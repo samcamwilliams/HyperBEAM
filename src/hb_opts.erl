@@ -170,10 +170,12 @@ default_message() ->
                      [
                         #{
                             <<"store-module">> => hb_store_fs,
-                            <<"prefix">> => <<"cache-mainnet">>,
-                            <<"subindex">> => #{ <<"Data-Protocol">> => <<"ao">> }
+                            <<"prefix">> => <<"cache-mainnet">>
                          }
-                     ]
+                     ],
+                     <<"subindex">> => #{
+                       <<"Data-Protocol">> => <<"ao">>
+                    }
                 },
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
