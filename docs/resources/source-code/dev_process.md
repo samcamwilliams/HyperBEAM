@@ -1,7 +1,7 @@
+# [Module dev_process.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_process.erl)
 
 
-# Module dev_process #
-* [Description](#description)
+
 
 This module contains the device implementation of AO processes
 in AO-Core.

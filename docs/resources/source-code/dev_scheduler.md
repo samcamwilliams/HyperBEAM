@@ -1,7 +1,7 @@
+# [Module dev_scheduler.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler.erl)
 
 
-# Module dev_scheduler #
-* [Description](#description)
+
 
 A simple scheduler scheme for AO.
 

@@ -1,8 +1,8 @@
-# HyperPaths
+# HyperPATHs
 
 ## Overview
 
-HyperPaths provides a comprehensive set of HTTP endpoints for interacting with HyperBEAM nodes and accessing process data. This section covers various ways to extract value and interact with HyperBEAM through HTTP requests.
+HyperPATHs provides a comprehensive set of HTTP endpoints for interacting with HyperBEAM nodes and accessing process data. This section covers various ways to extract value and interact with HyperBEAM through HTTP requests.
 
 ## Key Concepts
 

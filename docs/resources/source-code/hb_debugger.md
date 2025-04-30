@@ -1,7 +1,7 @@
+# [Module hb_debugger.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_debugger.erl)
 
 
-# Module hb_debugger #
-* [Description](#description)
+
 
 A module that provides bootstrapping interfaces for external debuggers
 to connect to HyperBEAM.

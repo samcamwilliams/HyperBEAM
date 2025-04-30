@@ -1,7 +1,7 @@
+# [Module dev_lua.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_lua.erl)
 
 
-# Module dev_lua #
-* [Description](#description)
+
 
 A device that calls a Lua script upon a request and returns the result.
 

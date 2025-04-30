@@ -1,7 +1,7 @@
+# [Module hb_ao_test_vectors.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_ao_test_vectors.erl)
 
 
-# Module hb_ao_test_vectors #
-* [Description](#description)
+
 
 Uses a series of different `Opts` values to test the resolution engine's
 execution under different circumstances.

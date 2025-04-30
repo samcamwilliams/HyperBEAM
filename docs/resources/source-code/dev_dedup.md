@@ -1,7 +1,7 @@
+# [Module dev_dedup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_dedup.erl)
 
 
-# Module dev_dedup #
-* [Description](#description)
+
 
 A device that deduplicates messages send to a process.
 

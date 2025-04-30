@@ -1,7 +1,7 @@
+# [Module hb_cache_render.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_cache_render.erl)
 
 
-# Module hb_cache_render #
-* [Description](#description)
+
 
 A module that helps to render given Key graphs into the .dot files.
 

@@ -22,7 +22,7 @@ This device acts as an HTTP client within the AO ecosystem. It allows a node or 
         *   `requires-sign`: (Optional, boolean) If true, the request message (`target`) will be signed using the node's key before sending. Defaults to `false`.
         *   `http-client`: (Optional) Specify a custom HTTP client module to use (defaults to node's configured `relay_http_client`).
     *   **Response:** `{ok, <ResponseMessage>}` where `<ResponseMessage>` is the full message received from the remote peer, or `{error, Reason}`.
-    *   **Example HyperPath:**
+    *   **Example HyperPATH:**
         ```
         GET /~relay@1.0/call?method=GET&path=https://example.com
         ```
@@ -44,3 +44,5 @@ This device acts as an HTTP client within the AO ecosystem. It allows a node or 
 ## Interaction with Routing
 
 When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by `hb_http:request/2`. This function often utilizes the node's routing configuration (`dev_router`) to determine the specific peer/URL to send the request to, especially if the target path is an AO process ID or another internal identifier rather than a full external URL.
+
+[relay module](../resources/source-code/dev_relay.md)

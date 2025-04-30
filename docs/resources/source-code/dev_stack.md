@@ -1,7 +1,7 @@
+# [Module dev_stack.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_stack.erl)
 
 
-# Module dev_stack #
-* [Description](#description)
+
 
 A device that contains a stack of other devices, and manages their
 execution.

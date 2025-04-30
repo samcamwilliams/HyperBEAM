@@ -1,7 +1,7 @@
+# [Module hb_app.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_app.erl)
 
 
-# Module hb_app #
-* [Description](#description)
+
 
 The main HyperBEAM application module.
 

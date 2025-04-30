@@ -1,7 +1,7 @@
+# [Module hb_store_remote_node.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store_remote_node.erl)
 
 
-# Module hb_store_remote_node #
-* [Description](#description)
+
 
 A store module that reads data from another AO node.
 

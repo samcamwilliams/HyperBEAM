@@ -1,7 +1,7 @@
+# [Module dev_scheduler_formats.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler_formats.erl)
 
 
-# Module dev_scheduler_formats #
-* [Description](#description)
+
 
 This module is used by dev_scheduler in order to produce outputs that
 are compatible with various forms of AO clients.

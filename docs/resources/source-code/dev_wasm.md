@@ -1,7 +1,7 @@
+# [Module dev_wasm.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_wasm.erl)
 
 
-# Module dev_wasm #
-* [Description](#description)
+
 
 A device that executes a WASM image on messages using the Memory-64
 preview standard.

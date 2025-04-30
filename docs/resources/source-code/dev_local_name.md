@@ -1,7 +1,7 @@
+# [Module dev_local_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_local_name.erl)
 
 
-# Module dev_local_name #
-* [Description](#description)
+
 
 A device for registering and looking up local names.
 

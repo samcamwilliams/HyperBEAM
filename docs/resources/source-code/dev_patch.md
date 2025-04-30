@@ -1,7 +1,7 @@
+# [Module dev_patch.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_patch.erl)
 
 
-# Module dev_patch #
-* [Description](#description)
+
 
 A device that finds `PATCH` requests in the `results/outbox`
 of its message, and applies them to it.

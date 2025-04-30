@@ -1,7 +1,7 @@
+# [Module dev_cache.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_cache.erl)
 
 
-# Module dev_cache #
-* [Description](#description)
+
 
 A device that looks up an ID from a local store and returns it,
 honoring the `accept` key to return the correct format.

@@ -1,7 +1,7 @@
+# [Module dev_codec_ans104.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_ans104.erl)
 
 
-# Module dev_codec_ans104 #
-* [Description](#description)
+
 
 Codec for managing transformations from `ar_bundles`-style Arweave TX
 records to and from TABMs.

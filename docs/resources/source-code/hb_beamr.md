@@ -1,7 +1,7 @@
+# [Module hb_beamr.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_beamr.erl)
 
 
-# Module hb_beamr #
-* [Description](#description)
+
 
 BEAMR: A WAMR wrapper for BEAM.
 

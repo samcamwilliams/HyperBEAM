@@ -1,7 +1,7 @@
+# [Module hb_tracer.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_tracer.erl)
 
 
-# Module hb_tracer #
-* [Description](#description)
+
 
 A module for tracing the flow of requests through the system.
 

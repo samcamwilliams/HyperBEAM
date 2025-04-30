@@ -1,7 +1,7 @@
+# [Module hb_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_name.erl)
 
 
-# Module hb_name #
-* [Description](#description)
+
 
 An abstraction for name registration/deregistration in Hyperbeam.
 

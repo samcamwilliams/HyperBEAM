@@ -1,6 +1,7 @@
+# [Module ar_deep_hash.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_deep_hash.erl)
 
 
-# Module ar_deep_hash #
+
 
 <a name="index"></a>
 

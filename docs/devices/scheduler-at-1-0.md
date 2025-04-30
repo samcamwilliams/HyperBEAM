@@ -47,3 +47,5 @@ These keys are typically accessed via the `~process@1.0` device, which delegates
 *   **Scheduling Unit (SU):** Schedulers may interact with external entities (like Arweave gateways or dedicated SU nodes) to fetch or commit schedules, although `~scheduler@1.0` aims for a simpler, often node-local or SU-client model.
 
 `~scheduler@1.0` provides the fundamental mechanism for ordered, sequential execution within the potentially asynchronous and parallel environment of AO.
+
+[scheduler module](../resources/source-code/dev_scheduler.md)

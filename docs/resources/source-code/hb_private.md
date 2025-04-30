@@ -1,7 +1,7 @@
+# [Module hb_private.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_private.erl)
 
 
-# Module hb_private #
-* [Description](#description)
+
 
 This module provides basic helper utilities for managing the
 private element of a message, which can be used to store state that is

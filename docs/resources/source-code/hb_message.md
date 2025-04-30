@@ -1,7 +1,7 @@
+# [Module hb_message.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_message.erl)
 
 
-# Module hb_message #
-* [Description](#description)
+
 
 This module acts an adapter between messages, as modeled in the
 AO-Core protocol, and their uderlying binary representations and formats.

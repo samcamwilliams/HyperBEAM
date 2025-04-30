@@ -18,7 +18,7 @@ The `~process@1.0` device acts as a router, intercepting requests and delegating
 
 ## Key Functions (Keys)
 
-These keys are accessed via HyperPaths relative to the Process Definition Message ID (`<ProcessID>`).
+These keys are accessed via HyperPATHs relative to the Process Definition Message ID (`<ProcessID>`).
 
 *   **`GET /<ProcessID>~process@1.0/schedule`**
     *   **Action:** Delegates to the configured Scheduler Device (via the process's `schedule/3` function) to retrieve the current schedule or state.
@@ -70,3 +70,5 @@ This defines a process that uses:
 ## Initialization (`init`)
 
 Processes often require an initialization step before they can process messages. This is typically triggered by calling the `init` key on the configured Execution Device via the process path (`/<ProcessID>~process@1.0/init`). This allows components within the execution stack (like WASM modules) to set up their initial state.
+
+[process module](../resources/source-code/dev_process.md)

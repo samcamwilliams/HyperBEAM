@@ -1,7 +1,7 @@
+# [Module hb_features.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_features.erl)
 
 
-# Module hb_features #
-* [Description](#description)
+
 
 A module that exports a list of feature flags that the node supports
 using the `-ifdef` macro.

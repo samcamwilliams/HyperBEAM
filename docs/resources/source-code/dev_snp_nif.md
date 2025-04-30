@@ -1,6 +1,7 @@
+# [Module dev_snp_nif.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_snp_nif.erl)
 
 
-# Module dev_snp_nif #
+
 
 <a name="index"></a>
 

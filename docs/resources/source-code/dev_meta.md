@@ -1,7 +1,7 @@
+# [Module dev_meta.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_meta.erl)
 
 
-# Module dev_meta #
-* [Description](#description)
+
 
 The hyperbeam meta device, which is the default entry point
 for all messages processed by the machine.

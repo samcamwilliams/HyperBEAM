@@ -1,7 +1,7 @@
+# [Module dev_multipass.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_multipass.erl)
 
 
-# Module dev_multipass #
-* [Description](#description)
+
 
 A device that triggers repass events until a certain counter has been
 reached.

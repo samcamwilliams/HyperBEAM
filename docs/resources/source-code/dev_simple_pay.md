@@ -1,7 +1,7 @@
+# [Module dev_simple_pay.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_simple_pay.erl)
 
 
-# Module dev_simple_pay #
-* [Description](#description)
+
 
 A simple device that allows the operator to specify a price for a
 request and then charge the user for it, on a per message basis.

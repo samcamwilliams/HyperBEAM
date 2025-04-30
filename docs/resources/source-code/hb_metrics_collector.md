@@ -1,6 +1,7 @@
+# [Module hb_metrics_collector.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_metrics_collector.erl)
 
 
-# Module hb_metrics_collector #
+
 
 __Behaviours:__ [`prometheus_collector`](prometheus_collector.md).
 

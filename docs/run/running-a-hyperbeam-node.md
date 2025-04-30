@@ -23,7 +23,7 @@ This command:
 
 1.  Starts the Erlang Virtual Machine (BEAM) with all HyperBEAM modules loaded.
 2.  Initializes the node with default settings (from `hb_opts.erl`).
-3.  Starts the default HTTP server (typically on **port 10000**), making the node accessible via HyperPaths.
+3.  Starts the default HTTP server (typically on **port 10000**), making the node accessible via HyperPATHs.
 4.  Drops you into an interactive Erlang shell where you can interact with the running node.
 
 This basic setup is suitable for local development and exploring HyperBEAM's functionalities.
@@ -45,35 +45,67 @@ HyperBEAM uses build profiles to enable optional features, often requiring extra
 rebar3 as rocksdb shell
 
 # Start with RocksDB and Genesis WASM profiles
-rebar3 as rocksdb,genesis_wasm shell
+rebar3 as rocksdb, genesis_wasm shell
 ```
 
-*Note: Choose profiles *before* starting the shell, as they affect compile-time options.*
+*Note: Choose profiles **before** starting the shell, as they affect compile-time options.*
 
-## Configuration Options (Environment Variables & Args)
+## Configuration (config.flat)
 
-You can customize your node's behavior using environment variables or command-line arguments passed via `erl_opts`.
+The primary way to configure your HyperBEAM node is through a `config.flat` file located in the node's working directory or specified by the `HB_CONFIG_LOCATION` environment variable.
 
-**Common Options:**
+This file uses a simple `Key = Value.` format (note the period at the end of each line).
 
-*   **`HB_PORT=<port_number>`:** Sets the port for the HTTP server.
+**Example `config.flat`:**
+
+```erlang
+% Set the HTTP port
+hb_port = 8080.
+
+% Specify the Arweave key file
+hb_key = "/path/to/your/wallet.json".
+
+% Set the data store directory
+hb_store = "./node_data_mainnet".
+
+% Enable verbose logging for specific modules
+hb_print = "hb_http,dev_router".
+```
+
+Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
+
+## Overrides (Environment Variables & Args)
+
+You can override settings from `config.flat` or provide values if the file is missing using environment variables or command-line arguments.
+
+**Using Environment Variables:**
+
+Environment variables typically use an `HB_` prefix followed by the configuration key in uppercase.
+
+*   **`HB_PORT=<port_number>`:** Overrides `hb_port`.
     *   Example: `HB_PORT=8080 rebar3 shell`
-*   **`HB_KEY=<path/to/wallet.key>`:** Specifies the Arweave key file the node will use to sign its messages. If not provided, a temporary key might be generated or a default sought.
+*   **`HB_KEY=<path/to/wallet.key>`:** Overrides `hb_key`.
     *   Example: `HB_KEY=~/.keys/arweave_key.json rebar3 shell`
-*   **`HB_STORE=<directory_path>`:** Sets a specific local directory for the node's data store. Useful for isolating data when running multiple nodes or for persistent storage.
+*   **`HB_STORE=<directory_path>`:** Overrides `hb_store`.
     *   Example: `HB_STORE=./node_data_1 rebar3 shell`
-*   **`HB_PRINT=<setting>`:** Controls the level of debug logging output. `<setting>` can be `true` (or `1`), or a comma-separated list of modules/topics (e.g., `hb_path,hb_ao,ao_result`).
+*   **`HB_PRINT=<setting>`:** Overrides `hb_print`. `<setting>` can be `true` (or `1`), or a comma-separated list of modules/topics (e.g., `hb_path,hb_ao,ao_result`).
     *   Example: `HB_PRINT=hb_http,dev_router rebar3 shell`
+*   **`HB_CONFIG_LOCATION=<path/to/config.flat>`:** Specifies a custom location for the configuration file.
 
-**Using `erl_opts` (Alternative):**
+**Using `erl_opts` (Direct Erlang VM Arguments):**
 
-You can pass Erlang VM arguments directly:
+You can also pass arguments directly to the Erlang VM using the `-<key> <value>` format within `erl_opts`. This is generally less common for application configuration than `config.flat` or environment variables.
 
 ```bash
 rebar3 shell --erl_opts "-hb_port 8080 -hb_key path/to/key.json"
 ```
 
-Refer to the `hb_opts.erl` source file for a comprehensive list of configuration options.
+**Order of Precedence:**
+
+1.  Command-line arguments (`erl_opts`).
+2.  Environment variables (`HB_*`).
+3.  Settings in `config.flat`.
+4.  Default values from `hb_opts.erl`.
 
 ## Verify Installation
 
@@ -85,20 +117,54 @@ curl http://localhost:10000/~meta@1.0/info
 
 A JSON response containing node information indicates success.
 
-## Running in Mainnet Mode
+## Running for Production (Mainnet)
 
-For connecting to the main AO network, specific configurations might be required. A helper function `hb:start_mainnet/1` exists for common mainnet setups:
+While you can connect to the main AO network using the `rebar3 shell` for testing purposes (potentially using specific configurations or helper functions like `hb:start_mainnet/1` if available and applicable), the standard and recommended method for a stable production deployment (like running on the mainnet) is to build and run a **release**.
 
-```erlang
-% Inside the rebar3 shell:
-hb:start_mainnet(#{ port => 9001, key_location => "path/to/wallet.key" }).
+**1. Build the Release:**
+
+From the root of the HyperBEAM repository, build the release package. You might include specific profiles needed for your mainnet setup (e.g., `rocksdb` if you intend to use it):
+
+```bash
+# Build release with default profile
+rebar3 release
+
+# Or, build with specific profiles (example)
+# rebar3 as rocksdb release
 ```
 
-Consult further documentation or community resources for detailed mainnet deployment guides.
+This command compiles the project and packages it along with the Erlang Runtime System (ERTS) and all dependencies into a directory, typically `_build/default/rel/hb`.
 
-## Stopping the Node
+**2. Configure the Release:**
 
-To stop the node running in the shell, press `Ctrl+C` twice or use the Erlang command `q().`.
+Navigate into the release directory (e.g., `cd _build/default/rel/hb`). You will find a `config.flat` file (or you might need to copy your customized one here). Edit this `config.flat` file to set your desired mainnet parameters (port, key file location, store path, specific peers, etc.). Environment variables can also be used to override settings in the release's `config.flat`, just like in the shell environment.
+
+**3. Start the Node:**
+
+Use the generated start script (`bin/hb`) to run the node:
+
+```bash
+# Start the node in the foreground (logs to console)
+./bin/hb console
+
+# Start the node as a background daemon
+./bin/hb start
+
+# Check the status
+./bin/hb ping
+./bin/hb status
+
+# Stop the node
+./bin/hb stop
+```
+
+Consult the generated `bin/hb` script or Erlang/OTP documentation for more advanced start-up options (e.g., attaching a remote shell).
+
+Running as a release provides a more robust, isolated, and manageable way to operate a node compared to running directly from the `rebar3 shell`.
+
+## Stopping the Node (rebar3 shell)
+
+To stop the node running *within the `rebar3 shell`*, press `Ctrl+C` twice or use the Erlang command `q().`.
 
 ## Next Steps
 

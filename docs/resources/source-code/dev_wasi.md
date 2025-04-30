@@ -1,7 +1,7 @@
+# [Module dev_wasi.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_wasi.erl)
 
 
-# Module dev_wasi #
-* [Description](#description)
+
 
 A virtual filesystem device.
 
