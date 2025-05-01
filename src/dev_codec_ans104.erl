@@ -13,7 +13,6 @@
 %% it may be set by the codec in order to support nested messages.
 -define(TX_KEYS,
     [
-        <<"id">>,
         <<"last_tx">>,
         <<"owner">>,
         <<"target">>,
@@ -156,10 +155,10 @@ do_from(RawTX, Req, Opts) ->
                 )
             )
         ),
-    % Normalize `owner' to `keyid'
+    % Normalize `owner' to `keyid', remove 'id', and remove 'signature'
     TXKeysMap =
         maps:without(
-            [<<"owner">>],
+            [<<"owner">>, <<"signature">>],
             case maps:get(<<"owner">>, RawTXKeysMap, ?DEFAULT_OWNER) of
                 ?DEFAULT_OWNER -> RawTXKeysMap;
                 Owner -> RawTXKeysMap#{ <<"keyid">> => Owner }
@@ -199,10 +198,11 @@ do_from(RawTX, Req, Opts) ->
     WithCommitments =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
+                ?event({no_signature_detected, NormalizedDataMap}),
                 case normal_tags(TX#tx.tags) of
                     true -> NormalizedDataMap;
                     false ->
-                        ID = hb_util:human_id(TX#tx.id),
+                        ID = hb_util:human_id(TX#tx.unsigned_id),
                         NormalizedDataMap#{
                             <<"commitments">> => #{
                                 ID => #{
@@ -229,6 +229,7 @@ do_from(RawTX, Req, Opts) ->
                         NormalizedDataMap
                     ),
                 ID = hb_util:human_id(TX#tx.id),
+                ?event({raw_tx_id, {id, ID}, {explicit, WithoutBaseCommitment}}),
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"alg">> => <<"rsa-pss">>,
