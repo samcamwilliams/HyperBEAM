@@ -643,7 +643,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
 %% @doc Ensure that a message is loaded from the cache if it is an ID, or 
 %% a link, such that it is ready for execution.
 ensure_message_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
-    hb_cache:ensure_loaded({link, MsgID, #{}}, Opts);
+    hb_util:ok(hb_cache:read(MsgID, Opts));
 ensure_message_loaded(MsgLink, Opts) when ?IS_LINK(MsgLink) ->
     hb_cache:ensure_loaded(MsgLink, Opts);
 ensure_message_loaded(Msg, _Opts) ->
