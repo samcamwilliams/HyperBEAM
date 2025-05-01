@@ -52,8 +52,29 @@ metrics(_, Req, Opts) ->
     end.
 
 %% @doc Employ HyperBEAM's internal pretty printer to format a message.
-format(Base, _, _) ->
-    {ok, #{ <<"body">> => hb_util:bin(hb_message:format(Base)) }}.
+format(Base, Req, Opts) ->
+    LoadedBase = hb_cache:ensure_all_loaded(Base, Opts),
+    LoadedReq = hb_cache:ensure_all_loaded(Req, Opts),
+    {ok,
+        #{
+            <<"body">> =>
+                    hb_util:bin(
+                        hb_message:format(
+                            #{
+                                <<"base">> =>
+                                    maps:without(
+                                        [<<"device">>],
+                                        hb_private:reset(LoadedBase)),
+                                <<"request">> =>
+                                    maps:without(
+                                        [<<"path">>],
+                                        hb_private:reset(LoadedReq)
+                                    )
+                            }
+                        )
+                    )
+        }
+    }.
 
 %% @doc Serve a file from the priv directory. Only serves files that are explicitly
 %% listed in the `routes' field of the `info/0' return value.

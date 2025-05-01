@@ -875,11 +875,11 @@ send_large_signed_request_test() ->
     ).
 
 index_test() ->
-    URL = hb_http_server:start_node(),
-    {ok, Res} = get(URL, <<"/~test@1.0">>, #{}),
-    ?assertEqual(<<"i like turtles!">>, Res).
+    NodeURL = hb_http_server:start_node(),
+    {ok, Res} = get(NodeURL, <<"/~test-device@1.0/load">>, #{}),
+    ?assertEqual(<<"i like turtles!">>, hb_ao:get(<<"body">>, Res, #{})).
 
 index_request_test() ->
     URL = hb_http_server:start_node(),
-    {ok, Res} = get(URL, <<"/~test@1.0?name=dogs">>, #{}),
-    ?assertEqual(<<"i like dogs!">>, Res).
+    {ok, Res} = get(URL, <<"/~test-device@1.0/load?name=dogs">>, #{}),
+    ?assertEqual(<<"i like dogs!">>, hb_ao:get(<<"body">>, Res, #{})).

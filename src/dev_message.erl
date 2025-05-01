@@ -36,16 +36,35 @@ info() ->
         default => fun get/4
     }.
 
-%% @doc Generate an index page for a message, in the event that the `body` and
-%% `content-type` of a message returned to the client are both empty. We do this
-%% by finding the `default_index` key of the node message and executing the base
-%% message as a request to it with the path set to `index`.
-index(Msg, _Req, Opts) ->
+%% @doc Generate an index page for a message, in the event that the `body' and
+%% `content-type' of a message returned to the client are both empty. We do this
+%% as follows:
+%% 1. Find the `default_index' key of the node message. If it is a binary,
+%%    it is assumed to be the name of a device, and we execute the resolution
+%%    `as` that ID.
+%% 2. Merge the base message with the default index message, favoring the default
+%%    index message's keys over those in the base message, unless the default
+%%    was a device name.
+%% 3. Execute the `default_index_path` (base: `index') upon the message,
+%%    giving the rest of the request unchanged.
+index(Msg, Req, Opts) ->
     case hb_opts:get(default_index, not_found, Opts) of
         not_found ->
             {error, <<"No default index message set.">>};
         DefaultIndex ->
-            hb_ao:resolve(DefaultIndex, Msg#{ <<"path">> => <<"index">> }, Opts)
+            hb_ao:resolve(
+                maps:merge(
+                    Msg,
+                    if is_map(DefaultIndex) -> DefaultIndex;
+                       is_binary(DefaultIndex) -> {as, DefaultIndex, Msg}
+                    end
+                ),
+                Req#{
+                    <<"path">> =>
+                        hb_opts:get(default_index_path, <<"index">>, Opts)
+                },
+                Opts
+            )
     end.
 
 %% @doc Return the ID of a message, using the `committers' list if it exists.
