@@ -5,8 +5,8 @@
 -export([encode/1, decode/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-%%% The set of functions that will be sandboxed by default if `sandbox` is set 
-%%% to only `true`. Setting `sandbox` to a map allows the invoker to specify
+%%% The set of functions that will be sandboxed by default if `sandbox' is set 
+%%% to only `true'. Setting `sandbox' to a map allows the invoker to specify
 %%% which functions should be sandboxed and what to return instead. Providing
 %%% a list instead of a map will result in all functions being sandboxed and
 %%% returning `sandboxed'.

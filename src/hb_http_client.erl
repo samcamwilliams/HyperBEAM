@@ -178,7 +178,7 @@ maybe_invoke_monitor(Details, Opts) ->
         not_found -> ok;
         Monitor ->
             % We have a monitor message. Place the `details' into the body, set
-            % the `method` to "POST", add the `http_reference' (if applicable)
+            % the `method' to "POST", add the `http_reference' (if applicable)
             % and sign the request. We use the node message's wallet as the
             % source of the key.
             MaybeWithReference =
