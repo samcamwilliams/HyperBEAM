@@ -9,28 +9,30 @@ site_dir: mkdocs-site
 use_directory_urls: false
 
 nav:
-  - Begin:
+  - Introduction:
       - What is AO-Core?: 'begin/what-is-ao-core.md'
       - What is HyperBEAM?: 'begin/what-is-hyperbeam.md'
       - AO Devices: 'begin/ao-devices.md'
       - Pathing in AO-Core: 'begin/pathing-in-ao-core.md'
-  - Run:
+  - Run a Node:
       - Running a HyperBEAM node: 'run/running-a-hyperbeam-node.md'
       - Configuring your machine: 'run/configuring-your-machine.md'
       - TEE nodes: 'run/tee-nodes.md'
       - Joining/running a router: 'run/joining-running-a-router.md'
-  - Learn:
-      - Get started building on AO-Core: 'guides/get-started-building-on-ao-core.md'
-      - Exposing process state: 'guides/exposing-process-state.md'
-      - Serverless decentralized compute: 'guides/serverless-decentralized-compute.md'
-      - Extending HyperBEAM: 'guides/extending-hyperbeam.md'
+  - Build on HyperBEAM:
+      - Get started building on AO-Core: 'build/get-started-building-on-ao-core.md'
+      - Exposing process state: 'build/exposing-process-state.md'
+      - Serverless decentralized compute: 'build/serverless-decentralized-compute.md'
+      - Extending HyperBEAM: 'build/extending-hyperbeam.md'
   - Devices:
       - Overview: 'devices/index.md'
       - '~meta@1.0': 'devices/meta-at-1-0.md'
       - '~process@1.0': 'devices/process-at-1-0.md'
-      - '~scheduler@1.0': 'devices/scheduler-at-1-0.md'
+      - '~message@1.0': 'devices/message-at-1-0.md'
       - '~wasm64@1.0': 'devices/wasm64-at-1-0.md'
       - '~lua@5.3a': 'devices/lua-at-5-3a.md'
+      - '~json@1.0': 'devices/json-at-1-0.md'
+      - '~scheduler@1.0': 'devices/scheduler-at-1-0.md'
       - '~relay@1.0': 'devices/relay-at-1-0.md'
   - Resources:
     - Source Code:
@@ -164,8 +166,9 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.superfences
   - pymdownx.tabbed:
-      alternate_style: false
+      alternate_style: true
   - pymdownx.critic
   - pymdownx.keys
   - def_list

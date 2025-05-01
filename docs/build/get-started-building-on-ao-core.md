@@ -17,13 +17,20 @@ Messages are processed by [Devices](../begin/ao-devices.md), which define *how* 
 
 The primary tool for interacting with AO and developing processes is `aos`, a command-line interface and development environment.
 
-**Installation (if not already installed):**
+=== "npm"
+    ```bash
+    npm i -g https://get_ao.g8way.io
+    ```
 
-```bash
-npm install -g https://github.com/permaweb/aos.git
-# or using bun
-bun install -g https://github.com/permaweb/aos.git
-```
+=== "bun"
+    ```bash
+    bun install -g https://get_ao.g8way.io
+    ```
+
+=== "pnpm"
+    ```bash
+    pnpm add -g https://get_ao.g8way.io
+    ```
 
 **Starting `aos`:**
 

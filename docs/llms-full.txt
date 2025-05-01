@@ -1,4 +1,3 @@
-Generated: 2025-05-01T19:10:56Z
 Generated: 2025-05-01T14:36:24Z
 
 --- START OF FILE: docs/begin/ao-devices.md ---
@@ -25,6 +24,8 @@ HyperBEAM includes many preloaded devices that provide core functionality. Some 
 *   **[`~wasm64@1.0`](../devices/wasm64-at-1-0.md):** Executes WebAssembly (WASM) code, allowing for complex computations written in languages like Rust, C++, etc.
 *   **[`~lua@5.3a`](../devices/lua-at-5-3a.md):** Executes Lua scripts.
 *   **[`~relay@1.0`](../devices/relay-at-1-0.md):** Forwards messages between AO nodes or to external HTTP endpoints.
+*   **[`~json@1.0`](../devices/json-at-1-0.md):** Provides access to JSON data structures using HyperPATHs.
+*   **[`~message@1.0`](../devices/message-at-1-0.md):** Manages message state and processing.
 *   **[`~patch@1.0`](../guides/exposing-process-state.md):** Applies state updates directly to a process, often used for migrating or managing process data.
 
 ## Beyond the Basics
@@ -57,67 +58,49 @@ The specific functions or 'keys' available for each Device are documented indivi
 
 Understanding how to construct and interpret paths in AO-Core is fundamental to working with HyperBEAM. This guide explains the structure and components of AO-Core paths, enabling you to effectively interact with processes and access their data.
 
-## Path Structure
+## HyperPATH Structure
 
 Let's examine a typical HyperBEAM endpoint piece-by-piece:
 
 ```
-https://router-1.forward.computer/YOUR_STATE_PROCESS_ID~process@1.0/now/cache
+https://router-1.forward.computer/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
 ```
 
 ### Node URL (`router-1.forward.computer`)
 
-The HTTP response from this node includes a signature from the host's key. By accessing the `~snp@1.0` device, you can verify that the node is running in a genuine Trusted Execution Environment (TEE), ensuring computation integrity. You can replace `router-1.forward.computer` with any HyperBEAM TEE node operated by any party while maintaining trustless guarantees.
+The HTTP response from this node includes a signature from the host's key. By accessing the [`~snp@1.0`](../resources/source-code/dev_snp.md) device, you can verify that the node is running in a genuine Trusted Execution Environment (TEE), ensuring computation integrity. You can replace `router-1.forward.computer` with any HyperBEAM TEE node operated by any party while maintaining trustless guarantees.
 
-### Process Path (`/YOUR_STATE_PROCESS_ID~process@1.0`)
+### Process Path (`/<procId>~process@1.0`)
 
 Every path in AO-Core represents a program. Think of the URL bar as a Unix-style command-line interface, providing access to AO's trustless and verifiable compute. Each path component (between `/` characters) represents a step in the computation. In this example, we instruct the AO-Core node to:
+
 1. Load a specific message from its caches (local, another node, or Arweave)
-2. Interpret it with the `process@1.0` device
+2. Interpret it with the [`~process@1.0`](../devices/process-at-1-0.md) device
 3. The process device implements a shared computing environment with consistent state between users
 
 ### State Access (`/now` or `/compute`)
 
 Devices in AO-Core expose keys accessible via path components. Each key executes a function on the device:
+
 - `now`: Calculates real-time process state
 - `compute`: Serves the latest known state (faster than checking for new messages)
 
 Under the surface, these keys represent AO-Core messages. As we progress through the path, AO-Core applies each message to the existing state. You can access the full process state by visiting:
 ```
-/procID~process@1.0/now
+/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
 ```
 
 ### State Navigation
 
-You can browse through sub-messages and data fields by accessing them as keys. For example:
+You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `at-slot`, you can access it like this:
 ```
-/procID~process@1.0/compute/at-slot
+/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/compute/at-slot
 ```
 This shows the latest 'slot' (number of interactions) of your process. Each response is:
+
 - A message with a signature attesting to its correctness
 - A hashpath describing its generation
 - Transferable to other AO-Core nodes for uninterrupted execution
-
-### Cache Access (`/cache`)
-
-The final component accesses the 'cache' element of the state. This works because:
-1. The HyperBEAM node executes the schedule on the process
-2. Finds the `method = "PATCH"` message in its outbox
-3. Invokes the `patch@1.0` device
-4. Merges your message with the process's state
-5. Allows execution of the `cache` key to retrieve your data
-
-!!! note
-    The final path parameter (`cache`) is set by using `Send({ device = 'patch@1.0', cache = msg.Data })`. You can use different values than `cache` by changing this parameter.
-
-## Deep Message Navigation
-
-The `patch@1.0` device supports 'deep messages' in your state. By sending a full Lua table in the data field (unencoded or flattened), you can browse through the state and resolve keys individually, downloading only needed information.
-
-For example, with a Balances table in your state process, you can access individual holders directly:
-```
-/procid~process@1.0/compute/cache/balances/address
-```
 
 ## Best Practices
 
@@ -126,6 +109,25 @@ For example, with a Balances table in your state process, you can access individ
 3. Implement proper error handling for network requests
 4. Consider rate limits and performance implications
 5. Keep sensitive data secure and use appropriate authentication methods 
+
+## Example: Using the `message` Device
+
+Let's break down another common HyperPATH pattern using the built-in [`~message@1.0`](../devices/message-at-1-0.md) device:
+
+```
+http://localhost:10000/[`~message@1.0`](../devices/message-at-1-0.md)&hello=world&k=v/k
+```
+
+Here's how this works:
+
+1.  **`http://localhost:10000/`**: The base address of your local HyperBEAM node.
+2.  **[`~message@1.0`](../devices/message-at-1-0.md)**: This designates `~message@1.0` as the *root device*. The request is routed to the corresponding module (`dev_message`).
+3.  **`&hello=world&k=v`**: These query parameters define the initial message. The `dev_message` device interprets them as key-value pairs, creating the starting message map: `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }`.
+4.  **`/k`**: This path segment tells the `dev_message` device which key's value to retrieve from the message map constructed in the previous step.
+
+The `dev_message` device receives the initial message and the path `/k`. It performs a lookup for the key `k` within the message `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }` and returns the corresponding value `v` as the response.
+
+This pattern is useful for simple data retrieval or manipulating transient messages without needing a persistent process. 
 --- END OF FILE: docs/begin/pathing-in-ao-core.md ---
 
 --- START OF FILE: docs/begin/what-is-ao-core.md ---
@@ -190,12 +192,14 @@ Each device listed here represents a specific capability available to AO process
 
 Below is a list of documented built-in devices. Each page details the device's purpose, status, available functions (keys), and usage examples where applicable.
 
+*   **[`~message@1.0`](./message-at-1-0.md):** Base message handling and manipulation.
 *   **[`~meta@1.0`](./meta-at-1-0.md):** Node configuration and metadata.
 *   **[`~process@1.0`](./process-at-1-0.md):** Persistent, shared process execution environment.
 *   **[`~scheduler@1.0`](./scheduler-at-1-0.md):** Message scheduling and execution ordering for processes.
 *   **[`~wasm64@1.0`](./wasm64-at-1-0.md):** WebAssembly (WASM) execution engine.
 *   **[`~lua@5.3a`](./lua-at-5-3a.md):** Lua script execution engine.
 *   **[`~relay@1.0`](./relay-at-1-0.md):** Relaying messages to other nodes or HTTP endpoints.
+*   **[`~json@1.0`](./json-at-1-0.md):** Provides access to JSON data structures using HyperPATHs.
 
 *(More devices will be documented here as specifications are finalized and reviewed.)*
 
@@ -210,6 +214,73 @@ Versioning indicates the specific interface and behavior of the device. Changes 
 Each device page will include a status indicator (e.g., `Stable`, `Beta`, `Experimental`) to help you gauge its production readiness and likelihood of future changes.
 
 --- END OF FILE: docs/devices/index.md ---
+
+--- START OF FILE: docs/devices/json-at-1-0.md ---
+# Device: ~json@1.0
+
+## Overview
+
+The `json` device provides a structured way to access and interact with JSON (JavaScript Object Notation) data within the HyperBEAM environment. It allows processes to read, query, and potentially modify JSON objects stored or referenced by the device. It can also be used via HyperPATH chaining to serialize arbitrary data from other devices.
+
+**Status:** Experimental <!-- TODO: Update status -->
+
+## Core Functions (Keys)
+
+These keys are typically accessed via HyperPATHs relative to the device's mount point (e.g., `/data/myJson`) or used in HyperPATH chains.
+
+*   **`GET /<MountPoint>/<HyperPATH>` (Read Action)**
+    *   **Action:** Retrieves the data located at the specified `<HyperPATH>` within the device's *own* stored JSON structure. The device serializes the targeted JSON fragment (object, array, value) into a standard JSON string format.
+    *   **Example:** `GET /data/myJson/user/settings` on the example JSON below would return the string `"{\"theme\":\"dark\",\"notifications\":true}"`.
+    *   **HyperPATH:** Required. Specifies the target within the device's JSON data.
+
+*   **`/<PreviousPath>/serialize` (Serialize Action)**
+    *   **Action:** Takes arbitrary input data (piped from the `<PreviousPath>` segment of a HyperPATH chain) and returns its serialized JSON string representation.
+    *   **Example:** `GET /~meta@1.0/info /~json@1.0/serialize` - fetches node info and then pipes it to this device to serialize the result as JSON.
+    *   **HyperPATH:** This segment (`/serialize`) is appended to a previous HyperPATH segment.
+
+*   **`GET /<MountPoint>/query?<HyperPATHQuery>` (Query Action)**
+    *   **Action:** Performs a more complex query against the device's *own* stored JSON data using a specific query syntax (details TBD).
+    *   **Example:** <!-- TODO: Add Query example -->
+    *   **HyperPATH:** Required. The base path to the device's data.
+    *   **Query Parameter:** `?query=<HyperPATHQuery>` (Syntax TBD).
+
+<!-- TODO: Add details on Update, Delete, or other potential actions -->
+
+## Example JSON Data
+
+Assuming `json` is mounted at `/data/myJson` and holds the following JSON:
+
+```json
+{
+  "user": {
+    "name": "Alice",
+    "id": 123,
+    "settings": {
+      "theme": "dark",
+      "notifications": true
+    }
+  },
+  "items": [
+    {"sku": "abc", "price": 10},
+    {"sku": "def", "price": 20}
+  ]
+}
+```
+
+**Access Examples:**
+
+-   Get user name: `GET /data/myJson/user/name`
+-   Get theme setting: `GET /data/myJson/user/settings/theme`
+-   Get first item price: `GET /data/myJson/items[0]/price`
+
+## Events
+
+<!-- TODO: Details about events emitted by the device, e.g., DataChanged -->
+
+<!-- TODO: Link to source module if available --> 
+
+[json module](../resources/source-code/dev_codec_json.md)
+--- END OF FILE: docs/devices/json-at-1-0.md ---
 
 --- START OF FILE: docs/devices/lua-at-5-3a.md ---
 # Device: ~lua@5.3a
@@ -286,6 +357,85 @@ This device offers a lightweight, integrated scripting capability for AO process
 [lua module](../resources/source-code/dev_lua.md)
 
 --- END OF FILE: docs/devices/lua-at-5-3a.md ---
+
+--- START OF FILE: docs/devices/message-at-1-0.md ---
+# Device: ~message@1.0
+
+## Overview
+
+The [`~message@1.0`](../resources/source-code/dev_message.md) device is a fundamental built-in device in HyperBEAM. It serves as the identity device for standard AO-Core messages, which are represented as Erlang maps internally. Its primary function is to allow manipulation and inspection of these message maps directly via HyperPATH requests, without needing a persistent process state.
+
+**Status:** Stable
+
+This device is particularly useful for:
+
+*   Creating and modifying transient messages on the fly using query parameters.
+*   Retrieving specific values from a message map.
+*   Inspecting the keys of a message.
+*   Handling message commitments and verification (though often delegated to specialized commitment devices like `httpsig@1.0`).
+
+## Core Functionality
+
+The `message@1.0` device treats the message itself as the state it operates on. Key operations are accessed via path segments in the HyperPATH.
+
+### Key Access (`/key`)
+
+To retrieve the value associated with a specific key in the message map, simply append the key name to the path. Key lookup is case-insensitive.
+
+**Example:**
+
+```
+http://localhost:10000/~message@1.0&hello=world&Key=Value/key
+```
+
+**Response:**
+
+```
+"Value"
+```
+
+### Reserved Keys
+
+The `message@1.0` device reserves several keys for specific operations:
+
+*   **`get`**: (Default operation if path segment matches a key in the map) Retrieves the value of a specified key. Behaves identically to accessing `/key` directly.
+*   **`set`**: Modifies the message by adding or updating key-value pairs. Requires additional parameters (usually in the request body or subsequent path segments/query params, depending on implementation specifics).
+    *   Supports deep merging of maps.
+    *   Setting a key to `unset` removes it.
+    *   Overwriting keys that are part of existing commitments will typically remove those commitments unless the new value matches the old one.
+*   **`set_path`**: A special case for setting the `path` key itself, which cannot be done via the standard `set` operation.
+*   **`remove`**: Removes one or more specified keys from the message. Requires an `item` or `items` parameter.
+*   **`keys`**: Returns a list of all public (non-private) keys present in the message map.
+*   **`id`**: Calculates and returns the ID (hash) of the message. Considers active commitments based on specified `committers`. May delegate ID calculation to a device specified by the message's `id-device` key or the default (`httpsig@1.0`).
+*   **`commit`**: Creates a commitment (e.g., a signature) for the message. Requires parameters like `commitment-device` and potentially committer information. Delegates the actual commitment generation to the specified device (default `httpsig@1.0`).
+*   **`committers`**: Returns a list of committers associated with the commitments in the message. Can be filtered by request parameters.
+*   **`commitments`**: Used internally and in requests to filter or specify which commitments to operate on (e.g., for `id` or `verify`).
+*   **`verify`**: Verifies the commitments attached to the message. Can be filtered by `committers` or specific `commitment` IDs in the request. Delegates verification to the device specified in each commitment (`commitment-device`).
+
+### Private Keys
+
+Keys prefixed with `priv` (e.g., `priv_key`, `private.data`) are considered private and cannot be accessed or listed via standard `get` or `keys` operations.
+
+## HyperPATH Example
+
+This example demonstrates creating a transient message and retrieving a value:
+
+```
+http://localhost:10000/~message@1.0&hello=world&k=v/k
+```
+
+**Breakdown:**
+
+1.  `~message@1.0`: Sets the root device.
+2.  `&hello=world&k=v`: Query parameters create the initial message: `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }`.
+3.  `/k`: The path segment requests the value for the key `k`.
+
+**Response:**
+
+```
+"v"
+``` 
+--- END OF FILE: docs/devices/message-at-1-0.md ---
 
 --- START OF FILE: docs/devices/meta-at-1-0.md ---
 # Device: ~meta@1.0
@@ -599,332 +749,6 @@ This setup allows AO processes to leverage the computational power and language 
 [wasm module](../resources/source-code/dev_wasm.md)
 
 --- END OF FILE: docs/devices/wasm64-at-1-0.md ---
-
---- START OF FILE: docs/guides/exposing-process-state.md ---
-# Exposing Process State with the Patch Device
-
-The `~patch@1.0` device provides a mechanism for AO processes to expose parts of their internal state, making it readable via direct HTTP GET requests along the process's HyperPATH.
-
-## Why Use the Patch Device?
-
-Standard AO process execution typically involves sending a message to a process, letting it compute, and then potentially reading results from its outbox or state after the computation is scheduled and finished. This is asynchronous.
-
-The `patch` device allows for a more direct, synchronous-like read pattern. A process can use it to "patch" specific data elements from its internal state into a location that becomes directly accessible via a HyperPATH GET request *before* the full asynchronous scheduling might complete.
-
-This is particularly useful for:
-
-*   **Web Interfaces:** Building frontends that need to quickly read specific data points from an AO process without waiting for a full message round-trip.
-*   **Data Feeds:** Exposing specific metrics or state variables for monitoring or integration with other systems.
-*   **Caching:** Allowing frequently accessed data to be retrieved efficiently via simple HTTP GETs.
-
-## How it Works
-
-1.  **Process Logic:** Inside your AO process code (e.g., in Lua or WASM), when you want to expose data, you construct an **Outbound Message** targeted at the `~patch@1.0` device.
-2.  **Patch Message Format:** This outbound message typically includes tags that specify:
-    *   `device = 'patch@1.0'`
-    *   A `cache` tag containing a table. The **keys** within this table become the final segments in the HyperPATH used to access the data, and the **values** are the data itself.
-    *   Example Lua using `aos`: `Send({ Target = ao.id, device = 'patch@1.0', cache = { myDataKey = MyValue } })`
-3.  **HyperBEAM Execution:** When HyperBEAM executes the process schedule and encounters this outbound message:
-    *   It invokes the `dev_patch` module.
-    *   `dev_patch` inspects the message.
-    *   It takes the keys from the `cache` table (`myDataKey` in the example) and their associated values (`MyValue`) and makes these values available under the `/cache/` path segment.
-4.  **HTTP Access:** You (or any HTTP client) can now access this data directly using a GET request:
-    ```
-    GET /<process-id>~process@1.0/compute/cache/<myDataKey>
-    # Or potentially using /now/
-    GET /<process-id>~process@1.0/now/cache/<myDataKey>
-    ```
-    The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`myDataKey`) to return the `MyValue` directly.
-
-## Example (Lua in `aos`)
-
-```lua
--- In your process code (e.g., loaded via .load)
-Handlers.add(
-  "PublishData",
-  Handlers.utils.hasMatchingTag("Action", "PublishData"),
-  function (msg)
-    local dataToPublish = "Some important state: " .. math.random()
-    -- Expose 'currentStatus' key under the 'cache' path
-    Send({ Target = ao.id, device = 'patch@1.0', cache = { currentStatus = dataToPublish } })
-    print("Published data to /cache/currentStatus")
-  end
-)
-
--- Spawning and interacting
-[aos]> MyProcess = spawn(MyModule)
-
-[aos]> Send({ Target = MyProcess, Action = "PublishData" })
--- Wait a moment for scheduling
-
--- Now you can access the data via HTTP (using curl or a browser)
--- GET <node_url>/<MyProcess_ID>~process@1.0/compute/cache/currentStatus
--- Or using aos utilities if available (assuming ReadState reflects this structure):
-[aos]> ReadState(MyProcess).cache.currentStatus
-```
-
-## Key Points
-
-*   **Path Structure:** The data is exposed under the `/cache/` path segment. The tag name you use *inside* the `cache` table in the `Send` call (e.g., `currentStatus`) becomes the final segment in the accessible HyperPATH (e.g., `/compute/cache/currentStatus`).
-*   **Data Types:** The `patch` device typically handles basic data types (strings, numbers) within the `cache` table effectively. Complex nested tables might require specific encoding or handling.
-*   **`compute` vs `now`:** Accessing patched data via `/compute/cache/...` typically serves the last known patched value quickly. Accessing via `/now/cache/...` might involve more computation to ensure the absolute latest state before checking for the patched key under `/cache/`.
-*   **Not a Replacement for State:** Patching is primarily for *exposing* reads. It doesn't replace the core state management within your process handler logic.
-
-By using the `patch` device, you can make parts of your AO process state easily and efficiently readable over standard HTTP, bridging the gap between decentralized computation and web-based applications.
-
---- END OF FILE: docs/guides/exposing-process-state.md ---
-
---- START OF FILE: docs/guides/extending-hyperbeam.md ---
-# Extending HyperBEAM
-
-HyperBEAM's modular design, built on AO-Core principles and Erlang/OTP, makes it highly extensible. You can add new functionalities or modify existing behaviors primarily by creating new **Devices** or implementing **Pre/Post-Processors**.
-
-!!! warning "Advanced Topic"
-    Extending HyperBEAM requires a good understanding of Erlang/OTP, the AO-Core protocol, and HyperBEAM's internal architecture. This guide provides a high-level overview; detailed implementation requires deeper exploration of the source code.
-
-## Approach 1: Creating New Devices
-
-This is the most common way to add significant new capabilities.
-A Device is essentially an Erlang module (typically named `dev_*.erl`) that processes AO-Core messages.
-
-**Steps:**
-
-1.  **Define Purpose:** Clearly define what your device will do. What kind of messages will it process? What state will it manage (if any)? What functions (keys) will it expose?
-2.  **Create Module:** Create a new Erlang module (e.g., `src/dev_my_new_device.erl`).
-3.  **Implement `info/0..2` (Optional but Recommended):** Define an `info` function to signal capabilities and requirements to HyperBEAM (e.g., exported keys, variant/version ID).
-    ```erlang
-    info() ->
-        #{
-          variant => <<"MyNewDevice/1.0">>,
-          exports => [<<"do_something">>, <<"get_status">>]
-        }.
-    ```
-4.  **Implement Key Functions:** Create Erlang functions corresponding to the keys your device exposes. These functions typically take `StateMessage`, `InputMessage`, and `Environment` as arguments and return `{ok, NewMessage}` or `{error, Reason}`.
-    ```erlang
-    do_something(StateMsg, InputMsg, Env) ->
-        % ... perform action based on InputMsg ...
-        NewState = ..., % Calculate new state
-        {ok, NewState}.
-
-    get_status(StateMsg, _InputMsg, _Env) ->
-        % ... read status from StateMsg ...
-        StatusData = ..., 
-        {ok, StatusData}.
-    ```
-5.  **Handle State (If Applicable):** Devices can be stateless or stateful. Stateful devices manage their state within the `StateMessage` passed between function calls.
-6.  **Register Device:** Ensure HyperBEAM knows about your device. This might involve adding it to build configurations or potentially a dynamic registration mechanism if available.
-7.  **Testing:** Write EUnit tests for your device's functions.
-
-**Example Idea:** A device that bridges to another blockchain network, allowing AO processes to read data or trigger transactions on that chain.
-
-## Approach 2: Building Pre/Post-Processors
-
-Pre/post-processors allow you to intercept incoming requests *before* they reach the target device/process (`preprocess`) or modify the response *after* execution (`postprocess`). These are often implemented using the `dev_stack` device or specific hooks within the request handling pipeline.
-
-**Use Cases:**
-
-*   **Authentication/Authorization:** Checking signatures or permissions before allowing execution.
-*   **Request Modification:** Rewriting requests, adding metadata, or routing based on specific criteria.
-*   **Response Formatting:** Changing the structure or content type of the response.
-*   **Metering/Logging:** Recording request details or charging for usage before or after execution.
-
-**Implementation:**
-
-Processors often involve checking specific conditions (like request path or headers) and then either:
-
-a)  Passing the request through unchanged.
-b)  Modifying the request/response message structure.
-c)  Returning an error or redirect.
-
-dThe guide on [Building Pre/Post-Processors](TODO:link-to-pre-post-processor-guide-once-available) provides a detailed example pattern, particularly focusing on exempting certain routes.
-
-**Example Idea:** A preprocessor that automatically adds a timestamp tag to all incoming messages for a specific process.
-
-## Approach 3: Modifying Existing Devices (Use with Caution)
-
-You could directly modify the source code of existing `dev_*.erl` modules. However, this is generally discouraged as it makes future updates harder and can break compatibility.
-
-## Approach 4: Custom Routing Strategies
-
-While `dev_router` provides basic strategies (round-robin, etc.), you could potentially implement a custom load balancing or routing strategy module that `dev_router` could be configured to use. This would involve understanding the interfaces expected by `dev_router`.
-
-**Example Idea:** A routing strategy that queries worker nodes for their specific capabilities before forwarding a request.
-
-## Getting Started
-
-1.  **Familiarize Yourself:** Deeply understand Erlang/OTP and the HyperBEAM codebase (`src/` directory), especially `hb_ao.erl`, `hb_message.erl`, and existing `dev_*.erl` modules relevant to your idea.
-2.  **Study Examples:** Look at simple devices like `dev_patch.erl` or more complex ones like `dev_process.erl` to understand patterns.
-3.  **Start Small:** Implement a minimal version of your idea first.
-4.  **Test Rigorously:** Use `rebar3 eunit` extensively.
-5.  **Engage Community:** Ask questions in developer channels if you get stuck.
-
-Extending HyperBEAM allows you to tailor the AO network's capabilities to specific needs, contributing to its rich and evolving ecosystem.
-
---- END OF FILE: docs/guides/extending-hyperbeam.md ---
-
---- START OF FILE: docs/guides/get-started-building-on-ao-core.md ---
-# Getting Started Building on AO-Core
-
-Welcome to building on AO, the decentralized supercomputer!
-
-AO combines the permanent storage of Arweave with the flexible, scalable computation enabled by the AO-Core protocol and its HyperBEAM implementation. This allows you to create truly autonomous applications, agents, and services that run trustlessly and permissionlessly.
-
-## Core Idea: Processes & Messages
-
-At its heart, building on AO involves:
-
-1.  **Creating Processes:** Think of these as independent programs or stateful contracts. Each process has a unique ID and maintains its own state.
-2.  **Sending Messages:** You interact with processes by sending them messages. These messages trigger computations, update state, or cause the process to interact with other processes or the outside world.
-
-Messages are processed by [Devices](../begin/ao-devices.md), which define *how* the computation happens (e.g., running WASM code, executing Lua scripts, managing state transitions).
-
-## Starting `aos`: Your Development Environment
-
-The primary tool for interacting with AO and developing processes is `aos`, a command-line interface and development environment.
-
-**Installation (if not already installed):**
-
-```bash
-npm install -g https://github.com/permaweb/aos.git
-# or using bun
-bun install -g https://github.com/permaweb/aos.git
-```
-
-**Starting `aos`:**
-
-Simply run the command in your terminal:
-
-```bash
-aos
-```
-
-This launches an interactive Lua environment connected to the AO network. By default, it connects to the mainnet.
-
-**What `aos` is doing:**
-
-*   **Connecting:** Establishes a connection to AO network nodes (usually public routers).
-*   **Loading Wallet:** Looks for a default Arweave key file (usually `~/.aos.json` or specified via arguments) to sign outgoing messages.
-*   **Providing Interface:** Gives you a Lua prompt (`[aos]>`) where you can:
-    *   Load code for new processes.
-    *   Send messages to existing processes.
-    *   Inspect process state.
-    *   Manage your local environment.
-
-## Your First Interaction: Spawning a Process
-
-From the `aos` prompt, you can spawn a simple process. Let's spawn a basic Lua process that just holds some data:
-
-```lua
-[aos]> .load my-first-process.lua
--- Assume my-first-process.lua contains: print("Hello from my process!")
-
-[aos]> MyProcess = spawn(MyModule)
--- This sends a message to AO to create a new process
--- using the code loaded from my-first-process.lua.
--- The unique process ID is stored in the 'MyProcess' variable.
-
-[aos]> MyProcess
--- Displays the Process ID
-```
-
-You've just created your first decentralized program on AO!
-
-## Next Steps
-
-This is just the beginning. To dive deeper:
-
-*   **AO Cookbook:** Explore practical examples and recipes for common tasks: [AO Cookbook](https://cookbook.ao.computer/)
-*   **Expose Process State:** Learn how to make your process data accessible via HTTP using the `patch` device: [Exposing Process State](./exposing-process-state.md)
-*   **Serverless Compute:** Discover how to run WASM or Lua computations within your processes: [Serverless Decentralized Compute](./serverless-decentralized-compute.md)
-*   **aos Documentation:** Refer to the official `aos` documentation for detailed commands and usage.
-
---- END OF FILE: docs/guides/get-started-building-on-ao-core.md ---
-
---- START OF FILE: docs/guides/serverless-decentralized-compute.md ---
-# Serverless Decentralized Compute on AO
-
-AO enables powerful "serverless" computation patterns by allowing you to run code (WASM, Lua) directly within decentralized processes, triggered by messages. Furthermore, if computations are performed on nodes running in Trusted Execution Environments (TEEs), you can obtain cryptographic attestations verifying the execution integrity.
-
-## Core Concept: Compute Inside Processes
-
-Instead of deploying code to centralized servers, you deploy code *to* the Arweave permaweb and instantiate it as an AO process. Interactions happen by sending messages to this process ID.
-
-*   **Code Deployment:** Your WASM binary or Lua script is uploaded to Arweave, getting a permanent transaction ID.
-*   **Process Spawning:** You create an AO process, associating it with your code's transaction ID and specifying the appropriate compute device (`~wasm64@1.0` or `~lua@5.3a`).
-*   **Execution via Messages:** Sending a message to the process ID triggers the HyperBEAM node (that picks up the message) to:
-    1.  Load the process state.
-    2.  Fetch the associated WASM/Lua code from Arweave.
-    3.  Execute the code using the relevant device (`dev_wasm` or `dev_lua`), passing the message data and current state.
-    4.  Update the process state based on the execution results.
-
-## Example 1: Running WASM Containers
-
-WebAssembly (WASM) allows you to run precompiled code written in languages like Rust, C++, Go, or AssemblyScript within your AO process.
-
-1.  **Compile:** Compile your code (e.g., Rust) to a WASM target.
-2.  **Upload:** Upload the `.wasm` file to Arweave to get a `<WasmCodeTxID>`.
-3.  **Spawn Process (using `aos`):**
-    ```lua
-    [aos]> Send({ Target = "AOS", Action = "Spawn", Module = "<WasmCodeTxID>", Scheduler = "<OptionalSchedulerProcessID>" })
-    -- This returns a <ProcessID>
-    ```
-    *(Note: The exact spawning mechanism might vary; consult `aos` or relevant SDK documentation. You specify that this process uses WASM.)*
-4.  **Send Message to Trigger Execution:**
-    ```lua
-    [aos]> Send({ Target = "<ProcessID>", Action = "ExecuteFunction", InputData = "Some data for WASM" })
-    ```
-    The HyperBEAM node executing this will load the WASM module identified by `<WasmCodeTxID>`, run its handler function (triggered by `Action = "ExecuteFunction"`) with `"Some data for WASM"` as input, and update the state of `<ProcessID>`.
-
-## Example 2: Running Lua Scripts
-
-Lua provides a lightweight scripting environment directly within AO.
-
-1.  **Write Script:** Create your `my_script.lua` file.
-    ```lua
-    -- my_script.lua
-    Handlers.add(
-      "Calculate",
-      Handlers.utils.hasMatchingTag("Action", "Calculate"),
-      function (msg)
-        local input = tonumber(msg.Tags.Value) or 0
-        local result = input * input
-        -- Update state or send messages back
-        ao.send({ Target = msg.From, Data = "Result: " .. result })
-        print("Calculated square of " .. input .. ": " .. result)
-      end
-    )
-    ```
-2.  **Load & Spawn (using `aos`):**
-    ```lua
-    [aos]> .load my_script.lua
-    [aos]> MyLuaProcess = spawn(MyModule)
-    ```
-3.  **Send Message:**
-    ```lua
-    [aos]> Send({ Target = MyLuaProcess, Action = "Calculate", Value = "7" })
-    ```
-    The node executes the `Calculate` handler within the Lua script associated with `MyLuaProcess`.
-
-## TEE Attestations (via `~snp@1.0`)
-
-If a HyperBEAM node performing these computations runs within a supported Trusted Execution Environment (like AMD SEV-SNP), it can provide cryptographic proof of execution.
-
-*   **How it works:** The `~snp@1.0` device interacts with the TEE hardware.
-*   **Signed Responses:** When a TEE-enabled node processes your message (e.g., executes your WASM function), the HTTP response containing the result can be cryptographically signed by a key that *provably* only exists inside the TEE.
-*   **Verification:** Clients receiving this response can verify the signature against the TEE platform's attestation mechanism (e.g., AMD's KDS) to gain high confidence that the computation was performed correctly and confidentially within the secure environment, untampered by the node operator.
-
-**Obtaining Attested Responses:**
-
-This usually involves interacting with nodes specifically advertised as TEE-enabled. The exact mechanism for requesting and verifying attestations depends on the specific TEE technology and node configuration.
-
-*   The HTTP response headers might contain specific signature or attestation data (e.g., using HTTP Message Signatures RFC-9421 via `dev_codec_httpsig`).
-*   You might query the `~snp@1.0` device directly on the node to get its attestation report.
-
-Refer to documentation on [TEE Nodes](./run/tee-nodes.md) and the `~snp@1.0` device for details.
-
-By leveraging WASM, Lua, and optional TEE attestations, AO provides a powerful platform for building complex, verifiable, and truly decentralized serverless applications.
-
---- END OF FILE: docs/guides/serverless-decentralized-compute.md ---
 
 --- START OF FILE: docs/resources/llms.md ---
 # LLM Context Files
@@ -19545,90 +19369,73 @@ verify(Message, DigestType, Signature, PublicKey) -&gt; boolean()
 --- END OF FILE: docs/resources/source-code/rsa_pss.md ---
 
 --- START OF FILE: docs/run/configuring-your-machine.md ---
-# Configuring Your Machine for HyperBEAM
+# Configuring Your HyperBEAM Node
 
-To successfully build and run a HyperBEAM node, your system needs several software dependencies installed. This guide outlines the necessary components.
+This guide details the various ways to configure your HyperBEAM node's behavior, including ports, storage, keys, and logging.
 
-## Core Build Tools & Libraries (Linux - apt)
+## Configuration (`config.flat`)
 
-On Debian-based Linux distributions (like Ubuntu), you can install most core dependencies using `apt`:
+The primary way to configure your HyperBEAM node is through a `config.flat` file located in the node's working directory or specified by the `HB_CONFIG_LOCATION` environment variable.
 
-```bash
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    pkg-config \
-    ncurses-dev \
-    libssl-dev \
-    sudo \
-    curl \
-    ca-certificates
+This file uses a simple `Key = Value.` format (note the period at the end of each line).
+
+**Example `config.flat`:**
+
+```erlang
+% Set the HTTP port
+hb_port = 8080.
+
+% Specify the Arweave key file
+hb_key = "/path/to/your/wallet.json".
+
+% Set the data store directory
+hb_store = "./node_data_mainnet".
+
+% Enable verbose logging for specific modules
+hb_print = "hb_http,dev_router".
 ```
 
-*   `build-essential`: Basic C/C++ compilers and build tools (gcc, g++, make).
-*   `cmake`: Build system generator.
-*   `git`: Version control for fetching the source code.
-*   `pkg-config`: Helps find installed libraries during compilation.
-*   `ncurses-dev`: Required for some terminal interface elements used by Erlang/OTP.
-*   `libssl-dev`: Necessary for cryptographic operations and secure connections (HTTPS).
-*   `sudo`: Needed for system-level installations.
-*   `curl`: Used for downloading dependencies or interacting with web services.
-*   `ca-certificates`: Required for validating SSL certificates.
+Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
 
-*(Note: Package names may vary slightly on other Linux distributions or macOS. Use your system's package manager accordingly, e.g., `yum`, `dnf`, `pacman`, `brew`.)*
+## Overrides (Environment Variables & Args)
 
-## Erlang/OTP
+You can override settings from `config.flat` or provide values if the file is missing using environment variables or command-line arguments.
 
-HyperBEAM is built on Erlang/OTP. You need a compatible version installed (check the `rebar.config` or project documentation for specific version requirements, but typically a recent version like 25.x or 26.x is recommended).
+**Using Environment Variables:**
 
-Installation methods vary:
+Environment variables typically use an `HB_` prefix followed by the configuration key in uppercase.
 
-*   **Package Managers:** `sudo apt install erlang`, `brew install erlang`.
-*   **Source Build:** Download from [erlang.org](https://www.erlang.org/downloads) and build.
-*   **Version Managers:** Tools like `asdf-vm` with the `asdf-erlang` plugin are highly recommended for managing multiple Erlang versions.
-    ```bash
-    asdf plugin add erlang
-    asdf install erlang <version>
-    asdf global erlang <version>
-    ```
+*   **`HB_PORT=<port_number>`:** Overrides `hb_port`.
+    *   Example: `HB_PORT=8080 rebar3 shell`
+*   **`HB_KEY=<path/to/wallet.key>`:** Overrides `hb_key`.
+    *   Example: `HB_KEY=~/.keys/arweave_key.json rebar3 shell`
+*   **`HB_STORE=<directory_path>`:** Overrides `hb_store`.
+    *   Example: `HB_STORE=./node_data_1 rebar3 shell`
+*   **`HB_PRINT=<setting>`:** Overrides `hb_print`. `<setting>` can be `true` (or `1`), or a comma-separated list of modules/topics (e.g., `hb_path,hb_ao,ao_result`).
+    *   Example: `HB_PRINT=hb_http,dev_router rebar3 shell`
+*   **`HB_CONFIG_LOCATION=<path/to/config.flat>`:** Specifies a custom location for the configuration file.
 
-## Rebar3
+**Using `erl_opts` (Direct Erlang VM Arguments):**
 
-Rebar3 is the build tool for Erlang projects.
+You can also pass arguments directly to the Erlang VM using the `-<key> <value>` format within `erl_opts`. This is generally less common for application configuration than `config.flat` or environment variables.
 
-*   **Download:** Get the `rebar3` binary from the [official website](https://rebar3.org/).
-*   **Installation:** Place the downloaded `rebar3` file in your system's `PATH` (e.g., `/usr/local/bin`) and make it executable (`chmod +x rebar3`).
-*   **Via `asdf`:** If using `asdf`, you can install it via the `rebar` plugin:
-    ```bash
-    asdf plugin add rebar
-    asdf install rebar <version>
-    asdf global rebar <version>
-    ```
+```bash
+rebar3 shell --erl_opts "-hb_port 8080 -hb_key path/to/key.json"
+```
 
-## Node.js
+**Order of Precedence:**
 
-Node.js might be required for certain JavaScript-related tools or dependencies used within the broader AO ecosystem or specific device functionalities.
+1.  Command-line arguments (`erl_opts`).
+2.  Settings in `config.flat`.
+3.  Environment variables (`HB_*`).
+4.  Default values from `hb_opts.erl`.
 
-*   **Package Managers:** `sudo apt install nodejs npm`, `brew install node`.
-*   **Version Managers:** `asdf-vm` with the `asdf-nodejs` plugin is recommended.
+## Configuration in Releases
 
-## Rust
+When running a release build (see [Running a HyperBEAM Node](./running-a-hyperbeam-node.md)), configuration works similarly:
 
-Rust is needed if you intend to work with or build components involving WebAssembly (WASM) or certain Native Implemented Functions (NIFs) used by some devices (like `~snp@1.0`).
-
-*   **`rustup`:** The recommended way to install Rust is via `rustup`:
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    source "$HOME/.cargo/env"
-    ```
-
-## Platform Specific Notes
-
-*   **macOS:** Use [Homebrew](https://brew.sh/) (`brew`) to install most dependencies (`cmake`, `git`, `pkg-config`, `openssl`, `ncurses`, `erlang`, `rebar3`, `node`). You might need to set specific environment variables for `openssl` during Erlang compilation if building from source.
-*   **Windows:** Setting up the environment on Windows can be more complex. Using the Windows Subsystem for Linux (WSL) with a distribution like Ubuntu is often the easiest path.
-
-Once these dependencies are installed, you should be able to clone the HyperBEAM repository and build it using `rebar3 compile`.
+1.  A `config.flat` file will be present in the release directory (e.g., `_build/default/rel/hb/config.flat`). Edit this file to set your desired parameters for the release environment.
+2.  Environment variables (`HB_*`) can still be used to override the settings in the release's `config.flat` when starting the node using the `bin/hb` script.
 
 --- END OF FILE: docs/run/configuring-your-machine.md ---
 
@@ -19707,16 +19514,144 @@ The router handles directing your request to an appropriate compute node.
 --- START OF FILE: docs/run/running-a-hyperbeam-node.md ---
 # Running a HyperBEAM Node
 
-This guide provides the basics for running your own HyperBEAM node, allowing you to participate in the AO network, contribute resources, and potentially offer services.
+This guide provides the basics for running your own HyperBEAM node, installing dependencies, and connecting to the AO network.
 
-## Prerequisites
+## System Dependencies
 
-Before running a node, ensure you have:
+To successfully build and run a HyperBEAM node, your system needs several software dependencies installed.
 
-*   The necessary [system dependencies installed](./configuring-your-machine.md), including **Erlang/OTP 27** and **Rebar3**.
+=== "macOS"
+    Install core dependencies using [Homebrew](https://brew.sh/):
+
+    ```bash
+    brew install cmake git pkg-config openssl ncurses
+    ```
+
+=== "Linux (Debian/Ubuntu)"
+    Install core dependencies using `apt`:
+    ```bash
+    sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        pkg-config \
+        ncurses-dev \
+        libssl-dev \
+        sudo \
+        curl \
+        ca-certificates
+    ```
+
+=== "Windows (WSL)"
+    Using the Windows Subsystem for Linux (WSL) with a distribution like Ubuntu is recommended. Follow the Linux (Debian/Ubuntu) instructions within your WSL environment.
+
+<!-- **Core Dependency Breakdown:**
+
+*   `build-essential` (Linux) / Xcode Command Line Tools (macOS): Basic C/C++ compilers and build tools (gcc, g++, make).
+*   `cmake`: Build system generator.
+*   `git`: Version control for fetching the source code.
+*   `pkg-config`: Helps find installed libraries during compilation.
+*   `ncurses-dev` / `ncurses`: Required for some terminal interface elements used by Erlang/OTP.
+*   `libssl-dev` / `openssl`: Necessary for cryptographic operations and secure connections (HTTPS). You might need to set specific environment variables for `openssl` during Erlang compilation if building from source on macOS.
+*   `sudo` (Linux/macOS): Needed for system-level installations.
+*   `curl`: Used for downloading dependencies or interacting with web services.
+*   `ca-certificates` (Linux): Required for validating SSL certificates (often handled by the OS on macOS/Windows).
+
+*(Note: Package names may vary slightly on other Linux distributions. Use your system's package manager accordingly, e.g., `yum`, `dnf`, `pacman`.)* -->
+
+### Erlang/OTP
+
+HyperBEAM is built on Erlang/OTP. You need a compatible version installed (check the `rebar.config` or project documentation for specific version requirements, **typically OTP 27**).
+
+Installation methods:
+
+=== "macOS (brew)"
+    ```bash
+    brew install erlang
+    ```
+
+=== "Linux (apt)"
+    ```bash
+    sudo apt install erlang
+    ```
+
+=== "asdf (Recommended)"
+    Tools like `asdf-vm` with the `asdf-erlang` plugin are highly recommended for managing multiple Erlang versions across platforms.
+    ```bash
+    asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git
+    asdf install erlang <version> # e.g., 27.0
+    asdf global erlang <version>
+    ```
+
+=== "Source Build"
+    Download from [erlang.org](https://www.erlang.org/downloads) and follow the build instructions for your platform.
+
+### Rebar3
+
+Rebar3 is the build tool for Erlang projects.
+
+Installation methods:
+
+=== "macOS (brew)"
+    ```bash
+    brew install rebar3
+    ```
+
+=== "Linux / macOS (Direct Download)"
+    Get the `rebar3` binary from the [official website](https://rebar3.org/). Place the downloaded `rebar3` file in your system's `PATH` (e.g., `/usr/local/bin`) and make it executable (`chmod +x rebar3`).
+
+=== "asdf (Recommended)"
+    If using `asdf`, you can install it via the `rebar` plugin:
+    ```bash
+    asdf plugin add rebar https://github.com/asdf-vm/asdf-rebar.git
+    asdf install rebar <version> # e.g., 3.23.0
+    asdf global rebar <version>
+    ```
+
+### Node.js
+
+Node.js might be required for certain JavaScript-related tools or dependencies.
+
+Installation methods:
+
+=== "macOS (brew)"
+    ```bash
+    brew install node
+    ```
+
+=== "Linux (apt)"
+    ```bash
+    # Check your distribution's recommended method, might need nodesource repo
+    sudo apt install nodejs npm 
+    ```
+
+=== "asdf (Recommended)"
+    `asdf-vm` with the `asdf-nodejs` plugin is recommended.
+    ```bash
+    asdf plugin add nodejs https://github.com/asdf-vm/asdf-nodejs.git
+    asdf install nodejs <version> # e.g., lts
+    asdf global nodejs <version>
+    ```
+
+### Rust
+
+Rust is needed if you intend to work with or build components involving WebAssembly (WASM) or certain Native Implemented Functions (NIFs) used by some devices (like `~snp@1.0`).
+
+The recommended way to install Rust on **all platforms** is via `rustup`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env" # Or follow the instructions provided by rustup
+```
+
+## Prerequisites for Running
+
+Before starting a node, ensure you have:
+
+*   Installed the [system dependencies](#system-dependencies) mentioned above.
 *   Cloned the [HyperBEAM repository](https://github.com/permaweb/HyperBEAM) (`git clone ...`).
 *   Compiled the source code (`rebar3 compile` in the repo directory).
-*   An Arweave **wallet keyfile** (e.g., generated via [Wander](https://www.wander.app)).
+*   An Arweave **wallet keyfile** (e.g., generated via [Wander](https://www.wander.app)). The path to this file is typically set via the `hb_key` configuration option (see [Configuring Your HyperBEAM Node](./configuring-your-machine.md)).
 
 ## Starting a Basic Node
 
@@ -19757,62 +19692,11 @@ rebar3 as rocksdb, genesis_wasm shell
 
 *Note: Choose profiles **before** starting the shell, as they affect compile-time options.*
 
-## Configuration (config.flat)
+## Node Configuration
 
-The primary way to configure your HyperBEAM node is through a `config.flat` file located in the node's working directory or specified by the `HB_CONFIG_LOCATION` environment variable.
+HyperBEAM offers various configuration options (port, key file, data storage, logging, etc.). These are primarily set using a `config.flat` file and can be overridden by environment variables or command-line arguments.
 
-This file uses a simple `Key = Value.` format (note the period at the end of each line).
-
-**Example `config.flat`:**
-
-```erlang
-% Set the HTTP port
-hb_port = 8080.
-
-% Specify the Arweave key file
-hb_key = "/path/to/your/wallet.json".
-
-% Set the data store directory
-hb_store = "./node_data_mainnet".
-
-% Enable verbose logging for specific modules
-hb_print = "hb_http,dev_router".
-```
-
-Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
-
-## Overrides (Environment Variables & Args)
-
-You can override settings from `config.flat` or provide values if the file is missing using environment variables or command-line arguments.
-
-**Using Environment Variables:**
-
-Environment variables typically use an `HB_` prefix followed by the configuration key in uppercase.
-
-*   **`HB_PORT=<port_number>`:** Overrides `hb_port`.
-    *   Example: `HB_PORT=8080 rebar3 shell`
-*   **`HB_KEY=<path/to/wallet.key>`:** Overrides `hb_key`.
-    *   Example: `HB_KEY=~/.keys/arweave_key.json rebar3 shell`
-*   **`HB_STORE=<directory_path>`:** Overrides `hb_store`.
-    *   Example: `HB_STORE=./node_data_1 rebar3 shell`
-*   **`HB_PRINT=<setting>`:** Overrides `hb_print`. `<setting>` can be `true` (or `1`), or a comma-separated list of modules/topics (e.g., `hb_path,hb_ao,ao_result`).
-    *   Example: `HB_PRINT=hb_http,dev_router rebar3 shell`
-*   **`HB_CONFIG_LOCATION=<path/to/config.flat>`:** Specifies a custom location for the configuration file.
-
-**Using `erl_opts` (Direct Erlang VM Arguments):**
-
-You can also pass arguments directly to the Erlang VM using the `-<key> <value>` format within `erl_opts`. This is generally less common for application configuration than `config.flat` or environment variables.
-
-```bash
-rebar3 shell --erl_opts "-hb_port 8080 -hb_key path/to/key.json"
-```
-
-**Order of Precedence:**
-
-1.  Command-line arguments (`erl_opts`).
-2.  Environment variables (`HB_*`).
-3.  Settings in `config.flat`.
-4.  Default values from `hb_opts.erl`.
+See the dedicated **[Configuring Your HyperBEAM Node](./configuring-your-machine.md)** guide for detailed information on all configuration methods and options.
 
 ## Verify Installation
 
@@ -19844,7 +19728,7 @@ This command compiles the project and packages it along with the Erlang Runtime 
 
 **2. Configure the Release:**
 
-Navigate into the release directory (e.g., `cd _build/default/rel/hb`). You will find a `config.flat` file (or you might need to copy your customized one here). Edit this `config.flat` file to set your desired mainnet parameters (port, key file location, store path, specific peers, etc.). Environment variables can also be used to override settings in the release's `config.flat`, just like in the shell environment.
+Navigate into the release directory (e.g., `cd _build/default/rel/hb`). Ensure you have a correctly configured `config.flat` file here. See the [configuration guide](./configuring-your-machine.md) for details on setting mainnet parameters (port, key file location, store path, specific peers, etc.). Environment variables can also be used to override settings in the release's `config.flat` when starting the node.
 
 **3. Start the Node:**
 
@@ -19875,7 +19759,7 @@ To stop the node running *within the `rebar3 shell`*, press `Ctrl+C` twice or us
 
 ## Next Steps
 
-*   **Configure Your Machine:** Ensure all [system dependencies](./configuring-your-machine.md) are correctly installed.
+*   **Configure Your Node:** Deep dive into [configuration options](./configuring-your-machine.md).
 *   **TEE Nodes:** Learn about running nodes in [Trusted Execution Environments](./tee-nodes.md) for enhanced security.
 *   **Routers:** Understand how to configure and run a [router node](./joining-running-a-router.md).
 

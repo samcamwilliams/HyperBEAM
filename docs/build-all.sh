@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Script to build HyperBEAM documentation in one seamless command
+#
+# Usage: ./docs/build-all.sh [-v | --verbose]
+#   -v, --verbose: Show detailed output from rebar3 and mkdocs commands.
 
 # --- Color Definitions ---
 GREEN='\033[0;32m'
@@ -36,6 +39,28 @@ log_error() {
   echo -e "${RED}✗ $1${NC}"
 }
 
+# --- Variable Defaults ---
+VERBOSE=false
+
+# --- Parse Command Line Arguments ---
+while [[ $# -gt 0 ]]; do
+  key="$1"
+
+  case $key in
+    -v|--verbose)
+      VERBOSE=true
+      log_info "Verbose mode enabled"
+      shift # past argument
+      ;;
+    *)
+      # unknown option
+      log_error "Unknown option: $1"
+      # Optionally, show usage here and exit
+      exit 1
+      ;;
+  esac
+done
+
 # --- Display HyperBEAM ASCII Logo ---
 display_logo() {
   echo -e "
@@ -62,12 +87,20 @@ cd "$ROOT_DIR" || { log_error "Failed to change to root directory"; exit 1; }
 
 # --- Step 1: Compile the project with rebar3 ---
 log_step "Compiling project"
-rebar3 compile > /dev/null 2>&1 || { log_error "rebar3 compile failed"; exit 1; }
+if [ "$VERBOSE" = true ]; then
+  rebar3 compile || { log_error "rebar3 compile failed"; exit 1; }
+else
+  rebar3 compile > /dev/null 2>&1 || { log_error "rebar3 compile failed"; exit 1; }
+fi
 log_success "Compilation completed"
 
 # --- Step 2: Generate edoc documentation ---
 log_step "Generating edoc documentation"
-rebar3 edoc > /dev/null 2>&1 || { log_error "rebar3 edoc failed"; exit 1; }
+if [ "$VERBOSE" = true ]; then
+  rebar3 edoc || { log_error "rebar3 edoc failed"; exit 1; }
+else
+  rebar3 edoc > /dev/null 2>&1 || { log_error "rebar3 edoc failed"; exit 1; }
+fi
 log_success "Edoc generation completed"
 
 # --- Step 3: Process source code documentation ---
@@ -223,7 +256,11 @@ log_success "GitHub links added and old headers removed"
 
 # --- Step 4: Build and serve mkdocs ---
 log_step "Building mkdocs documentation"
-mkdocs build > /dev/null 2>&1 || { log_error "mkdocs build failed"; exit 1; }
+if [ "$VERBOSE" = true ]; then
+  mkdocs build || { log_error "mkdocs build failed"; exit 1; }
+else
+  mkdocs build > /dev/null 2>&1 || { log_error "mkdocs build failed"; exit 1; }
+fi
 
 # Find the latest CSS files with their hashes
 MAIN_CSS=$(find ./mkdocs-site/assets/stylesheets -name "main.*.min.css" | sort | tail -n 1)

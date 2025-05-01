@@ -1,6 +1,6 @@
 # Exposing Process State with the Patch Device
 
-The `~patch@1.0` device provides a mechanism for AO processes to expose parts of their internal state, making it readable via direct HTTP GET requests along the process's HyperPATH.
+The [`~patch@1.0`](../resources/source-code/dev_patch.md) device provides a mechanism for AO processes to expose parts of their internal state, making it readable via direct HTTP GET requests along the process's HyperPATH.
 
 ## Why Use the Patch Device?
 
@@ -16,7 +16,7 @@ This is particularly useful for:
 
 ## How it Works
 
-1.  **Process Logic:** Inside your AO process code (e.g., in Lua or WASM), when you want to expose data, you construct an **Outbound Message** targeted at the `~patch@1.0` device.
+1.  **Process Logic:** Inside your AO process code (e.g., in Lua or WASM), when you want to expose data, you construct an **Outbound Message** targeted at the [`~patch@1.0`](../resources/source-code/dev_patch.md) device.
 2.  **Patch Message Format:** This outbound message typically includes tags that specify:
     *   `device = 'patch@1.0'`
     *   A `cache` tag containing a table. The **keys** within this table become the final segments in the HyperPATH used to access the data, and the **values** are the data itself.
@@ -27,9 +27,9 @@ This is particularly useful for:
     *   It takes the keys from the `cache` table (`myDataKey` in the example) and their associated values (`MyValue`) and makes these values available under the `/cache/` path segment.
 4.  **HTTP Access:** You (or any HTTP client) can now access this data directly using a GET request:
     ```
-    GET /<process-id>~process@1.0/compute/cache/<myDataKey>
+    GET /<process-id>[`~process@1.0`](../devices/process-at-1-0.md)/compute/cache/<myDataKey>
     # Or potentially using /now/
-    GET /<process-id>~process@1.0/now/cache/<myDataKey>
+    GET /<process-id>[`~process@1.0`](../devices/process-at-1-0.md)/now/cache/<myDataKey>
     ```
     The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`myDataKey`) to return the `MyValue` directly.
 
@@ -55,7 +55,7 @@ Handlers.add(
 -- Wait a moment for scheduling
 
 -- Now you can access the data via HTTP (using curl or a browser)
--- GET <node_url>/<MyProcess_ID>~process@1.0/compute/cache/currentStatus
+-- GET <node_url>/<MyProcess_ID>[`~process@1.0`](../devices/process-at-1-0.md)/compute/cache/currentStatus
 -- Or using aos utilities if available (assuming ReadState reflects this structure):
 [aos]> ReadState(MyProcess).cache.currentStatus
 ```

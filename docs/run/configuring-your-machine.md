@@ -1,84 +1,67 @@
-# Configuring Your Machine for HyperBEAM
+# Configuring Your HyperBEAM Node
 
-To successfully build and run a HyperBEAM node, your system needs several software dependencies installed. This guide outlines the necessary components.
+This guide details the various ways to configure your HyperBEAM node's behavior, including ports, storage, keys, and logging.
 
-## Core Build Tools & Libraries (Linux - apt)
+## Configuration (`config.flat`)
 
-On Debian-based Linux distributions (like Ubuntu), you can install most core dependencies using `apt`:
+The primary way to configure your HyperBEAM node is through a `config.flat` file located in the node's working directory or specified by the `HB_CONFIG_LOCATION` environment variable.
 
-```bash
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    pkg-config \
-    ncurses-dev \
-    libssl-dev \
-    sudo \
-    curl \
-    ca-certificates
+This file uses a simple `Key = Value.` format (note the period at the end of each line).
+
+**Example `config.flat`:**
+
+```erlang
+% Set the HTTP port
+hb_port = 8080.
+
+% Specify the Arweave key file
+hb_key = "/path/to/your/wallet.json".
+
+% Set the data store directory
+hb_store = "./node_data_mainnet".
+
+% Enable verbose logging for specific modules
+hb_print = "hb_http,dev_router".
 ```
 
-*   `build-essential`: Basic C/C++ compilers and build tools (gcc, g++, make).
-*   `cmake`: Build system generator.
-*   `git`: Version control for fetching the source code.
-*   `pkg-config`: Helps find installed libraries during compilation.
-*   `ncurses-dev`: Required for some terminal interface elements used by Erlang/OTP.
-*   `libssl-dev`: Necessary for cryptographic operations and secure connections (HTTPS).
-*   `sudo`: Needed for system-level installations.
-*   `curl`: Used for downloading dependencies or interacting with web services.
-*   `ca-certificates`: Required for validating SSL certificates.
+Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
 
-*(Note: Package names may vary slightly on other Linux distributions or macOS. Use your system's package manager accordingly, e.g., `yum`, `dnf`, `pacman`, `brew`.)*
+## Overrides (Environment Variables & Args)
 
-## Erlang/OTP
+You can override settings from `config.flat` or provide values if the file is missing using environment variables or command-line arguments.
 
-HyperBEAM is built on Erlang/OTP. You need a compatible version installed (check the `rebar.config` or project documentation for specific version requirements, but typically a recent version like 25.x or 26.x is recommended).
+**Using Environment Variables:**
 
-Installation methods vary:
+Environment variables typically use an `HB_` prefix followed by the configuration key in uppercase.
 
-*   **Package Managers:** `sudo apt install erlang`, `brew install erlang`.
-*   **Source Build:** Download from [erlang.org](https://www.erlang.org/downloads) and build.
-*   **Version Managers:** Tools like `asdf-vm` with the `asdf-erlang` plugin are highly recommended for managing multiple Erlang versions.
-    ```bash
-    asdf plugin add erlang
-    asdf install erlang <version>
-    asdf global erlang <version>
-    ```
+*   **`HB_PORT=<port_number>`:** Overrides `hb_port`.
+    *   Example: `HB_PORT=8080 rebar3 shell`
+*   **`HB_KEY=<path/to/wallet.key>`:** Overrides `hb_key`.
+    *   Example: `HB_KEY=~/.keys/arweave_key.json rebar3 shell`
+*   **`HB_STORE=<directory_path>`:** Overrides `hb_store`.
+    *   Example: `HB_STORE=./node_data_1 rebar3 shell`
+*   **`HB_PRINT=<setting>`:** Overrides `hb_print`. `<setting>` can be `true` (or `1`), or a comma-separated list of modules/topics (e.g., `hb_path,hb_ao,ao_result`).
+    *   Example: `HB_PRINT=hb_http,dev_router rebar3 shell`
+*   **`HB_CONFIG_LOCATION=<path/to/config.flat>`:** Specifies a custom location for the configuration file.
 
-## Rebar3
+**Using `erl_opts` (Direct Erlang VM Arguments):**
 
-Rebar3 is the build tool for Erlang projects.
+You can also pass arguments directly to the Erlang VM using the `-<key> <value>` format within `erl_opts`. This is generally less common for application configuration than `config.flat` or environment variables.
 
-*   **Download:** Get the `rebar3` binary from the [official website](https://rebar3.org/).
-*   **Installation:** Place the downloaded `rebar3` file in your system's `PATH` (e.g., `/usr/local/bin`) and make it executable (`chmod +x rebar3`).
-*   **Via `asdf`:** If using `asdf`, you can install it via the `rebar` plugin:
-    ```bash
-    asdf plugin add rebar
-    asdf install rebar <version>
-    asdf global rebar <version>
-    ```
+```bash
+rebar3 shell --erl_opts "-hb_port 8080 -hb_key path/to/key.json"
+```
 
-## Node.js
+**Order of Precedence:**
 
-Node.js might be required for certain JavaScript-related tools or dependencies used within the broader AO ecosystem or specific device functionalities.
+1.  Command-line arguments (`erl_opts`).
+2.  Settings in `config.flat`.
+3.  Environment variables (`HB_*`).
+4.  Default values from `hb_opts.erl`.
 
-*   **Package Managers:** `sudo apt install nodejs npm`, `brew install node`.
-*   **Version Managers:** `asdf-vm` with the `asdf-nodejs` plugin is recommended.
+## Configuration in Releases
 
-## Rust
+When running a release build (see [Running a HyperBEAM Node](./running-a-hyperbeam-node.md)), configuration works similarly:
 
-Rust is needed if you intend to work with or build components involving WebAssembly (WASM) or certain Native Implemented Functions (NIFs) used by some devices (like `~snp@1.0`).
-
-*   **`rustup`:** The recommended way to install Rust is via `rustup`:
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    source "$HOME/.cargo/env"
-    ```
-
-## Platform Specific Notes
-
-*   **macOS:** Use [Homebrew](https://brew.sh/) (`brew`) to install most dependencies (`cmake`, `git`, `pkg-config`, `openssl`, `ncurses`, `erlang`, `rebar3`, `node`). You might need to set specific environment variables for `openssl` during Erlang compilation if building from source.
-*   **Windows:** Setting up the environment on Windows can be more complex. Using the Windows Subsystem for Linux (WSL) with a distribution like Ubuntu is often the easiest path.
-
-Once these dependencies are installed, you should be able to clone the HyperBEAM repository and build it using `rebar3 compile`.
+1.  A `config.flat` file will be present in the release directory (e.g., `_build/default/rel/hb/config.flat`). Edit this file to set your desired parameters for the release environment.
+2.  Environment variables (`HB_*`) can still be used to override the settings in the release's `config.flat` when starting the node using the `bin/hb` script.

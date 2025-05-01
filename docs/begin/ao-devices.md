@@ -21,6 +21,8 @@ HyperBEAM includes many preloaded devices that provide core functionality. Some 
 *   **[`~wasm64@1.0`](../devices/wasm64-at-1-0.md):** Executes WebAssembly (WASM) code, allowing for complex computations written in languages like Rust, C++, etc.
 *   **[`~lua@5.3a`](../devices/lua-at-5-3a.md):** Executes Lua scripts.
 *   **[`~relay@1.0`](../devices/relay-at-1-0.md):** Forwards messages between AO nodes or to external HTTP endpoints.
+*   **[`~json@1.0`](../devices/json-at-1-0.md):** Provides access to JSON data structures using HyperPATHs.
+*   **[`~message@1.0`](../devices/message-at-1-0.md):** Manages message state and processing.
 *   **[`~patch@1.0`](../guides/exposing-process-state.md):** Applies state updates directly to a process, often used for migrating or managing process data.
 
 ## Beyond the Basics
