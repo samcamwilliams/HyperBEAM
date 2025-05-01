@@ -27,9 +27,9 @@
 %%%     Key:
 %%%         - key: `<<"value">>' => #{ key => `<<"value">>', ... } for all messages
 %%%         - n.key: `<<"value">>' => #{ key => `<<"value">>', ... } for Nth message
-%%%         - key+Int: 1 => #{ key => 1, ... }
-%%%         - key+Res: /nested/path => #{ key => (resolve /nested/path), ... }
-%%%         - N.Key+Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
+%%%         - key+int: 1 => #{ key => 1, ... }
+%%%         - key+res: /nested/path => #{ key => (resolve /nested/path), ... }
+%%%         - N.Key+res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
 %%% </pre>
 -module(hb_singleton).
 -export([from/1, to/1]).
@@ -162,6 +162,9 @@ from(RawMsg) ->
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
+    %?event(parsing, {raw_relative_ref, RawRelativeRef}),
+    %RelativeRef = hb_escape:decode(RawRelativeRef),
+    ?event(parsing, {parsed_relative_ref, RelativeRef}),
     {Path, QKVList} =
         case binary:split(RelativeRef, <<"?">>) of
             [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
@@ -310,7 +313,7 @@ parse_part(Part) ->
     case maybe_subpath(Part) of
         {resolve, Subpath} -> {resolve, Subpath};
         Part ->
-            case part([$&, $~, $+], Part) of
+            case part([$&, $~, $+, $ ], Part) of
                 {no_match, PartKey, <<>>} ->
                     #{ <<"path">> => PartKey };
                 {Sep, PartKey, PartModBin} ->
@@ -377,10 +380,13 @@ maybe_subpath(Str) when byte_size(Str) >= 2 ->
 maybe_subpath(Other) -> Other.
 
 %% @doc Parse a key's type (applying it to the value) and device name if present.
+%% We allow ` ` characters as type indicators because some URL-string encoders
+%% (e.g. Chrome) will encode `+` characters in a form that query-string parsers
+%% interpret as ` ' characters.
 maybe_typed(Key, Value) ->
-    case part($+, Key) of
+    case part([$+, $ ], Key) of
         {no_match, OnlyKey, <<>>} -> {untyped, OnlyKey, Value};
-        {$+, OnlyKey, Type} ->
+        {_, OnlyKey, Type} ->
             case {Type, Value} of
                 {<<"resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,

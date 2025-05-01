@@ -7,6 +7,7 @@
 -module(hb_escape).
 -export([encode/1, decode/1, encode_keys/1, decode_keys/1]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Encode a binary as a URI-encoded string.
 encode(Bin) when is_binary(Bin) ->
@@ -42,7 +43,7 @@ percent_escape([C | Cs]) when C >= $a, C =< $z -> [C | percent_escape(Cs)];
 percent_escape([C | Cs]) when C >= $0, C =< $9 -> [C | percent_escape(Cs)];
 percent_escape([C | Cs]) when
         C == $.; C == $-; C == $_; C == $/;
-        C == $?; C == $&; C == $+ ->
+        C == $?; C == $& ->
     [C | percent_escape(Cs)];
 percent_escape([C | Cs]) -> [escape_byte(C) | percent_escape(Cs)].
 
@@ -78,12 +79,24 @@ escape_unescape_identity_test() ->
     TestCases = [
         <<"hello">>,
         <<"hello, world!">>,
+        <<"hello+list">>,
         <<"special@chars#here">>,
         <<"UPPERCASE">>,
         <<"MixedCASEstring">>,
         <<"12345">>,
         <<>> % Empty string
     ],
+    ?event(parsing,
+        {escape_unescape_identity_test,
+            {test_cases,
+                [
+                        {Case, {explicit, encode(Case)}}
+                    ||
+                        Case <- TestCases
+                ]
+            }
+        }
+    ),
     lists:foreach(fun(TestCase) ->
         ?assertEqual(TestCase, decode(encode(TestCase)))
     end, TestCases).

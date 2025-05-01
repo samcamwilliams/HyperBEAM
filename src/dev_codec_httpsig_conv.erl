@@ -243,14 +243,14 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
     %    if conflicts arise.
     % 5. The resulting combined message is returned to the user.
     {ok, EncOriginal} = to(TABM, Req#{ <<"index">> => false }, Opts),
-    OrigBody = hb_ao:get(<<"body">>, TABM, <<>>, Opts),
-    OrigContentType = hb_ao:get(<<"content-type">>, TABM, <<>>, Opts),
+    OrigBody = hb_maps:get(<<"body">>, TABM, <<>>, Opts),
+    OrigContentType = hb_maps:get(<<"content-type">>, TABM, <<>>, Opts),
     case {OrigBody, OrigContentType} of
         {<<>>, <<>>} ->
             % The message has no body or content-type set. Resolve the `index`
             % key upon it to derive it.
             Structured = hb_message:convert(TABM, <<"structured@1.0">>, Opts),
-            case hb_ao:resolve(Structured, #{ <<"path">> => <<"index">> }, Opts) of
+            try hb_ao:resolve(Structured, #{ <<"path">> => <<"index">> }, Opts) of
                 {ok, IndexMsg} ->
                     % The index message has been calculated successfully. Convert
                     % it to TABM format.
@@ -262,10 +262,23 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
                     % Return the merged result.
                     {ok, Merged};
                 Err ->
-                    % There was an error while generating the index page. We 
+                    % The index resolution executed without error, but the result
+                    % was not a valid message. We log a warning for the operator
+                    % and return the original message to the caller.
+                    ?event(warning, {invalid_index_result, Err}),
+                    {ok, EncOriginal}
+            catch
+                Err:Details:Stacktrace ->
+                    % There was an error while generating the index page. We
                     % log a warning for the operator and return the modified
                     % message to the caller.
-                    ?event(warning, {error_generating_index, Err}),
+                    ?event(warning,
+                        {error_generating_index,
+                            {type, Err},
+                            {details, Details},
+                            {stacktrace, Stacktrace}
+                        }
+                    ),
                     {ok, EncOriginal}
             end;
         _ ->
