@@ -1,8 +1,18 @@
 %%% @doc Simple utilities for testing HyperBEAM.
 -module(hb_test_utils).
--export([suite_with_opts/2, run/4]).
+-export([suite_with_opts/2, run/4, test_store/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Generate a new, unique test store as an isolated context for an execution.
+test_store() ->
+    TestDir =
+        <<
+            "cache-TEST/run-fs-",
+            (integer_to_binary(erlang:system_time(millisecond)))/binary
+        >>,
+    filelib:ensure_dir(binary_to_list(TestDir)),
+    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => TestDir }.
 
 %% @doc Run each test in a suite with each set of options. Start and reset
 %% the store(s) for each test. Expects suites to be a list of tuples with

@@ -54,7 +54,7 @@ deserialize(TX, Req, Opts) when is_record(TX, tx) ->
 %% the `hmac-sha256' and `rsa-pss-sha256' algorithms, offering unsigned and
 %% signed commitments.
 commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
-    commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
+    commit(Msg, Req#{ <<"type">> => <<"unsigned-sha256">> }, Opts);
 commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha256">> }, Opts);
 commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
@@ -363,13 +363,24 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
         case hb_maps:keys(Commitments) of
             [] -> TABM;
             [ID] ->
+                Commitment = hb_maps:get(ID, Commitments),
                 TABMWithoutCommitmentKeys =
                     TABM#{
-                        <<"signature">> => hb_maps:get(<<"signature">>, hb_maps:get(ID, Commitments)),
-                        <<"owner">> => hb_maps:get(<<"keyid">>, hb_maps:get(ID, Commitments))
+                        <<"signature">> =>
+                            maps:get(<<"signature">>, Commitment, ?DEFAULT_SIG),
+                        <<"owner">> =>
+                            maps:get(<<"keyid">>, Commitment, ?DEFAULT_OWNER)
                     },
-                ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
-                TABMWithoutCommitmentKeys;
+                WithOrigKeys =
+                    case maps:get(<<"original-tags">>, Commitment, undefined) of
+                        undefined -> TABMWithoutCommitmentKeys;
+                        OrigKeys ->
+                            TABMWithoutCommitmentKeys#{
+                                <<"original-tags">> => OrigKeys
+                            }
+                    end,
+                ?event({flattened_tabm, WithOrigKeys}),
+                WithOrigKeys;
             _ -> throw({multisignatures_not_supported_by_ans104, NormTABM})
         end,
     OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}, Opts),
@@ -395,12 +406,12 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
                 NormKey = hb_ao:normalize_key(Field),
-                case hb_maps:find(NormKey, NormalizedMsgKeyMap, Opts) of
+                case maps:find(NormKey, NormalizedMsgKeyMap) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
                         % NOTE: Do we really want to do this type coercion?
                         {
-                            hb_maps:remove(NormKey, RemMap),
+                            maps:remove(NormKey, RemMap),
                             [
                                 try hb_util:native_id(Value) catch _:_ -> Value end
                             |
@@ -409,7 +420,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                         };
                     {ok, Value} ->
                         {
-                            hb_maps:remove(NormKey, RemMap),
+                            maps:remove(NormKey, RemMap),
                             [Value|Acc]
                         }
                 end
@@ -438,7 +449,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
         ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags, Opts),
-        NormRemaining = hb_maps:from_list(Remaining),
+        NormRemaining = maps:from_list(Remaining),
         case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
@@ -497,7 +508,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                 }),
                 throw(Error)
         end,
-    %?event({result, {explicit, Res}}),
+    ?event({to_result, {explicit, Res}}),
     {ok, Res};
 to(_Other, _Req, _Opts) ->
     throw(invalid_tx).
@@ -532,6 +543,7 @@ from_maintains_tag_name_case_test() ->
     ?assertEqual(ConvertedTX, ar_bundles:normalize(SignedTX)).
 
 restore_tag_name_case_from_cache_test() ->
+    Opts = #{ store => hb_test_utils:test_store() },
     TX = #tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>},
@@ -544,22 +556,22 @@ restore_tag_name_case_from_cache_test() ->
             SignedTX,
             <<"structured@1.0">>,
             <<"ans104@1.0">>,
-            #{}
+            Opts
         ),
     SignedID = hb_message:id(SignedMsg, all),
     ?event({signed_msg, SignedMsg}),
-    OnlyCommitted = hb_message:with_only_committed(SignedMsg, #{}),
+    OnlyCommitted = hb_message:with_only_committed(SignedMsg, Opts),
     ?event({only_committed, OnlyCommitted}),
-    {ok, ID} = hb_cache:write(SignedMsg, #{}),
+    {ok, ID} = hb_cache:write(SignedMsg, Opts),
     ?event({id, ID}),
-    {ok, ReadMsg} = hb_cache:read(SignedID, #{}),
+    {ok, ReadMsg} = hb_cache:read(SignedID, Opts),
     ?event({restored_msg, ReadMsg}),
-    {ok, ReadTX} = to(ReadMsg, #{}, #{}),
+    {ok, ReadTX} = to(ReadMsg, #{}, Opts),
     ?event({restored_tx, ReadTX}),
     ?assert(hb_message:match(ReadMsg, SignedMsg)),
     ?assert(ar_bundles:verify_item(ReadTX)).
 
-duplicated_tag_name_test() ->
+unsigned_duplicated_tag_name_test() ->
     TX = ar_bundles:reset_ids(ar_bundles:normalize(#tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>},
