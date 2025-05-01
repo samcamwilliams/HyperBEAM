@@ -264,6 +264,11 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                     ar_bundles:serialize(
                         hb_message:convert(Message, <<"ans104@1.0">>, Opts)
                     )
+            };
+        _ ->
+            ReqBase#{
+                headers => maps:without([<<"body">>], Message),
+                body => maps:get(<<"body">>, Message, <<>>)
             }
     end.
 
@@ -661,6 +666,27 @@ req_to_tabm_singleton(Req, Body, Opts) ->
                     maybe_add_unsigned(Req, ANS104, Opts);
                 false ->
                     throw({invalid_ans104_signature, Item})
+            end;
+        Codec ->
+            % Assume that the codec stores the encoded message in the `body' field.
+            Decoded =
+                hb_message:convert(
+                    Body,
+                    <<"structured@1.0">>,
+                    Codec,
+                    Opts
+                ),
+            ?event(debug,
+                {verifying_encoded_message,
+                    {body, {string, Body}},
+                    {decoded, Decoded}
+                }
+            ),
+            case hb_message:verify(Decoded, all) of
+                true ->
+                    maybe_add_unsigned(Req, Decoded, Opts);
+                false ->
+                    throw({invalid_signature, Decoded})
             end
     end.
 
@@ -863,4 +889,54 @@ send_large_signed_request_test() ->
             Req,
             #{ http_client => httpc }
         )
+    ).
+
+send_encoded_node_message_test(Config, Codec) ->
+    NodeURL = hb_http_server:start_node(
+        #{
+            priv_wallet => ar_wallet:new(),
+            operator => <<"unclaimed">>
+        }
+    ),
+    {ok, Res} =
+        post(
+            NodeURL,
+            <<"/~meta@1.0/info">>,
+            #{
+                <<"codec-device">> => Codec,
+                <<"body">> => Config
+            },
+            #{}
+        ),
+    ?event(debug, {res, Res}),
+    ?assertEqual(
+        {ok, <<"b">>},
+        hb_http:get(
+            NodeURL,
+            <<"/~meta@1.0/info/test_optionb">>,
+            #{}
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"c">>},
+        hb_http:get(
+            NodeURL,
+            <<"/~meta@1.0/info/test_deep/c">>,
+            #{}
+        )
+    ).
+
+send_flat_encoded_node_message_test() ->
+    send_encoded_node_message_test(
+        <<"test_option: a\ntest_optionb: b\ntest_deep/c: c">>,
+        <<"flat@1.0">>
+    ).
+
+send_json_encoded_node_message_test() ->
+    send_encoded_node_message_test(
+        <<
+            "{\"test_option\": \"a\", \"test_optionb\": \"b\", \"test_deep\": "
+                "{\"c\": \"c\"}}"
+        >>,
+        <<"json@1.0">>
     ).

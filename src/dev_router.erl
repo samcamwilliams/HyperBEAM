@@ -38,13 +38,15 @@
 %% so that it can be called only once.
 register(_M1, M2, Opts) ->
 	Registered = hb_opts:get(registered, false, Opts),
-	case Registered of
-	true ->
+	case { dev_meta:validate_request(M2, Opts), Registered } of
+	{Error = {error, _}, _} ->
+		Error;
+	{{ok, _}, true} ->
 		{ok, #{
 			<<"status">> => 208,
 			<<"message">> => <<"Node already registered.">>
 		}};
-	false ->
+	{{ok, _}, false} ->
 		RouterNode = hb_ao:get(<<"peer-location">>, M2, not_found, Opts),
 		Prefix = hb_ao:get(<<"prefix">>, M2, not_found, Opts),
 		Price = hb_ao:get(<<"price">>, M2, not_found, Opts),

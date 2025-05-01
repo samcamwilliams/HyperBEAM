@@ -13,7 +13,7 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, default_message/0, mimic_default_types/2]).
+-export([get/1, get/2, get/3, load/1, load_bin/1, default_message/0, mimic_default_types/2]).
 -include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
@@ -164,8 +164,28 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
-                #{ <<"store-module">> => hb_store_gateway,
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-mainnet">>
+                },
+                #{
+                    <<"store-module">> => hb_store_gateway,
+                    <<"subindex">> => [
+                        #{
+                            <<"name">> => <<"Data-Protocol">>,
+                            <<"value">> => <<"ao">>
+                        }
+                    ],
+                    <<"store">> => 
+                     [
+                        #{
+                            <<"store-module">> => hb_store_fs,
+                            <<"prefix">> => <<"cache-mainnet">>
+                         }
+                     ]
+                },
+                #{
+                    <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
                             #{
@@ -318,12 +338,14 @@ config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
-            try dev_codec_flat:deserialize(Bin) of
-                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
-            catch
-                error:B -> {error, B}
-            end;
+			load_bin(Bin);
         _ -> {error, not_found}
+    end.
+load_bin(Bin) ->
+    try dev_codec_flat:deserialize(Bin) of
+        {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
+    catch
+        error:B -> {error, B}
     end.
 
 %% @doc Mimic the types of the default message for a given map.

@@ -1,4 +1,4 @@
-Generated: 2025-04-30T22:08:31Z
+Generated: 2025-04-30T19:21:45Z
 
 --- START OF FILE: docs/begin/ao-devices.md ---
 # AO Devices
@@ -2817,18 +2817,12 @@ their value.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#binary_passthrough_test-0">binary_passthrough_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td></td></tr><tr><td valign="top"><a href="#deep_nesting_test-0">deep_nesting_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#deserialize-1">deserialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#empty_map_test-0">empty_map_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Convert a flat map to a TABM.</td></tr><tr><td valign="top"><a href="#inject_at_path-3">inject_at_path/3*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_paths_test-0">multiple_paths_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#nested_conversion_test-0">nested_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#path_list_test-0">path_list_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serialize-1">serialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#simple_conversion_test-0">simple_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM to a flat map.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td></td></tr><tr><td valign="top"><a href="#deep_nesting_test-0">deep_nesting_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#deserialize-1">deserialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#empty_map_test-0">empty_map_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Convert a flat map to a TABM.</td></tr><tr><td valign="top"><a href="#inject_at_path-3">inject_at_path/3*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_paths_test-0">multiple_paths_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#nested_conversion_test-0">nested_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#path_list_test-0">path_list_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serialize-1">serialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#simple_conversion_test-0">simple_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM to a flat map.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
 
 ## Function Details ##
-
-<a name="binary_passthrough_test-0"></a>
-
-### binary_passthrough_test/0 * ###
-
-`binary_passthrough_test() -> any()`
 
 <a name="commit-3"></a>
 
@@ -5317,7 +5311,7 @@ A device that calls a Lua script upon a request and returns the result.
 list of Erlang terms.</td></tr><tr><td valign="top"><a href="#decode_stacktrace-2">decode_stacktrace/2*</a></td><td>Parse a Lua stack trace into a list of messages.</td></tr><tr><td valign="top"><a href="#decode_stacktrace-3">decode_stacktrace/3*</a></td><td></td></tr><tr><td valign="top"><a href="#direct_benchmark_test-0">direct_benchmark_test/0*</a></td><td>Benchmark the performance of Lua executions.</td></tr><tr><td valign="top"><a href="#encode-1">encode/1</a></td><td>Encode a HyperBEAM <code>structured@1.0</code> message into a Lua term.</td></tr><tr><td valign="top"><a href="#ensure_initialized-3">ensure_initialized/3*</a></td><td>Initialize the Lua VM if it is not already initialized.</td></tr><tr><td valign="top"><a href="#error_response_test-0">error_response_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#execute_aos_call-1">execute_aos_call/1*</a></td><td></td></tr><tr><td valign="top"><a href="#execute_aos_call-2">execute_aos_call/2*</a></td><td></td></tr><tr><td valign="top"><a href="#find_scripts-2">find_scripts/2*</a></td><td>Find the script in the base message, either by ID or by string.</td></tr><tr><td valign="top"><a href="#functions-3">functions/3</a></td><td>Return a list of all functions in the Lua environment.</td></tr><tr><td valign="top"><a href="#generate_lua_process-1">generate_lua_process/1*</a></td><td>Generate a Lua process message.</td></tr><tr><td valign="top"><a href="#generate_stack-1">generate_stack/1*</a></td><td>Generate a stack message for the Lua process.</td></tr><tr><td valign="top"><a href="#generate_test_message-1">generate_test_message/1*</a></td><td>Generate a test message for a Lua process.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>All keys that are not directly available in the base message are
 resolved by calling the Lua function in the script of the same name.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Initialize the device state, loading the script into memory if it is
 a reference.</td></tr><tr><td valign="top"><a href="#initialize-3">initialize/3*</a></td><td>Initialize a new Lua state with a given base message and script.</td></tr><tr><td valign="top"><a href="#invoke_aos_test-0">invoke_aos_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#invoke_non_compute_key_test-0">invoke_non_compute_key_test/0*</a></td><td>Call a non-compute key on a Lua device message and ensure that the
-function of the same name in the script is called.</td></tr><tr><td valign="top"><a href="#load_scripts-2">load_scripts/2*</a></td><td>Load a list of scripts for installation into the Lua VM.</td></tr><tr><td valign="top"><a href="#load_scripts-3">load_scripts/3*</a></td><td></td></tr><tr><td valign="top"><a href="#lua_http_preprocessor_test-0">lua_http_preprocessor_test/0*</a></td><td>Use a Lua script as a preprocessor on the HTTP server via <code>~meta@1.0</code>.</td></tr><tr><td valign="top"><a href="#multiple_scripts_test-0">multiple_scripts_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td>Restore the Lua state from a snapshot, if it exists.</td></tr><tr><td valign="top"><a href="#process_response-2">process_response/2*</a></td><td>Process a response to a Luerl invocation.</td></tr><tr><td valign="top"><a href="#pure_lua_process_benchmark_test_-0">pure_lua_process_benchmark_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pure_lua_process_test-0">pure_lua_process_test/0*</a></td><td>Call a process whose <code>execution-device</code> is set to <code>lua@5.3a</code>.</td></tr><tr><td valign="top"><a href="#sandbox-3">sandbox/3*</a></td><td>Sandbox (render inoperable) a set of Lua functions.</td></tr><tr><td valign="top"><a href="#sandboxed_failure_test-0">sandboxed_failure_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_invocation_test-0">simple_invocation_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Snapshot the Lua state from a live computation.</td></tr></table>
+function of the same name in the script is called.</td></tr><tr><td valign="top"><a href="#load_scripts-2">load_scripts/2*</a></td><td>Load a list of scripts for installation into the Lua VM.</td></tr><tr><td valign="top"><a href="#load_scripts-3">load_scripts/3*</a></td><td></td></tr><tr><td valign="top"><a href="#load_scripts_by_id_test-0">load_scripts_by_id_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#lua_http_preprocessor_test-0">lua_http_preprocessor_test/0*</a></td><td>Use a Lua script as a preprocessor on the HTTP server via <code>~meta@1.0</code>.</td></tr><tr><td valign="top"><a href="#multiple_scripts_test-0">multiple_scripts_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td>Restore the Lua state from a snapshot, if it exists.</td></tr><tr><td valign="top"><a href="#process_response-2">process_response/2*</a></td><td>Process a response to a Luerl invocation.</td></tr><tr><td valign="top"><a href="#pure_lua_process_benchmark_test_-0">pure_lua_process_benchmark_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pure_lua_process_test-0">pure_lua_process_test/0*</a></td><td>Call a process whose <code>execution-device</code> is set to <code>lua@5.3a</code>.</td></tr><tr><td valign="top"><a href="#sandbox-3">sandbox/3*</a></td><td>Sandbox (render inoperable) a set of Lua functions.</td></tr><tr><td valign="top"><a href="#sandboxed_failure_test-0">sandboxed_failure_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_invocation_test-0">simple_invocation_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Snapshot the Lua state from a live computation.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -5533,6 +5527,12 @@ Load a list of scripts for installation into the Lua VM.
 ### load_scripts/3 * ###
 
 `load_scripts(Rest, Opts, Acc) -> any()`
+
+<a name="load_scripts_by_id_test-0"></a>
+
+### load_scripts_by_id_test/0 * ###
+
+`load_scripts_by_id_test() -> any()`
 
 <a name="lua_http_preprocessor_test-0"></a>
 
@@ -6016,8 +6016,7 @@ the AO-Core resolver has returned a result.<a name="index"></a>
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_dynamic_keys-1">add_dynamic_keys/1*</a></td><td>Add dynamic keys to the node message.</td></tr><tr><td valign="top"><a href="#adopt_node_message-2">adopt_node_message/2</a></td><td>Attempt to adopt changes to a node message.</td></tr><tr><td valign="top"><a href="#authorized_set_node_msg_succeeds_test-0">authorized_set_node_msg_succeeds_test/0*</a></td><td>Test that we can set the node message if the request is signed by the
 owner of the node.</td></tr><tr><td valign="top"><a href="#claim_node_test-0">claim_node_test/0*</a></td><td>Test that we can claim the node correctly and set the node message after.</td></tr><tr><td valign="top"><a href="#config_test-0">config_test/0*</a></td><td>Test that we can get the node message.</td></tr><tr><td valign="top"><a href="#embed_status-1">embed_status/1*</a></td><td>Wrap the result of a device call in a status.</td></tr><tr><td valign="top"><a href="#filter_node_msg-1">filter_node_msg/1*</a></td><td>Remove items from the node message that are not encodable into a
-message.</td></tr><tr><td valign="top"><a href="#halt_request_test-0">halt_request_test/0*</a></td><td>Test that we can halt a request if the preprocessor returns an error.</td></tr><tr><td valign="top"><a href="#handle-2">handle/2</a></td><td>Normalize and route messages downstream based on their path.</td></tr><tr><td valign="top"><a href="#handle_initialize-2">handle_initialize/2*</a></td><td></td></tr><tr><td valign="top"><a href="#handle_resolve-3">handle_resolve/3*</a></td><td>Handle an AO-Core request, which is a list of messages.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Ensure that the helper function <code>adopt_node_message/2</code> is not exported.</td></tr><tr><td valign="top"><a href="#info-3">info/3</a></td><td>Get/set the node message.</td></tr><tr><td valign="top"><a href="#is_operator-2">is_operator/2</a></td><td>Utility function for determining if a request is from the <code>operator</code> of
-the node.</td></tr><tr><td valign="top"><a href="#maybe_sign-2">maybe_sign/2*</a></td><td>Sign the result of a device call if the node is configured to do so.</td></tr><tr><td valign="top"><a href="#message_to_status-1">message_to_status/1*</a></td><td>Get the HTTP status code from a transaction (if it exists).</td></tr><tr><td valign="top"><a href="#modify_request_test-0">modify_request_test/0*</a></td><td>Test that a preprocessor can modify a request.</td></tr><tr><td valign="top"><a href="#permanent_node_message_test-0">permanent_node_message_test/0*</a></td><td>Test that a permanent node message cannot be changed.</td></tr><tr><td valign="top"><a href="#priv_inaccessible_test-0">priv_inaccessible_test/0*</a></td><td>Test that we can't get the node message if the requested key is private.</td></tr><tr><td valign="top"><a href="#resolve_processor-5">resolve_processor/5*</a></td><td>Execute a message from the node message upon the user's request.</td></tr><tr><td valign="top"><a href="#status_code-1">status_code/1*</a></td><td>Calculate the appropriate HTTP status code for an AO-Core result.</td></tr><tr><td valign="top"><a href="#unauthorized_set_node_msg_fails_test-0">unauthorized_set_node_msg_fails_test/0*</a></td><td>Test that we can't set the node message if the request is not signed by
+message.</td></tr><tr><td valign="top"><a href="#halt_request_test-0">halt_request_test/0*</a></td><td>Test that we can halt a request if the preprocessor returns an error.</td></tr><tr><td valign="top"><a href="#handle-2">handle/2</a></td><td>Normalize and route messages downstream based on their path.</td></tr><tr><td valign="top"><a href="#handle_initialize-2">handle_initialize/2*</a></td><td></td></tr><tr><td valign="top"><a href="#handle_resolve-3">handle_resolve/3*</a></td><td>Handle an AO-Core request, which is a list of messages.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Ensure that the helper function <code>adopt_node_message/2</code> is not exported.</td></tr><tr><td valign="top"><a href="#info-3">info/3</a></td><td>Get/set the node message.</td></tr><tr><td valign="top"><a href="#is-2">is/2</a></td><td>Check if the request in question is signed by a given <code>role</code> on the node.</td></tr><tr><td valign="top"><a href="#is-3">is/3</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_sign-2">maybe_sign/2*</a></td><td>Sign the result of a device call if the node is configured to do so.</td></tr><tr><td valign="top"><a href="#message_to_status-1">message_to_status/1*</a></td><td>Get the HTTP status code from a transaction (if it exists).</td></tr><tr><td valign="top"><a href="#modify_request_test-0">modify_request_test/0*</a></td><td>Test that a preprocessor can modify a request.</td></tr><tr><td valign="top"><a href="#permanent_node_message_test-0">permanent_node_message_test/0*</a></td><td>Test that a permanent node message cannot be changed.</td></tr><tr><td valign="top"><a href="#priv_inaccessible_test-0">priv_inaccessible_test/0*</a></td><td>Test that we can't get the node message if the requested key is private.</td></tr><tr><td valign="top"><a href="#resolve_processor-5">resolve_processor/5*</a></td><td>Execute a message from the node message upon the user's request.</td></tr><tr><td valign="top"><a href="#status_code-1">status_code/1*</a></td><td>Calculate the appropriate HTTP status code for an AO-Core result.</td></tr><tr><td valign="top"><a href="#unauthorized_set_node_msg_fails_test-0">unauthorized_set_node_msg_fails_test/0*</a></td><td>Test that we can't set the node message if the request is not signed by
 the owner of the node.</td></tr><tr><td valign="top"><a href="#uninitialized_node_test-0">uninitialized_node_test/0*</a></td><td>Test that an uninitialized node will not run computation.</td></tr><tr><td valign="top"><a href="#update_node_message-2">update_node_message/2*</a></td><td>Validate that the request is signed by the operator of the node, then
 allow them to update the node message.</td></tr></table>
 
@@ -6146,14 +6145,20 @@ Get/set the node message. If the request is a `POST`, we check that the
 request is signed by the owner of the node. If not, we return the node message
 as-is, aside all keys that are private (according to `hb_private`).
 
-<a name="is_operator-2"></a>
+<a name="is-2"></a>
 
-### is_operator/2 ###
+### is/2 ###
 
-`is_operator(Request, NodeMsg) -> any()`
+`is(Request, NodeMsg) -> any()`
 
-Utility function for determining if a request is from the `operator` of
-the node.
+Check if the request in question is signed by a given `role` on the node.
+The `role` can be one of `operator` or `initiator`.
+
+<a name="is-3"></a>
+
+### is/3 ###
+
+`is(X1, Request, NodeMsg) -> any()`
 
 <a name="maybe_sign-2"></a>
 
@@ -13032,11 +13037,12 @@ module will be deprecated.<a name="index"></a>
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#ans104_no_data_item_test-0">ans104_no_data_item_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#data-2">data/2</a></td><td>Get the data associated with a transaction by its ID, using the node's
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#ans104_no_data_item_test-0">ans104_no_data_item_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#ao_dataitem_test-0">ao_dataitem_test/0*</a></td><td>Test optimistic index.</td></tr><tr><td valign="top"><a href="#data-2">data/2</a></td><td>Get the data associated with a transaction by its ID, using the node's
 Arweave <code>gateway</code> peers.</td></tr><tr><td valign="top"><a href="#decode_id_or_null-1">decode_id_or_null/1*</a></td><td></td></tr><tr><td valign="top"><a href="#decode_or_null-1">decode_or_null/1*</a></td><td></td></tr><tr><td valign="top"><a href="#item_spec-0">item_spec/0*</a></td><td>Gives the fields of a transaction that are needed to construct an
-ANS-104 message.</td></tr><tr><td valign="top"><a href="#normalize_null-1">normalize_null/1*</a></td><td></td></tr><tr><td valign="top"><a href="#query-2">query/2*</a></td><td>Run a GraphQL request encoded as a binary.</td></tr><tr><td valign="top"><a href="#read-2">read/2</a></td><td>Get a data item (including data and tags) by its ID, using the node's
+ANS-104 message.</td></tr><tr><td valign="top"><a href="#l1_transaction_test-0">l1_transaction_test/0*</a></td><td>Test l1 message from graphql.</td></tr><tr><td valign="top"><a href="#l2_dataitem_test-0">l2_dataitem_test/0*</a></td><td>Test l2 message from graphql.</td></tr><tr><td valign="top"><a href="#normalize_null-1">normalize_null/1*</a></td><td></td></tr><tr><td valign="top"><a href="#query-2">query/2*</a></td><td>Run a GraphQL request encoded as a binary.</td></tr><tr><td valign="top"><a href="#read-2">read/2</a></td><td>Get a data item (including data and tags) by its ID, using the node's
 GraphQL peers.</td></tr><tr><td valign="top"><a href="#result_to_message-2">result_to_message/2</a></td><td>Takes a GraphQL item node, matches it with the appropriate data from a
-gateway, then returns <code>{ok, ParsedMsg}</code>.</td></tr><tr><td valign="top"><a href="#result_to_message-3">result_to_message/3*</a></td><td></td></tr><tr><td valign="top"><a href="#scheduler_location-2">scheduler_location/2</a></td><td>Find the location of the scheduler based on its ID, through GraphQL.</td></tr><tr><td valign="top"><a href="#scheduler_location_test-0">scheduler_location_test/0*</a></td><td>Test that we can get the scheduler location.</td></tr></table>
+gateway, then returns <code>{ok, ParsedMsg}</code>.</td></tr><tr><td valign="top"><a href="#result_to_message-3">result_to_message/3*</a></td><td></td></tr><tr><td valign="top"><a href="#scheduler_location-2">scheduler_location/2</a></td><td>Find the location of the scheduler based on its ID, through GraphQL.</td></tr><tr><td valign="top"><a href="#scheduler_location_test-0">scheduler_location_test/0*</a></td><td>Test that we can get the scheduler location.</td></tr><tr><td valign="top"><a href="#subindex_to_tags-1">subindex_to_tags/1*</a></td><td>Takes a list of messages with <code>name</code> and <code>value</code> fields, and formats
+them as a GraphQL <code>tags</code> argument.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -13048,6 +13054,14 @@ gateway, then returns <code>{ok, ParsedMsg}</code>.</td></tr><tr><td valign="top
 ### ans104_no_data_item_test/0 * ###
 
 `ans104_no_data_item_test() -> any()`
+
+<a name="ao_dataitem_test-0"></a>
+
+### ao_dataitem_test/0 * ###
+
+`ao_dataitem_test() -> any()`
+
+Test optimistic index
 
 <a name="data-2"></a>
 
@@ -13081,6 +13095,22 @@ where `&lt;id&gt;` is the base64-url-encoded transaction ID.
 
 Gives the fields of a transaction that are needed to construct an
 ANS-104 message.
+
+<a name="l1_transaction_test-0"></a>
+
+### l1_transaction_test/0 * ###
+
+`l1_transaction_test() -> any()`
+
+Test l1 message from graphql
+
+<a name="l2_dataitem_test-0"></a>
+
+### l2_dataitem_test/0 * ###
+
+`l2_dataitem_test() -> any()`
+
+Test l2 message from graphql
 
 <a name="normalize_null-1"></a>
 
@@ -13153,6 +13183,15 @@ Find the location of the scheduler based on its ID, through GraphQL.
 `scheduler_location_test() -> any()`
 
 Test that we can get the scheduler location.
+
+<a name="subindex_to_tags-1"></a>
+
+### subindex_to_tags/1 * ###
+
+`subindex_to_tags(Subindex) -> any()`
+
+Takes a list of messages with `name` and `value` fields, and formats
+them as a GraphQL `tags` argument.
 
 
 --- END OF FILE: docs/resources/source-code/hb_gateway_client.md ---
@@ -13600,7 +13639,7 @@ require special handling in order to be converted to a normalized message.</td><
 configured to do so.</td></tr><tr><td valign="top"><a href="#post-3">post/3</a></td><td>Posts a message to a URL on a remote peer via HTTP.</td></tr><tr><td valign="top"><a href="#post-4">post/4</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_request-6">prepare_request/6*</a></td><td>Turn a set of request arguments into a request message, formatted in the
 preferred format.</td></tr><tr><td valign="top"><a href="#remove_unsigned_fields-2">remove_unsigned_fields/2*</a></td><td></td></tr><tr><td valign="top"><a href="#reply-4">reply/4</a></td><td>Reply to the client's HTTP request with a message.</td></tr><tr><td valign="top"><a href="#reply-5">reply/5*</a></td><td></td></tr><tr><td valign="top"><a href="#req_to_tabm_singleton-3">req_to_tabm_singleton/3</a></td><td>Convert a cowboy request to a normalized message.</td></tr><tr><td valign="top"><a href="#request-2">request/2</a></td><td>Posts a binary to a URL on a remote peer via HTTP, returning the raw
 binary body.</td></tr><tr><td valign="top"><a href="#request-4">request/4</a></td><td></td></tr><tr><td valign="top"><a href="#request-5">request/5</a></td><td></td></tr><tr><td valign="top"><a href="#route_to_request-3">route_to_request/3*</a></td><td>Parse a <code>dev_router:route</code> response and return a tuple of request
-parameters.</td></tr><tr><td valign="top"><a href="#run_wasm_signed_test-0">run_wasm_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#run_wasm_unsigned_test-0">run_wasm_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_large_signed_request_test-0">send_large_signed_request_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serial_multirequest-7">serial_multirequest/7*</a></td><td>Serially request a message, collecting responses until the required
+parameters.</td></tr><tr><td valign="top"><a href="#run_wasm_signed_test-0">run_wasm_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#run_wasm_unsigned_test-0">run_wasm_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_encoded_node_message_test-2">send_encoded_node_message_test/2*</a></td><td></td></tr><tr><td valign="top"><a href="#send_flat_encoded_node_message_test-0">send_flat_encoded_node_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_json_encoded_node_message_test-0">send_json_encoded_node_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_large_signed_request_test-0">send_large_signed_request_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serial_multirequest-7">serial_multirequest/7*</a></td><td>Serially request a message, collecting responses until the required
 number of responses have been gathered.</td></tr><tr><td valign="top"><a href="#simple_ao_resolve_signed_test-0">simple_ao_resolve_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_ao_resolve_unsigned_test-0">simple_ao_resolve_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td></td></tr><tr><td valign="top"><a href="#wasm_compute_request-3">wasm_compute_request/3*</a></td><td></td></tr><tr><td valign="top"><a href="#wasm_compute_request-4">wasm_compute_request/4*</a></td><td></td></tr></table>
 
 
@@ -13911,6 +13950,24 @@ parameters.
 ### run_wasm_unsigned_test/0 * ###
 
 `run_wasm_unsigned_test() -> any()`
+
+<a name="send_encoded_node_message_test-2"></a>
+
+### send_encoded_node_message_test/2 * ###
+
+`send_encoded_node_message_test(Config, Codec) -> any()`
+
+<a name="send_flat_encoded_node_message_test-0"></a>
+
+### send_flat_encoded_node_message_test/0 * ###
+
+`send_flat_encoded_node_message_test() -> any()`
+
+<a name="send_json_encoded_node_message_test-0"></a>
+
+### send_json_encoded_node_message_test/0 * ###
+
+`send_json_encoded_node_message_test() -> any()`
 
 <a name="send_large_signed_request_test-0"></a>
 
@@ -15032,7 +15089,7 @@ with a refusal to execute.<a name="index"></a>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cached_os_env-2">cached_os_env/2*</a></td><td>Cache the result of os:getenv/1 in the process dictionary, as it never
 changes during the lifetime of a node.</td></tr><tr><td valign="top"><a href="#config_lookup-2">config_lookup/2*</a></td><td>An abstraction for looking up configuration variables.</td></tr><tr><td valign="top"><a href="#default_message-0">default_message/0</a></td><td>The default configuration options of the hyperbeam node.</td></tr><tr><td valign="top"><a href="#get-1">get/1</a></td><td>Get an option from the global options, optionally overriding with a
 local <code>Opts</code> map if <code>prefer</code> or <code>only</code> is set to <code>local</code>.</td></tr><tr><td valign="top"><a href="#get-2">get/2</a></td><td></td></tr><tr><td valign="top"><a href="#get-3">get/3</a></td><td></td></tr><tr><td valign="top"><a href="#global_get-2">global_get/2*</a></td><td>Get an environment variable or configuration key.</td></tr><tr><td valign="top"><a href="#load-1">load/1</a></td><td>Parse a <code>flat@1.0</code> encoded file into a map, matching the types of the
-keys to those in the default message.</td></tr><tr><td valign="top"><a href="#mimic_default_types-2">mimic_default_types/2</a></td><td>Mimic the types of the default message for a given map.</td></tr><tr><td valign="top"><a href="#normalize_default-1">normalize_default/1*</a></td><td>Get an option from environment variables, optionally consulting the
+keys to those in the default message.</td></tr><tr><td valign="top"><a href="#load_bin-1">load_bin/1</a></td><td></td></tr><tr><td valign="top"><a href="#mimic_default_types-2">mimic_default_types/2</a></td><td>Mimic the types of the default message for a given map.</td></tr><tr><td valign="top"><a href="#normalize_default-1">normalize_default/1*</a></td><td>Get an option from environment variables, optionally consulting the
 <code>hb_features</code> of the node if a conditional default tuple is provided.</td></tr></table>
 
 
@@ -15109,6 +15166,12 @@ Get an environment variable or configuration key.
 
 Parse a `flat@1.0` encoded file into a map, matching the types of the
 keys to those in the default message.
+
+<a name="load_bin-1"></a>
+
+### load_bin/1 ###
+
+`load_bin(Bin) -> any()`
 
 <a name="mimic_default_types-2"></a>
 
@@ -16537,7 +16600,7 @@ GraphQL routes, additionally including additional store-specific routes.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cache_read_message_test-0">cache_read_message_test/0*</a></td><td>Ensure that saving to the gateway store works.</td></tr><tr><td valign="top"><a href="#external_http_access_test-0">external_http_access_test/0*</a></td><td>Test that the default node config allows for data to be accessed.</td></tr><tr><td valign="top"><a href="#graphql_as_store_test_-0">graphql_as_store_test_/0*</a></td><td>Store is accessible via the default options.</td></tr><tr><td valign="top"><a href="#graphql_from_cache_test-0">graphql_from_cache_test/0*</a></td><td>Stored messages are accessible via <code>hb_cache</code> accesses.</td></tr><tr><td valign="top"><a href="#list-2">list/2</a></td><td></td></tr><tr><td valign="top"><a href="#manual_local_cache_test-0">manual_local_cache_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_cache-2">maybe_cache/2*</a></td><td>Cache the data if the cache is enabled.</td></tr><tr><td valign="top"><a href="#read-2">read/2</a></td><td>Read the data at the given key from the GraphQL route.</td></tr><tr><td valign="top"><a href="#resolve-2">resolve/2</a></td><td></td></tr><tr><td valign="top"><a href="#resolve_on_gateway_test_-0">resolve_on_gateway_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#scope-1">scope/1</a></td><td>The scope of a GraphQL store is always remote, due to performance.</td></tr><tr><td valign="top"><a href="#specific_route_test-0">specific_route_test/0*</a></td><td>Routes can be specified in the options, overriding the default routes.</td></tr><tr><td valign="top"><a href="#type-2">type/2</a></td><td>Get the type of the data at the given key.</td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cache_read_message_test-0">cache_read_message_test/0*</a></td><td>Ensure that saving to the gateway store works.</td></tr><tr><td valign="top"><a href="#external_http_access_test-0">external_http_access_test/0*</a></td><td>Test that the default node config allows for data to be accessed.</td></tr><tr><td valign="top"><a href="#graphql_as_store_test_-0">graphql_as_store_test_/0*</a></td><td>Store is accessible via the default options.</td></tr><tr><td valign="top"><a href="#graphql_from_cache_test-0">graphql_from_cache_test/0*</a></td><td>Stored messages are accessible via <code>hb_cache</code> accesses.</td></tr><tr><td valign="top"><a href="#list-2">list/2</a></td><td></td></tr><tr><td valign="top"><a href="#manual_local_cache_test-0">manual_local_cache_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_cache-2">maybe_cache/2*</a></td><td>Cache the data if the cache is enabled.</td></tr><tr><td valign="top"><a href="#read-2">read/2</a></td><td>Read the data at the given key from the GraphQL route.</td></tr><tr><td valign="top"><a href="#resolve-2">resolve/2</a></td><td></td></tr><tr><td valign="top"><a href="#resolve_on_gateway_test_-0">resolve_on_gateway_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#scope-1">scope/1</a></td><td>The scope of a GraphQL store is always remote, due to performance.</td></tr><tr><td valign="top"><a href="#specific_route_test-0">specific_route_test/0*</a></td><td>Routes can be specified in the options, overriding the default routes.</td></tr><tr><td valign="top"><a href="#store_opts_test-0">store_opts_test/0*</a></td><td>Test to verify store opts is being set for Data-Protocol ao.</td></tr><tr><td valign="top"><a href="#type-2">type/2</a></td><td>Get the type of the data at the given key.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -16638,6 +16701,14 @@ We test this by inversion: If the above cache read test works, then we know
 that the default routes allow access to the item. If the test below were to
 produce the same result, despite an empty 'only' route list, then we would
 know that the module is not respecting the route list.
+
+<a name="store_opts_test-0"></a>
+
+### store_opts_test/0 * ###
+
+`store_opts_test() -> any()`
+
+Test to verify store opts is being set for Data-Protocol ao
 
 <a name="type-2"></a>
 
