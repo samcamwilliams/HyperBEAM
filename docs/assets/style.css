@@ -186,7 +186,7 @@ body {
 /* Hero Customization */
 .custom-homepage-main {
 	perspective: var(--parallax-perspective);
-	overflow: visible auto;
+	overflow: hidden auto;
 	scroll-behavior: smooth;
 	height: 100vh;
 	width: 100vw;
@@ -277,7 +277,6 @@ body {
 	will-change: transform;
 	pointer-events: none;
 	z-index: calc(10 - var(--depth, 0));
-
 }
 
 .rocks img {
