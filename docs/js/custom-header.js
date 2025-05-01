@@ -4,6 +4,8 @@
   function updateHeaderAndMainClass() {
     const header = document.querySelector(".md-header");
     const main = document.querySelector("main");
+    const tabs = document.querySelector(".md-tabs");
+
     const segments = window.location.pathname.split("/").filter(Boolean);
     const arweavePath = segments.length === 1 && segments[0].length === 43;
     const isHomepage = segments.length === 0 || arweavePath;
@@ -14,10 +16,12 @@
       header.classList.add("custom-homepage-header");
       main.classList.add("custom-homepage-main");
       main.classList.remove("md-main");
+      if (tabs) tabs.style.display = "none";
     } else {
       header.classList.remove("custom-homepage-header");
       main.classList.remove("custom-homepage-main");
       main.classList.add("md-main");
+      if (tabs) tabs.style.display = "";
     }
   }
 
