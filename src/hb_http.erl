@@ -537,7 +537,7 @@ encode_reply(TABMReq, Message, Opts) ->
             {ok, EncMessage} =
                 dev_codec_httpsig:to(
                     TABM,
-                    #{ <<"index">> => true },
+                    #{ <<"index">> => hb_opts:get(generate_index, true, Opts) },
                     Opts
                 ),
             {
@@ -664,7 +664,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
                             <<"ans104@1.0">>,
                             Opts
                         ),
-                    maybe_add_unsigned(Req, ANS104, Opts);
+                    normalize_unsigned(Req, ANS104, Opts);
                 false ->
                     throw({invalid_ans104_signature, Item})
             end
@@ -707,7 +707,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                 false ->
                     do_nothing
             end,
-            maybe_add_unsigned(Req, SignedMsg, Opts);
+            normalize_unsigned(Req, SignedMsg, Opts);
         false ->
             ?event(http_verify,
                 {invalid_signature,
@@ -720,10 +720,12 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     end.
 
 %% @doc Add the method and path to a message, if they are not already present.
+%% Remove browser-added fields that are unhelpful during processing (for example,
+%% `content-length').
 %% The precidence order for finding the path is:
 %% 1. The path in the message
 %% 2. The path in the request URI
-maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
     Method = cowboy_req:method(Req),
     MsgPath =
         hb_ao:get(
@@ -745,13 +747,20 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
             ),
             Opts
         ),
-    Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
+    (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
+        <<"method">> => Method,
+        <<"path">> => MsgPath
+    }.
 
-remove_unsigned_fields(Msg, Opts) ->
-    case hb_message:signers(Msg, Opts) of
-        [] -> {ok, Msg};
-        _ -> hb_message:with_only_committed(Msg, Opts)
-    end.
+%% @doc Remove all keys from the message unless they are signed.
+remove_unless_signed(Key, Msg, Opts) when not is_list(Key) ->
+    remove_unless_signed([Key], Msg, Opts);
+remove_unless_signed(Keys, Msg, Opts) ->
+    SignedKeys = hb_message:committed(Msg, all, Opts),
+    maps:without(
+        lists:filter(fun(K) -> not lists:member(K, SignedKeys) end, Keys),
+        Msg
+    ).
 
 %%% Tests
 

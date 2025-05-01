@@ -616,7 +616,11 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
                 case map_size(hb_maps:without([<<"path">>], Req)) of
                     0 -> Msg1b;
                     _ ->
-                        set(Msg1b, hb_maps:without([<<"path">>], Req), Opts#{ force_message => false })
+                        set(
+                            Msg1b,
+                            hb_maps:without([<<"path">>], Req),
+                            Opts#{ force_message => false }
+                        )
                 end,
             ?event(subresolution,
                 {subresolve_modified_base, Msg1c},

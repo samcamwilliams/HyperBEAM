@@ -1,6 +1,6 @@
 -module(hb_store_fs).
 -behavior(hb_store).
--export([start/1, stop/1, reset/1, scope/0]).
+-export([start/1, stop/1, reset/1, scope/0, scope/1]).
 -export([type/2, read/2, write/3, list/2]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
@@ -21,6 +21,8 @@ stop(#{ <<"prefix">> := _DataDir }) ->
 %% @doc The file-based store is always local, for now. In the future, we may
 %% want to allow that an FS store is shared across a cluster and thus remote.
 scope() -> local.
+scope(#{ <<"scope">> := Scope }) -> Scope;
+scope(_) -> scope().
 
 %% @doc Reset the store by completely removing its directory and recreating it.
 reset(#{ <<"prefix">> := DataDir }) ->
