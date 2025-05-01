@@ -21,7 +21,7 @@
 ).
 %% The list of tags that a user is explicitly committing to when they sign an
 %% ANS-104 message.
--define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
+-define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>, <<"type">>]).
 %% List of tags that should be removed during `to'. These relate to the nested
 %% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
@@ -70,7 +70,7 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Get the prior original tags from the commitment, if it exists.
     PriorOriginalTags =
-        case hb_message:commitment(#{ <<"alg">> => <<"unsigned">> }, Msg, Opts) of
+        case hb_message:commitment(#{ <<"type">> => <<"unsigned-sha256">> }, Msg, Opts) of
             {ok, _, #{ <<"original-tags">> := OrigTags }} -> OrigTags;
             _ -> undefined
         end,
@@ -78,12 +78,14 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
         #{
             <<"commitment-device">> => <<"ans104@1.0">>,
             <<"committer">> => Address,
-            <<"alg">> => <<"rsa-pss">>,
-            <<"keyid">> => PublicKey,
-            <<"signature">> => Sig,
+            <<"keyid">> => hb_util:encode(PublicKey),
+            <<"signature">> => hb_util:encode(Sig),
             <<"type">> => <<"rsa-pss-sha256">>,
             <<"committed">> =>
-                ?BASE_COMMITTED_TAGS ++ [ Tag || {Tag, _} <- TX#tx.tags ]
+                hb_util:unique(
+                    ?BASE_COMMITTED_TAGS
+                        ++ [ Tag || {Tag, _} <- TX#tx.tags ]
+                )
         },
     CommitmentWithOriginalTags =
         case PriorOriginalTags of
@@ -101,7 +103,7 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
         (hb_message:without_commitments(
             #{
                 <<"commitment-device">> => <<"ans104@1.0">>,
-                <<"alg">> => <<"unsigned">>
+                <<"type">> => <<"unsigned-sha256">>
             },
             MsgWithoutHP,
             Opts
@@ -207,7 +209,7 @@ do_from(RawTX, Req, Opts) ->
                             <<"commitments">> => #{
                                 ID => #{
                                     <<"commitment-device">> => <<"ans104@1.0">>,
-                                    <<"alg">> => <<"unsigned">>,
+                                    <<"type">> => <<"unsigned-sha256">>,
                                     <<"original-tags">> => OriginalTagMap
                                 }
                             }
@@ -223,7 +225,7 @@ do_from(RawTX, Req, Opts) ->
                             <<"signature">>,
                             <<"commitment-device">>,
                             <<"committer">>,
-                            <<"alg">>,
+                            <<"type">>,
                             <<"original-tags">>
                         ],
                         NormalizedDataMap
@@ -232,12 +234,14 @@ do_from(RawTX, Req, Opts) ->
                 ?event({raw_tx_id, {id, ID}, {explicit, WithoutBaseCommitment}}),
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
-                    <<"alg">> => <<"rsa-pss">>,
                     <<"committer">> => Address,
                     <<"committed">> =>
-                        ?BASE_COMMITTED_TAGS ++ [ Tag || {Tag, _} <- TX#tx.tags ],
-                    <<"keyid">> => TX#tx.owner,
-                    <<"signature">> => TX#tx.signature,
+                        hb_util:unique(
+                            ?BASE_COMMITTED_TAGS
+                                ++ [ Tag || {Tag, _} <- TX#tx.tags ]
+                        ),
+                    <<"keyid">> => hb_util:encode(TX#tx.owner),
+                    <<"signature">> => hb_util:encode(TX#tx.signature),
                     <<"type">> => <<"rsa-pss-sha256">>
                 },
                 WithoutBaseCommitment#{
@@ -368,9 +372,17 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                 TABMWithoutCommitmentKeys =
                     TABM#{
                         <<"signature">> =>
-                            maps:get(<<"signature">>, Commitment, ?DEFAULT_SIG),
+                            hb_util:decode(
+                                maps:get(<<"signature">>, Commitment,
+                                    hb_util:encode(?DEFAULT_SIG)
+                                )
+                            ),
                         <<"owner">> =>
-                            maps:get(<<"keyid">>, Commitment, ?DEFAULT_OWNER)
+                            hb_util:decode(
+                                maps:get(<<"keyid">>, Commitment,
+                                    hb_util:encode(?DEFAULT_OWNER)
+                                )
+                            )
                     },
                 WithOrigKeys =
                     case maps:get(<<"original-tags">>, Commitment, undefined) of
@@ -627,3 +639,24 @@ only_committed_maintains_target_test() ->
     Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({encoded, Encoded}),
     ?assertEqual(TX, Encoded).
+
+simple_signed_to_httpsig_test() ->
+    TX =
+        ar_bundles:sign_item(
+            #tx {
+                tags = [
+                    {<<"test-tag">>, <<"test-value">>},
+                    {<<"test-tag-2">>, <<"test-value-2">>}
+                ]
+            },
+            ar_wallet:new()
+        ),
+    Structured1 = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({tx, TX}),
+    TABM = hb_message:convert(TX, tabm, <<"ans104@1.0">>, #{}),
+    ?event({tabm, TABM}),
+    HTTPSig = hb_message:convert(TABM, <<"httpsig@1.0">>, tabm, #{}),
+    ?event({httpsig, HTTPSig}),
+    Structured2 = hb_message:convert(HTTPSig, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
+    ?assert(hb_message:match(Structured1, Structured2)),
+    ?assert(hb_message:verify(Structured2, all, #{})).
