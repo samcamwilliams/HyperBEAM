@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/3, to/3, from/3, commit/3, verify/3, committed/3, content_type/1]).
+-export([to/3, from/3, commit/3, verify/3, content_type/1]).
 -export([serialize/3, deserialize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -22,7 +22,7 @@
 ).
 %% The list of tags that a user is explicitly committing to when they sign an
 %% ANS-104 message.
--define(COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
+-define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
 %% List of tags that should be removed during `to'. These relate to the nested
 %% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
@@ -50,18 +50,20 @@ deserialize(Binary, Req, Opts) when is_binary(Binary) ->
 deserialize(TX, Req, Opts) when is_record(TX, tx) ->
     from(TX, Req, Opts).
 
-%% @doc Return the ID of a message.
-id(Msg, Req, Opts) ->
-    {ok, TABM} = dev_codec_structured:from(Msg, Req, Opts),
-    {ok, hb_util:human_id((to(TABM, Req, Opts))#tx.id)}.
-
-%% @doc Sign a message using the `priv_wallet' key in the options.
-commit(Msg, Req, Opts) ->
+%% @doc Sign a message using the `priv_wallet' key in the options. Supports both
+%% the `hmac-sha256' and `rsa-pss-sha256' algorithms, offering unsigned and
+%% signed commitments.
+commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
+    commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
+commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
+    commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha256">> }, Opts);
+commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
     ?event({committing, {input, Msg}}),
-    Signed = ar_bundles:sign_item(
-        hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
-        Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
-    ),
+    Signed =
+        ar_bundles:sign_item(
+            TX = hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
+            Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
+        ),
     ?event({signed_tx, Signed}),
     ID = hb_util:human_id(Signed#tx.id),
     PublicKey = Signed#tx.owner,
@@ -79,7 +81,10 @@ commit(Msg, Req, Opts) ->
             <<"committer">> => Address,
             <<"alg">> => <<"rsa-pss">>,
             <<"keyid">> => PublicKey,
-            <<"signature">> => Sig
+            <<"signature">> => Sig,
+            <<"type">> => <<"rsa-pss-sha256">>,
+            <<"committed">> =>
+                ?BASE_COMMITTED_TAGS ++ [ Tag || {Tag, _} <- TX#tx.tags ]
         },
     CommitmentWithOriginalTags =
         case PriorOriginalTags of
@@ -108,123 +113,20 @@ commit(Msg, Req, Opts) ->
         }
     }.
 
-%% @doc Return a list of committed keys from an ANS-104 message.
-committed(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
-    % If the message has a `trusted-keys' field in the immediate layer, we validate
-    % that it also exists in the commitment's sub-map. If it exists there (which
-    % cannot be written to directly by users), we can trust that the stated keys
-    % are present in the message.
-    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}, Opts) of
-        #{ <<"trusted-keys">> := RawTKeys } ->
-            committed_from_trusted_keys(Msg, RawTKeys, Opts);
-        _ ->
-            % If the key is not repeated, we cannot trust that the message has
-            % the keys in the commitment so we return an error.
-            throw({trusted_keys_not_found_in_commitment, Msg})
-    end;
-committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
-    % If the message has an `original-tags' field, the committed fields are only
-    % those keys, and maps that are nested in the `data' field.
-    ?event({committed_from_original_tags, {input, Msg}}),
-    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}, Opts) of
-        #{ <<"original-tags">> := TagMap } ->
-            TrustedKeys =
-                [
-                    hb_maps:get(<<"name">>, Tag, Opts)
-                ||
-                    Tag <- hb_maps:values(hb_ao:normalize_keys(TagMap), Opts)
-                ],
-            committed_from_trusted_keys(Msg, TrustedKeys, Opts);
-        _ ->
-            % Message appears to be tampered with.
-            throw({original_tags_not_found_in_commitment, Msg})
-    end;
-committed(Msg, Req, Opts) ->
-    ?event({running_committed, {input, Msg}}),
-    % Remove other commitments that were not 'promoted' to the base layer message
-    % by `message@1.0/committed'. This is safe because `to' will only proceed if 
-    % there is a single signature on the message. Subsequently, we can trust that
-    % the keys signed by that single commitment speak for 'all' of the 
-    % commitments.
-    MsgLessGivenComm = hb_maps:without([<<"commitments">>], Msg),
-    ?event({to_verify, {input, MsgLessGivenComm}}),
-    case verify(MsgLessGivenComm, Req, Opts) of
-        {ok, true} ->
-            % The message validates, so we can trust that the original keys are
-            % all present in the message in its converted state.
-            {ok, Encoded} = to(Msg, Req, Opts),
-            ?event({verified_tx, Encoded}),
-            % Get the immediate (first-level) keys from the encoded message.
-            % This is safe because we know that the message is valid. We normalize
-            % the keys such that callers can rely on the keys being in a canonical
-            % form.
-            TagKeys = [ hb_ao:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
-            % Get the nested keys from the original message.
-            NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-            Implicit =
-                case lists:member(<<"ao-types">>, hb_maps:keys(Msg)) of
-                    true -> dev_codec_structured:implicit_keys(Msg, Opts);
-                    false -> []
-                end,
-            % Return the immediate and nested keys. The `data' field is always
-            % committed, so we include it in the list of keys.
-            {
-                ok,
-                remove_link_specifiers(
-                    TagKeys ++
-                    NestedKeys ++
-                    Implicit ++
-                    ?COMMITTED_TAGS
-                )
-            };
-        _ ->
-            ?event({could_not_verify, {msg, MsgLessGivenComm}}),
-            {ok, []}
-    end.
-
-committed_from_trusted_keys(Msg, TrustedKeys, Opts) ->
-    ?event({committed_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
-    NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-    TKeys = hb_maps:values(hb_ao:normalize_keys(TrustedKeys), Opts),
-    Implicit =
-        case lists:member(<<"ao-types">>, TKeys) of
-            true -> dev_codec_structured:implicit_keys(Msg, Opts);
-            false -> []
-        end,
-    {
-        ok,
-        remove_link_specifiers(
-            lists:map(fun hb_ao:normalize_key/1, TKeys)
-                ++ Implicit
-                ++ NestedKeys
-                ++ ?COMMITTED_TAGS
-        )
-    }.
-
-%% @doc Remove link specifiers from a list of keys.
-remove_link_specifiers(Keys) ->
-    lists:map(
-        fun(Key) ->
-            case hb_link:is_link_key(Key) of
-                true -> binary:part(Key, 0, byte_size(Key) - 5);
-                false -> Key
-            end
-        end,
-        Keys
-    ).
-
 %% @doc Verify an ANS-104 commitment.
 verify(Msg, Req, Opts) ->
-    MsgWithoutCommitments =
-        hb_maps:without(
-            [
-                <<"commitments">>,
-                <<"committer">>,
-                <<"alg">>
-            ],
-            hb_private:reset(Msg)
+    ?event({verify, {base, Msg}, {req, Req}}),
+    OnlyWithCommitment =
+        hb_private:reset(
+            hb_message:with_commitments(
+                Req,
+                Msg,
+                Opts
+            )
         ),
-    {ok, TX} = to(MsgWithoutCommitments, Req, Opts),
+    ?event({verify, {only_with_commitment, OnlyWithCommitment}}),
+    {ok, TX} = to(OnlyWithCommitment, Req, Opts),
+    ?event({verify, {encoded, TX}}),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
 
@@ -258,7 +160,10 @@ do_from(RawTX, Req, Opts) ->
     TXKeysMap =
         maps:without(
             [<<"owner">>],
-            RawTXKeysMap#{ <<"keyid">> => RawTXKeysMap#tx.owner }
+            case maps:get(<<"owner">>, RawTXKeysMap, ?DEFAULT_OWNER) of
+                ?DEFAULT_OWNER -> RawTXKeysMap;
+                Owner -> RawTXKeysMap#{ <<"keyid">> => Owner }
+            end
         ),
     % Generate a TABM from the tags.
     MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags, Opts)),
@@ -328,8 +233,11 @@ do_from(RawTX, Req, Opts) ->
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"alg">> => <<"rsa-pss">>,
                     <<"committer">> => Address,
+                    <<"committed">> =>
+                        ?BASE_COMMITTED_TAGS ++ [ Tag || {Tag, _} <- TX#tx.tags ],
                     <<"keyid">> => TX#tx.owner,
-                    <<"signature">> => TX#tx.signature
+                    <<"signature">> => TX#tx.signature,
+                    <<"type">> => <<"rsa-pss-sha256">>
                 },
                 WithoutBaseCommitment#{
                     <<"commitments">> => #{
@@ -417,10 +325,8 @@ encoded_tags_to_map(Tags) ->
 %% @doc Convert a HyperBEAM-compatible map into an ANS-104 encoded tag list,
 %% recreating the original order of the tags.
 tag_map_to_encoded_tags(TagMap) ->
-    OrderedList =
-        hb_util:message_to_ordered_list(
-            hb_maps:without([<<"priv">>], TagMap)),
-    %?event({ordered_list, {explicit, OrderedList}, {input, {explicit, Input}}}),
+    OrderedList = hb_util:message_to_ordered_list(hb_private:reset(TagMap)),
+    ?event({ordered_tagmap, {explicit, OrderedList}, {input, {explicit, TagMap}}}),
     lists:map(
         fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
             {Key, Value}
@@ -437,49 +343,38 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
     % ar_bundles cannot serialize just a simple binary or get an ID for it, so
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
-    {ok, #tx{
-        tags= [{<<"ao-type">>, <<"binary">>}],
-        data = Binary
-    }};
+    {ok,
+        #tx{
+            tags = [{<<"ao-type">>, <<"binary">>}],
+            data = Binary
+        }
+    };
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded, for now.
-    DenormTABM = hb_cache:ensure_all_loaded(RawTABM, Opts),
-    % The path is a special case so we normalized it first. It may have been
-    % modified by `hb_ao' in order to set it to the current key that is
-    % being executed. We should check whether the path is in the
-    % `priv/AO-Core/Original-Path' field, and if so, use that instead of the
-    % stated path. This normalizes the path, such that the signed message will
-    % continue to validate correctly.
-    TABM = hb_ao:normalize_keys(hb_maps:without([<<"commitments">>], DenormTABM)),
-    Commitments = hb_maps:get(<<"commitments">>, DenormTABM, #{}, Opts),
+    NormTABM = hb_cache:ensure_all_loaded(RawTABM, Opts),
+    ?event({to, {norm, NormTABM}}),
+    TABM =
+        hb_ao:normalize_keys(
+            hb_maps:without([<<"commitments">>], NormTABM)
+        ),
+    Commitments = hb_maps:get(<<"commitments">>, NormTABM, #{}, Opts),
     TABMWithComm =
         case hb_maps:keys(Commitments) of
             [] -> TABM;
             [ID] ->
                 TABMWithoutCommitmentKeys =
-                    hb_maps:merge(
-                        TABM,
-                        hb_maps:without(
-                            [<<"commitment-device">>, <<"committer">>, <<"alg">>],
-                            hb_maps:get(ID, Commitments)
-                        )
-                    ),
+                    TABM#{
+                        <<"signature">> => hb_maps:get(<<"signature">>, hb_maps:get(ID, Commitments)),
+                        <<"owner">> => hb_maps:get(<<"keyid">>, hb_maps:get(ID, Commitments))
+                    },
                 ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
                 TABMWithoutCommitmentKeys;
-            _ -> throw({multisignatures_not_supported_by_ans104, DenormTABM})
+            _ -> throw({multisignatures_not_supported_by_ans104, NormTABM})
         end,
     OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}, Opts),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
     TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm),
-    % TODO: Is this necessary now? Do we want to pursue `original-path` as the
-    % mechanism for restoring original tags?
-    M =
-        case {hb_maps:find(<<"path">>, TABMNoOrigTags, Opts), hb_private:from_message(TABMNoOrigTags)} of
-            {{ok, _}, #{ <<"ao-core">> := #{ <<"original-path">> := Path } }} ->
-                hb_maps:put(<<"path">>, Path, TABMNoOrigTags);
-            _ -> TABMNoOrigTags
-        end,
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
     % call message_to_tx/1 on the inner map because that would lead to adding
@@ -490,7 +385,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             fun(_Key, Msg) when is_map(Msg) -> hb_util:ok(to(Msg, Req, Opts));
                (_Key, Value) -> Value
             end,
-            M,
+            TABMNoOrigTags,
             Opts
         ),
     NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap),
@@ -567,9 +462,11 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                     _ -> OriginalTags
                 end
         },
+    ?event({tx_before_data, TX}),
     % Recursively turn the remaining data items into tx records.
     DataItems = hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
+            ?event({data_item, {key, Key}, {value, Value}}),
             {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
         end,
         RawDataItems

@@ -20,7 +20,7 @@ test_codecs() ->
         <<"structured@1.0">>,
         <<"httpsig@1.0">>,
         <<"flat@1.0">>,
-        %<<"ans104@1.0">>,
+        <<"ans104@1.0">>,
         <<"json@1.0">>
     ].
 
@@ -65,8 +65,6 @@ suite_test_() ->
         % Nested structures
         {<<"Simple nested message">>,
             fun simple_nested_message_test/1},
-        {<<"Signed nested message">>,
-            fun signed_nested_message_with_child_test/1},
         {<<"Message with simple embedded list">>,
             fun message_with_simple_embedded_list_test/1},
         {<<"Nested empty map">>,
@@ -90,6 +88,8 @@ suite_test_() ->
             fun signed_message_encode_decode_verify_test/1},
         {<<"Signed only committed data field">>,
             fun signed_only_committed_data_field_test/1},
+        {<<"Signed nested message">>,
+            fun signed_nested_message_with_child_test/1},
         {<<"Committed keys">>,
             fun committed_keys_test/1},
         {<<"Committed empty keys">>,
@@ -315,14 +315,18 @@ single_layer_message_to_encoding_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{
         <<"last_tx">> => << 2:256 >>,
-        <<"owner">> => << 3:4096 >>,
         <<"target">> => << 4:256 >>,
         <<"data">> => <<"DATA">>,
         <<"special-key">> => <<"SPECIAL_VALUE">>
     },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
+    ?event({decoded, Decoded}),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    MatchRes = hb_message:match(Msg, Decoded, strict, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes).
 
 signed_only_committed_data_field_test(Codec) ->
     Opts = test_opts(Codec),
@@ -371,7 +375,9 @@ match_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2 },
     Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 binary_to_binary_test(Codec) ->
@@ -641,7 +647,9 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
     ?event({matching, {input, SignedMsg}, {encoded, Encoded}, {decoded, Decoded}}),
-    ?assert(hb_message:match(SignedMsg, Decoded, strict, Opts)).
+    MatchRes = hb_message:match(SignedMsg, Decoded, strict, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes).
 
 complex_signed_message_test(Codec) ->
     Opts = test_opts(Codec),
