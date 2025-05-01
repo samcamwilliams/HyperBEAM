@@ -1,14 +1,259 @@
-<html>
-    <head>HyperBuddy</head>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link
+            rel="icon"
+            type="image/png"
+            href="https://arweave.net/oTMNDjwfn-Mv0bJZPGmMpDPPYWqINH6lQeTVc92bwjA"
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="../../styles.css" />
+        <title>HyperBEAM</title>
+    </head>
     <body>
-        <h1>Eat glass;</h1>
-        <h2>Build the future.</h2>
-        <p>
-            The hashpath you requested did not contain a page for you to see.
-        </p>
-        <p>
-            But fear not! Your request did succeed. Check your browser's network
-            tools and look at the headers to see your result.
-        </p>
+        <div class="explorer-wrapper">
+            <div class="explorer-header">
+                <p>Message Headers</p>
+            </div>
+            <div class="explorer">
+                <div id="explorer-body-row-loader" class="explorer-body-row">
+                    <p>Loading...</p>
+                </div>
+            </div>
+            <div class="explorer-footer">
+                <p>HyperBEAM Message Explorer</p>
+            </div>
+        </div>
+
+        <!-- load the library as an ES module -->
+        <script type="module">
+            import { verify } from "https://esm.sh/@ltonetwork/http-message-signatures";
+
+            /**
+             * Turn a FetchResponse into the shape the library expects:
+             *   { method, url, headers: Record<string,string> }
+             */
+            async function buildRequestShape(response) {
+                const headers = {};
+                // Pull out all the headers you used in your Signature-Input
+                for (let [k, v] of response.headers) {
+                    headers[k.toLowerCase()] = v;
+                }
+                return {
+                    method: response.request ? response.request.method : "GET",
+                    url: response.url,
+                    headers,
+                };
+            }
+
+            /**
+             * Your verifyCallback: takes (signingString, signatureBytes, params)
+             * and must return truthy (e.g. an identity) or throw on failure.
+             */
+            async function myVerifier(signingString, signatureBytes, params) {
+                // 1) Look up the public key by params.keyId
+                const jwk = await fetch(`/keys/${params.keyId}`).then((r) =>
+                    r.json()
+                );
+
+                // 2) Import it into SubtleCrypto
+                const cryptoKey = await crypto.subtle.importKey(
+                    "jwk",
+                    jwk,
+                    { name: params.alg.toUpperCase().replace("-", "") },
+                    false,
+                    ["verify"]
+                );
+
+                // 3) Verify the bytes
+                const valid = await crypto.subtle.verify(
+                    { name: params.alg.toUpperCase().replace("-", "") },
+                    cryptoKey,
+                    signatureBytes,
+                    new TextEncoder().encode(signingString)
+                );
+                if (!valid) throw new Error("Invalid signature");
+
+                // return whatever represents “who signed it”
+                return jwk.kid;
+            }
+
+            (async () => {
+                const resp = await fetch("/some/signed/endpoint");
+                const reqShape = await buildRequestShape(resp);
+
+                try {
+                    await verify(reqShape, myVerifier);
+                    console.log("✅ Signature validated");
+                } catch (err) {
+                    console.error("❌ Signature invalid:", err);
+                }
+            })();
+        </script>
+
+        <script>
+            function parseHeaders(input) {
+                const out = {};
+                input
+                    .split("\n")
+                    .map((l) => l.trim())
+                    .filter((l) => l && l.includes(":"))
+                    .forEach((line) => {
+                        const idx = line.indexOf(":");
+                        const key = line.slice(0, idx).trim();
+                        const val = line.slice(idx + 1).trim();
+                        out[key] = { data: val };
+                        if (key.includes("+link")) out[key].isLink = true;
+                    });
+                return out;
+            }
+
+            async function renderExplorer(container, parsed, depth = 0) {
+                const body = document.createElement("div");
+                body.className = "explorer-body";
+
+                Object.entries(parsed).forEach(
+                    ([headerKey, { data, isLink }], idx, arr) => {
+                        const wrapper = document.createElement("div");
+                        wrapper.className = "explorer-body-row-wrapper";
+
+                        const row = document.createElement("div");
+                        row.className = "explorer-body-row";
+                        row.style.paddingLeft = `${depth * 20 + 15}px`;
+
+                        let arrow, nestedBody;
+                        if (isLink) {
+                            row.classList.add("explorer-action");
+
+                            arrow = document.createElement("span");
+                            arrow.className = "explorer-body-row-indicator";
+                            row.appendChild(arrow);
+
+                            wrapper._loaded = false;
+                            wrapper._isOpen = false;
+
+                            row.addEventListener("click", async () => {
+                                if (!wrapper._loaded) {
+                                    wrapper._loaded = true;
+                                    try {
+                                        // const txt = await fetch(data).then(
+                                        //     (r) => r.text()
+                                        // );
+                                        console.log(window.location);
+                                        const res = await fetch(
+                                            `${window.location.origin}/${data}`
+                                        );
+
+                                        console.log(res);
+
+                                        const txt = `
+                                        inner: content-digest: sha-256=:D4nM67wKpMD2YDlWtEyWNwzakImc4trZHmVf1+OoKZE=:
+                                        content-type: application/html
+                                        function: fac
+                                        parameters+link: IBNbQhSl5JsiLAX1OITZTWYHzSXGiOTV4JqQWQqurlY
+                                        signature: _ltiatthtwivihvqgoacxx1cvwacqxdkkrh0jypdpxu=:UFBOTUFueXVDczVWM1Z5QlIxLW9wLTMySXJzYUlJTGVmNnBldzhqQ0dxcw==:, …
+                                        signature-input: _ltiatthtwivihvqgoacxx1cvwacqxdkkrh0jypdpxu=("content-digest" "content-type" "function" "parameters+link" "type");alg="hmac-sha256";keyid="YW8", …
+                                        type: Message
+                                        `.trim();
+                                        const child = parseHeaders(txt);
+                                        await renderExplorer(
+                                            nestedBody,
+                                            child,
+                                            depth + 1
+                                        );
+                                    } catch (e) {
+                                        console.error("Fetch failed:", e);
+                                    }
+                                    wrapper._isOpen = true;
+                                    nestedBody.style.display = "flex";
+                                    row.classList.add("explorer-body-row-open");
+                                    arrow.classList.add(
+                                        "explorer-body-row-indicator-open"
+                                    );
+                                } else {
+                                    wrapper._isOpen = !wrapper._isOpen;
+                                    if (wrapper._isOpen) {
+                                        nestedBody.style.display = "flex";
+                                        row.classList.add(
+                                            "explorer-body-row-open"
+                                        );
+                                        arrow.classList.add(
+                                            "explorer-body-row-indicator-open"
+                                        );
+                                    } else {
+                                        nestedBody.style.display = "none";
+                                        row.classList.remove(
+                                            "explorer-body-row-open"
+                                        );
+                                        arrow.classList.remove(
+                                            "explorer-body-row-indicator-open"
+                                        );
+                                    }
+                                }
+                            });
+                        }
+
+                        const keySpan = document.createElement("span");
+                        keySpan.textContent = headerKey + ":";
+                        row.appendChild(keySpan);
+
+                        const value = document.createElement("p");
+                        if (isLink)
+                            value.classList.add("explorer-body-link-value");
+                        value.textContent = data;
+                        row.appendChild(value);
+
+                        wrapper.appendChild(row);
+
+                        nestedBody = document.createElement("div");
+                        nestedBody.className = "explorer-body";
+                        nestedBody.style.display = "none";
+                        wrapper.appendChild(nestedBody);
+
+                        body.appendChild(wrapper);
+                    }
+                );
+
+                const loader = document.getElementById(
+                    "explorer-body-row-loader"
+                );
+                if (loader) container.removeChild(loader);
+                container.appendChild(body);
+            }
+
+            function joinHeaders(headers) {
+                return Array.from(headers.entries())
+                    .map(([name, value]) => `${name}: ${value}`)
+                    .join("\n");
+            }
+
+            // const raw = `
+            //   inner: content-digest: sha-256=:D4nM67wKpMD2YDlWtEyWNwzakImc4trZHmVf1+OoKZE=:
+            //   content-type: application/html
+            //   function: fac
+            //   parameters+link: IBNbQhSl5JsiLAX1OITZTWYHzSXGiOTV4JqQWQqurlY
+            //   signature: _ltiatthtwivihvqgoacxx1cvwacqxdkkrh0jypdpxu=:UFBOTUFueXVDczVWM1Z5QlIxLW9wLTMySXJzYUlJTGVmNnBldzhqQ0dxcw==:, …
+            //   signature-input: _ltiatthtwivihvqgoacxx1cvwacqxdkkrh0jypdpxu=("content-digest" "content-type" "function" "parameters+link" "type");alg="hmac-sha256";keyid="YW8", …
+            //   type: Message
+            // `.trim();
+
+            // const parsed = parseHeaders(raw);
+            // renderExplorer(document.querySelector(".explorer"), parsed, 0);
+
+            async function renderInitialMessage() {
+                const res = await fetch(window.location.href);
+                const raw = joinHeaders(res.headers).trim();
+                const parsed = parseHeaders(raw);
+
+                renderExplorer(document.querySelector(".explorer"), parsed, 0);
+            }
+
+            renderInitialMessage();
+        </script>
     </body>
 </html>
