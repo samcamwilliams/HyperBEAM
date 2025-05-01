@@ -243,8 +243,8 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
     %    if conflicts arise.
     % 5. The resulting combined message is returned to the user.
     {ok, EncOriginal} = to(TABM, Req#{ <<"index">> => false }, Opts),
-    OrigBody = hb_ao:get(<<"body">>, TABM, <<>>, Opts),
-    OrigContentType = hb_ao:get(<<"content-type">>, TABM, <<>>, Opts),
+    OrigBody = hb_maps:get(<<"body">>, TABM, <<>>, Opts),
+    OrigContentType = hb_maps:get(<<"content-type">>, TABM, <<>>, Opts),
     case {OrigBody, OrigContentType} of
         {<<>>, <<>>} ->
             % The message has no body or content-type set. Resolve the `index`
