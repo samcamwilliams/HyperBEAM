@@ -27,9 +27,9 @@ This is particularly useful for:
     *   It takes the keys from the `cache` table (`myDataKey` in the example) and their associated values (`MyValue`) and makes these values available under the `/cache/` path segment.
 4.  **HTTP Access:** You (or any HTTP client) can now access this data directly using a GET request:
     ```
-    GET /<process-id>[`~process@1.0`](../devices/process-at-1-0.md)/compute/cache/<myDataKey>
+    GET /<process-id>~process@1.0/compute/cache/<myDataKey>
     # Or potentially using /now/
-    GET /<process-id>[`~process@1.0`](../devices/process-at-1-0.md)/now/cache/<myDataKey>
+    GET /<process-id>~process@1.0/now/cache/<myDataKey>
     ```
     The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`myDataKey`) to return the `MyValue` directly.
 
