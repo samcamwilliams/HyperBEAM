@@ -119,17 +119,17 @@
                             <div class="tabs">
                                 <button
                                     class="tab-button active"
-                                    data-id="hyperbuddy@1.0/format"
-                                    data-tab="hyperbuddy-tab"
-                                >
-                                    Hyperbuddy
-                                </button>
-                                <button
-                                    class="tab-button"
                                     data-id="cacheviz@1.0/index"
                                     data-tab="cacheviz-tab"
                                 >
                                     Cacheviz
+                                </button>
+                                <button
+                                    class="tab-button"
+                                    data-id="hyperbuddy@1.0/format"
+                                    data-tab="hyperbuddy-tab"
+                                >
+                                    Hyperbuddy
                                 </button>
                             </div>
                         </div>
@@ -464,8 +464,7 @@
                     iframe.style.height = "100%";
                     return iframe;
                 };
-
-                // 1) On load: insert the iframe for whichever tab is already `.active`
+                
                 const initial = document.querySelector(".tab-button.active");
                 if (initial)
                     container.appendChild(makeIframe(initial.dataset.id));
@@ -490,7 +489,7 @@
 
         <script type="module">
             import { fetchInfo } from "/~hyperbuddy@1.0/devices.js"
-            
+
             fetchInfo();
         </script>
     </body>
