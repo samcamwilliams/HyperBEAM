@@ -24,7 +24,7 @@ To retrieve the value associated with a specific key in the message map, simply 
 **Example:**
 
 ```
-http://localhost:10000/~message@1.0&hello=world&Key=Value/key
+GET /~message@1.0&hello=world&Key=Value/key
 ```
 
 **Response:**
@@ -60,7 +60,7 @@ Keys prefixed with `priv` (e.g., `priv_key`, `private.data`) are considered priv
 This example demonstrates creating a transient message and retrieving a value:
 
 ```
-http://localhost:10000/~message@1.0&hello=world&k=v/k
+GET /~message@1.0&hello=world&k=v/k
 ```
 
 **Breakdown:**

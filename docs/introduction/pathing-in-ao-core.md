@@ -48,6 +48,105 @@ This shows the latest 'slot' (number of interactions) of your process. Each resp
 - A hashpath describing its generation
 - Transferable to other AO-Core nodes for uninterrupted execution
 
+### Query Parameters and Type Casting
+
+Beyond path segments, HyperBEAM URLs can include query parameters that utilize a special type casting syntax. This allows specifying the desired data type for a parameter directly within the URL using the format `key+type=value`.
+
+- **Syntax**: A `+` symbol separates the parameter key from its intended type (e.g., `count+integer=42`, `items+list="apple",7`).
+- **Mechanism**: The HyperBEAM node identifies the `+type` suffix (e.g., `+integer`, `+list`, `+map`, `+float`, `+atom`, `+resolve`). It then uses internal functions ([`hb_singleton:maybe_typed`](../resources/source-code/hb_singleton.md) and [`dev_codec_structured:decode_value`](../resources/source-code/dev_codec_structured.md)) to decode and cast the provided value string into the corresponding Erlang data type before incorporating it into the message.
+- **Supported Types**: Common types include `integer`, `float`, `list`, `map`, `atom`, `binary` (often implicit), and `resolve` (for path resolution). List values often follow the [HTTP Structured Fields format (RFC 8941)](https://www.rfc-editor.org/rfc/rfc8941.html).
+
+This powerful feature enables the expression of complex data structures directly in URLs.
+
+**Example:**
+
+Consider the following URL:
+
+```
+GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&config+map=key1="val1";key2=true/[PATH]
+```
+
+HyperBEAM processes this as follows:
+
+1.  Root Device: `~message@1.0`
+2.  Query Parameters:
+    *   `name="Alice"`: Key `name`, implicit type `binary`, value `<<"Alice">>`.
+    *   `age+integer=30`: Key `age`, type `integer`, value `30`.
+    *   `items+list="apple",1,"banana"`: Key `items`, type `list`, value `[<<"apple">>, 1, <<"banana">>]` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
+    *   `config+map=key1="val1";key2=true`: Key `config`, type `map`, value `#{<<"key1">> => <<"val1">>, <<"key2">> => true}` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
+3.  Initial Message Map: `#{ <<"name">> => <<"Alice">>, <<"age">> => 30, <<"items">> => [<<"apple">>, 1, <<"banana">>], <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }`
+
+Depending on the `[PATH]` provided:
+
+*   **If `[PATH]` is `/items/1`:**
+    *   The path instructs the `~message@1.0` device to access the key `items` and then the element at index `1` (0-indexed internally, so the *second* element).
+    *   Response: The integer `1`.
+
+*   **If `[PATH]` is `/config/key1`:**
+    *   The path instructs the `~message@1.0` device to access the key `config` (which resolves to the map `#{<<"key1">> => <<"val1">>, <<"key2">> => true}`), and then access the key `key1` within that map.
+    *   Response: The binary `<<"val1">>`.
+
+## Examples
+
+### Example 1: Accessing Full Process State
+
+To get the complete, real-time state of a process identified by `<procId>`, use the `/now` path component with the `~process@1.0` device:
+
+```
+GET /<procId>~process@1.0/now
+```
+
+This instructs the AO-Core node to load the process and execute the `now` function on the `~process@1.0` device.
+
+### Example 2: Navigating to Specific Process Data
+
+If a process maintains its state in a map and you want to access a specific field, like `at-slot`, using the faster `/compute` endpoint:
+
+```
+GET /<procId>~process@1.0/compute/at-slot
+```
+
+This accesses the `compute` key on the `~process@1.0` device and then navigates to the `at-slot` key within the resulting state map.
+(Note: This represents direct navigation within the process state structure. For accessing data specifically published via the `~patch@1.0` device, see the documentation on [Exposing Process State](../build/exposing-process-state.md), which typically uses the `/cache/` path.)
+
+### Example 3: Basic `~message@1.0` Usage
+
+Here's a simpler use of `~message@1.0` to create a message and retrieve a value:
+
+```
+GET /~message@1.0&greeting="Hello"&count+integer=42/count
+```
+
+1.  **Base:** `/` - The base URL of the HyperBEAM node.
+2.  **Root Device:** `~message@1.0`
+3.  **Query Params:** `greeting="Hello"` (binary) and `count+integer=42` (integer), forming the message `#{ <<"greeting">> => <<"Hello">>, <<"count">> => 42 }`.
+4.  **Path:** `/count` tells `~message@1.0` to retrieve the value associated with the key `count`.
+
+**Response:** The integer `42`.
+
+### Example 4: Using the `~message@1.0` Device with Type Casting
+
+The `~message@1.0` device can be used to construct and query transient messages, utilizing type casting in query parameters.
+
+Consider the following URL:
+
+```
+GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&config+map=key1="val1";key2=true/[PATH]
+```
+
+HyperBEAM processes this as follows:
+
+1.  Root Device: `~message@1.0`
+2.  Query Parameters (with type casting):
+    *   `name="Alice"` -> `#{ <<"name">> => <<"Alice">> }` (binary)
+    *   `age+integer=30` -> `#{ <<"age">> => 30 }` (integer)
+    *   `items+list="apple",1,"banana"` -> `#{ <<"items">> => [<<"apple">>, 1, <<"banana">>] }` (list)
+    *   `config+map=key1="val1";key2=true` -> `#{ <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }` (map)
+3.  Initial Message Map: A combination of the above key-value pairs.
+4.  Path Evaluation:
+    *   If `[PATH]` is `/items/1`, the response is the integer `1`.
+    *   If `[PATH]` is `/config/key1`, the response is the binary `<<"val1">>`.
+
 ## Best Practices
 
 1. Always verify cryptographic signatures on responses
@@ -55,22 +154,3 @@ This shows the latest 'slot' (number of interactions) of your process. Each resp
 3. Implement proper error handling for network requests
 4. Consider rate limits and performance implications
 5. Keep sensitive data secure and use appropriate authentication methods 
-
-## Example: Using the `message` Device
-
-Let's break down another common HyperPATH pattern using the built-in [`~message@1.0`](../devices/message-at-1-0.md) device:
-
-```
-http://localhost:10000/[`~message@1.0`](../devices/message-at-1-0.md)&hello=world&k=v/k
-```
-
-Here's how this works:
-
-1.  **`http://localhost:10000/`**: The base address of your local HyperBEAM node.
-2.  **[`~message@1.0`](../devices/message-at-1-0.md)**: This designates `~message@1.0` as the *root device*. The request is routed to the corresponding module (`dev_message`).
-3.  **`&hello=world&k=v`**: These query parameters define the initial message. The `dev_message` device interprets them as key-value pairs, creating the starting message map: `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }`.
-4.  **`/k`**: This path segment tells the `dev_message` device which key's value to retrieve from the message map constructed in the previous step.
-
-The `dev_message` device receives the initial message and the path `/k`. It performs a lookup for the key `k` within the message `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }` and returns the corresponding value `v` as the response.
-
-This pattern is useful for simple data retrieval or manipulating transient messages without needing a persistent process. 
