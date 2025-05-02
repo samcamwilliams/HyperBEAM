@@ -87,7 +87,7 @@ Handlers.add(
 -- Wait a moment for scheduling
 
 -- Now you can access the data via HTTP (using curl or a browser)
--- GET <node_url>/<MyProcess_ID>[`~process@1.0`](../devices/process-at-1-0.md)/compute/cache/currentStatus
+-- GET <node_url>/<MyProcess_ID>~process@1.0/compute/cache/currentStatus
 -- Or using aos utilities if available (assuming ReadState reflects this structure):
 [aos]> ReadState(MyProcess).cache.currentStatus
 ```
