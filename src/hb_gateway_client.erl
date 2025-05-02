@@ -176,13 +176,19 @@ result_to_message(ExpectedID, Item, Opts) ->
     ?event(gateway, {data, {id, ExpectedID}, {data, Data}, {item, Item}}, Opts),
     % Convert the response to an ANS-104 message.
     Tags = hb_ao:get(<<"tags">>, Item, GQLOpts),
+	Signature = hb_util:decode(hb_ao:get(<<"signature">>, Item, GQLOpts)),
+	SignatureType = case byte_size(Signature) of
+		65 -> {ecdsa, 256};
+		512 -> {rsa, 65537};
+		_ -> unsupported_tx_signature_type
+	end,
     TX =
         #tx {
             format = ans104,
             id = hb_util:decode(ExpectedID),
             last_tx = normalize_null(hb_ao:get(<<"anchor">>, Item, GQLOpts)),
-            signature =
-                hb_util:decode(hb_ao:get(<<"signature">>, Item, GQLOpts)),
+            signature = Signature,
+            signature_type = SignatureType,
             target =
                 decode_or_null(
                     hb_ao:get_first(
