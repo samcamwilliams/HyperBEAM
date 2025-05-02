@@ -17,12 +17,11 @@ HyperBEAM is a highly configurable node runtime for decentralized applications. 
 
 For detailed information about specific aspects of HyperBEAM configuration, please refer to the following documentation:
 
-- [Configuration Methods](configuration-methods.md) - Different ways to configure HyperBEAM
-- [Configuration Options](configuration-options.md) - Complete reference of all configuration options
-- [Storage Configuration](storage-configuration.md) - Setting up file systems, RocksDB, and other storage backends
-- [Routing Configuration](routing-configuration.md) - Configuring request routing and connectivity
-- [Configuration Examples](configuration-examples.md) - Common deployment scenarios and sample configurations
-- [Configuration Troubleshooting](configuration-troubleshooting.md) - Solving common configuration issues
+- [Configuration Methods](./configuration/configuration-methods.md) - Different ways to configure HyperBEAM
+- [Configuration Options](./configuration/configuration-options.md) - Complete reference of all configuration options
+- [Storage Configuration](./configuration/storage-configuration.md) - Setting up file systems, RocksDB, and other storage backends
+- [Routing Configuration](./configuration/routing-configuration.md) - Configuring request routing and connectivity
+- [Configuration Examples](./configuration/configuration-examples.md) - Common deployment scenarios and sample configurations
 
 ## Getting Started
 

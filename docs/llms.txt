@@ -1,4 +1,4 @@
-Generated: 2025-04-30T19:21:45Z
+Generated: 2025-05-02T14:36:17Z
 
 ## HyperBEAM Documentation Summary
 
@@ -9,29 +9,23 @@ Key sections include: Getting Started (begin), Running HyperBEAM (run), Develope
 
 ### uegin
 
-* [AO Devices](./begin/ao-devices.html)
-* [Pathing in AO-Core](./begin/pathing-in-ao-core.html)
-* [What is AO-Core?](./begin/what-is-ao-core.html)
-* [What is HyperBEAM?](./begin/what-is-hyperbeam.html)
 
 ### run
 
-* [Configuring Your Machine for HyperBEAM](./run/configuring-your-machine.html)
+* [Configuring Your HyperBEAM Node](./run/configuring-your-machine.html)
 * [Joining or Running a Router Node](./run/joining-running-a-router.html)
 * [Running a HyperBEAM Node](./run/running-a-hyperbeam-node.html)
 * [Trusted Execution Environment (TEE)](./run/tee-nodes.html)
 
 ### guides
 
-* [Exposing Process State with the Patch Device](./guides/exposing-process-state.html)
-* [Extending HyperBEAM](./guides/extending-hyperbeam.html)
-* [Getting Started Building on AO-Core](./guides/get-started-building-on-ao-core.html)
-* [Serverless Decentralized Compute on AO](./guides/serverless-decentralized-compute.html)
 
 ### devices
 
 * [Devices](./devices/index.html)
+* [Device: ~json@1.0](./devices/json-at-1-0.html)
 * [Device: ~lua@5.3a](./devices/lua-at-5-3a.html)
+* [Device: ~message@1.0](./devices/message-at-1-0.html)
 * [Device: ~meta@1.0](./devices/meta-at-1-0.html)
 * [Device: ~process@1.0](./devices/process-at-1-0.html)
 * [Device: ~relay@1.0](./devices/relay-at-1-0.html)

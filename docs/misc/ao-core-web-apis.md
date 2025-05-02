@@ -71,8 +71,8 @@ end)
 
 Access your process data via any HyperBEAM node. This provides immediate access to the latest state without the need for dryruns:
 
-- **Latest State**: `https://router-1.forward.computer/YOUR_PROCESS_ID~process@1.0/now/cache`
-- **Pre-computed State**: `https://router-1.forward.computer/YOUR_PROCESS_ID~process@1.0/compute/cache`
+- **Latest State**: `GET /YOUR_PROCESS_ID~process@1.0/now/cache`
+- **Pre-computed State**: `GET /YOUR_PROCESS_ID~process@1.0/compute/cache`
 
 ## Best Practices
 
