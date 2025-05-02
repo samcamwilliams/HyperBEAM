@@ -33,6 +33,38 @@ This is particularly useful for:
     ```
     The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`myDataKey`) to return the `MyValue` directly.
 
+## Initial State Sync (Optional)
+
+It can be beneficial to expose the initial state of your process via the `patch` device as soon as the process is loaded or spawned. This makes key data points immediately accessible via HTTP GET requests without requiring an initial interaction message to trigger a `Send` to the patch device.
+
+This pattern typically involves checking a flag within your process state to ensure the initial sync only happens once. Here's an example from the Token Blueprint, demonstrating how to sync `Balances` and `TotalSupply` right after the process starts:
+
+```lua
+-- Place this logic at the top level of your process script, 
+-- outside of specific handlers, so it runs on load.
+
+-- Initialize the sync flag if it doesn't exist
+InitialSync = InitialSync or 'INCOMPLETE'
+
+-- Sync state on spawn/load if not already done
+if InitialSync == 'INCOMPLETE' then
+  -- Send the relevant state variables to the patch device
+  Send({ Target = ao.id, device = 'patch@1.0', cache = { Balances = Balances, TotalSupply = TotalSupply } })
+  -- Update the flag to prevent re-syncing on subsequent executions
+  InitialSync = 'COMPLETE'
+  print("Initial state sync complete. Balances and TotalSupply patched.")
+end
+```
+
+**Explanation:**
+
+1.  `InitialSync = InitialSync or 'INCOMPLETE'`: This line ensures the `InitialSync` variable exists in the process state, initializing it to `'INCOMPLETE'` if it's the first time the code runs.
+2.  `if InitialSync == 'INCOMPLETE' then`: The code proceeds only if the initial sync hasn't been marked as complete.
+3.  `Send(...)`: The relevant state (`Balances`, `TotalSupply`) is sent to the `patch` device, making it available under `/cache/Balances` and `/cache/TotalSupply`.
+4.  `InitialSync = 'COMPLETE'`: The flag is updated, so this block won't execute again in future message handlers within the same process lifecycle.
+
+This ensures that clients or frontends can immediately query essential data like token balances as soon as the process ID is known, improving the responsiveness of applications built on AO.
+
 ## Example (Lua in `aos`)
 
 ```lua
