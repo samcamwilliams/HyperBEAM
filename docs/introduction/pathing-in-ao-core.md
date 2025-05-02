@@ -33,14 +33,14 @@ Devices in AO-Core expose keys accessible via path components. Each key executes
 
 Under the surface, these keys represent AO-Core messages. As we progress through the path, AO-Core applies each message to the existing state. You can access the full process state by visiting:
 ```
-/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
+/<procId>~process@1.0/now
 ```
 
 ### State Navigation
 
 You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `at-slot`, you can access it like this:
 ```
-/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/compute/at-slot
+/<procId>~process@1.0/compute/at-slot
 ```
 This shows the latest 'slot' (number of interactions) of your process. Each response is:
 
