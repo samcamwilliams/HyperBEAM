@@ -1,21 +1,17 @@
 :root {
-    --bg-color: #ffffff;
-    --section-bg-color-primary: #fafafa;
-    --section-bg-color-alt1: #f4f4f4;
-
-    --border-color: #ababab;
-    --active-action-bg: #ededed;
-
+    --bg-color: #FFFFFF;
+    --section-bg-color-primary: #FAFAFA;
+    --section-bg-color-alt1: #F4F4F4;
+    --border-color: #ABABAB;
+    --active-action-bg: #EDEDED;
     --text-color-primary: #000000;
     --text-color-alt1: #646464;
     --text-color-light: #FFFFFF;
-
-    --link-color: #1a73e8;
-    --link-hover-color: #0c47a1;
-
-    --indicator-color: #27d735;
-    --indicator-color-active: #23be30;
-    --border-radius: 15px;
+    --link-color: #1A73E8;
+    --link-hover-color: #0C47A1;
+    --indicator-color: #27D735;
+    --indicator-color-active: #23BE30;
+    --border-radius: 7.5px;
 }
 
 @keyframes rotateInfinite {
@@ -108,16 +104,6 @@ a:hover {
     color: var(--link-hover-color);
 }
 
-.dashboard {
-    display: flex;
-    flex-direction: column;
-    gap: 40px;
-    padding: 40px;
-    max-width: 1460px;
-    margin: 0 auto;
-}
-
-/* Add styles for collapsible sections */
 .collapsible-header {
     cursor: pointer;
     display: flex;
@@ -656,16 +642,6 @@ a:hover {
 }
 
 .explorers-wrapper {
-    width: 100%;
-    display: flex;
-    gap: 25px;
-}
-
-.explorer-wrapper {
-    width: 50%;
-}
-
-/* .explorers-wrapper {
     width: 45%;
     display: flex;
     flex-direction: column;
@@ -674,11 +650,27 @@ a:hover {
 
 .explorer-wrapper {
     width: 100%;
-} */
+}
 
 .visual-wrapper {
     height: 600px;
     width: 60%;
+}
+
+.visual-body {
+    height: calc(100% - 50px);
+    width: 100%;
+}
+
+.visual-body iframe {
+    height: 100%;
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    border-bottom-left-radius: var(--border-radius);
+    border-bottom-right-radius: var(--border-radius);
 }
 
 .explorer-header {

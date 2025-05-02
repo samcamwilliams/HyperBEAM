@@ -12,7 +12,7 @@
             href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
             rel="stylesheet"
         />
-        <link rel="stylesheet" href="../../styles.css" />
+        <link rel="stylesheet" href="/~hyperbuddy@1.0/styles.css" />
 
         <title>HyperBEAM</title>
     </head>
@@ -105,100 +105,32 @@
                         </div>
                     </div>
 
-                    <!-- <div class="visual-wrapper border-wrapper-primary">
-
-                    </div> -->
+                    <div class="visual-wrapper">
+                        <div class="tabs-wrapper">
+                            <div class="tabs">
+                                <button
+                                    class="tab-button active"
+                                    data-id="hyperbuddy"
+                                    data-tab="hyperbuddy-tab"
+                                >
+                                    Hyperbuddy
+                                </button>
+                                <button
+                                    class="tab-button"
+                                    data-id="json"
+                                    data-tab="json-tab"
+                                >
+                                    JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div class="visual-body"></div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <script>
-            /**
-             * Reconstruct the exact "signature base string" for a single entry:
-             * 1) the raw signature-input entry (label=(...);alg="…";keyid="…"[;tag="…"])
-             * 2) one line per covered field: "name: value" or "(status): 200"
-             */
-            function buildSigningString(entry, parsedHeaders, response) {
-                // Find the raw entry text:
-                const rawEntry = response.signatureInputRaw
-                    .split(/\s*,\s*/)
-                    .find((e) => e.startsWith(entry.label + "="));
-                // Build each covered line
-                const lines = entry.fields.map((f) => {
-                    if (f.toLowerCase() === "status") {
-                        return `(status): ${response.status}`;
-                    }
-                    const name = f.toLowerCase();
-                    const val = parsedHeaders[name]?.data ?? "";
-                    return `${name}: ${val}`;
-                });
-                return rawEntry + "\n" + lines.join("\n");
-            }
-
-            /**
-             * Verify the HTTP Message Signature on the given response.
-             * @param {{[header:string]:{data:string}}} parsedHeaders
-             * @param {Response} response
-             * @returns {Promise<boolean>}
-             */
-            async function verifySignature(parsedHeaders, response) {
-                const sigInputRaw = parsedHeaders["signature-input"]?.data;
-                const sigRaw = parsedHeaders["signature"]?.data;
-                if (!sigInputRaw || !sigRaw) return false;
-
-                // Stash for buildSigningString
-                response.signatureInputRaw = sigInputRaw;
-
-                // Parse inputs + signatures
-                const entries = parseSignatureInput(sigInputRaw);
-                console.log(entries);
-                const sigParts = parseSignatureHeader(sigRaw);
-                console.log(sigParts);
-
-                // Pick the RSA-PSS-SHA512 entry
-                const entry = entries.find(
-                    (e) => e.alg.toLowerCase() === "rsa-pss-sha512"
-                );
-                if (!entry) return false;
-
-                // Get the matching signature
-                const sigObj = sigParts.find((s) => s.label === entry.label);
-                if (!sigObj) return false;
-                const signatureBytes = base64UrlToUint8Array(sigObj.sig);
-
-                console.log(signatureBytes);
-
-                // Import the public key (SPKI DER)
-                const pubKeyBytes = base64UrlToUint8Array(entry.keyid);
-                console.log(pubKeyBytes);
-                const publicKey = await crypto.subtle.importKey(
-                    "spki",
-                    pubKeyBytes,
-                    { name: "RSA-PSS", hash: "SHA-512" },
-                    false,
-                    ["verify"]
-                );
-
-                console.log(publicKey);
-
-                // Build the signing string
-                const signingString = buildSigningString(
-                    entry,
-                    parsedHeaders,
-                    response
-                );
-                const data = new TextEncoder().encode(signingString);
-
-                // Verify with RSA-PSS / SHA-512
-                const ok = await crypto.subtle.verify(
-                    { name: "RSA-PSS", saltLength: 64 },
-                    publicKey,
-                    signatureBytes,
-                    data
-                );
-                return ok;
-            }
-
             function parseHeaders(input) {
                 const out = {};
                 input
@@ -252,18 +184,6 @@
                 });
             }
 
-            /**
-             * Parse the Signature header into {label, sig}[]
-             */
-            function parseSignatureHeader(sigRaw) {
-                return sigRaw.split(/\s*,\s*/).map((part) => {
-                    const [label, rest] = part.split("=");
-                    // drop leading/trailing colons, e.g. :BASE64URL:
-                    const sig = rest.replace(/^:+|:+$/g, "");
-                    return { label, sig };
-                });
-            }
-
             function joinHeaders(headers) {
                 return Array.from(headers.entries())
                     .map(([name, value]) => `${name}: ${value}`)
@@ -307,7 +227,6 @@
                         (e) => e.alg.toLowerCase() !== "hmac-sha256"
                     ) || entries[0];
                 const rawKeyId = realEntry.keyid;
-                console.log("using keyid:", rawKeyId);
 
                 // Now decode it to bytes (base64url → Uint8Array)
                 const pubKeyBytes = base64UrlToUint8Array(rawKeyId);
@@ -366,8 +285,12 @@
                                 if (!wrapper._loaded) {
                                     wrapper._loaded = true;
                                     try {
-                                        const res = await fetch(`${window.location.origin}/${data}`);
-                                        const raw = joinHeaders(res.headers).trim();
+                                        const res = await fetch(
+                                            `${window.location.origin}/${data}`
+                                        );
+                                        const raw = joinHeaders(
+                                            res.headers
+                                        ).trim();
                                         const child = parseHeaders(raw);
 
                                         await renderExplorer(
@@ -431,9 +354,9 @@
                 container.appendChild(body);
             }
 
-            function renderSignature(signature, signer, isValid) {
+            function renderSignature(signature, signer) {
                 const wrapper = document.querySelector(".signature-wrapper");
-                
+
                 while (wrapper.firstChild) {
                     wrapper.removeChild(wrapper.firstChild);
                 }
@@ -449,18 +372,6 @@
                 signatureValue.innerText = signature;
                 signatureLine.appendChild(signatureValue);
 
-                // const statusLine = document.createElement("div");
-                // statusLine.classList.add("signature-line");
-
-                // const statusKey = document.createElement("span");
-                // statusKey.innerText = "Status";
-                // statusLine.appendChild(statusKey);
-
-                // const statusValue = document.createElement("p");
-                // statusValue.classList.add("status-indicator");
-                // statusValue.innerText = isValid ? "Verified" : "Invalid";
-                // statusLine.appendChild(statusValue);
-
                 const signerLine = document.createElement("div");
                 signerLine.classList.add("signature-line");
 
@@ -474,7 +385,6 @@
                 signerLine.appendChild(signerValue);
 
                 wrapper.appendChild(signatureLine);
-                // wrapper.appendChild(statusLine);
                 wrapper.appendChild(signerLine);
             }
 
@@ -483,11 +393,8 @@
                 const raw = joinHeaders(res.headers).trim();
                 const parsed = parseHeaders(raw);
 
-                // const isValid = await verifySignature(parsed, res);
-
                 const signature = res.headers.get("signature");
                 if (signature) {
-                    console.log(parsed["signature-input"]);
                     const signatureInput =
                         parsed["signature-input"]?.data ?? "";
 
@@ -495,7 +402,7 @@
                         ? await getSignerAddress(signatureInput)
                         : "Unknown";
 
-                    renderSignature(signature, signer, true);
+                    renderSignature(signature, signer);
                 }
 
                 // Get the signature-input header string
@@ -535,6 +442,39 @@
                     ).innerText = `(${Object.keys(links).length}) Links`;
                 }
             }
+
+            document.addEventListener("DOMContentLoaded", () => {
+                const container = document.querySelector(".visual-body");
+                const tabs = document.querySelectorAll(".tab-button");
+                
+                const makeIframe = (device) => {
+                    const iframe = document.createElement("iframe");
+                    iframe.src = `${window.location.href}/format~${device}@1.0`;
+                    iframe.id = "preview-frame";
+                    iframe.style.width = "100%";
+                    iframe.style.height = "100%";
+                    return iframe;
+                };
+
+                // 1) On load: insert the iframe for whichever tab is already `.active`
+                const initial = document.querySelector(".tab-button.active");
+                if (initial)
+                    container.appendChild(makeIframe(initial.dataset.id));
+                
+                tabs.forEach((tab) => {
+                    tab.addEventListener("click", () => {
+                        document
+                            .querySelectorAll(".tab-button.active")
+                            .forEach((t) => t.classList.remove("active"));
+                        tab.classList.add("active");
+                        
+                        const old = document.getElementById("preview-frame");
+                        if (old) old.remove();
+                        
+                        container.appendChild(makeIframe(tab.dataset.id));
+                    });
+                });
+            });
 
             renderInitialMessage();
         </script>

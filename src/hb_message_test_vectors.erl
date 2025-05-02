@@ -34,7 +34,7 @@ test_opts(_) ->
             [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/httpsig">>
+                    <<"prefix">> => <<"cache-mainnet">>
                 }
             ],
         priv_wallet => hb:wallet()
