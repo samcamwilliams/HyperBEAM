@@ -146,10 +146,10 @@ a:hover {
 }
 
 .header-hyperbeam-chain {
+    height: 180px;
     position: absolute;
     right: 0;
     z-index: 1;
-    opacity: 30%;
 }
 
 .header {
@@ -160,12 +160,11 @@ a:hover {
 	width: 100%;
 	position: relative;
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: space-between;
 	overflow: hidden;
 	flex-wrap: wrap;
 	gap: 10px;
-	padding: 0px 40px 0px 0px;
 	border: 1px solid var(--border-color);
 	border-radius: 5px;
 }
@@ -749,12 +748,12 @@ a:hover {
 }
 
 .visual-wrapper {
-    height: 600px;
+    min-height: 600px;
     width: 60%;
 }
 
 .visual-body {
-    height: calc(100% - 50px);
+    height: calc(100% - 57.5px);
     width: 100%;
 }
 
@@ -964,8 +963,8 @@ a:hover {
 .graph-link {
 	position: absolute;
 	z-index: 100;
-	top: -18px;
-	right: -18px;
+	top: 22.5px;
+    right: 21.5px;
 	background: var(--section-bg-color-primary);
 	border-radius: 5px;
 	border: 0.5px solid var(--border-color);

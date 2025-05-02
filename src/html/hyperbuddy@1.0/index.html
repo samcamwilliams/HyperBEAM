@@ -19,47 +19,56 @@
     <body>
         <div class="view-wrapper">
             <div class="header">
-                <div class="header-hyperbeam-chain">
-                    <video autoplay muted loop playsinline width="500">
-                        <source
-                            src="https://arweave.net/kvebTQY2E5J7Zx-SSnsbwxIqS0-BxII9Bb0bQc__Rmg"
-                            type="video/mp4"
-                        />
-                    </video>
-                </div>
-                <div class="header-main">
-                    <div class="header-left">
-                        <div class="video-container">
-                            <video
-                                autoplay
-                                muted
-                                loop
-                                playsinline
-                                width="500"
-                                class="light-video"
-                            >
-                                <source
-                                    src="https://arweave.net/ewmiCoSJpWpNv02F7AW5ZCp4meyaJxZHbOD4WEsuDFY"
-                                    type="video/mp4"
-                                />
-                                Your browser does not support the video tag.
-                            </video>
+                <a
+                    class="graph-link"
+                    href="/~cacheviz@1.0/index?target=."
+                    target="_blank"
+                >
+                    Cache Visualizer
+                </a>
+                <div class="header-inner">
+                    <div class="header-hyperbeam-chain">
+                        <video autoplay muted loop playsinline width="500">
+                            <source
+                                src="https://arweave.net/kvebTQY2E5J7Zx-SSnsbwxIqS0-BxII9Bb0bQc__Rmg"
+                                type="video/mp4"
+                            />
+                        </video>
+                    </div>
+                    <div class="header-main">
+                        <div class="header-left">
+                            <div class="video-container">
+                                <video
+                                    autoplay
+                                    muted
+                                    loop
+                                    playsinline
+                                    width="500"
+                                    class="light-video"
+                                >
+                                    <source
+                                        src="https://arweave.net/ewmiCoSJpWpNv02F7AW5ZCp4meyaJxZHbOD4WEsuDFY"
+                                        type="video/mp4"
+                                    />
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="subheader">
-                    <div class="subheader-value">
-                        <p>Status:</p>
-                        <div class="subheader-indicator-wrapper">
-                            <div class="subheader-indicator"></div>
-                            <p>Live</p>
+                    <div class="subheader">
+                        <div class="subheader-value">
+                            <p>Status:</p>
+                            <div class="subheader-indicator-wrapper">
+                                <div class="subheader-indicator"></div>
+                                <p>Live</p>
+                            </div>
                         </div>
-                    </div>
-                    <div class="subheader-value">
-                        <p>Operator:</p>
-                        <button id="operator-action" disabled="true">
-                            Loading...
-                        </button>
+                        <div class="subheader-value">
+                            <p>Operator:</p>
+                            <button id="operator-action" disabled="true">
+                                Loading...
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -110,17 +119,17 @@
                             <div class="tabs">
                                 <button
                                     class="tab-button active"
-                                    data-id="hyperbuddy"
+                                    data-id="hyperbuddy@1.0/format"
                                     data-tab="hyperbuddy-tab"
                                 >
                                     Hyperbuddy
                                 </button>
                                 <button
                                     class="tab-button"
-                                    data-id="json"
-                                    data-tab="json-tab"
+                                    data-id="cacheviz@1.0/index"
+                                    data-tab="cacheviz-tab"
                                 >
-                                    JSON
+                                    Cacheviz
                                 </button>
                             </div>
                         </div>
@@ -446,10 +455,10 @@
             document.addEventListener("DOMContentLoaded", () => {
                 const container = document.querySelector(".visual-body");
                 const tabs = document.querySelectorAll(".tab-button");
-                
+
                 const makeIframe = (device) => {
                     const iframe = document.createElement("iframe");
-                    iframe.src = `${window.location.href}/format~${device}@1.0`;
+                    iframe.src = `${window.location.href}/~${device}`;
                     iframe.id = "preview-frame";
                     iframe.style.width = "100%";
                     iframe.style.height = "100%";
@@ -460,23 +469,29 @@
                 const initial = document.querySelector(".tab-button.active");
                 if (initial)
                     container.appendChild(makeIframe(initial.dataset.id));
-                
+
                 tabs.forEach((tab) => {
                     tab.addEventListener("click", () => {
                         document
                             .querySelectorAll(".tab-button.active")
                             .forEach((t) => t.classList.remove("active"));
                         tab.classList.add("active");
-                        
+
                         const old = document.getElementById("preview-frame");
                         if (old) old.remove();
-                        
+
                         container.appendChild(makeIframe(tab.dataset.id));
                     });
                 });
             });
 
             renderInitialMessage();
+        </script>
+
+        <script type="module">
+            import { fetchInfo } from "/~hyperbuddy@1.0/devices.js"
+            
+            fetchInfo();
         </script>
     </body>
 </html>
