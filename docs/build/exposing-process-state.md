@@ -97,8 +97,7 @@ Using reserved keywords as your cache keys can lead to routing conflicts or prev
 It's recommended to use descriptive and specific keys for your cached data to prevent clashes with the underlying HyperPATH routing mechanisms. For example, instead of `cache = { state = ... }`, prefer `cache = { myappstate = ... }` or `cache = { usercount = ... }`.
 
 !!! warning
-    Additionally, be aware that while the `patch` device might store keys with case sensitivity (e.g., `MyKey` vs `mykey`), the HyperPATH resolution for HTTP GET requests might be case-insensitive or normalize to lowercase. This can lead to ambiguity. To avoid potential issues where `cache = { MyKey = "value1" }` and `cache = { mykey = "value2" }` might conflict or overwrite each other unpredictably when accessed via HTTP, it is strongly recommended to use **consistently lowercase keys** within the `cache` table (e.g., `mykey`, `usercount`, `appstate`).
-
+    Be aware that HTTP path resolution is case-insensitive and automatically normalizes paths to lowercase. While the `patch` device itself stores keys with case sensitivity (e.g., distinguishing `MyKey` from `mykey`), accessing them via an HTTP GET request will treat `/cache/MyKey` and `/cache/mykey` as the same path. This means that using keys that only differ in case (like `MyKey` and `mykey` in your `cache` table) will result in unpredictable behavior or data overwrites when accessed via HyperPATH. To prevent these issues, it is **strongly recommended** to use **consistently lowercase keys** within the `cache` table (e.g., `mykey`, `usercount`, `appstate`).
 
 ## Key Points
 
