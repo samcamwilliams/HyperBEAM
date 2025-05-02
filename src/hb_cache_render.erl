@@ -1,6 +1,7 @@
 %%% @doc A module that helps to render given Key graphs into the .dot files
 -module(hb_cache_render).
 -export([render/1, render/2, cache_path_to_dot/2, cache_path_to_dot/3, dot_to_svg/1]).
+-export([get_graph_data/3]).
 % Preparing data for testing
 -export([prepare_unsigned_data/0, prepare_signed_data/0,
     prepare_deeply_nested_complex_message/0]).
@@ -30,11 +31,10 @@ cache_path_to_graph(ToRender, GraphOpts, StoreOrOpts) when is_map(StoreOrOpts) -
     cache_path_to_graph(ToRender, GraphOpts, Store);
 cache_path_to_graph(all, GraphOpts, Store) ->
     {ok, Keys} = hb_store:list(Store, "/"),
-    cache_path_to_graph(Store, GraphOpts, Keys);
+    cache_path_to_graph(Keys, GraphOpts, Store);
 cache_path_to_graph(InitPath, GraphOpts, Store) when is_binary(InitPath) ->
-    {ok, Keys} = hb_store:list(Store, InitPath),
-    cache_path_to_graph(Store, GraphOpts, Keys);
-cache_path_to_graph(Store, GraphOpts, RootKeys) ->
+    cache_path_to_graph([InitPath], GraphOpts, Store);
+cache_path_to_graph(RootKeys, GraphOpts, Store) ->
     % Use a map to track nodes, arcs and visited paths (to avoid cycles)
     EmptyGraph = GraphOpts#{ nodes => #{}, arcs => #{}, visited => #{} },
     % Process all root keys and get the final graph
@@ -198,6 +198,95 @@ collect_output(Port, Acc) ->
             iolist_to_binary(lists:reverse(Acc))
     after 10000 ->
         {error, timeout}
+    end.
+
+%% @doc Get graph data for the Three.js visualization
+get_graph_data(Base, MaxSize, Opts) ->
+    % Get the store from options
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    % Try to generate graph using hb_cache_render
+    Graph =
+        try
+            % Use hb_cache_render to build the graph
+            cache_path_to_graph(Base, #{}, Store)
+        catch
+            Error:Reason:Stack -> 
+                ?event({hyperbuddy_graph_error, Error, Reason, Stack}),
+                #{nodes => #{}, arcs => #{}, visited => #{}}
+        end,
+    % Extract nodes and links for the visualization
+    NodesMap = maps:get(nodes, Graph, #{}),
+    ArcsMap = maps:get(arcs, Graph, #{}),
+    % Limit to top `MaxSize` nodes if there are too many
+    NodesList = 
+        case maps:size(NodesMap) > MaxSize of
+            true ->
+                % Take a subset of nodes
+                {ReducedNodes, _} = lists:split(
+                    MaxSize,
+                    maps:to_list(NodesMap)
+                ),
+                ReducedNodes;
+            false ->
+                maps:to_list(NodesMap)
+        end,
+    % Get node IDs for filtering links
+    NodeIds = [ID || {ID, _} <- NodesList],
+    % Convert to JSON format for web visualization
+    Nodes =
+        [
+                #{
+                    <<"id">> => ID,
+                    <<"label">> => get_label(hb_util:bin(ID)),
+                    <<"type">> => get_node_type(Color)
+                }
+            ||
+                {ID, {_, Color}} <- NodesList
+        ],
+    % Filter links to only include those between nodes we're showing
+    FilteredLinks =
+        [
+                {From, To, Label}
+            ||
+                {From, To, Label} <- maps:keys(ArcsMap),
+                    lists:member(From, NodeIds)
+                    andalso lists:member(To, NodeIds)
+        ],
+    Links =
+        [
+                #{
+                    <<"source">> => From,
+                    <<"target">> => To,
+                    <<"label">> => Label
+                }
+            ||
+                {From, To, Label} <- FilteredLinks
+        ],
+    % Return the JSON data
+    JsonData = hb_json:encode(#{ <<"nodes">> => Nodes, <<"links">> => Links }),
+    {ok, #{
+        <<"body">> => JsonData,
+        <<"content-type">> => <<"application/json">>
+    }}.
+
+%% @doc Convert node color from hb_cache_render to node type for visualization
+get_node_type(Color) ->
+    case Color of
+        "lightblue" -> <<"simple">>;
+        "lightcoral" -> <<"composite">>;
+        _ -> <<"unknown">>
+    end.
+
+%% @doc Extract a readable label from a path
+get_label(Path) ->
+    case binary:split(Path, <<"/">>, [global]) of
+        [] -> Path;
+        Parts -> 
+            FilteredParts = [P || P <- Parts, P /= <<>>],
+            case FilteredParts of
+                [] -> Path;
+                _ -> lists:last(FilteredParts)
+            end
     end.
 
 % Test data preparation functions
