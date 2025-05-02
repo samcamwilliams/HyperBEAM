@@ -153,16 +153,21 @@ a:hover {
 }
 
 .header {
-    width: 100%;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    overflow: hidden;
-    flex-wrap: wrap;
-    gap: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
+	position: relative;
+}
+
+.header-inner {
+	width: 100%;
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	overflow: hidden;
+	flex-wrap: wrap;
+	gap: 10px;
+	padding: 0px 40px 0px 0px;
+	border: 1px solid var(--border-color);
+	border-radius: 5px;
 }
 
 .header-logo {
@@ -446,6 +451,97 @@ a:hover {
     display: block;
 }
 
+@keyframes pulse {
+
+	0%,
+	100% {
+		background: var(--indicator-color);
+		transform: scale(1);
+	}
+
+	50% {
+		background: var(--indicator-color-active);
+		transform: scale(1.15);
+	}
+}
+
+
+@media (max-width: 1024px) {
+	.header-hyperbeam-chain {
+		width: 300px;
+		margin-top: -50px;
+	}
+
+	.header-inner {
+		position: relative;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 40px;
+		overflow: hidden;
+		padding: 30px;
+	}
+
+	.subheader {
+		align-items: flex-start;
+		z-index: 2;
+	}
+
+	.subheader-value {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.section-group {
+		flex-direction: column;
+	}
+
+	.tab-content .device-cards-container {
+		grid-template-columns: repeat(1, 1fr);
+
+	}
+
+	/* 
+  .section-line {
+	height: fit-content;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 15px;
+  } */
+}
+
+@media (max-width: 800px) {
+	.header-inner {
+		padding: 20px;
+	}
+
+	.header-left .light-video {
+		width: 400px;
+	}
+
+	.header-left {
+		margin-left: -70px;
+	}
+
+
+}
+
+
+@media (max-width: 500px) {
+	.header-inner {
+		padding: 20px;
+	}
+
+	.header-left .light-video {
+		width: 300px;
+	}
+
+	.header-left {
+		margin-left: -50px;
+	}
+}
+
+/* Add styles for device cards */
 .device-cards-container {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -862,4 +958,30 @@ a:hover {
     .tab-content .device-cards-container {
         grid-template-columns: repeat(1, 1fr);
     }
+}
+
+/* Graph visualization styles */
+.graph-link {
+	position: absolute;
+	z-index: 100;
+	top: -18px;
+	right: -18px;
+	background: var(--section-bg-color-primary);
+	border-radius: 5px;
+	border: 0.5px solid var(--border-color);
+	height: 36px;
+	padding: 0px 12px;
+	font-size: clamp(0.6rem, 1.75vw, 0.9rem);
+    font-weight: 500;
+    color: var(--text-color-primary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.graph-link:hover {
+	background: var(--section-bg-color-alt1);
+	color: var(--indicator-color-active);
+	text-decoration: none;
+
 }

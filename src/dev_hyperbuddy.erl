@@ -1,6 +1,6 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
--export([info/0, format/3, metrics/3]).
+-export([info/0, format/3, metrics/3, return_file/2]).
 -include_lib("include/hb.hrl").
 
 %% @doc Export an explicit list of files via http.
@@ -14,13 +14,16 @@ info() ->
             <<"dashboard">> => <<"dashboard.html">>,
             % Interactive REPL:
             <<"console">> => <<"console.html">>,
+            <<"graph">> => <<"graph.html">>,
             % Styling and scripts:
 			<<"styles.css">> => <<"styles.css">>,
 			<<"metrics.js">> => <<"metrics.js">>,
 			<<"devices.js">> => <<"devices.js">>,
 			<<"utils.js">> => <<"utils.js">>,
-			<<"main.js">> => <<"main.js">>
-        }
+			<<"main.js">> => <<"main.js">>,
+			<<"graph.js">> => <<"graph.js">>
+        },
+        excludes => [<<"return_file">>]
     }.
 
 %% @doc The main HTML page for the REPL device.
@@ -89,8 +92,10 @@ serve(Key, _, _, _) ->
 
 %% @doc Read a file from disk and serve it as a static HTML page.
 return_file(Name) ->
+    return_file(<<"hyperbuddy@1.0">>, Name).
+return_file(Device, Name) ->
     Base = hb_util:bin(code:priv_dir(hb)),
-    Filename = <<Base/binary, "/html/hyperbuddy@1.0/", Name/binary >>,
+    Filename = <<Base/binary, "/html/", Device/binary, "/", Name/binary >>,
     ?event({hyperbuddy_serving, Filename}),
     {ok, Body} = file:read_file(Filename),
     {ok, #{
