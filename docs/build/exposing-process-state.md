@@ -60,6 +60,19 @@ Handlers.add(
 [aos]> ReadState(MyProcess).cache.currentStatus
 ```
 
+## Avoiding Key Conflicts
+
+When defining keys within the `cache` table (e.g., `cache = { myDataKey = MyValue }`), these keys become path segments under `/cache/` (e.g., `/compute/cache/myDataKey` or `/now/cache/myDataKey`). It's important to choose keys that do not conflict with existing, reserved path segments used by HyperBEAM or the `~process` device itself for state access.
+
+Using reserved keywords as your cache keys can lead to routing conflicts or prevent you from accessing your patched data as expected. While the exact list can depend on device implementations, it's wise to avoid keys commonly associated with state access, such as:
+
+*   `now`
+*   `compute`
+*   `state`
+*   `info`
+
+It's recommended to use descriptive and specific keys for your cached data to prevent clashes with the underlying HyperPATH routing mechanisms. For example, instead of `cache = { state = ... }`, prefer `cache = { myAppState = ... }` or `cache = { userCount = ... }`.
+
 ## Key Points
 
 *   **Path Structure:** The data is exposed under the `/cache/` path segment. The tag name you use *inside* the `cache` table in the `Send` call (e.g., `currentStatus`) becomes the final segment in the accessible HyperPATH (e.g., `/compute/cache/currentStatus`).
