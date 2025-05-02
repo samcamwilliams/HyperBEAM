@@ -20,18 +20,18 @@ This is particularly useful for:
 2.  **Patch Message Format:** This outbound message typically includes tags that specify:
     *   `device = 'patch@1.0'`
     *   A `cache` tag containing a table. The **keys** within this table become the final segments in the HyperPATH used to access the data, and the **values** are the data itself.
-    *   Example Lua using `aos`: `Send({ Target = ao.id, device = 'patch@1.0', cache = { myDataKey = MyValue } })`
+    *   Example Lua using `aos`: `Send({ Target = ao.id, device = 'patch@1.0', cache = { mydatakey = MyValue } })`
 3.  **HyperBEAM Execution:** When HyperBEAM executes the process schedule and encounters this outbound message:
     *   It invokes the `dev_patch` module.
     *   `dev_patch` inspects the message.
-    *   It takes the keys from the `cache` table (`myDataKey` in the example) and their associated values (`MyValue`) and makes these values available under the `/cache/` path segment.
+    *   It takes the keys from the `cache` table (`mydatakey` in the example) and their associated values (`MyValue`) and makes these values available under the `/cache/` path segment.
 4.  **HTTP Access:** You (or any HTTP client) can now access this data directly using a GET request:
     ```
-    GET /<process-id>~process@1.0/compute/cache/<myDataKey>
+    GET /<process-id>~process@1.0/compute/cache/<mydatakey>
     # Or potentially using /now/
-    GET /<process-id>~process@1.0/now/cache/<myDataKey>
+    GET /<process-id>~process@1.0/now/cache/<mydatakey>
     ```
-    The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`myDataKey`) to return the `MyValue` directly.
+    The HyperBEAM node serving the request will resolve the path up to `/compute/cache` (or `/now/cache`), then use the logic associated with the patched data (`mydatakey`) to return the `MyValue` directly.
 
 ## Initial State Sync (Optional)
 
@@ -49,7 +49,7 @@ InitialSync = InitialSync or 'INCOMPLETE'
 -- Sync state on spawn/load if not already done
 if InitialSync == 'INCOMPLETE' then
   -- Send the relevant state variables to the patch device
-  Send({ Target = ao.id, device = 'patch@1.0', cache = { Balances = Balances, TotalSupply = TotalSupply } })
+  Send({ Target = ao.id, device = 'patch@1.0', cache = { balances = Balances, totalsupply = TotalSupply } })
   -- Update the flag to prevent re-syncing on subsequent executions
   InitialSync = 'COMPLETE'
   print("Initial state sync complete. Balances and TotalSupply patched.")
@@ -60,7 +60,7 @@ end
 
 1.  `InitialSync = InitialSync or 'INCOMPLETE'`: This line ensures the `InitialSync` variable exists in the process state, initializing it to `'INCOMPLETE'` if it's the first time the code runs.
 2.  `if InitialSync == 'INCOMPLETE' then`: The code proceeds only if the initial sync hasn't been marked as complete.
-3.  `Send(...)`: The relevant state (`Balances`, `TotalSupply`) is sent to the `patch` device, making it available under `/cache/Balances` and `/cache/TotalSupply`.
+3.  `Send(...)`: The relevant state (`Balances`, `TotalSupply`) is sent to the `patch` device, making it available under `/cache/balances` and `/cache/totalsupply`.
 4.  `InitialSync = 'COMPLETE'`: The flag is updated, so this block won't execute again in future message handlers within the same process lifecycle.
 
 This ensures that clients or frontends can immediately query essential data like token balances as soon as the process ID is known, improving the responsiveness of applications built on AO.
@@ -74,9 +74,9 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action", "PublishData"),
   function (msg)
     local dataToPublish = "Some important state: " .. math.random()
-    -- Expose 'currentStatus' key under the 'cache' path
-    Send({ Target = ao.id, device = 'patch@1.0', cache = { currentStatus = dataToPublish } })
-    print("Published data to /cache/currentStatus")
+    -- Expose 'currentstatus' key under the 'cache' path
+    Send({ Target = ao.id, device = 'patch@1.0', cache = { currentstatus = dataToPublish } })
+    print("Published data to /cache/currentstatus")
   end
 )
 
@@ -86,28 +86,23 @@ Handlers.add(
 [aos]> Send({ Target = MyProcess, Action = "PublishData" })
 -- Wait a moment for scheduling
 
--- Now you can access the data via HTTP (using curl or a browser)
--- GET <node_url>/<MyProcess_ID>~process@1.0/compute/cache/currentStatus
--- Or using aos utilities if available (assuming ReadState reflects this structure):
-[aos]> ReadState(MyProcess).cache.currentStatus
 ```
 
 ## Avoiding Key Conflicts
 
-When defining keys within the `cache` table (e.g., `cache = { myDataKey = MyValue }`), these keys become path segments under `/cache/` (e.g., `/compute/cache/myDataKey` or `/now/cache/myDataKey`). It's important to choose keys that do not conflict with existing, reserved path segments used by HyperBEAM or the `~process` device itself for state access.
+When defining keys within the `cache` table (e.g., `cache = { mydatakey = MyValue }`), these keys become path segments under `/cache/` (e.g., `/compute/cache/mydatakey` or `/now/cache/mydatakey`). It's important to choose keys that do not conflict with existing, reserved path segments used by HyperBEAM or the `~process` device itself for state access.
 
-Using reserved keywords as your cache keys can lead to routing conflicts or prevent you from accessing your patched data as expected. While the exact list can depend on device implementations, it's wise to avoid keys commonly associated with state access, such as:
+Using reserved keywords as your cache keys can lead to routing conflicts or prevent you from accessing your patched data as expected. While the exact list can depend on device implementations, it's wise to avoid keys commonly associated with state access, such as: `now`, `compute`, `state`, `info`, `test`.
 
-*   `now`
-*   `compute`
-*   `state`
-*   `info`
+It's recommended to use descriptive and specific keys for your cached data to prevent clashes with the underlying HyperPATH routing mechanisms. For example, instead of `cache = { state = ... }`, prefer `cache = { myappstate = ... }` or `cache = { usercount = ... }`.
 
-It's recommended to use descriptive and specific keys for your cached data to prevent clashes with the underlying HyperPATH routing mechanisms. For example, instead of `cache = { state = ... }`, prefer `cache = { myAppState = ... }` or `cache = { userCount = ... }`.
+!!! warning
+    Additionally, be aware that while the `patch` device might store keys with case sensitivity (e.g., `MyKey` vs `mykey`), the HyperPATH resolution for HTTP GET requests might be case-insensitive or normalize to lowercase. This can lead to ambiguity. To avoid potential issues where `cache = { MyKey = "value1" }` and `cache = { mykey = "value2" }` might conflict or overwrite each other unpredictably when accessed via HTTP, it is strongly recommended to use **consistently lowercase keys** within the `cache` table (e.g., `mykey`, `usercount`, `appstate`).
+
 
 ## Key Points
 
-*   **Path Structure:** The data is exposed under the `/cache/` path segment. The tag name you use *inside* the `cache` table in the `Send` call (e.g., `currentStatus`) becomes the final segment in the accessible HyperPATH (e.g., `/compute/cache/currentStatus`).
+*   **Path Structure:** The data is exposed under the `/cache/` path segment. The tag name you use *inside* the `cache` table in the `Send` call (e.g., `currentstatus`) becomes the final segment in the accessible HyperPATH (e.g., `/compute/cache/currentstatus`).
 *   **Data Types:** The `patch` device typically handles basic data types (strings, numbers) within the `cache` table effectively. Complex nested tables might require specific encoding or handling.
 *   **`compute` vs `now`:** Accessing patched data via `/compute/cache/...` typically serves the last known patched value quickly. Accessing via `/now/cache/...` might involve more computation to ensure the absolute latest state before checking for the patched key under `/cache/`.
 *   **Not a Replacement for State:** Patching is primarily for *exposing* reads. It doesn't replace the core state management within your process handler logic.
