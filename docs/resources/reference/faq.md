@@ -27,6 +27,10 @@ You can build a wide range of applications, including:
 
 Yes, HyperBEAM is open-source software licensed under the MIT License.
 
+### What is the current focus or phase of HyperBEAM development?
+
+The initial development phase focuses on integrating AO processes more deeply with HyperBEAM. A key part of this is phasing out the reliance on traditional "dryrun" simulations for reading process state. Instead, processes are encouraged to use the [~patch@1.0 device](../../resources/source-code/dev_patch.md) to expose specific parts of their state directly via HyperPATH GET requests. This allows for more efficient and direct state access, particularly for web interfaces and external integrations. You can learn more about this mechanism in the [Exposing Process State with the Patch Device](../../build/exposing-process-state.md) guide.
+
 ## Installation and Setup
 
 ### What are the system requirements for running HyperBEAM?
