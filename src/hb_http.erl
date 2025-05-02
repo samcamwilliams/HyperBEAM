@@ -496,7 +496,8 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
 add_cors_headers(Msg, ReqHdr) ->
     CorHeaders = #{
         <<"access-control-allow-origin">> => <<"*">>,
-        <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>
+        <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
+        <<"access-control-expose-headers">> => <<"*">>
     },
      WithAllowHeaders = case ReqHdr of
         <<>> -> CorHeaders;
