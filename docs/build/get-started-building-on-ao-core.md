@@ -40,36 +40,87 @@ Simply run the command in your terminal:
 aos
 ```
 
-This launches an interactive Lua environment connected to the AO network. By default, it connects to the mainnet.
+This connects you to an interactive Lua environment running within a **process** on the AO network. This process acts as your command-line interface (CLI) to the AO network, allowing you to interact with other processes, manage your wallet, and develop new AO processes. By default, it connects to a process running on the mainnet Compute Unit (CU).
 
 **What `aos` is doing:**
 
-*   **Connecting:** Establishes a connection to AO network nodes (usually public routers).
-*   **Loading Wallet:** Looks for a default Arweave key file (usually `~/.aos.json` or specified via arguments) to sign outgoing messages.
-*   **Providing Interface:** Gives you a Lua prompt (`[aos]>`) where you can:
-    *   Load code for new processes.
-    *   Send messages to existing processes.
+*   **Connecting:** Establishes a connection from your terminal to a remote process running the `aos` environment.
+*   **Loading Wallet:** Looks for a default Arweave key file (usually `~/.aos.json` or specified via arguments) to load into the remote process context for signing outgoing messages.
+*   **Providing Interface:** Gives you a Lua prompt (`[aos]>`) within the remote process where you can:
+    *   Load code for new persistent processes on the network.
+    *   Send messages to existing network processes.
     *   Inspect process state.
     *   Manage your local environment.
 
-## Your First Interaction: Spawning a Process
+## Your First Interaction: Assigning a Variable
 
-From the `aos` prompt, you can spawn a simple process. Let's spawn a basic Lua process that just holds some data:
+From the `aos` prompt, you can assign a variable. Let's assign a basic Lua process that just holds some data:
 
 ```lua
-[aos]> .load my-first-process.lua
--- Assume my-first-process.lua contains: print("Hello from my process!")
+[aos]> myVariable = "Hello from aos!"
+-- This assigns the string "Hello from aos!" to the variable 'myVariable'
+-- within the current process's Lua environment.
 
-[aos]> MyProcess = spawn(MyModule)
--- This sends a message to AO to create a new process
--- using the code loaded from my-first-process.lua.
--- The unique process ID is stored in the 'MyProcess' variable.
-
-[aos]> MyProcess
--- Displays the Process ID
+[aos]> myVariable
+-- Displays the content of 'myVariable'
+Hello from aos!
 ```
 
-You've just created your first decentralized program on AO!
+
+## Your First Handler
+
+Follow these steps to create and interact with your first message handler in AO:
+
+1.  **Create a Lua File to Handle Messages:**
+    Create a new file named `main.lua` in your local directory and add the following Lua code:
+
+    ```lua
+    Handlers.add(
+      "HelloWorld",
+      function(msg)
+        -- This function gets called when a message with Action = "HelloWorld" arrives.
+        print("Handler triggered by message from: " .. msg.From)
+        -- It replies to the sender with a new message containing the specified data.
+        msg.reply({ Data = "Hello back from your process!" })
+      end
+    )
+
+    print("HelloWorld handler loaded.") -- Confirmation message
+    ```
+
+    *   `Handlers.add`: Registers a function to handle incoming messages.
+    *   `"HelloWorld"`: The name of this handler. It will be triggered by messages with `Action = "HelloWorld"`.
+    *   `function(msg)`: The function that executes when the handler is triggered. `msg` contains details about the incoming message (like `msg.From`, the sender's process ID).
+    *   `msg.reply({...})`: Sends a response message back to the original sender. The response must be a Lua table, typically containing a `Data` field.
+
+2.  **Load the Handler into `aos`:**
+    From your `aos` prompt, load the handler code into your running process:
+
+    ```lua
+    [aos]> .load main.lua
+    ```
+
+3.  **Send a Message to Trigger the Handler:**
+    Now, send a message to your own process (`ao.id` refers to the current process ID) with the action that matches your handler's name:
+
+    ```lua
+    [aos]> Send({ Target = ao.id, Action = "HelloWorld" })
+    ```
+
+4.  **Observe the Output:**
+    You should see two things happen in your `aos` terminal:
+    *   The `print` statement from your handler: `Handler triggered by message from: <your-process-id>`
+    *   A notification about the reply message: `New Message From <your-process-id>: Data = Hello back from your process!`
+
+5.  **Inspect the Reply Message:**
+    The reply message sent by your handler is now in your process's inbox. You can inspect its data like this:
+
+    ```lua
+    [aos]> Inbox[#Inbox].Data
+    ```
+    This should output: `"Hello back from your process!"`
+
+You've successfully created a handler, loaded it into your AO process, triggered it with a message, and received a reply!
 
 ## Next Steps
 
