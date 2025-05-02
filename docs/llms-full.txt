@@ -1,4 +1,4 @@
-Generated: 2025-05-02T14:36:17Z
+Generated: 2025-05-02T22:37:19Z
 
 --- START OF FILE: docs/devices/index.md ---
 # Devices
@@ -204,7 +204,7 @@ To retrieve the value associated with a specific key in the message map, simply 
 **Example:**
 
 ```
-http://localhost:10000/~message@1.0&hello=world&Key=Value/key
+GET /~message@1.0&hello=world&Key=Value/key
 ```
 
 **Response:**
@@ -240,7 +240,7 @@ Keys prefixed with `priv` (e.g., `priv_key`, `private.data`) are considered priv
 This example demonstrates creating a transient message and retrieving a value:
 
 ```
-http://localhost:10000/~message@1.0&hello=world&k=v/k
+GET /~message@1.0&hello=world&k=v/k
 ```
 
 **Breakdown:**
@@ -622,6 +622,10 @@ You can build a wide range of applications, including:
 ### Is HyperBEAM open source?
 
 Yes, HyperBEAM is open-source software licensed under the MIT License.
+
+### What is the current focus or phase of HyperBEAM development?
+
+The initial development phase focuses on integrating AO processes more deeply with HyperBEAM. A key part of this is phasing out the reliance on traditional "dryrun" simulations for reading process state. Instead, processes are encouraged to use the [~patch@1.0 device](../../resources/source-code/dev_patch.md) to expose specific parts of their state directly via HyperPATH GET requests. This allows for more efficient and direct state access, particularly for web interfaces and external integrations. You can learn more about this mechanism in the [Exposing Process State with the Patch Device](../../build/exposing-process-state.md) guide.
 
 ## Installation and Setup
 
