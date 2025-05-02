@@ -9,7 +9,7 @@ Understanding how to construct and interpret paths in AO-Core is fundamental to 
 Let's examine a typical HyperBEAM endpoint piece-by-piece:
 
 ```
-https://router-1.forward.computer/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
+https://router-1.forward.computer/<procId>~process@1.0/now
 ```
 
 ### Node URL (`router-1.forward.computer`)

@@ -10,10 +10,10 @@ use_directory_urls: false
 
 nav:
   - Introduction:
-      - What is AO-Core?: 'begin/what-is-ao-core.md'
-      - What is HyperBEAM?: 'begin/what-is-hyperbeam.md'
-      - AO Devices: 'begin/ao-devices.md'
-      - Pathing in AO-Core: 'begin/pathing-in-ao-core.md'
+      - What is AO-Core?: 'introduction/what-is-ao-core.md'
+      - What is HyperBEAM?: 'introduction/what-is-hyperbeam.md'
+      - AO Devices: 'introduction/ao-devices.md'
+      - Pathing in AO-Core: 'introduction/pathing-in-ao-core.md'
   - Run a Node:
       - Running a HyperBEAM node: 'run/running-a-hyperbeam-node.md'
       - Configuring your machine: 'run/configuring-your-machine.md'

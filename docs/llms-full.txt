@@ -1,185 +1,4 @@
-Generated: 2025-05-01T14:36:24Z
-
---- START OF FILE: docs/begin/ao-devices.md ---
-# AO Devices
-
-In AO-Core and its implementation HyperBEAM, **Devices** are modular components responsible for processing and interpreting [Messages](./what-is-ao-core.md#messages). They define the specific logic for how computations are performed, data is handled, or interactions occur within the AO ecosystem.
-
-Think of Devices as specialized engines or services that can be plugged into the AO framework. This modularity is key to AO's flexibility and extensibility.
-
-## Purpose of Devices
-
-*   **Define Computation:** Devices dictate *how* a message's instructions are executed. One device might run WASM code, another might manage process state, and yet another might simply relay data.
-*   **Enable Specialization:** Nodes running HyperBEAM can choose which Devices to support, allowing them to specialize in certain tasks (e.g., high-compute tasks, storage-focused tasks, secure TEE operations).
-*   **Promote Modularity:** New functionalities can be added to AO by creating new Devices, without altering the core protocol.
-*   **Distribute Workload:** Different Devices can handle different parts of a complex task, enabling parallel processing and efficient resource utilization across the network.
-
-## Familiar Examples
-
-HyperBEAM includes many preloaded devices that provide core functionality. Some key examples include:
-
-*   **[`~meta@1.0`](../devices/meta-at-1-0.md):** Configures the node itself (hardware specs, supported devices, payment info).
-*   **[`~process@1.0`](../devices/process-at-1-0.md):** Manages persistent, shared computational states (like traditional smart contracts, but more flexible).
-*   **[`~scheduler@1.0`](../devices/scheduler-at-1-0.md):** Handles the ordering and execution of messages within a process.
-*   **[`~wasm64@1.0`](../devices/wasm64-at-1-0.md):** Executes WebAssembly (WASM) code, allowing for complex computations written in languages like Rust, C++, etc.
-*   **[`~lua@5.3a`](../devices/lua-at-5-3a.md):** Executes Lua scripts.
-*   **[`~relay@1.0`](../devices/relay-at-1-0.md):** Forwards messages between AO nodes or to external HTTP endpoints.
-*   **[`~json@1.0`](../devices/json-at-1-0.md):** Provides access to JSON data structures using HyperPATHs.
-*   **[`~message@1.0`](../devices/message-at-1-0.md):** Manages message state and processing.
-*   **[`~patch@1.0`](../guides/exposing-process-state.md):** Applies state updates directly to a process, often used for migrating or managing process data.
-
-## Beyond the Basics
-
-Devices aren't limited to just computation or state management. They can represent more abstract concepts:
-
-*   **Security Devices ([`~snp@1.0`](../resources/source-code/dev_snp.md), [`dev_codec_httpsig`](../resources/source-code/dev_codec_httpsig.md)):** Handle tasks related to Trusted Execution Environments (TEEs) or message signing, adding layers of security and verification.
-*   **Payment/Access Control Devices ([`~p4@1.0`](../resources/source-code/dev_p4.md), [`~faff@1.0`](../resources/source-code/dev_faff.md)):** Manage metering, billing, or access control for node services.
-*   **Workflow/Utility Devices ([`dev_cron`](../resources/source-code/dev_cron.md), [`dev_stack`](../resources/source-code/dev_stack.md), [`dev_monitor`](../resources/source-code/dev_monitor.md)):** Coordinate complex execution flows, schedule tasks, or monitor process activity.
-
-## Using Devices
-
-Devices are typically invoked via [HyperPATHs](./pathing-in-ao-core.md). The path specifies which Device should interpret the subsequent parts of the path or the request body.
-
-```
-# Example: Execute the 'now' key on the process device for a specific process
-/PROCESS_ID~process@1.0/now
-
-# Example: Relay a GET request via the relay device
-/~relay@1.0/call?method=GET&path=https://example.com
-```
-
-The specific functions or 'keys' available for each Device are documented individually. See the [Devices section](../devices/index.md) for details on specific built-in devices. 
---- END OF FILE: docs/begin/ao-devices.md ---
-
---- START OF FILE: docs/begin/pathing-in-ao-core.md ---
-# Pathing in AO-Core
-
-## Overview
-
-Understanding how to construct and interpret paths in AO-Core is fundamental to working with HyperBEAM. This guide explains the structure and components of AO-Core paths, enabling you to effectively interact with processes and access their data.
-
-## HyperPATH Structure
-
-Let's examine a typical HyperBEAM endpoint piece-by-piece:
-
-```
-https://router-1.forward.computer/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
-```
-
-### Node URL (`router-1.forward.computer`)
-
-The HTTP response from this node includes a signature from the host's key. By accessing the [`~snp@1.0`](../resources/source-code/dev_snp.md) device, you can verify that the node is running in a genuine Trusted Execution Environment (TEE), ensuring computation integrity. You can replace `router-1.forward.computer` with any HyperBEAM TEE node operated by any party while maintaining trustless guarantees.
-
-### Process Path (`/<procId>~process@1.0`)
-
-Every path in AO-Core represents a program. Think of the URL bar as a Unix-style command-line interface, providing access to AO's trustless and verifiable compute. Each path component (between `/` characters) represents a step in the computation. In this example, we instruct the AO-Core node to:
-
-1. Load a specific message from its caches (local, another node, or Arweave)
-2. Interpret it with the [`~process@1.0`](../devices/process-at-1-0.md) device
-3. The process device implements a shared computing environment with consistent state between users
-
-### State Access (`/now` or `/compute`)
-
-Devices in AO-Core expose keys accessible via path components. Each key executes a function on the device:
-
-- `now`: Calculates real-time process state
-- `compute`: Serves the latest known state (faster than checking for new messages)
-
-Under the surface, these keys represent AO-Core messages. As we progress through the path, AO-Core applies each message to the existing state. You can access the full process state by visiting:
-```
-/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/now
-```
-
-### State Navigation
-
-You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `at-slot`, you can access it like this:
-```
-/<procId>[`~process@1.0`](../devices/process-at-1-0.md)/compute/at-slot
-```
-This shows the latest 'slot' (number of interactions) of your process. Each response is:
-
-- A message with a signature attesting to its correctness
-- A hashpath describing its generation
-- Transferable to other AO-Core nodes for uninterrupted execution
-
-## Best Practices
-
-1. Always verify cryptographic signatures on responses
-2. Use appropriate caching strategies for frequently accessed data
-3. Implement proper error handling for network requests
-4. Consider rate limits and performance implications
-5. Keep sensitive data secure and use appropriate authentication methods 
-
-## Example: Using the `message` Device
-
-Let's break down another common HyperPATH pattern using the built-in [`~message@1.0`](../devices/message-at-1-0.md) device:
-
-```
-http://localhost:10000/[`~message@1.0`](../devices/message-at-1-0.md)&hello=world&k=v/k
-```
-
-Here's how this works:
-
-1.  **`http://localhost:10000/`**: The base address of your local HyperBEAM node.
-2.  **[`~message@1.0`](../devices/message-at-1-0.md)**: This designates `~message@1.0` as the *root device*. The request is routed to the corresponding module (`dev_message`).
-3.  **`&hello=world&k=v`**: These query parameters define the initial message. The `dev_message` device interprets them as key-value pairs, creating the starting message map: `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }`.
-4.  **`/k`**: This path segment tells the `dev_message` device which key's value to retrieve from the message map constructed in the previous step.
-
-The `dev_message` device receives the initial message and the path `/k`. It performs a lookup for the key `k` within the message `#{ <<"hello">> => <<"world">>, <<"k">> => <<"v">> }` and returns the corresponding value `v` as the response.
-
-This pattern is useful for simple data retrieval or manipulating transient messages without needing a persistent process. 
---- END OF FILE: docs/begin/pathing-in-ao-core.md ---
-
---- START OF FILE: docs/begin/what-is-ao-core.md ---
-# What is AO-Core?
-
-AO-Core is the foundational protocol underpinning the [AO Computer](https://ao.arweave.net). It defines a minimal, generalized model for decentralized computation built around standard web technologies like HTTP. Think of it as a way to interpret the Arweave permaweb not just as static storage, but as a dynamic, programmable, and infinitely scalable computing environment.
-
-## Core Concepts
-
-AO-Core revolves around three fundamental components:
-
-1.  **Messages:** The smallest units of data and computation. Messages can be simple data blobs or maps of named functions. They are the primary means of communication and triggering execution within the system. Messages are cryptographically linked, forming a verifiable computation graph.
-2.  **Devices:** Modules responsible for interpreting and processing messages. Each device defines specific logic for how messages are handled (e.g., executing WASM, storing data, relaying information). This modular design allows nodes to specialize and the system to be highly extensible.
-3.  **Paths:** Structures that link messages over time, creating a verifiable history of computations. Paths allow users to navigate the computation graph and access specific states or results. They leverage `HashPaths`, cryptographic fingerprints representing the sequence of operations leading to a specific message state, ensuring traceability and integrity.
-
-## Key Principles
-
-*   **Minimalism:** AO-Core provides the simplest possible representation of data and computation, avoiding prescriptive consensus mechanisms or specific VM requirements.
-*   **HTTP Native:** Designed for compatibility with HTTP protocols, making it accessible via standard web tools and infrastructure.
-*   **Scalability:** By allowing parallel message processing and modular device execution, AO-Core enables hyper-parallel computing, overcoming the limitations of traditional sequential blockchains.
-*   **Permissionlessness & Trustlessness:** While AO-Core itself is minimal, it provides the framework upon which higher-level protocols like AO can build systems that allow anyone to participate (`permissionlessness`) without needing to trust intermediaries (`trustlessness`). Users can choose their desired security and performance trade-offs.
-
-AO-Core transforms the permanent data storage of Arweave into a global, shared computation space, enabling the creation of complex, autonomous, and scalable decentralized applications.
-
-*See also: [The AO-Core Protocol Specification (Draft)](https://github.com/permaweb/ao-core/blob/main/spec.md)* 
---- END OF FILE: docs/begin/what-is-ao-core.md ---
-
---- START OF FILE: docs/begin/what-is-hyperbeam.md ---
-# What is HyperBEAM?
-
-HyperBEAM is the primary, production-ready implementation of the [AO-Core protocol](./what-is-ao-core.md), written in Erlang/OTP. It functions as a decentralized operating system, providing the runtime environment and necessary services to execute AO-Core computations across a network of distributed nodes.
-
-## Key Roles
-
-*   **AO-Core Implementation:** HyperBEAM translates the abstract concepts of AO-Core (Messages, Devices, Paths) into a concrete, runnable system.
-*   **Decentralized OS:** It provides the necessary infrastructure for nodes to participate in the AO network, manage resources, execute computations, and communicate with each other.
-*   **Erlang/OTP Foundation:** Built on the highly concurrent, fault-tolerant BEAM virtual machine, HyperBEAM inherits robustness, scalability, and features ideal for distributed systems, such as lightweight processes and message passing.
-*   **Hardware Abstraction:** HyperBEAM allows AO computations to run independently of the underlying hardware, enabling a diverse network of nodes to contribute resources.
-*   **Node Coordination:** It manages how individual nodes join the network, offer services (by running specific Devices), and interact with each other.
-
-## Core Components & Features
-
-*   **Preloaded Devices:** HyperBEAM comes with a suite of built-in devices (e.g., `~meta`, `~relay`, `~process`, `~scheduler`, `~wasm64`) providing essential functionalities for node operation, computation, and communication.
-*   **HTTP Interface:** Nodes expose an HTTP server, allowing interaction via standard web requests and HyperPATHs.
-*   **Modularity:** Its design allows for easy extension and addition of new devices and functionalities.
-*   **Developer Tooling:** Includes tools for testing (`rebar3 eunit`), debugging (`?event` logging), and profiling (`eflame`).
-
-In essence, HyperBEAM is the engine that powers the AO Computer, enabling the vision of a scalable, trust-minimized, decentralized supercomputer built on permanent storage.
-
-*See also: [HyperBEAM GitHub Repository](https://github.com/permaweb/HyperBEAM)*
-
---- END OF FILE: docs/begin/what-is-hyperbeam.md ---
+Generated: 2025-05-02T14:36:17Z
 
 --- START OF FILE: docs/devices/index.md ---
 # Devices
@@ -4963,7 +4782,6 @@ the first term is typically the status, and the second term is the result.<a nam
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#convert_as-1">convert_as/1*</a></td><td>Converts any <code>as</code> terms from Lua to their HyperBEAM equivalents.</td></tr><tr><td valign="top"><a href="#event-3">event/3</a></td><td>Allows Lua scripts to signal events using the HyperBEAM hosts internal
 event system.</td></tr><tr><td valign="top"><a href="#install-3">install/3</a></td><td>Install the library into the given Lua environment.</td></tr><tr><td valign="top"><a href="#resolve-3">resolve/3</a></td><td>A wrapper function for performing AO-Core resolutions.</td></tr><tr><td valign="top"><a href="#return-2">return/2*</a></td><td>Helper function for returning a result from a Lua function.</td></tr><tr><td valign="top"><a href="#set-3">set/3</a></td><td>Wrapper for <code>hb_ao</code>'s <code>set</code> functionality.</td></tr></table>
-event system.</td></tr><tr><td valign="top"><a href="#install-3">install/3</a></td><td>Install the library into the given Lua environment.</td></tr><tr><td valign="top"><a href="#resolve-3">resolve/3</a></td><td>A wrapper function for performing AO-Core resolutions.</td></tr><tr><td valign="top"><a href="#return-2">return/2*</a></td><td>Helper function for returning a result from a Lua function.</td></tr><tr><td valign="top"><a href="#set-3">set/3</a></td><td>Wrapper for <code>hb_ao</code>'s <code>set</code> functionality.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -5019,7 +4837,6 @@ Helper function for returning a result from a Lua function.
 
 `set(X1, ExecState, ExecOpts) -> any()`
 
-Wrapper for `hb_ao`'s `set` functionality.
 Wrapper for `hb_ao`'s `set` functionality.
 
 
@@ -19383,19 +19200,109 @@ This file uses a simple `Key = Value.` format (note the period at the end of eac
 
 ```erlang
 % Set the HTTP port
-hb_port = 8080.
+port = 8080.
 
 % Specify the Arweave key file
-hb_key = "/path/to/your/wallet.json".
+priv_key_location = "/path/to/your/wallet.json".
 
 % Set the data store directory
-hb_store = "./node_data_mainnet".
+% Note: Storage configuration can be complex. See below.
+% store = [{local, [{root, <<"./node_data_mainnet">>}]}]. % Example of complex config, not for config.flat
 
 % Enable verbose logging for specific modules
-hb_print = "hb_http,dev_router".
+% debug_print = [hb_http, dev_router]. % Example of complex config, not for config.flat
 ```
 
-Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
+Below is a reference of commonly used configuration keys. Remember that `config.flat` only supports simple key-value pairs (Atoms, Strings, Integers, Booleans). For complex configurations (Lists, Maps), you must use environment variables or `hb:start_mainnet/1`.
+
+### Core Configuration
+
+These options control fundamental HyperBEAM behavior.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `port` | Integer | 8734 | HTTP API port |
+| `hb_config_location` | String | "config.flat" | Path to configuration file |
+| `priv_key_location` | String | "hyperbeam-key.json" | Path to operator wallet key file |
+| `mode` | Atom | debug | Execution mode (debug, prod) |
+
+### Server & Network Configuration
+
+These options control networking behavior and HTTP settings.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `host` | String | "localhost" | Choice of remote node for non-local tasks |
+| `gateway` | String | "https://arweave.net" | Default gateway |
+| `bundler_ans104` | String | "https://up.arweave.net:443" | Location of ANS-104 bundler |
+| `protocol` | Atom | http2 | Protocol for HTTP requests (http1, http2, http3) |
+| `http_client` | Atom | gun | HTTP client to use (gun, httpc) |
+| `http_connect_timeout` | Integer | 5000 | HTTP connection timeout in milliseconds |
+| `http_keepalive` | Integer | 120000 | HTTP keepalive time in milliseconds |
+| `http_request_send_timeout` | Integer | 60000 | HTTP request send timeout in milliseconds |
+| `relay_http_client` | Atom | httpc | HTTP client for the relay device |
+<!-- Complex options like http_extra_opts are omitted as they are not suitable for config.flat -->
+
+### Security & Identity
+
+These options control identity and security settings.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `scheduler_location_ttl` | Integer | 604800000 | TTL for scheduler registration (7 days in ms) |
+<!-- Complex options like trusted_device_signers, trusted are omitted -->
+
+### Caching & Storage
+
+These options control caching behavior. **Note:** Detailed storage configuration (`store` option) involves complex data structures and cannot be set via `config.flat`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `cache_lookup_hueristics` | Boolean | false | Whether to use caching heuristics or always consult the local data store |
+| `access_remote_cache_for_client` | Boolean | false | Whether to access data from remote caches for client requests |
+| `store_all_signed` | Boolean | true | Whether the node should store all signed messages |
+| `await_inprogress` | Atom/Boolean | named | Whether to await in-progress executions (false, named, true) |
+<!-- Complex options like cache_control are omitted -->
+
+### Execution & Processing
+
+These options control how HyperBEAM executes messages and processes.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `scheduling_mode` | Atom | local_confirmation | When to inform recipients about scheduled assignments (aggressive, local_confirmation, remote_confirmation) |
+| `compute_mode` | Atom | lazy | Whether to execute more messages after returning a result (aggressive, lazy) |
+| `process_workers` | Boolean | true | Whether the node should use persistent processes |
+| `client_error_strategy` | Atom | throw | What to do if a client error occurs |
+| `wasm_allow_aot` | Boolean | false | Allow ahead-of-time compilation for WASM |
+
+### Device Management
+
+These options control how HyperBEAM manages devices.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `load_remote_devices` | Boolean | false | Whether to load devices from remote signers |
+<!-- Complex options like preloaded_devices, devices are omitted -->
+
+### Debug & Development
+
+These options control debugging and development features.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `debug_stack_depth` | Integer | 40 | Maximum stack depth for debug printing |
+| `debug_print_map_line_threshold` | Integer | 30 | Maximum lines for map printing |
+| `debug_print_binary_max` | Integer | 60 | Maximum binary size for debug printing |
+| `debug_print_indent` | Integer | 2 | Indentation for debug printing |
+| `debug_print_trace` | Atom | short | Trace mode (short, false) |
+| `short_trace_len` | Integer | 5 | Length of short traces |
+| `debug_hide_metadata` | Boolean | true | Whether to hide metadata in debug output |
+| `debug_ids` | Boolean | false | Whether to print IDs in debug output |
+| `debug_hide_priv` | Boolean | true | Whether to hide private data in debug output |
+<!-- Complex options like debug_print, stack_print_prefixes are omitted -->
+
+**Note:** For the *absolute complete* and most up-to-date list, including complex options not suitable for `config.flat`, refer to the `default_message/0` function in the `hb_opts` module source code.
 
 ## Overrides (Environment Variables & Args)
 

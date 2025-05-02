@@ -1,4 +1,4 @@
-Generated: 2025-05-01T19:10:56Z
+Generated: 2025-05-02T14:36:17Z
 
 ## HyperBEAM Documentation Summary
 
@@ -9,10 +9,6 @@ Key sections include: Getting Started (begin), Running HyperBEAM (run), Develope
 
 ### uegin
 
-* [AO Devices](./begin/ao-devices.html)
-* [Pathing in AO-Core](./begin/pathing-in-ao-core.html)
-* [What is AO-Core?](./begin/what-is-ao-core.html)
-* [What is HyperBEAM?](./begin/what-is-hyperbeam.html)
 
 ### run
 
