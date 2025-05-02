@@ -54,17 +54,16 @@ AES key, and an empty trusted nodes list are stored in the node's configuration.
 @returns {ok, Msg} where Msg is a binary confirmation message.
 """.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
-init(_M1, M2, Opts) ->
+init(_M1, _M2, Opts) ->
     ?event(green_zone, {init, start}),
-	case length(hb_opts:get(node_history, [], Opts)) of
-        0 -> {error, <<"Node history is empty.">>};
-		1 ->
-			RequiredConfig = hb_ao:get(
-				<<"required-config">>,
-				M2,
+	case hb_opts:validate_node_history(Opts) of
+        {ok, 1} ->
+			RequiredConfig = hb_opts:get(
+				<<"green_zone_required_config">>,
 				default_zone_required_opts(Opts),
 				Opts
 			),
+			?event(green_zone, {init, required_config, RequiredConfig}),
 			% Check if a wallet exists; create one if absent.
 			NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
 				undefined -> 
@@ -94,14 +93,8 @@ init(_M1, M2, Opts) ->
 			}),
 			?event(green_zone, {init, complete}),
 			{ok, <<"Green zone initialized successfully.">>};
-        N ->
-            {error,
-                <<
-                    "Node history not acceptable. Expected 1 entry, got ",
-                    (integer_to_binary(N))/binary,
-                    "."
-                >>
-            }
+		{error, Reason} ->
+			{error, Reason}
 	end.
 	
 
@@ -128,15 +121,19 @@ Based on the presence of a peer address:
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	PeerLocation = hb_opts:get(<<"green-zone-peer-location">>, undefined, Opts),
-	PeerID = hb_opts:get(<<"green-zone-peer-id">>, undefined, Opts),
-	?event(green_zone, {join_peer, PeerLocation, PeerID}),
-	if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
-		validate_join(M1, M2, Opts);
-	true ->
-		join_peer(PeerLocation, PeerID, M1, M2, Opts)
+	case hb_opts:validate_node_history(Opts, 0, 1) of
+		{ok, _N} ->
+			PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
+			PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
+			?event(green_zone, {join_peer, PeerLocation, PeerID}),
+			if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
+				validate_join(M1, M2, Opts);
+			true ->
+				join_peer(PeerLocation, PeerID, M1, M2, Opts)
+			end;
+		{error, Reason} ->
+			{error, Reason}
 	end.
-
 
 -doc """
 Retrieve and encrypt the node's private key.
@@ -208,8 +205,8 @@ and updating the local node's wallet with the target node's keypair.
 become(_M1, _M2, Opts) ->
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
-    NodeLocation = hb_opts:get(<<"green-zone-peer-location">>, undefined, Opts),
-    NodeID = hb_opts:get(<<"green-zone-peer-id">>, undefined, Opts),
+    NodeLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
+    NodeID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
     % 2. Check if the local node has a valid shared AES key.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     case GreenZoneAES of
@@ -411,7 +408,7 @@ required config of the green zone they are joining.
          {error, Reason} if the configuration adoption fails.
 """.
 maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
-    case hb_ao:get(<<"adopt-config">>, Req, true, InitOpts) of
+    case hb_opts:get(<<"green_zone_adopt_config">>, true, InitOpts) of
         false ->
             % The node operator does not want to adopt the peer's config. Return
             % the initial options unchanged.
@@ -450,7 +447,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
 							NodeMessage =
 								calculate_node_message(RequiredConfig, Req, AdoptConfig),
 							% Adopt the node message.
-							dev_meta:adopt_node_message(NodeMessage, InitOpts)
+							hb_http_server:set_opts(NodeMessage, InitOpts)
 					end
 			end
     end.
@@ -471,8 +468,8 @@ calculate_node_message(RequiredOpts, Req, true) ->
     StrippedReq =
         maps:without(
             [
-                <<"adopt-config">>, <<"peer-location">>,
-                <<"peer-id">>, <<"path">>, <<"method">>
+                <<"green_zone_adopt_config">>, <<"green_zone_peer_location">>,
+                <<"green_zone_peer_id">>, <<"path">>, <<"method">>
             ],
             hb_message:uncommitted(Req)
         ),

@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, set_opts/2, get_opts/1]).
 -export([start_node/0, start_node/1, set_default_opts/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -374,6 +374,23 @@ set_opts(Opts) ->
         ServerRef ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
+
+%% @doc Update node message with a request, preserving http_server and updating node_history.
+set_opts(Request, Opts) ->
+	MergedOpts =
+		maps:merge(
+			Opts,
+			hb_opts:mimic_default_types(
+				hb_message:uncommitted(Request),
+				new_atoms
+			)
+		),
+    FinalOpts = MergedOpts#{
+        http_server => hb_opts:get(http_server, no_server, Opts),
+        node_history => [Request | hb_opts:get(node_history, [], Opts)]
+    },
+    set_opts(FinalOpts),
+    {ok, FinalOpts}.
 
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),

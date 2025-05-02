@@ -137,26 +137,13 @@ update_node_message(Request, NodeMsg) ->
 %% @doc Attempt to adopt changes to a node message.
 adopt_node_message(Request, NodeMsg) ->
     ?event({set_node_message_success, Request}),
-    MergedOpts =
-        maps:merge(
-            NodeMsg,
-            hb_opts:mimic_default_types(
-                hb_message:uncommitted(Request),
-                new_atoms
-            )
-        ),
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
     case hb_opts:get(initialized, permanent, NodeMsg) of
         permanent ->
             {error, <<"Node message is already permanent.">>};
         _ ->
-			FinalOpts = MergedOpts#{
-				http_server => hb_opts:get(http_server, no_server, NodeMsg),
-				node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
-			},
-			hb_http_server:set_opts(FinalOpts),
-			{ok, FinalOpts}
+            hb_http_server:set_opts(Request, NodeMsg)
     end.
 
 %% @doc Handle an AO-Core request, which is a list of messages. We apply

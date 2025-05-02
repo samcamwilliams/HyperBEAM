@@ -154,8 +154,9 @@ path_list_test() ->
     ).
 
 binary_passthrough_test() ->
-    Bin = <<"raw binary">>,
-    ?assertEqual(Bin, dev_codec_flat:from(Bin)),
+    % Note: Modified for changes to the `from/1' function.
+	Bin = <<"raw: binary">>,
+    ?assertEqual(#{<<"raw">> => Bin}, dev_codec_flat:from(Bin)),
     ?assertEqual(Bin, dev_codec_flat:to(Bin)).
 
 deep_nesting_test() ->

@@ -2,7 +2,6 @@
 %%% as well as generating them, if called in an appropriate environment.
 -module(dev_snp).
 -export([generate/3, verify/3, trusted/3]).
--export([init/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -define(COMMITTED_PARAMETERS, [vcpus, vcpu_type, vmm_type, guest_features,
@@ -49,42 +48,44 @@ real_node_test() ->
         ?assertEqual({ok, true}, Result)
     end.
 
-%% @doc Should take in options to set for the device such as kernel, initrd, firmware,
-%% and append hashes and make them available to the device. Only runnable once,
-%% and only if the operator is not set to an address (and thus, the node has not
-%% had any priviledged access).
-init(_M1, M2, Opts) ->
-    ExistingTrusted = hb_opts:get(trusted, [], Opts),
-    % First check if SNP is already initialized
-    case ExistingTrusted of
-        [] ->
-            % Not initialized yet, proceed with validation
-            case dev_meta:validate_request(M2, Opts) of
-                {ok, _} ->
-                    % Valid request, initialize SNP
-                    SnpHashes = hb_ao:get(<<"data">>, M2, Opts),
-                    SNPDecoded = hb_json:decode(SnpHashes),
-                    Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
-                    
-                    % Add new hash configuration to the list
-                    NewTrusted = ExistingTrusted ++ [Hashes],
-                    
-                    ok = hb_http_server:set_opts(Opts#{
-                        % Set trusted to the combined list
-                        trusted => NewTrusted
-                    }),
-                    {ok, <<"SNP node initialized successfully.">>};
-                Error = {error, _} ->
-                    % Invalid request
-                    Error
-            end;
-        _ ->
-            % Already initialized
-            {error, #{
-                <<"status">>  => 400,
-                <<"message">> => <<"SNP node already initialized.">>
-            }}
-    end.
+
+% init(_M1, M2, Opts) ->
+%     ExistingTrusted = hb_opts:get(trusted, [], Opts),
+
+% 	case length(hb_opts:get(node_history, [], Opts)) of
+%         0 -> {error, <<"Node history is empty.">>};
+% 		1 -> 
+% 			% Valid request, initialize SNP
+% 			SnpHashes = hb_ao:get(<<"data">>, M2, Opts),
+% 			SNPDecoded = hb_json:decode(SnpHashes),
+% 			Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
+			
+% 			% Add new hash configuration to the list
+% 			NewTrusted = ExistingTrusted ++ [Hashes],
+			
+% 			ok = hb_http_server:set_opts(Opts#{
+% 				% Set trusted to the combined list
+% 				trusted => NewTrusted
+% 			}),
+% 			{ok, <<"SNP node initialized successfully.">>};
+%     % First check if SNP is already initialized
+%     case ExistingTrusted of
+%         [] ->
+%             % Not initialized yet, proceed with validation
+%             case dev_meta:validate_request(M2, Opts) of
+%                 {ok, _} ->
+
+%                 Error = {error, _} ->
+%                     % Invalid request
+%                     Error
+%             end;
+%         _ ->
+%             % Already initialized
+%             {error, #{
+%                 <<"status">>  => 400,
+%                 <<"message">> => <<"SNP node already initialized.">>
+%             }}
+%     end.
 
 %% @doc Verify an commitment report message; validating the identity of a 
 %% remote node, its ephemeral private address, and the integrity of the report.
