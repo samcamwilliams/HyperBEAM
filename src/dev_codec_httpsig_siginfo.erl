@@ -236,7 +236,7 @@ commitment_to_device_specifiers(Alg, _Opts) ->
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => Type
             };
-        [_DevName, Specifiers] ->
+        [DevName, Specifiers] ->
             % The `alg' is a device specifier. We determine if a type is present
             % by splitting on the `/` character.
             case binary:split(Specifiers, <<"/">>) of
@@ -245,10 +245,11 @@ commitment_to_device_specifiers(Alg, _Opts) ->
                     #{
                         <<"commitment-device">> => Alg
                     };
-                [_Version, Type] ->
+                [Version, Type] ->
                     % The `alg' is a device specifier with a type.
                     #{
-                        <<"commitment-device">> => Alg,
+                        <<"commitment-device">> =>
+                            <<DevName/binary, "@", Version/binary>>,
                         <<"type">> => Type
                     }
             end

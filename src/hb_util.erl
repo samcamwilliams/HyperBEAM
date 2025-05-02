@@ -7,7 +7,7 @@
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, number/1, list_to_numbered_map/1]).
 -export([is_ordered_list/1, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
+-export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1, unique/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -275,6 +275,20 @@ is_ordered_list(N, Msg) ->
                 maps:without([NormKey], Msg)
             )
     end.
+
+%% @doc Take a list and return a list of unique elements. The function is
+%% order-preserving.
+unique(List) ->
+    lists:foldl(
+        fun(Item, Acc) ->
+            case lists:member(Item, Acc) of
+                true -> Acc;
+                false -> [Item | Acc]
+            end
+        end,
+        [],
+        List
+    ).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
