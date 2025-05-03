@@ -193,7 +193,7 @@ is_explicit_lookup(Msg1, #{ <<"path">> := Key }, Opts) ->
 derive_cache_settings(SourceList, Opts) ->
     lists:foldr(
         fun(Source, Acc) ->
-            maybe_set(Acc, cache_source_to_cache_settings(Source), Opts)
+            maybe_set(Acc, cache_source_to_cache_settings(Source, Opts), Opts)
         end,
         #{ <<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT },
         [{opts, Opts}|lists:filter(fun erlang:is_map/1, SourceList)]
@@ -219,14 +219,14 @@ maybe_set(Map1, Map2, Opts) ->
 %% cases, except where an `Opts' specifies that hashpaths should not be updated,
 %% which leads to the result not being cached (as it may be stored with an 
 %% incorrect hashpath).
-cache_source_to_cache_settings({opts, Opts}) ->
+cache_source_to_cache_settings({opts, Opts}, _) ->
     CCMap = specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)),
     case hb_opts:get(hashpath, update, Opts) of
         ignore -> CCMap#{ <<"store">> => false };
         _ -> CCMap
     end;
-cache_source_to_cache_settings(Msg) ->
-    case dev_message:get(<<"cache-control">>, Msg, #{}) of
+cache_source_to_cache_settings(Msg, Opts) ->
+    case dev_message:get(<<"cache-control">>, Msg, Opts) of
         {ok, CC} -> specifiers_to_cache_settings(CC);
         {error, not_found} -> #{}
     end.
@@ -346,7 +346,8 @@ message_without_cache_control_test() ->
 opts_source_cache_control_test() ->
     Result =
         cache_source_to_cache_settings(
-            {opts, opts_with_cc([<<"no-store">>])}
+            {opts, opts_with_cc([<<"no-store">>])},
+            #{}
         ),
     ?assertEqual(#{
         <<"store">> => false,
@@ -356,7 +357,7 @@ opts_source_cache_control_test() ->
 
 message_source_cache_control_test() ->
     Msg = msg_with_cc([<<"no-cache">>]),
-    Result = cache_source_to_cache_settings(Msg),
+    Result = cache_source_to_cache_settings(Msg, #{}),
     ?assertEqual(#{
         <<"store">> => undefined,
         <<"lookup">> => false,
