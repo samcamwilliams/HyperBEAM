@@ -808,7 +808,7 @@ keys(Msg, Opts, keep) ->
             fun normalize_key/1,
             hb_maps:values(
                 normalize_keys(
-                    get(<<"keys">>, Msg, Opts)
+                    hb_private:reset(get(<<"keys">>, Msg, Opts))
                 ),
                 Opts
             )
