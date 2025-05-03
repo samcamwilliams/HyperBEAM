@@ -164,7 +164,8 @@ exec_dummy_device(SigningWallet, Opts) ->
                     <<"variant">> => <<"ao.N.1">>,
                     <<"content-type">> => <<"application/beam">>,
                     <<"module-name">> => ModName,
-                    <<"requires-otp-release">> => erlang:system_info(otp_release),
+                    <<"requires-otp-release">> =>
+                        hb_util:bin(erlang:system_info(otp_release)),
                     <<"body">> => Bin
                 }
             ),
