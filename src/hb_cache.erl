@@ -241,22 +241,14 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
 write_key(Base, <<"commitments">>, HPAlg, RawCommitments, Store, Opts) ->
     % Search to see if we already have commitments for this message locally.
     Commitments = prepare_commitments(RawCommitments, Opts),
-    ?event(debug_commitments, {writing_commitments, {base, Base}, {commitments, Commitments}, {store, Store}}),
     LocalStore = hb_store:scope(Store, local),
     case read(<<Base/binary, "/commitments">>, Opts#{ store => LocalStore }) of
         {ok, ExistingCommitments} ->
             % We do, so we need to merge the new commitments with the old ones.
             % We do this by fully loading the existing commitments, converting
             % them to TABM, and merging the maps.
-            LoadedExistingCommitments =
-                hb_message:convert(
-                    hb_cache:ensure_all_loaded(ExistingCommitments, Opts),
-                    tabm,
-                    <<"structured@1.0">>,
-                    Opts
-                ),
-            ?event({loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
-            Merged = hb_maps:merge(Commitments, LoadedExistingCommitments),
+            LoadedExisting = prepare_commitments(ExistingCommitments, Opts),
+            Merged = hb_maps:merge(Commitments, LoadedExisting),
             % Write the merged commitments to the store.
             {ok, Path} = do_write_message(Merged, Store, Opts),
             % Link the merged commitments to the message.
@@ -474,6 +466,8 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
             Subpaths
         )),
     Merged = maps:merge(Res, Implicit),
+    % Convert the message to an ordered list if the ao-types indicate that it
+    % should be so.
     case dev_codec_structured:is_list_from_ao_types(Types, Opts) of
         true ->
             hb_util:message_to_ordered_list(Merged, Opts);
