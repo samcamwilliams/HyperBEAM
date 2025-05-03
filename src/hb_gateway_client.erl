@@ -281,7 +281,11 @@ ans104_no_data_item_test() ->
 scheduler_location_test() ->
     % Start a random node so that all of the services come up.
     _Node = hb_http_server:start_node(#{}),
-    {ok, Res} = scheduler_location(<<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>, #{}),
+    {ok, Res} =
+        scheduler_location(
+            <<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>,
+            #{}
+        ),
     ?event(gateway, {get_scheduler_location_test, Res}),
     ?assertEqual(<<"Scheduler-Location">>, hb_ao:get(<<"Type">>, Res, #{})),
     ?event(gateway, {scheduler_location, {explicit, hb_ao:get(<<"url">>, Res, #{})}}),

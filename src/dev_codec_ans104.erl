@@ -65,9 +65,6 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
         ),
     ?event({signed_tx, Signed}),
     ID = hb_util:human_id(Signed#tx.id),
-    PublicKey = Signed#tx.owner,
-    Sig = Signed#tx.signature,
-    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Get the prior original tags from the commitment, if it exists.
     PriorOriginalTags =
         case hb_message:commitment(#{ <<"type">> => <<"unsigned-sha256">> }, Msg, Opts) of
@@ -77,14 +74,14 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
     Commitment =
         #{
             <<"commitment-device">> => <<"ans104@1.0">>,
-            <<"committer">> => Address,
-            <<"keyid">> => hb_util:encode(PublicKey),
-            <<"signature">> => hb_util:encode(Sig),
+            <<"committer">> => hb_util:human_id(ar_wallet:to_address(Wallet)),
+            <<"keyid">> => hb_util:encode(Signed#tx.owner),
+            <<"signature">> => hb_util:encode(Signed#tx.signature),
             <<"type">> => <<"rsa-pss-sha256">>,
             <<"committed">> =>
                 hb_util:unique(
                     ?BASE_COMMITTED_TAGS
-                        ++ [ Tag || {Tag, _} <- TX#tx.tags ]
+                        ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
                 )
         },
     CommitmentWithOriginalTags =
@@ -167,7 +164,11 @@ do_from(RawTX, Req, Opts) ->
             end
         ),
     % Generate a TABM from the tags.
-    MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags, Opts)),
+    MapWithoutData =
+        hb_maps:merge(
+            TXKeysMap,
+            deduplicating_from_list(TX#tx.tags, Opts)
+        ),
     ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
         case TX#tx.data of
@@ -224,8 +225,6 @@ do_from(RawTX, Req, Opts) ->
                             <<"keyid">>,
                             <<"signature">>,
                             <<"commitment-device">>,
-                            <<"committer">>,
-                            <<"type">>,
                             <<"original-tags">>
                         ],
                         NormalizedDataMap
@@ -238,7 +237,7 @@ do_from(RawTX, Req, Opts) ->
                     <<"committed">> =>
                         hb_util:unique(
                             ?BASE_COMMITTED_TAGS
-                                ++ [ Tag || {Tag, _} <- TX#tx.tags ]
+                                ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
                         ),
                     <<"keyid">> => hb_util:encode(TX#tx.owner),
                     <<"signature">> => hb_util:encode(TX#tx.signature),
@@ -403,7 +402,6 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % we recursively turn its children into messages. Notably, we do not simply
     % call message_to_tx/1 on the inner map because that would lead to adding
     % an extra layer of nesting to the data.
-    %?event({message_to_tx, {keys, Keys}, {map, M}}),
     MsgKeyMap =
         hb_maps:map(
             fun(_Key, Msg) when is_map(Msg) -> hb_util:ok(to(Msg, Req, Opts));
@@ -507,9 +505,13 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             {Data, _} when is_record(Data, tx) ->
                 TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->
-                TX#tx { data = DataItems#{ <<"data">> => hb_util:ok(to(Data, Req, Opts)) } }
+                TX#tx {
+                    data =
+                        DataItems#{
+                            <<"data">> => hb_util:ok(to(Data, Req, Opts))
+                        }
+                }
         end,
-    % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
     Res =
         try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
         catch
@@ -640,6 +642,21 @@ only_committed_maintains_target_test() ->
     ?event({encoded, Encoded}),
     ?assertEqual(TX, Encoded).
 
+type_tag_test() ->
+    TX =
+        ar_bundles:sign_item(
+            #tx {
+                tags = [{<<"type">>, <<"test-value">>}]
+            },
+            ar_wallet:new()
+        ),
+    ?event({tx, TX}),
+    Structured = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({structured, Structured}),
+    TX2 = hb_message:convert(Structured, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?event({after_conversion, TX2}),
+    ?assertEqual(TX, TX2).
+    
 simple_signed_to_httpsig_test() ->
     TX =
         ar_bundles:sign_item(
