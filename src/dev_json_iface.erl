@@ -84,7 +84,7 @@ denormalize_message(Message, Opts) ->
         case hb_message:signers(Message, Opts) of
             [] -> Message;
             [PrimarySigner|_] ->
-                {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message),
+                {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message, Opts),
                 Message#{
                     <<"owner">> => hb_util:human_id(PrimarySigner),
                     <<"signature">> =>

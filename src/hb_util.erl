@@ -7,7 +7,7 @@
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, number/1, list_to_numbered_map/1]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1, to_sorted_keys/2]).
+-export([is_string_list/1, to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -127,9 +127,11 @@ is_string_list(MaybeString) ->
 to_sorted_list(Msg) ->
     to_sorted_list(Msg, #{}).
 to_sorted_list(Msg, Opts) when is_map(Msg) ->
-    to_sorted_list(hb_maps:to_list(Msg, Opts), Opts);
+	to_sorted_list(hb_maps:to_list(Msg, Opts), Opts);
+to_sorted_list(Msg = [{_Key, _} | _], _Opts) when is_list(Msg) ->
+	lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg);
 to_sorted_list(Msg, _Opts) when is_list(Msg) ->
-    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
+	lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
 %% @doc Given a map or KVList, return a deterministically ordered list of its keys.
 to_sorted_keys(Msg) ->

@@ -57,7 +57,7 @@
 %%% interact with it are found in `hb_message_test_vectors.erl'.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, uncommitted/1, committed/3]).
+-export([convert/3, convert/4, uncommitted/1, uncommitted/2, committed/3]).
 -export([with_only_committers/2, with_only_committers/3]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
 -export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
