@@ -42,11 +42,11 @@ httpc_req(Args, _, Opts) ->
     end,
     ?event(http, {httpc_req, Args}),
     URL = binary_to_list(iolist_to_binary([Scheme, "://", Host, ":", integer_to_binary(Port), Path])),
-    FilteredHeaders = hb_maps:remove(<<"content-type">>, Headers),
+    FilteredHeaders = hb_maps:remove(<<"content-type">>, Headers, Opts),
     HeaderKV =
-        [ {binary_to_list(Key), binary_to_list(Value)} || {Key, Value} <- hb_maps:to_list(FilteredHeaders) ],
+        [ {binary_to_list(Key), binary_to_list(Value)} || {Key, Value} <- hb_maps:to_list(FilteredHeaders, Opts) ],
     Method = binary_to_existing_atom(hb_util:to_lower(RawMethod)),
-    ContentType = hb_maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>),
+    ContentType = hb_maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>, Opts),
     Request =
         case Method of
             get ->
@@ -277,17 +277,18 @@ init_prometheus(Opts) ->
 
 handle_call({get_connection, Args, Opts}, From,
 		#state{ pid_by_peer = PIDPeer, status_by_pid = StatusByPID } = State) ->
-	Peer = hb_maps:get(peer, Args),
-	case hb_maps:get(Peer, PIDPeer, not_found) of
+	Peer = hb_maps:get(peer, Args, undefined, Opts),
+	case hb_maps:get(Peer, PIDPeer, not_found, Opts) of
 		not_found ->
-			{ok, PID} = open_connection(Args, hb_maps:merge(State#state.opts, Opts)),
+			{ok, PID} = open_connection(Args, hb_maps:merge(State#state.opts, Opts, Opts)),
 			MonitorRef = monitor(process, PID),
-			PIDPeer2 = hb_maps:put(Peer, PID, PIDPeer),
+			PIDPeer2 = hb_maps:put(Peer, PID, PIDPeer, Opts),
 			StatusByPID2 =
                 hb_maps:put(
                     PID,
                     {{connecting, [{From, Args}]}, MonitorRef, Peer},
-					StatusByPID
+					StatusByPID,
+					Opts
                 ),
 			{
                 reply,
@@ -298,7 +299,7 @@ handle_call({get_connection, Args, Opts}, From,
                 }
             };
 		PID ->
-			case hb_maps:get(PID, StatusByPID) of
+			case hb_maps:get(PID, StatusByPID, undefined, Opts) of
 				{{connecting, PendingRequests}, MonitorRef, Peer} ->
 					StatusByPID2 =
                         hb_maps:put(PID,
@@ -307,7 +308,8 @@ handle_call({get_connection, Args, Opts}, From,
                                 MonitorRef,
                                 Peer
                             },
-                            StatusByPID
+                            StatusByPID,
+							Opts
                         ),
 					{noreply, State#state{ status_by_pid = StatusByPID2 }};
 				{connected, _MonitorRef, Peer} ->
@@ -510,7 +512,7 @@ parse_peer(Peer, Opts) ->
         URI = #{ host := Host } ->
             {
                 hb_util:list(Host),
-                case hb_maps:get(scheme, URI, undefined) of
+                case hb_maps:get(scheme, URI, undefined, Opts) of
                     <<"https">> -> 443;
                     _ -> hb_opts:get(port, 8734, Opts)
                 end
@@ -564,20 +566,20 @@ request(PID, Args, Opts) ->
         inet:start_timer(
             hb_opts:get(http_request_send_timeout, no_request_send_timeout, Opts)
         ),
-	Method = hb_maps:get(method, Args),
-	Path = hb_maps:get(path, Args),
-	Headers = hb_maps:get(headers, Args, []),
-	Body = hb_maps:get(body, Args, <<>>),
+	Method = hb_maps:get(method, Args, undefined, Opts),
+	Path = hb_maps:get(path, Args, undefined, Opts),
+	Headers = hb_maps:get(headers, Args, [], Opts),
+	Body = hb_maps:get(body, Args, <<>>, Opts),
     ?event(http, {gun_request, {method, Method}, {path, Path}, {headers, Headers}, {body, Body}}),
 	Ref = gun:request(PID, Method, Path, Headers, Body),
 	ResponseArgs =
         #{
             pid => PID, stream_ref => Ref,
-			timer => Timer, limit => hb_maps:get(limit, Args, infinity),
+			timer => Timer, limit => hb_maps:get(limit, Args, infinity, Opts),
 			counter => 0, acc => [], start => os:system_time(microsecond),
-			is_peer_request => hb_maps:get(is_peer_request, Args, true)
+			is_peer_request => hb_maps:get(is_peer_request, Args, true, Opts)
         },
-	Response = await_response(hb_maps:merge(Args, ResponseArgs), Opts),
+	Response = await_response(hb_maps:merge(Args, ResponseArgs, Opts), Opts),
 	record_response_status(Method, Path, Response),
 	inet:stop_timer(Timer),
 	Response.
@@ -618,8 +620,8 @@ await_response(Args, Opts) ->
 			download_metric(FinData, Args),
 			upload_metric(Args),
 			{ok,
-                hb_maps:get(status, Args),
-                hb_maps:get(headers, Args),
+                hb_maps:get(status, Args, undefined, Opts),
+                hb_maps:get(headers, Args, undefined, Opts),
                 FinData
             };
 		{error, timeout} = Response ->

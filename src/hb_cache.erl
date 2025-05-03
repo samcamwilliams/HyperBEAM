@@ -107,12 +107,12 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, Opts) ->
                     {link_opts, LinkOpts}
                 }
             ),
-            case hb_maps:get(<<"type">>, LinkOpts, undefined) of
+            case hb_maps:get(<<"type">>, LinkOpts, undefined, Opts) of
                 undefined -> LoadedMsg;
                 Type -> dev_codec_structured:decode_value(Type, LoadedMsg)
             end;
         not_found ->
-            throw({necessary_message_not_found, Link})
+            throw({necessary_message_not_found_b, Link})
     end;
 ensure_loaded(Msg, _Opts) when not ?IS_LINK(Msg) ->
     Msg.
@@ -292,7 +292,8 @@ calculate_all_ids(Msg, Opts) ->
     Commitments =
         hb_maps:without(
             [<<"priv">>],
-            hb_maps:get(<<"commitments">>, Msg, #{}, Opts)
+            hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+			Opts
         ),
     CommIDs = hb_maps:keys(Commitments, Opts),
     ?event({calculating_ids, {msg, Msg}, {commitments, Commitments}, {comm_ids, CommIDs}}),

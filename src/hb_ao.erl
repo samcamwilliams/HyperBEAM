@@ -95,7 +95,7 @@
 -module(hb_ao).
 %%% Main AO-Core API:
 -export([resolve/2, resolve/3, resolve_many/2]).
--export([normalize_key/1, normalize_key/2, normalize_keys/1]).
+-export([normalize_key/1, normalize_key/2, normalize_keys/1, normalize_keys/2]).
 -export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 -export([force_message/2]).
 %%% Shortcuts and tools:
@@ -224,11 +224,11 @@ resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
     ?event(ao_core, {stage, 1, subresolving_with_load, {dev, DevID}, {id, ID}}, Opts),
-    RemMsg1 = hb_maps:without([<<"path">>], Raw),
+    RemMsg1 = hb_maps:without([<<"path">>], Raw, Opts),
     ?event(subresolution, {loading_message, {id, ID}, {params, RemMsg1}}, Opts),
     Msg1b = ensure_message_loaded(ID, Opts),
     ?event(subresolution, {loaded_message, {msg, Msg1b}}, Opts),
-    Msg1c = hb_maps:merge(Msg1b, RemMsg1),
+    Msg1c = hb_maps:merge(Msg1b, RemMsg1, Opts),
     ?event(subresolution, {merged_message, {msg, Msg1c}}, Opts),
     Msg1d = set(Msg1c, <<"device">>, DevID, Opts),
     ?event(subresolution, {loaded_parameterized_message, {msg, Msg1d}}, Opts),
@@ -266,14 +266,15 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
             Msg2Outer,
             if is_map(LoadedInner) -> LoadedInner;
             true -> #{ <<"path">> => LoadedInner }
-            end
+            end,
+			Opts
         ),
     subresolve(RawMsg1, DevID, Msg2, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(ao_core, {stage, 1, list_normalize}, Opts),
     resolve_stage(1,
-        normalize_keys(Msg1),
+        normalize_keys(Msg1, Opts),
         Msg2,
         Opts
     );
@@ -284,8 +285,8 @@ resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
     ?event(ao_core, {stage, 1, normalize}, Opts),
-    Msg1 = normalize_keys(RawMsg1),
-    Msg2 = normalize_keys(RawMsg2),
+    Msg1 = normalize_keys(RawMsg1, Opts),
+    Msg2 = normalize_keys(RawMsg2, Opts),
     resolve_stage(2, Msg1, Msg2, Opts);
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(ao_core, {stage, 2, cache_lookup}, Opts),
@@ -325,7 +326,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
     % the `dev_process' device 'groups' all calls to the same process onto
     % calls to a single executor. By default, `{Msg1, Msg2}' is used as the
     % group name.
-    case hb_persistent:find_or_register(Msg1, Msg2, hb_maps:without(?TEMP_OPTS, Opts)) of
+    case hb_persistent:find_or_register(Msg1, Msg2, hb_maps:without(?TEMP_OPTS, Opts, Opts)) of
         {leader, ExecName} ->
             % We are the leader for this resolution. Continue to the next stage.
             case hb_opts:get(spawn_worker, false, Opts) of
@@ -385,7 +386,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
     % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
 		try
-            UserOpts = hb_maps:without(?TEMP_OPTS, Opts),
+            UserOpts = hb_maps:without(?TEMP_OPTS, Opts, Opts),
 			Key = hb_path:hd(Msg2, UserOpts),
 			% Try to load the device and get the function to call.
             ?event(
@@ -450,17 +451,17 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = hb_maps:without(?TEMP_OPTS, Opts),
+	UserOpts1 = hb_maps:without(?TEMP_OPTS, Opts, Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
     UserOpts2 =
-        case hb_maps:get(spawn_worker, UserOpts1, false) of
+        case hb_maps:get(spawn_worker, UserOpts1, false, Opts) of
             recursive -> UserOpts1;
-            _ -> hb_maps:remove(spawn_worker, UserOpts1)
+            _ -> hb_maps:remove(spawn_worker, UserOpts1, Opts)
         end,
 	Args =
-		case hb_maps:get(add_key, Opts, false) of
+		case hb_maps:get(add_key, Opts, false, Opts) of
 			false -> [Msg1, Msg2, UserOpts2];
 			Key -> [Key, Msg1, Msg2, UserOpts2]
 		end,
@@ -533,7 +534,7 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 end;
             reset ->
                 Priv = hb_private:from_message(Msg3),
-                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv) }};
+                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }};
             ignore ->
                 Priv = hb_private:from_message(Msg3),
                 if not is_map(Priv) ->
@@ -552,7 +553,7 @@ resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) -
     Priv = hb_private:from_message(Msg3),
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv) }},
+        {Status, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -605,7 +606,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     Msg1b =
         case DevID of
             undefined -> Msg1;
-            _ -> set(Msg1, <<"device">>, DevID, hb_maps:without(?TEMP_OPTS, Opts))
+            _ -> set(Msg1, <<"device">>, DevID, hb_maps:without(?TEMP_OPTS, Opts, Opts))
         end,
     % If there is no path but there are elements to the request, we set these on
     % the base message. If there is a path, we do not modify the base message 
@@ -613,14 +614,14 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     case hb_path:from_message(request, Req) of
         undefined ->
             Msg1c =
-                case map_size(hb_maps:without([<<"path">>], Req)) of
+                case map_size(hb_maps:without([<<"path">>], Req, Opts)) of
                     0 -> Msg1b;
                     _ ->
                         set(
-                            Msg1b,
-                            hb_maps:without([<<"path">>], Req),
-                            Opts#{ force_message => false }
-                        )
+							Msg1b,
+							hb_maps:without([<<"path">>], Req, Opts),
+							Opts#{ force_message => false }
+						)
                 end,
             ?event(subresolution,
                 {subresolve_modified_base, Msg1c},
@@ -708,7 +709,7 @@ error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
         #{
             <<"status">> => 422,
             <<"body">> => Msg3,
-            <<"key">> => hb_maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
+            <<"key">> => hb_maps:get(<<"path">>, Msg2, <<"Key unknown.">>, Opts),
             <<"remaining-path">> => RemainingPath
         }
     }.
@@ -734,7 +735,7 @@ maybe_force_message({Status, Res}, Opts) ->
     end.
 
 force_message({Status, Res}, Opts) when is_list(Res) ->
-    force_message({Status, normalize_keys(Res)}, Opts);
+    force_message({Status, normalize_keys(Res, Opts)}, Opts);
 force_message({Status, Literal}, _Opts) when not is_map(Literal) ->
     ?event({force_message_from_literal, Literal}),
     {Status, #{ <<"ao-result">> => <<"body">>, <<"body">> => Literal }};
@@ -835,8 +836,8 @@ keys(Msg, Opts, remove) ->
 %% `set' works with maps and recursive paths while maintaining the appropriate
 %% `HashPath' for each step.
 set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Msg1 = normalize_keys(RawMsg1),
-    Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),
+    Msg1 = normalize_keys(RawMsg1, Opts),
+    Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2, Opts), Opts),
     ?event(ao_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of
@@ -846,7 +847,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
             % getting via `maps' if it is not found.
             Val =
                 case get(Key, Msg2, internal_opts(Opts)) of
-                    not_found -> hb_maps:get(Key, Msg2);
+                    not_found -> hb_maps:get(Key, Msg2, undefined, Opts);
                     Body -> Body
                 end,
             ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Msg2}}),
@@ -971,7 +972,7 @@ message_to_fun(Msg, Key, Opts) ->
 	Dev = message_to_device(Msg, Opts),
     Info = info(Dev, Msg, Opts),
     % Is the key exported by the device?
-    Exported = is_exported(Info, Key),
+    Exported = is_exported(Info, Key, Opts),
 	?event(
         ao_devices,
         {message_to_fun,
@@ -1061,20 +1062,20 @@ message_to_device(Msg, Opts) ->
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
-	case hb_maps:find(exclude, HandlerMap) of
+	case hb_maps:find(exclude, HandlerMap, Opts) of
 		{ok, Exclude} ->
 			case lists:member(Key, Exclude) of
 				true ->
 					{ok, MsgWithoutDevice} =
-						dev_message:remove(Msg, #{ item => device }),
+						dev_message:remove(Msg, #{ item => device }, Opts),
 					message_to_fun(
 						MsgWithoutDevice#{ device => default_module() },
 						Key,
 						Opts
 					);
-				false -> {add_key, hb_maps:get(func, HandlerMap)}
+				false -> {add_key, hb_maps:get(func, HandlerMap, undefined, Opts)}
 			end;
-		error -> {add_key, hb_maps:get(func, HandlerMap)}
+		error -> {add_key, hb_maps:get(func, HandlerMap, undefined, Opts)}
 	end.
 
 %% @doc Find the function with the highest arity that has the given name, if it
@@ -1086,7 +1087,7 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
 find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
-	case hb_maps:get(normalize_key(Key), normalize_keys(Dev), not_found) of
+	case hb_maps:get(normalize_key(Key), normalize_keys(Dev, Opts), not_found, Opts) of
 		not_found -> not_found;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
@@ -1127,16 +1128,16 @@ find_exported_function(Msg, Mod, Key, Arity, Opts) ->
 %% given, so we check for it in both cases.
 is_exported(_Msg, _Dev, info, _Opts) -> true;
 is_exported(Msg, Dev, Key, Opts) ->
-	is_exported(info(Dev, Msg, Opts), Key).
-is_exported(_, info) -> true;
-is_exported(Info = #{ excludes := Excludes }, Key) ->
+	is_exported(info(Dev, Msg, Opts), Key, Opts).
+is_exported(_, info, _Opts) -> true;
+is_exported(Info = #{ excludes := Excludes }, Key, Opts) ->
     case lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Excludes)) of
         true -> false;
-        false -> is_exported(hb_maps:remove(excludes, Info), Key)
+        false -> is_exported(hb_maps:remove(excludes, Info, Opts), Key, Opts)
     end;
-is_exported(#{ exports := Exports }, Key) ->
+is_exported(#{ exports := Exports }, Key, _Opts) ->
     lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Exports));
-is_exported(_Info, _Key) -> true.
+is_exported(_Info, _Key, _Opts) -> true.
 
 %% @doc Convert a key to a binary in normalized form.
 normalize_key(Key) -> normalize_key(Key, #{}).
@@ -1158,14 +1159,19 @@ normalize_key(Key, _Opts) when is_list(Key) ->
     end.
 
 %% @doc Ensure that a message is processable by the AO-Core resolver: No lists.
-normalize_keys(Msg1) when is_list(Msg1) ->
-    normalize_keys(hb_maps:from_list(
-        lists:zip(
-            lists:seq(1, length(Msg1)),
-            Msg1
-        )
-    ));
-normalize_keys(Map) when is_map(Map) ->
+normalize_keys(Msg) -> normalize_keys(Msg, #{}).
+normalize_keys(Msg1, Opts) when is_list(Msg1) ->
+    normalize_keys(
+		hb_maps:from_list(
+        	lists:zip(
+            	lists:seq(1, length(Msg1)),
+            	Msg1
+			)
+        ),
+		Opts
+	);
+
+normalize_keys(Map, Opts) when is_map(Map) ->
     hb_maps:from_list(
         lists:map(
             fun({Key, Value}) when is_map(Value) ->
@@ -1173,10 +1179,10 @@ normalize_keys(Map) when is_map(Map) ->
             ({Key, Value}) ->
                 {hb_ao:normalize_key(Key), Value}
             end,
-            hb_maps:to_list(Map)
+            hb_maps:to_list(Map, Opts)
         )
     );
-normalize_keys(Other) -> Other.
+normalize_keys(Other, _Opts) -> Other.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
@@ -1215,7 +1221,7 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
 				false -> {error, device_signer_not_trusted};
 				true ->
                     ?event(device_load, {loading_device, {id, ID}}, Opts),
-					case hb_maps:get(<<"content-type">>, Msg, undefined) of
+					case hb_maps:get(<<"content-type">>, Msg, undefined, Opts) of
 						<<"application/beam">> ->
                             case verify_device_compatibility(Msg, Opts) of
                                 ok ->
@@ -1224,7 +1230,7 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
                                             hb_maps:get(<<"module-name">>, Msg),
                                             new_atoms
                                         ),
-                                    case erlang:load_module(ModName, hb_maps:get(<<"body">>, Msg)) of
+                                    case erlang:load_module(ModName, hb_maps:get(<<"body">>, Msg, undefined, Opts)) of
                                         {module, _} ->
                                             {ok, ModName};
                                         {error, Reason} ->
@@ -1275,7 +1281,7 @@ verify_device_compatibility(Msg, Opts) ->
                 };
             (_) -> false
             end,
-            hb_maps:to_list(Msg)
+            hb_maps:to_list(Msg, Opts)
         ),
     ?event(device_load,
         {discerned_requirements,
@@ -1340,4 +1346,4 @@ internal_opts(Opts) ->
         cache_control => [<<"no-cache">>, <<"no-store">>],
         spawn_worker => false,
         await_inprogress => false
-    }).
+    }, Opts).

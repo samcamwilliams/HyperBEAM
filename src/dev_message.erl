@@ -6,8 +6,8 @@
 %%% behaviour of the device when these keys are set.
 -module(dev_message).
 %%% Base AO-Core reserved keys:
--export([info/0, keys/1]).
--export([set/3, set_path/3, remove/2, get/3, get/4]).
+-export([info/0, keys/1, keys/2]).
+-export([set/3, set_path/3, remove/2, remove/3, get/3, get/4]).
 %%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
 -export([commit/3, committed/3, committers/1, committers/2, committers/3, verify/3]).
@@ -450,7 +450,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
     FromCommitmentIDs =
         case ReqCommitments of
             <<"none">> -> [];
-            <<"all">> -> hb_maps:keys(Commitments);
+            <<"all">> -> hb_maps:keys(Commitments, Opts);
             CommitmentIDs ->
                 CommitmentIDs =
                     if is_list(CommitmentIDs) -> CommitmentIDs;
@@ -571,7 +571,7 @@ commitment_ids_from_committers(CommitterAddrs, Commitments, Opts) ->
 set(Message1, NewValuesMsg, Opts) ->
     OriginalPriv = hb_private:from_message(Message1),
 	% Filter keys that are in the default device (this one).
-    {ok, NewValuesKeys} = keys(NewValuesMsg),
+    {ok, NewValuesKeys} = keys(NewValuesMsg, Opts),
 	KeysToSet =
 		lists:filter(
 			fun(Key) ->
@@ -585,7 +585,7 @@ set(Message1, NewValuesMsg, Opts) ->
 	ConflictingKeys =
 		lists:filter(
 			fun(Key) -> lists:member(Key, KeysToSet) end,
-			hb_maps:keys(Message1)
+			hb_maps:keys(Message1, Opts)
 		),
     UnsetKeys =
         lists:filter(
@@ -595,10 +595,10 @@ set(Message1, NewValuesMsg, Opts) ->
                     _ -> false
                 end
             end,
-            hb_maps:keys(Message1)
+            hb_maps:keys(Message1, Opts)
         ),
     % Base message with keys-to-unset removed
-    BaseValues = hb_maps:without(UnsetKeys, Message1),
+    BaseValues = hb_maps:without(UnsetKeys, Message1, Opts),
     ?event(
         {performing_set,
             {conflicting_keys, ConflictingKeys},
@@ -655,9 +655,9 @@ set(Message1, NewValuesMsg, Opts) ->
         _ ->
             % We did overwrite some keys, but do their values match the original?
             % If not, we must remove the commitments.
-            case hb_message:match(Merged, Message1) of
+            case hb_message:match(Merged, Message1, Opts) of
                 true -> {ok, Merged};
-                _ -> {ok, hb_maps:without([<<"commitments">>], Merged)}
+                _ -> {ok, hb_maps:without([<<"commitments">>], Merged, Opts)}
             end
     end.
 
@@ -668,23 +668,29 @@ set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
 
 %% @doc Remove a key or keys from a message.
-remove(Message1, #{ <<"item">> := Key }) ->
-    remove(Message1, #{ <<"items">> => [Key] });
-remove(Message1, #{ <<"items">> := Keys }) ->
-    { ok, hb_maps:without(Keys, Message1) }.
+remove(Message1, Key) ->
+	remove(Message1, Key, #{}).
+
+remove(Message1, #{ <<"item">> := Key }, Opts) ->
+    remove(Message1, #{ <<"items">> => [Key] }, Opts);
+remove(Message1, #{ <<"items">> := Keys }, Opts) ->
+    { ok, hb_maps:without(Keys, Message1, Opts) }.
 
 %% @doc Get the public keys of a message.
-keys(Msg) when not is_map(Msg) ->
-    case hb_ao:normalize_keys(Msg) of
-        NormMsg when is_map(NormMsg) -> keys(NormMsg);
+keys(Msg) ->
+	keys(Msg, #{}).
+
+keys(Msg, Opts) when not is_map(Msg) ->
+    case hb_ao:normalize_keys(Msg, Opts) of
+        NormMsg when is_map(NormMsg) -> keys(NormMsg, Opts);
         _ -> throw(badarg)
     end;
-keys(Msg) ->
+keys(Msg, Opts) ->
     {
         ok,
         lists:filter(
             fun(Key) -> not hb_private:is_private(Key) end,
-            hb_maps:keys(Msg)
+            hb_maps:keys(Msg, Opts)
         )
     }.
 
@@ -707,7 +713,7 @@ get(Key, Msg, _Msg2, Opts) ->
 %% `hb_maps:get/2'. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg, Opts) ->
     NormKey = hb_ao:normalize_key(Key),
-    NormMsg = hb_ao:normalize_keys(Msg),
+    NormMsg = hb_ao:normalize_keys(Msg, Opts),
     case hb_maps:get(NormKey, NormMsg, not_found, Opts) of
         not_found -> {error, not_found};
         Value -> {ok, Value}
@@ -717,7 +723,7 @@ case_insensitive_get(Key, Msg, Opts) ->
 
 %%% Internal module functionality tests:
 get_keys_mod_test() ->
-    ?assertEqual([a], hb_maps:keys(#{a => 1})).
+    ?assertEqual([a], hb_maps:keys(#{a => 1}, #{})).
 
 is_private_mod_test() ->
     ?assertEqual(true, hb_private:is_private(<<"private">>)),

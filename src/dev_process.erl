@@ -448,7 +448,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                             normalize,
                             Opts#{ hashpath => ignore }
                         ),
-                    NormalizedWithoutSnapshot = hb_maps:remove(<<"snapshot">>, Normalized),
+                    NormalizedWithoutSnapshot = hb_maps:remove(<<"snapshot">>, Normalized, Opts),
                     ?event({loaded_state_checkpoint_result,
                         {proc_id, ProcID},
                         {slot, LoadedSlot},
@@ -588,12 +588,13 @@ test_wasm_process(WASMImage, Opts) ->
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:commit(
         hb_maps:merge(
-            hb_message:uncommitted(test_base_process(Opts)),
+            hb_message:uncommitted(test_base_process(Opts), Opts),
             #{
                 <<"execution-device">> => <<"stack@1.0">>,
                 <<"device-stack">> => [<<"WASM-64@1.0">>],
                 <<"image">> => WASMImageID
-            }
+            },
+			Opts
         ),
         Wallet
     ).
@@ -615,7 +616,7 @@ test_aos_process(Opts, Stack) ->
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
     hb_message:commit(
         hb_maps:merge(
-            hb_message:uncommitted(WASMProc),
+            hb_message:uncommitted(WASMProc, Opts),
             #{
                 <<"device-stack">> => Stack,
                 <<"execution-device">> => <<"stack@1.0">>,
@@ -631,7 +632,9 @@ test_aos_process(Opts, Stack) ->
                     ],
                 <<"scheduler">> => Address,
                 <<"authority">> => Address
-            }),
+            },
+			Opts
+        ),
         Wallet
     ).
 
@@ -644,7 +647,7 @@ dev_test_process() ->
         hb_maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"test-device@1.0">>, <<"test-device@1.0">>]
-        }),
+        }, #{}),
         Wallet
     ).
 
@@ -652,7 +655,7 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
-    UncommittedBase = hb_message:uncommitted(MsgBase),
+    UncommittedBase = hb_message:uncommitted(MsgBase, #{}),
     Msg2 =
         hb_message:commit(#{
                 <<"path">> => <<"schedule">>,

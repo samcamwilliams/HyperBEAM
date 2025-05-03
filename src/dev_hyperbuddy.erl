@@ -47,7 +47,8 @@ metrics(_, Req, Opts) ->
             Headers =
                 hb_maps:map(
                     fun(_, Value) -> hb_util:bin(Value) end,
-                    RawHeaderMap
+                    RawHeaderMap,
+					Opts
                 ),
             {ok, Headers#{ <<"body">> => Body }};
         false ->
@@ -81,11 +82,11 @@ format(Base, Req, Opts) ->
 
 %% @doc Serve a file from the priv directory. Only serves files that are explicitly
 %% listed in the `routes' field of the `info/0' return value.
-serve(<<"keys">>, M1, _M2, _Opts) -> dev_message:keys(M1);
+serve(<<"keys">>, M1, _M2, Opts) -> dev_message:keys(M1, Opts);
 serve(<<"set">>, M1, M2, Opts) -> dev_message:set(M1, M2, Opts);
-serve(Key, _, _, _) ->
+serve(Key, _, _, Opts) ->
     ?event({hyperbuddy_serving, Key}),
-    case hb_maps:get(Key, hb_maps:get(routes, info(), no_routes), undefined) of
+    case hb_maps:get(Key, hb_maps:get(routes, info(), no_routes, Opts), undefined, Opts) of
         undefined -> {error, not_found};
         Filename -> return_file(Filename)
     end.

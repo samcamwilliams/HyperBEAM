@@ -209,7 +209,7 @@ apply_route(Msg, Route = #{ <<"opts">> := RouteOpts }, Opts) ->
             hb_util:ok(
                 apply_route(
                     Msg,
-                    hb_maps:without([<<"opts">>], Route),
+                    hb_maps:without([<<"opts">>], Route, Opts),
                     Opts
                 )
             )
@@ -257,7 +257,7 @@ match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
         Routes,
-        hb_ao:keys(hb_ao:normalize_keys(Routes)),
+        hb_ao:keys(hb_ao:normalize_keys(Routes, Opts)),
         Opts
     ).
 match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
@@ -1008,7 +1008,7 @@ simulation_occurences(SimRes, Nodes) ->
         fun(NearestNodes, Acc) ->
             lists:foldl(
                 fun(Node, Acc2) ->
-                    Acc2#{ Node => hb_maps:get(Node, Acc2) + 1 }
+                    Acc2#{ Node => hb_maps:get(Node, Acc2, 0, #{}) + 1 }
                 end,
                 Acc,
                 NearestNodes
@@ -1019,7 +1019,7 @@ simulation_occurences(SimRes, Nodes) ->
     ).
 
 simulation_distribution(SimRes, Nodes) ->
-    hb_maps:values(simulation_occurences(SimRes, Nodes)).
+    hb_maps:values(simulation_occurences(SimRes, Nodes), #{}).
 
 within_norms(SimRes, Nodes, TestSize) ->
     Distribution = simulation_distribution(SimRes, Nodes),

@@ -167,7 +167,8 @@ exec_dummy_device(SigningWallet, Opts) ->
                     <<"requires-otp-release">> =>
                         hb_util:bin(erlang:system_info(otp_release)),
                     <<"body">> => Bin
-                }
+                },
+				Opts
             ),
             Opts
         ),
@@ -296,9 +297,9 @@ generate_device_with_keys_using_args() ->
             fun(State, Msg, Opts) ->
                 {ok,
                     <<
-                        (hb_maps:get(<<"state_key">>, State))/binary,
-                        (hb_maps:get(<<"msg_key">>, Msg))/binary,
-                        (hb_maps:get(<<"opts_key">>, Opts))/binary
+                        (hb_maps:get(<<"state_key">>, State, undefined, Opts))/binary,
+                        (hb_maps:get(<<"msg_key">>, Msg, undefined, Opts))/binary,
+                        (hb_maps:get(<<"opts_key">>, Opts, undefined, Opts))/binary
                     >>
                 }
             end
@@ -494,7 +495,7 @@ set_with_device_test(Opts) ->
                 #{
                     <<"set">> =>
                         fun(State, _Msg) ->
-                            Acc = hb_maps:get(<<"set_count">>, State, <<"">>),
+                            Acc = hb_maps:get(<<"set_count">>, State, <<"">>, Opts),
                             {ok,
                                 State#{
                                     <<"set_count">> => << Acc/binary, "." >>
@@ -577,7 +578,7 @@ deep_set_with_device_test(Opts) ->
                 % A device where the set function modifies the key
                 % and adds a modified flag.
                 {Key, Val} =
-                    hd(hb_maps:to_list(hb_maps:without([<<"path">>, <<"priv">>], Msg2))),
+                    hd(hb_maps:to_list(hb_maps:without([<<"path">>, <<"priv">>], Msg2, Opts), Opts)),
                 {ok, Msg1#{ Key => Val, <<"modified">> => true }}
             end
     },

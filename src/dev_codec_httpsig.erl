@@ -172,7 +172,8 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
                         <<"committed">> => hb_ao:normalize_keys(CommittedKeys)
                     }
             },
-            Msg
+            Msg,
+			Opts
         )
     },
     ?event({reset_hmac_complete, Res}),
@@ -598,7 +599,9 @@ derive_component(Identifier, Req, Res) when map_size(Res) == 0 ->
 	derive_component(Identifier, Req, Res, req);
 derive_component(Identifier, Req, Res) ->
 	derive_component(Identifier, Req, Res, res).
-derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
+derive_component(Identifier, Req, Res, Subject) ->
+	derive_component(Identifier, Req, Res, Subject, #{}).
+derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject, Opts) ->
 	case find_request_param(IParams) andalso Subject =:= req of
 		% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.3
 		true ->
@@ -617,23 +620,23 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 				case Lowered of
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.2.1
 					<<"@method">> ->
-						{ok, upper_bin(hb_maps:get(<<"method">>, Req, <<>>))};
+						{ok, upper_bin(hb_maps:get(<<"method">>, Req, <<>>, Opts))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.4.1
 					<<"@target-uri">> ->
-						{ok, bin(hb_maps:get(<<"path">>, Req, <<>>))};
+						{ok, bin(hb_maps:get(<<"path">>, Req, <<>>, Opts))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.6.1
 					<<"@authority">> ->
-						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, <<>>)),
-						Authority = hb_maps:get(host, URI, <<>>),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, <<>>, Opts)),
+						Authority = hb_maps:get(host, URI, <<>>, Opts),
 						{ok, lower_bin(Authority)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.8.1
 					<<"@scheme">> ->
-						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
-						Scheme = hb_maps:get(scheme, URI, <<>>),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, Opts)),
+						Scheme = hb_maps:get(scheme, URI, <<>>, Opts),
 						{ok, lower_bin(Scheme)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.10.1
 					<<"@request-target">> ->
-						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, Opts)),
 						% If message contains the absolute form value, then
 						% the value must be the absolut url
 						%
@@ -642,13 +645,13 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						%
 						% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.5-10
 						RequestTarget =
-							case hb_maps:get(is_absolute_form, Req, false) of
-								true -> hb_maps:get(url, Req);
+							case hb_maps:get(is_absolute_form, Req, false, Opts) of
+								true -> hb_maps:get(url, Req, undefined, Opts);
 								_ ->
                                     lists:join($?,
                                         [
-                                            hb_maps:get(path, URI, <<>>),
-                                            hb_maps:get(query, URI, ?EMPTY_QUERY_PARAMS)
+                                            hb_maps:get(path, URI, <<>>, Opts),
+                                            hb_maps:get(query, URI, ?EMPTY_QUERY_PARAMS, Opts)
                                         ]
                                     )
 							end,
@@ -656,15 +659,15 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.12.1
 					<<"@path">> ->
 						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
-						Path = hb_maps:get(path, URI),
+						Path = hb_maps:get(path, URI, undefined, Opts),
 						{ok, bin(Path)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.14.1
 					<<"@query">> ->
-						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, undefined, Opts)),
 						% No query params results in a "?" value
 						% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 						Query =
-							case hb_maps:get(query, URI, <<>>) of
+							case hb_maps:get(query, URI, <<>>, Opts) of
 								<<>> -> ?EMPTY_QUERY_PARAMS;
 								Q -> Q
 							end,
@@ -681,9 +684,9 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "must specify a name parameter">>
                                 };
 							Name ->
-								URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
+								URI = uri_string:parse(hb_maps:get(<<"path">>, Req, undefined, Opts)),
 								QueryParams =
-                                    uri_string:dissect_query(hb_maps:get(query, URI, "")),
+                                    uri_string:dissect_query(hb_maps:get(query, URI, "", Opts)),
 								QueryParam =
 									case lists:keyfind(Name, 1, QueryParams) of
 										{_, QP} -> QP;
@@ -705,7 +708,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "used if target is a request message">>
                                 };
 							_ ->
-								Status = hb_maps:get(<<"status">>, Res, <<"200">>),
+								Status = hb_maps:get(<<"status">>, Res, <<"200">>, Opts),
 								{ok, Status}
 						end
 				end,
@@ -956,7 +959,7 @@ derive_component_error_req_param_on_request_target_test() ->
 	Result =
         derive_component(
             {item, {string, <<"@query-param">>}, [{<<"req">>, true}]},
-            #{}, #{}, req),
+            #{}, #{}, req, #{}),
 	?assertMatch(
 		{req_identifier_error, _},
 		Result
@@ -968,14 +971,19 @@ derive_component_error_query_param_no_name_test() ->
             {item,
                 {string, <<"@query-param">>},
                 [{<<"noname">>, {string, <<"foo">>}}]
-            }, #{}, #{}, req),
+            },
+			#{},
+			#{},
+			req,
+			#{}
+		),
 	?assertMatch(
 		{req_identifier_error, _},
 		Result
 	).
 
 derive_component_error_status_req_target_test() ->
-	Result = derive_component({item, {string, <<"@status">>}, []}, #{}, #{}, req),
+	Result = derive_component({item, {string, <<"@status">>}, []}, #{}, #{}, req, #{}),
 	{E, _M} = Result,
 	?assertEqual(res_identifier_error, E).
 

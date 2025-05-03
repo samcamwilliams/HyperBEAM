@@ -24,7 +24,7 @@ suite_with_opts(Suite, OptsList) ->
     lists:filtermap(
         fun(OptSpec = #{ name := _Name, opts := Opts, desc := ODesc}) ->
             Store = hb_opts:get(store, hb_opts:get(store), Opts),
-            Skip = hb_maps:get(skip, OptSpec, []),
+            Skip = hb_maps:get(skip, OptSpec, [], Opts),
             case satisfies_requirements(OptSpec) of
                 true ->
                     {true, {foreach,

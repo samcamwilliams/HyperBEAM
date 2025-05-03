@@ -84,7 +84,7 @@ denormalize_message(Message, Opts) ->
         case hb_message:signers(Message, Opts) of
             [] -> Message;
             [PrimarySigner|_] ->
-                {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message),
+                {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message, Opts),
                 Message#{
                     <<"owner">> => hb_util:human_id(PrimarySigner),
                     <<"signature">> =>
@@ -104,7 +104,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
             tabm,
             #{}
         ),
-    MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM),
+    MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
     Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
@@ -151,7 +151,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
         % NOTE: When sent to ao "Owner" is the wallet address
         <<"Owner">> => hb_util:encode(Owner),
         <<"From">> => case ?IS_ID(From) of true -> safe_to_id(From); false -> From end,
-        <<"Tags">> => prepare_tags(TABM),
+        <<"Tags">> => prepare_tags(TABM, Opts),
         <<"Target">> => safe_to_id(Target),
         <<"Data">> => Data,
         <<"Signature">> =>
@@ -164,25 +164,25 @@ message_to_json_struct(RawMsg, Features, Opts) ->
 
 %% @doc Prepare the tags of a message as a key-value list, for use in the 
 %% construction of the JSON-Struct message.
-prepare_tags(Msg) ->
+prepare_tags(Msg, Opts) ->
     % Prepare an ANS-104 message for JSON-Struct construction.
     case hb_message:commitment(#{ <<"commitment-device">> => <<"ans104@1.0">> }, Msg, #{}) of
         {ok, _, Commitment} ->
-            case hb_maps:find(<<"original-tags">>, Commitment) of
+            case hb_maps:find(<<"original-tags">>, Commitment, Opts) of
                 {ok, OriginalTags} ->
                     Res = hb_util:message_to_ordered_list(OriginalTags),
                     ?event({using_original_tags, Res}),
                     Res;
                 error -> 
-                    prepare_header_case_tags(Msg)
+                    prepare_header_case_tags(Msg, Opts)
             end;
         _ ->
-            prepare_header_case_tags(Msg)
+            prepare_header_case_tags(Msg, Opts)
     end.
 
 %% @doc Convert a message without an `original-tags' field into a list of
 %% key-value pairs, with the keys in HTTP header-case.
-prepare_header_case_tags(TABM) ->
+prepare_header_case_tags(TABM, Opts) ->
     % Prepare a non-ANS-104 message for JSON-Struct construction. 
     lists:map(
         fun({Name, Value}) ->
@@ -197,8 +197,10 @@ prepare_header_case_tags(TABM) ->
                     <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
                     <<"target">>, <<"signature">>, <<"commitments">>
                 ],
-                TABM
-            )
+                TABM,
+                Opts
+            ),
+			Opts
         )
     ).
 
@@ -207,7 +209,7 @@ prepare_header_case_tags(TABM) ->
 json_to_message(JSON, Opts) when is_binary(JSON) ->
     json_to_message(hb_json:decode(JSON), Opts);
 json_to_message(Resp, Opts) when is_map(Resp) ->
-    {ok, Data, Messages, Patches} = normalize_results(Resp),
+    {ok, Data, Messages, Patches} = normalize_results(Resp, Opts),
     Output = 
         #{
             <<"outbox">> =>
@@ -222,7 +224,7 @@ json_to_message(Resp, Opts) when is_map(Resp) ->
                             )
                     ]
                 ),
-            <<"patches">> => lists:map(fun tags_to_map/1, Patches),
+            <<"patches">> => lists:map(fun(Patch) -> tags_to_map(Patch, Opts) end, Patches),
             <<"data">> => Data
         },
     {ok, Output};
@@ -348,26 +350,27 @@ env_write(ProcessStr, MsgStr, Base, Req, Opts) ->
 
 %% @doc Normalize the results of an evaluation.
 normalize_results(
-    Msg = #{ <<"Output">> := #{<<"data">> := Data} }) ->
+    Msg = #{ <<"Output">> := #{<<"data">> := Data} }, Opts) ->
     {ok,
         Data,
-        hb_maps:get(<<"Messages">>, Msg, []),
-        hb_maps:get(<<"patches">>, Msg, [])
+        hb_maps:get(<<"Messages">>, Msg, [], Opts),
+        hb_maps:get(<<"patches">>, Msg, [], Opts)
     };
-normalize_results(#{ <<"Error">> := Error }) ->
+normalize_results(#{ <<"Error">> := Error }, _Opts) ->
     {ok, Error, [], []};
-normalize_results(Other) ->
+normalize_results(Other, _Opts) ->
     throw({invalid_results, Other}).
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
-preprocess_results(Msg, _Opts) ->
-    Tags = tags_to_map(Msg),
+preprocess_results(Msg, Opts) ->
+    Tags = tags_to_map(Msg, Opts),
     FilteredMsg =
         hb_maps:without(
             [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
-            Msg
+            Msg,
+            Opts
         ),
     hb_maps:merge(
         hb_maps:from_list(
@@ -375,19 +378,20 @@ preprocess_results(Msg, _Opts) ->
                 fun({Key, Value}) ->
                     {hb_ao:normalize_key(Key), Value}
                 end,
-                hb_maps:to_list(FilteredMsg)
+                hb_maps:to_list(FilteredMsg, Opts)
             )
         ),
-        Tags
+        Tags,
+        Opts
     ).
 
 %% @doc Convert a message with tags into a map of their key-value pairs.
-tags_to_map(Msg) ->
-    NormMsg = hb_ao:normalize_keys(Msg),
-    RawTags = hb_maps:get(<<"tags">>, NormMsg, []),
+tags_to_map(Msg, Opts) ->
+    NormMsg = hb_ao:normalize_keys(Msg, Opts),
+    RawTags = hb_maps:get(<<"tags">>, NormMsg, [], Opts),
     TagList =
         [
-            {hb_maps:get(<<"name">>, Tag), hb_maps:get(<<"value">>, Tag)}
+            {hb_maps:get(<<"name">>, Tag, Opts), hb_maps:get(<<"value">>, Tag, Opts)}
         ||
             Tag <- RawTags
         ],

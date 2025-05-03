@@ -131,9 +131,9 @@ output_prefix(Msg1, _Msg2, Opts) ->
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
 %% `dev_message'.
-router(<<"keys">>, Message1, Message2, _Opts) ->
+router(<<"keys">>, Message1, Message2, Opts) ->
 	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
-	dev_message:keys(Message1);
+	dev_message:keys(Message1, Opts);
 router(Key, Message1, Message2, Opts) ->
     case hb_path:matches(Key, <<"transform">>) of
         true -> transformer_message(Message1, Opts);
@@ -179,7 +179,8 @@ transformer_message(Msg1, Opts) ->
                                     fun(Key, MsgX1) ->
                                         transform(MsgX1, Key, Opts)
                                     end
-                            }
+                            },
+							Opts
                         )
 					end,
 				<<"type">> => <<"stack-transformer">>
@@ -359,7 +360,8 @@ resolve_map(Message1, Message2, Opts) ->
                     _ -> false
                 end
             end,
-            hb_maps:without(?AO_CORE_KEYS, hb_ao:normalize_keys(DevKeys))
+            hb_maps:without(?AO_CORE_KEYS, hb_ao:normalize_keys(DevKeys, Opts), Opts),
+			Opts
         )
     },
     Res.
@@ -443,7 +445,7 @@ transform_external_call_device_test() ->
 									handler =>
 										fun(<<"keys">>, MsgX1) ->
                                             ?event({test_dev_keys_called, MsgX1}),
-											{ok, hb_maps:keys(MsgX1)};
+											{ok, hb_maps:keys(MsgX1, #{})};
 										(Key, MsgX1) ->
 											{ok, Value} =
 												dev_message:get(Key, MsgX1, #{}),

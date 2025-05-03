@@ -43,9 +43,10 @@ compute(Msg1, Msg2, Opts) ->
                 (hb_ao:get(<<"method">>, Msg, Opts) == <<"PATCH">>) orelse
                     (hb_ao:get(<<"device">>, Msg, Opts) == <<"patch@1.0">>)
             end,
-            Outbox
+            Outbox,
+			Opts
         ),
-    OutboxWithoutPatches = hb_maps:without(hb_maps:keys(Patches), Outbox),
+    OutboxWithoutPatches = hb_maps:without(hb_maps:keys(Patches, Opts), Outbox, Opts),
     % Remove the outbox from the message.
     Msg1WithoutOutbox = hb_ao:set(Msg1, PatchFrom, should_never_happen, Opts),
     % Set the new outbox.
@@ -58,7 +59,7 @@ compute(Msg1, Msg2, Opts) ->
                 ?event({patching, {patch, Patch}, {before, MsgN}}),
                 Res = hb_ao:set(
                     MsgN,
-                    hb_maps:without([<<"method">>], Patch),
+                    hb_maps:without([<<"method">>], Patch, Opts),
                     Opts
                 ),
                 ?event({patched, {'after', Res}}),
@@ -68,7 +69,8 @@ compute(Msg1, Msg2, Opts) ->
                 not_found -> Msg1WithNewOutbox;
                 PatchTo -> hb_ao:get(PatchTo, Msg1WithNewOutbox, Opts)
             end,
-            Patches
+            Patches,
+			Opts
         ),
     PatchedState =
         case PatchTo of

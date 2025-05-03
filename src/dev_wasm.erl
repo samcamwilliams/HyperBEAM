@@ -479,7 +479,8 @@ benchmark_test() ->
             #{
                 <<"function">> => <<"fac">>,
                 <<"parameters">> => [5.0]
-            }
+            },
+			#{}
         ),
     Iterations =
         hb:benchmark(
@@ -513,7 +514,8 @@ state_export_and_restore_test() ->
                         <<"my_lib">> =>
                             #{ <<"device">> => <<"Test-Device@1.0">> }
                     }
-            }
+            },
+			#{}
         ),
     ?event({after_setup, Msg2}),
     % Compute a computation and export the state.
@@ -522,7 +524,7 @@ state_export_and_restore_test() ->
     {ok, State} = hb_ao:resolve(Msg3a, <<"snapshot">>, #{}),
     ?event({state_res, State}),
     % Restore the state without calling Init.
-    NewMsg1 = hb_maps:merge(Msg0, Extras#{ <<"snapshot">> => State }),
+    NewMsg1 = hb_maps:merge(Msg0, Extras#{ <<"snapshot">> => State }, #{}),
     ?assertEqual(
         {ok, [4]},
         hb_ao:resolve(NewMsg1, <<"compute/results/output">>, #{})
@@ -556,7 +558,8 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
                 },
                 AdditionalMsg,
                 #{ hashpath => ignore }
-            )
+            ),
+			#{}
         ),
     ?event({after_setup, Msg2}),
     {ok, StateRes} = hb_ao:resolve(Msg2, <<"compute">>, #{}),

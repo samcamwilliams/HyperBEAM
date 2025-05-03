@@ -62,10 +62,10 @@ init(M1, _M2, Opts) ->
         _ ->
             SnpHashes = hb_ao:get(<<"body">>, M1, Opts),
             SNPDecoded = hb_json:decode(SnpHashes),
-            Hashes = hb_maps:get(<<"snp_hashes">>, SNPDecoded),
+            Hashes = hb_maps:get(<<"snp_hashes">>, SNPDecoded, undefined, Opts),
             ok = hb_http_server:set_opts(Opts#{
                 % Add our trusted hashes to the device's trusted software list
-                trusted => hb_maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes),
+                trusted => hb_maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes, Opts),
                 % Set our hashes to the given hashes
                 snp_hashes => Hashes
             }),
@@ -91,8 +91,9 @@ verify(M1, M2, NodeOpts) ->
 	Report = hb_json:decode(ReportJSON),
 	Msg =
 		hb_maps:merge(
-			hb_maps:without([<<"report">>], MsgWithJSONReport),
-			Report
+			hb_maps:without([<<"report">>], MsgWithJSONReport, NodeOpts),
+			Report,
+			NodeOpts
 		),
     ?event({verify, Msg}),
     % Step 1: Verify the nonce.
@@ -131,7 +132,7 @@ verify(M1, M2, NodeOpts) ->
 		hb_maps:from_list(
 			lists:map(
 				fun({Key, Val}) -> {binary_to_existing_atom(Key), Val} end,
-				hb_maps:to_list(hb_maps:with(lists:map(fun atom_to_binary/1, ?COMMITTED_PARAMETERS), Msg))
+				hb_maps:to_list(hb_maps:with(lists:map(fun atom_to_binary/1, ?COMMITTED_PARAMETERS), Msg, NodeOpts), NodeOpts)
 			)
 		),
 	?event({args, Args}),

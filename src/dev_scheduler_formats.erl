@@ -93,12 +93,11 @@ assignments_to_aos2(ProcID, Assignments, More, RawOpts) ->
 cursor(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
     hb_ao:get(<<"slot">>, Assignment, Opts).
-
 %% @doc Convert an assignment to an AOS2-compatible JSON structure.
 assignment_to_aos2(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
     Message = hb_ao:get(<<"body">>, Assignment, Opts),
-    AssignmentWithoutBody = hb_maps:without([<<"body">>], Assignment),
+    AssignmentWithoutBody = hb_maps:without([<<"body">>], Assignment, Opts),
     #{
         <<"message">> =>
             dev_json_iface:message_to_json_struct(Message, Opts),
@@ -110,7 +109,7 @@ assignment_to_aos2(Assignment, RawOpts) ->
 %% assignments response.
 aos2_to_assignments(ProcID, Body, RawOpts) ->
     Opts = format_opts(RawOpts),
-    Assignments = hb_maps:get(<<"edges">>, Body, Opts),
+    Assignments = hb_maps:get(<<"edges">>, Body, Opts, Opts),
     ?event({raw_assignments, Assignments}),
     ParsedAssignments =
         lists:map(
@@ -136,18 +135,18 @@ aos2_to_assignments(ProcID, Body, RawOpts) ->
 aos2_to_assignment(A, RawOpts) ->
     Opts = format_opts(RawOpts),
     % Unwrap the node if it is provided
-    Node = hb_maps:get(<<"node">>, A, A),
+    Node = hb_maps:get(<<"node">>, A, A, Opts),
     ?event({node, Node}),
     {ok, Assignment} =
         hb_gateway_client:result_to_message(
-            aos2_normalize_data(hb_maps:get(<<"assignment">>, Node)),
+            aos2_normalize_data(hb_maps:get(<<"assignment">>, Node, undefined, Opts)),
             Opts
         ),
     NormalizedAssignment = aos2_normalize_types(Assignment),
     {ok, Message} =
-        case hb_maps:get(<<"message">>, Node) of
+        case hb_maps:get(<<"message">>, Node, undefined, Opts) of
             null ->
-                MessageID = hb_maps:get(<<"message">>, Assignment),
+                MessageID = hb_maps:get(<<"message">>, Assignment, undefined, Opts),
                 ?event(error, {scheduler_did_not_provide_message, MessageID}),
                 case hb_cache:read(MessageID, Opts) of
                     {ok, Msg} -> {ok, Msg};

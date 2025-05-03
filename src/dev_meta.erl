@@ -50,7 +50,7 @@ is_operator(Request, NodeMsg) ->
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(http, {request, hb_ao:normalize_keys(NormRequest)}),
+    ?event(http, {request, hb_ao:normalize_keys(NormRequest, NodeMsg)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
             Res =
@@ -87,7 +87,7 @@ info(_, Request, NodeMsg) ->
             ?event({get_config_req, Request, NodeMsg}),
 			DynamicKeys = add_dynamic_keys(NodeMsg),	
 			?event(green_zone, {get_config, DynamicKeys}),
-            embed_status({ok, filter_node_msg(DynamicKeys)}, NodeMsg);
+            embed_status({ok, filter_node_msg(DynamicKeys, NodeMsg)}, NodeMsg);
         <<"POST">> ->
             case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 permanent ->
@@ -106,13 +106,13 @@ info(_, Request, NodeMsg) ->
 
 %% @doc Remove items from the node message that are not encodable into a
 %% message.
-filter_node_msg(Msg) when is_map(Msg) ->
-    hb_maps:map(fun(_, Value) -> filter_node_msg(Value) end, hb_private:reset(Msg));
-filter_node_msg(Msg) when is_list(Msg) ->
-    lists:map(fun filter_node_msg/1, Msg);
-filter_node_msg(Tuple) when is_tuple(Tuple) ->
+filter_node_msg(Msg, NodeMsg) when is_map(Msg) ->
+    hb_maps:map(fun(_, Value) -> filter_node_msg(Value, NodeMsg) end, hb_private:reset(Msg), NodeMsg);
+filter_node_msg(Msg, NodeMsg) when is_list(Msg) ->
+    lists:map(fun(Item) -> filter_node_msg(Item, NodeMsg) end, Msg);
+filter_node_msg(Tuple, _NodeMsg) when is_tuple(Tuple) ->
     <<"Unencodable value.">>;
-filter_node_msg(Other) ->
+filter_node_msg(Other, _NodeMsg) ->
     Other.
 
 %% @doc Add dynamic keys to the node message.
@@ -179,7 +179,8 @@ adopt_node_message(Request, NodeMsg) ->
     MergedOpts =
         hb_maps:merge(
             NodeMsg,
-            hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
+            hb_opts:mimic_default_types(hb_message:uncommitted(Request, NodeMsg), new_atoms, NodeMsg),
+			NodeMsg
         ),
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
@@ -208,13 +209,14 @@ handle_resolve(Req, Msgs, NodeMsg) ->
         {ok, PreProcessedMsg} ->
             ?event(
                 {result_after_preprocessing,
-                    hb_ao:normalize_keys(PreProcessedMsg)}
+                    hb_ao:normalize_keys(PreProcessedMsg, NodeMsg)}
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
             HTTPOpts = hb_maps:merge(
                 AfterPreprocOpts,
-                hb_opts:get(http_extra_opts, #{}, NodeMsg)
+                hb_opts:get(http_extra_opts, #{}, NodeMsg),
+				NodeMsg
             ),
             Res =
                 try
