@@ -91,11 +91,13 @@ priv_ao_opts(Opts) ->
     Opts#{ hashpath => ignore, cache_control => [<<"no-cache">>, <<"no-store">>] }.
 
 %% @doc Unset all of the private keys in a message.
-reset(Msg) ->
+reset(Msg) when is_map(Msg) ->
     maps:without(
         lists:filter(fun is_private/1, maps:keys(Msg)),
         Msg
-    ).
+    );
+reset(Other) ->
+    Other.
 
 %%% Tests
 

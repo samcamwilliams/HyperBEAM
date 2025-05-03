@@ -155,10 +155,23 @@ format(Link, Opts) ->
     end.
 
 %% @doc Format a link without resolving it.
-format_unresolved({link, ID, #{ <<"type">> := Type }}) ->
-    hb_util:bin(io_lib:format("Link (~s): ~s", [hb_util:bin(Type), ID]));
-format_unresolved({link, ID, _}) ->
-    hb_util:bin(io_lib:format("Link: ~s", [ID])).
+format_unresolved({link, ID, Opts}) ->
+    hb_util:bin(
+        io_lib:format(
+            "~s~s: ~s",
+            [
+                case maps:get(<<"lazy">>, Opts, false) of
+                    true -> <<"Lazy link">>;
+                    false -> <<"Link">>
+                end,
+                case maps:get(<<"type">>, Opts, no_type) of
+                    no_type -> <<>>;
+                    Type -> <<" (to ", (hb_util:bin(Type))/binary, ")" >>
+                end,
+                ID
+            ]
+        )
+    ).
 
 %%% Tests
 

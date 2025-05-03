@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    verify_nested_complex_signed_test(<<"httpsig@1.0">>).
+    find_multiple_commitments_test().
 
 %% @doc Return a list of codecs to test. Disable these as necessary if you need
 %% to test the functionality of a single codec, etc.
@@ -34,7 +34,7 @@ test_opts(_) ->
             [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-mainnet">>
+                    <<"prefix">> => <<"cache-TEST">>
                 }
             ],
         priv_wallet => hb:wallet()

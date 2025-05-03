@@ -42,22 +42,22 @@ json(Base, Req, Opts) ->
                         all;
                     _ ->
                         {ok, Path} = hb_cache:write(Base, Opts),
-                        ?event(debug, {wrote_message, Path}),
+                        ?event({wrote_message, Path}),
                         ID = hb_message:id(Base, all, Opts),
-                        ?event(debug, {generated_id, ID}),
+                        ?event({generated_id, ID}),
                         ID
                 end;
             <<".">> -> <<"/">>;
             ReqTarget -> ReqTarget
         end,
     MaxSize = hb_util:int(hb_ao:get(<<"max-size">>, Req, 250, Opts)),
-    ?event(debug, {max_size, MaxSize}),
-    ?event(debug, {json, {target, Target}, {req, Req}}),
+    ?event({max_size, MaxSize}),
+    ?event({json, {target, Target}, {req, Req}}),
     hb_cache_render:get_graph_data(Target, MaxSize, Opts).
 
 %% @doc Return a renderer in HTML form for the JSON format.
 index(Base, _, _Opts) ->
-    ?event(debug, {cacheviz_index, {base, Base}}),
+    ?event({cacheviz_index, {base, Base}}),
     dev_hyperbuddy:return_file(<<"cacheviz@1.0">>, <<"graph.html">>).
 
 %% @doc Return a JS library that can be used to render the JSON format.

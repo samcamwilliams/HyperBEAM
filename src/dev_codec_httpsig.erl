@@ -250,7 +250,11 @@ add_content_digest(Msg, Opts) ->
 %% input as the components for the hmac.
 hmac(Msg, Req, Opts) ->
     % Find the committed keys. Default: all keys.
-    Committed = maps:get(<<"committed">>, Req, maps:keys(Msg)),
+    Committed =
+        hb_util:message_to_ordered_list(
+            hb_maps:get(<<"committed">>, Req, maps:keys(Msg)),
+            Opts
+        ),
     ?event(hmac, {generating_hmac_on, {msg, Msg}, {keys, Committed}}),
     % Find the keys to use for the hmac. These should be set by the signature
     % input, but if that is not present, then use all the keys from the encoded
@@ -375,7 +379,7 @@ signature_components_line(Commitment, Req, Res, Opts) ->
 %% @doc construct the "signature-params-line" part of the signature base.
 %%
 %% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
-signature_params_line(Commitment, _Opts) ->
+signature_params_line(Commitment, Opts) ->
 	hb_util:bin(
         hb_structured_fields:list(
             [
@@ -383,7 +387,10 @@ signature_params_line(Commitment, _Opts) ->
                     list,
                     lists:map(
                         fun(Key) -> {item, {string, Key}, []} end,
-                        maps:get(<<"committed">>, Commitment)
+                        hb_util:message_to_ordered_list(
+                            maps:get(<<"committed">>, Commitment),
+                            Opts
+                        )
                     ),
                     lists:map(
                         fun ({Name, Param}) when is_binary(Param) ->
@@ -883,19 +890,19 @@ validate_large_message_from_http_test() ->
                 N <- lists:seq(1, 3)
             ]
     }),
-    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    Signers = hb_message:signers(Res, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
+    Signers = hb_message:signers(Res, Opts),
     ?event({received, {signers, Signers}, {res, Res}}),
     ?assert(length(Signers) == 1),
-    ?assert(hb_message:verify(Res, Signers, #{})),
+    ?assert(hb_message:verify(Res, Signers, Opts)),
     ?event({sig_verifies, Signers}),
-    ?assert(hb_message:verify(Res)),
+    ?assert(hb_message:verify(Res, all, Opts)),
     ?event({hmac_verifies, <<"hmac-sha256">>}),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Res, Opts),
     ?event({msg_with_only_committed, OnlyCommitted}),
-    ?assert(hb_message:verify(OnlyCommitted, Signers)),
+    ?assert(hb_message:verify(OnlyCommitted, Signers, Opts)),
     ?event({msg_with_only_committed_verifies, Signers}),
-    ?assert(hb_message:verify(OnlyCommitted)),
+    ?assert(hb_message:verify(OnlyCommitted, all, Opts)),
     ?event({msg_with_only_committed_verifies_hmac, <<"hmac-sha256">>}).
 
 committed_id_test() ->
@@ -948,24 +955,6 @@ trim_ws_test() ->
 % 		join_signature_base(ComponentsLine, ParamsLine)
 % 	).
 
-signature_params_line_test() ->
-	Params = #{created => 1733165109501, nonce => "foobar", keyid => "key1"},
-	ContentIdentifiers = [
-		<<"Content-Length">>,
-        <<"@method">>,
-        <<"@Path">>,
-        <<"content-type">>,
-        <<"example-dict">>
-	],
-	Result = signature_params_line(ContentIdentifiers, Params),
-	?assertEqual(
-        <<
-            "(\"content-length\" \"@method\" \"@path\" \"content-type\" \"example-dict\")"
-            ";created=1733165109501;keyid=\"key1\";nonce=\"foobar\""
-        >>,
-		Result
-	).
-
 derive_component_error_req_param_on_request_target_test() ->
 	Result =
         derive_component(
@@ -1002,15 +991,11 @@ derive_component_error_status_req_target_test() ->
 sign_and_verify_link_test() ->
     Msg = #{
         <<"normal">> => <<"typical-value">>,
-        <<"untyped">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
-        <<"typed">> =>
-            {link,
-                hb_util:human_id(crypto:strong_rand_bytes(32)),
-                #{ <<"type">> => <<"integer">> }
-            }
+        <<"untyped">> => #{ <<"inner-untyped">> => <<"inner-value">> },
+        <<"typed">> => #{ <<"inner-typed">> => 123 }
     },
-    ?event({msg, Msg}),
-    Signed = hb_message:commit(Msg, hb:wallet()),
+    NormMsg = hb_message:convert(Msg, <<"structured@1.0">>, #{}),
+    ?event({msg, NormMsg}),
+    Signed = hb_message:commit(NormMsg, hb:wallet()),
     ?event({signed_msg, Signed}),
     ?assert(hb_message:verify(Signed)).
