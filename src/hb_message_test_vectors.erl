@@ -1228,14 +1228,10 @@ sign_links_test(Codec) ->
     % data directly in memory.
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
-        <<"submap+link">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{
-                <<"type">> => <<"link">>,
-                <<"lazy">> => false
-            }}
+        <<"submap+link">> => hb_util:human_id(crypto:strong_rand_bytes(32))
     },
     Signed = hb_message:commit(Msg, Opts, Codec),
-    ?event({signed, Signed}),
+    ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
 id_of_linked_message_test(Codec) ->

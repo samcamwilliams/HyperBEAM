@@ -57,58 +57,34 @@ commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
 commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha256">> }, Opts);
 commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
+    % Convert the given message to an ANS-104 TX record, sign it, and convert
+    % it back to a structured message.
     ?event({committing, {input, Msg}}),
     Signed =
         ar_bundles:sign_item(
-            TX = hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
-            Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
+            hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
+            hb_opts:get(priv_wallet, no_viable_wallet, Opts)
         ),
-    ?event({signed_tx, Signed}),
-    ID = hb_util:human_id(Signed#tx.id),
-    % Get the prior original tags from the commitment, if it exists.
-    PriorOriginalTags =
-        case hb_message:commitment(#{ <<"type">> => <<"unsigned-sha256">> }, Msg, Opts) of
-            {ok, _, #{ <<"original-tags">> := OrigTags }} -> OrigTags;
-            _ -> undefined
-        end,
-    Commitment =
-        #{
-            <<"commitment-device">> => <<"ans104@1.0">>,
-            <<"committer">> => hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"keyid">> => hb_util:encode(Signed#tx.owner),
-            <<"signature">> => hb_util:encode(Signed#tx.signature),
-            <<"type">> => <<"rsa-pss-sha256">>,
-            <<"committed">> =>
-                hb_util:unique(
-                    ?BASE_COMMITTED_TAGS
-                        ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
-                )
-        },
-    CommitmentWithOriginalTags =
-        case PriorOriginalTags of
-            undefined -> Commitment;
-            OriginalTags -> Commitment#{ <<"original-tags">> => OriginalTags }
-        end,
-    CommitmentWithHP =
-        case Msg of
-            #{ <<"hashpath">> := Hashpath } ->
-                CommitmentWithOriginalTags#{ <<"hashpath">> => Hashpath };
-            _ -> CommitmentWithOriginalTags
-        end,
-    MsgWithoutHP = hb_maps:without([<<"hashpath">>], Msg, Opts),
-    {ok,
-        (hb_message:without_commitments(
-            #{
-                <<"commitment-device">> => <<"ans104@1.0">>,
-                <<"type">> => <<"unsigned-sha256">>
-            },
-            MsgWithoutHP,
+    SignedStructured =
+        hb_message:convert(
+            Signed,
+            <<"structured@1.0">>,
+            <<"ans104@1.0">>,
             Opts
-        ))#{
-            <<"commitments">> => #{
-                ID => CommitmentWithHP
-            }
-        }
+        ),
+    {ok, SignedStructured};
+commit(Msg, #{ <<"type">> := <<"unsigned-sha256">> }, Opts) ->
+    % Remove the commitments from the message, convert it to ANS-104, then back.
+    % This forces the message to be normalized and the unsigned ID to be
+    % recalculated.
+    {
+        ok,
+        hb_message:convert(
+            hb_maps:without([<<"commitments">>], Msg, Opts),
+            <<"ans104@1.0">>,
+            <<"structured@1.0">>,
+            Opts
+        )
     }.
 
 %% @doc Verify an ANS-104 commitment.
@@ -139,7 +115,7 @@ from(TX, Req, Opts) when is_record(TX, tx) ->
     end.
 do_from(RawTX, Req, Opts) ->
     % Ensure the TX is fully deserialized.
-    TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)), % <- Is norm necessary?
+    TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
     OriginalTagMap = encoded_tags_to_map(TX#tx.tags),
     % Get the raw fields and values of the tx record and pair them. Then convert 
     % the list of key-value pairs into a map, removing irrelevant fields.
@@ -359,9 +335,8 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
         }
     };
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
-to(RawTABM, Req, Opts) when is_map(RawTABM) ->
+to(NormTABM, Req, Opts) when is_map(NormTABM) ->
     % Ensure that the TABM is fully loaded, for now.
-    NormTABM = hb_cache:ensure_all_loaded(RawTABM, Opts),
     ?event({to, {norm, NormTABM}}),
     TABM =
         hb_ao:normalize_keys(
@@ -669,17 +644,24 @@ simple_signed_to_httpsig_test() ->
             #tx {
                 tags = [
                     {<<"test-tag">>, <<"test-value">>},
-                    {<<"test-tag-2">>, <<"test-value-2">>}
+                    {<<"test-tag-2">>, <<"test-value-2">>},
+                    {<<"Capitalized-Tag">>, <<"test-value-3">>}
                 ]
             },
             ar_wallet:new()
         ),
     Structured1 = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
-    ?event({tx, TX}),
+    ?event(debug, {tx, TX}),
     TABM = hb_message:convert(TX, tabm, <<"ans104@1.0">>, #{}),
-    ?event({tabm, TABM}),
+    ?event(debug, {tabm, TABM}),
     HTTPSig = hb_message:convert(TABM, <<"httpsig@1.0">>, tabm, #{}),
-    ?event({httpsig, HTTPSig}),
+    ?event(debug, {httpsig, HTTPSig}),
     Structured2 = hb_message:convert(HTTPSig, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-    ?assert(hb_message:match(Structured1, Structured2)),
-    ?assert(hb_message:verify(Structured2, all, #{})).
+	Match = hb_message:match(Structured1, Structured2, #{}),
+    ?event(debug, {match, Match}),
+    ?assert(Match),
+    ?assert(hb_message:verify(Structured2, all, #{})),
+    HTTPSig2 = hb_message:convert(Structured2, <<"httpsig@1.0">>, <<"structured@1.0">>, #{}),
+    ?event(debug, {httpsig2, HTTPSig2}),
+    ?assert(hb_message:verify(HTTPSig2, all, #{})),
+    ?assert(hb_message:match(HTTPSig, HTTPSig2)).

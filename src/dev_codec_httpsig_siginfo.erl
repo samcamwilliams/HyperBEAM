@@ -58,13 +58,17 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     SFSig = {item, {binary, Signature}, []},
     Params = 
         lists:filter(
-            fun({_Key, {string, Val}}) -> Val =/= undefined end,
+            fun({_Key, undefined}) ->
+                false;
+               ({_Key, {_, Val}}) ->
+                Val =/= undefined
+            end,
             [
                 {<<"alg">>, {string, Alg}},
                 {<<"keyid">>, {string, KeyID}},
                 {<<"tag">>, {string, Tag}},
-                {<<"created">>, {string, Created}},
-                {<<"expires">>, {string, Expires}},
+                {<<"created">>, Created},
+                {<<"expires">>, Expires},
                 {<<"nonce">>, {string, Nonce}}
             ]
         ),
