@@ -229,7 +229,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                         ID =
                             if ?IS_ID(MsgID) -> hb_util:human_id(MsgID);
                                ?IS_LINK(MsgID) -> hb_link:format(MsgID);
-                               true -> MsgID
+                               true -> iolist_to_binary([MsgID])
                             end,
                         {error, #{
                             <<"status">> => 404,
