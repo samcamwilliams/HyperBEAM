@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, set_opts/2, get_opts/1]).
 -export([start_node/0, start_node/1, set_default_opts/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -311,32 +311,32 @@ handle_request(RawReq, Body, ServerID) ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
             ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
-			TracePID = hb_tracer:start_trace(),
+            TracePID = hb_tracer:start_trace(),
             % Parse the HTTP request into HyerBEAM's message format.
-			try 
-				ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-				CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-				?event(http,
+            try 
+                ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+                CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+                ?event(http,
                     {parsed_singleton,
                         {req_singleton, ReqSingleton},
                         {accept_codec, CommitmentCodec}},
                     #{trace => TracePID}
                 ),
-				% hb_tracer:record_step(TracePID, request_parsing),
-				% Invoke the meta@1.0 device to handle the request.
-				{ok, Res} =
-					dev_meta:handle(
-						NodeMsg#{
+                % hb_tracer:record_step(TracePID, request_parsing),
+                % Invoke the meta@1.0 device to handle the request.
+                {ok, Res} =
+                    dev_meta:handle(
+                        NodeMsg#{
                             commitment_device => CommitmentCodec,
                             trace => TracePID
                         },
-						ReqSingleton
-					),
-				hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
-			catch
+                        ReqSingleton
+                    ),
+                hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
+            catch
                 Type:Details:Stacktrace ->
-					Trace = hb_tracer:get_trace(TracePID),
-					TraceString = hb_tracer:format_error_trace(Trace),
+                    Trace = hb_tracer:get_trace(TracePID),
+                    TraceString = hb_tracer:format_error_trace(Trace),
                     ?event(
                         http_error,
                         {http_error,
@@ -345,7 +345,7 @@ handle_request(RawReq, Body, ServerID) ->
                             {stacktrace, Stacktrace}
                         }
                     ),
-					hb_http:reply(
+                    hb_http:reply(
                         Req,
                         #{},
                         #{
@@ -354,7 +354,7 @@ handle_request(RawReq, Body, ServerID) ->
                         },
                         NodeMsg
                     )
-			end
+            end
 end.
 
 %% @doc Return the list of allowed methods for the HTTP server.
@@ -365,8 +365,10 @@ allowed_methods(Req, State) ->
         State
     }.
 
-%% @doc Update the `Opts' map that the HTTP server uses for all future
-%% requests.
+%% @doc Merges the provided `Opts' with uncommitted values from `Request',
+%% preserves the http_server value, and updates node_history by prepending
+%% the `Request'. If a server reference exists, updates the Cowboy environment
+%% variable 'node_msg' with the resulting options map.
 set_opts(Opts) ->
     case hb_opts:get(http_server, no_server_ref, Opts) of
         no_server_ref ->
@@ -374,6 +376,20 @@ set_opts(Opts) ->
         ServerRef ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
+set_opts(Request, Opts) ->
+    MergedOpts =
+        maps:merge(
+            Opts,
+            hb_opts:mimic_default_types(
+                hb_message:uncommitted(Request),
+                new_atoms
+            )
+        ),
+    FinalOpts = MergedOpts#{
+        http_server => hb_opts:get(http_server, no_server, Opts),
+        node_history => [Request | hb_opts:get(node_history, [], Opts)]
+    },
+    {set_opts(FinalOpts), FinalOpts}.
 
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),

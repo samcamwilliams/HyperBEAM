@@ -153,6 +153,12 @@ path_list_test() ->
         maps:keys(Flat)
     ).
 
+binary_passthrough_test() ->
+	% Note: Modified for changes to the `from/1' function.
+	Bin = <<"raw: binary">>,
+	?assertEqual(#{<<"raw">> => <<"binary">>}, dev_codec_flat:from(Bin)),
+	?assertEqual(Bin, dev_codec_flat:to(Bin)).
+
 deep_nesting_test() ->
     Flat = #{<<"a/b/c/d">> => <<"deep">>},
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},

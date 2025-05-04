@@ -63,8 +63,7 @@ info(_, Request, NodeMsg) ->
     case hb_ao:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
             ?event({get_config_req, Request, NodeMsg}),
-			DynamicKeys = add_dynamic_keys(NodeMsg),	
-			?event(green_zone, {get_config, DynamicKeys}),
+            DynamicKeys = add_dynamic_keys(NodeMsg),	
             embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
@@ -99,7 +98,7 @@ add_dynamic_keys(NodeMsg) ->
             NodeMsg;
         Wallet ->
             %% Create a new map with address and merge it (overwriting existing)
-			Address = hb_util:id(ar_wallet:to_address(Wallet)),
+            Address = hb_util:id(ar_wallet:to_address(Wallet)),
             NodeMsg#{ address => Address, <<"address">> => Address }
     end.
 
@@ -137,26 +136,13 @@ update_node_message(Request, NodeMsg) ->
 %% @doc Attempt to adopt changes to a node message.
 adopt_node_message(Request, NodeMsg) ->
     ?event({set_node_message_success, Request}),
-    MergedOpts =
-        maps:merge(
-            NodeMsg,
-            hb_opts:mimic_default_types(
-                hb_message:uncommitted(Request),
-                new_atoms
-            )
-        ),
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
     case hb_opts:get(initialized, permanent, NodeMsg) of
         permanent ->
             {error, <<"Node message is already permanent.">>};
         _ ->
-			FinalOpts = MergedOpts#{
-				http_server => hb_opts:get(http_server, no_server, NodeMsg),
-				node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
-			},
-			hb_http_server:set_opts(FinalOpts),
-			{ok, FinalOpts}
+            hb_http_server:set_opts(Request, NodeMsg)
     end.
 
 %% @doc Handle an AO-Core request, which is a list of messages. We apply
@@ -165,7 +151,7 @@ adopt_node_message(Request, NodeMsg) ->
 %% After execution, we run the node's `postprocessor' message on the result of
 %% the request before returning the result it grants back to the user.
 handle_resolve(Req, Msgs, NodeMsg) ->
-	TracePID = hb_opts:get(trace, no_tracer_set, NodeMsg),
+    TracePID = hb_opts:get(trace, no_tracer_set, NodeMsg),
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
@@ -312,7 +298,7 @@ maybe_sign(Res, NodeMsg) ->
 %% @doc Check if the request in question is signed by a given `role' on the node.
 %% The `role' can be one of `operator' or `initiator'.
 is(Request, NodeMsg) ->
-	is(operator, Request, NodeMsg).
+    is(operator, Request, NodeMsg).
 is(admin, Request, NodeMsg) ->
     % Does the caller have the right to change the node message?
     RequestSigners = hb_message:signers(Request),
@@ -350,17 +336,17 @@ is(operator, Req, NodeMsg) ->
     lists:member(Operator, RequestSigners);
 is(initiator, Request, NodeMsg) ->
     % Is the caller the first identity that configured the node message?
-	NodeHistory = hb_opts:get(node_history, [], NodeMsg),
-	% Check if node_history exists and is not empty
-	case NodeHistory of
-		[] ->
-			?event(green_zone, {init, node_history, empty}),
-			false;
-		[InitializationRequest | _] ->
-			% Extract signature from first entry
-			InitializationRequestSigners = hb_message:signers(InitializationRequest),
-			% Get request signers
-			RequestSigners = hb_message:signers(Request),
+    NodeHistory = hb_opts:get(node_history, [], NodeMsg),
+    % Check if node_history exists and is not empty
+    case NodeHistory of
+        [] ->
+            ?event(green_zone, {init, node_history, empty}),
+            false;
+        [InitializationRequest | _] ->
+            % Extract signature from first entry
+            InitializationRequestSigners = hb_message:signers(InitializationRequest),
+            % Get request signers
+            RequestSigners = hb_message:signers(Request),
             % Ensure all signers of the initalization request are present in the
             % request.
             AllSignersPresent =
