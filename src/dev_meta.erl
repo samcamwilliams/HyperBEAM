@@ -43,9 +43,9 @@ handle(NodeMsg, RawRequest) ->
         _ -> handle_resolve(RawRequest, NormRequest, NodeMsg)
     end.
 
-handle_initialize([Base = #{ <<"device">> := Device}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
-    ?event({got, {device, Device}, {path, Path}}),
-    case {Device, Path} of
+handle_initialize([Base = #{ <<"device">> := Dev}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
+    ?event({got, {device, Dev}, {path, Path}}),
+    case {Dev, Path} of
         {<<"meta@1.0">>, <<"info">>} -> info(Base, Req, NodeMsg);
         _ -> {error, <<"Node must be initialized before use.">>}
     end;
@@ -175,10 +175,11 @@ handle_resolve(Req, Msgs, NodeMsg) ->
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
-            HTTPOpts = maps:merge(
-                AfterPreprocOpts,
-                hb_opts:get(http_extra_opts, #{}, NodeMsg)
-            ),
+            HTTPOpts =
+                maps:merge(
+                    AfterPreprocOpts,
+                    hb_opts:get(http_extra_opts, #{}, NodeMsg)
+                ),
             Res =
                 try
                     hb_ao:resolve_many(

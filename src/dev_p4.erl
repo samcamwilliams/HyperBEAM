@@ -22,10 +22,11 @@
 %%% circumstances. Else, the value returned by the `price' key will be passed to
 %%% the ledger device as the `amount' key.
 %%%
-%%% The ledger device should implement the following keys:
+%%% A ledger device should implement the following keys:
 %%% <pre>
 %%%             `POST /credit?message=PaymentMessage&request=RequestMessage'
-%%%             `POST /debit?amount=PriceMessage&type=pre|post&request=RequestMessage'
+%%%             `POST /debit?amount=PriceMessage&request=RequestMessage'
+%%%             `GET /balance?request=RequestMessage'
 %%% </pre>
 %%%
 %%% The `type' key is optional and defaults to `pre'. If `type' is set to `post',
@@ -51,16 +52,25 @@ preprocess(State, Raw, NodeMsg) ->
     Messages = hb_ao:get(<<"body">>, Raw, NodeMsg#{ hashpath => ignore }),
     Request = hb_ao:get(<<"request">>, Raw, NodeMsg),
     IsChargable = is_chargable_req(Request, NodeMsg),
-    ?event(payment, {preprocess_with_devices, PricingDevice, LedgerDevice, {chargable, IsChargable}}),
+    ?event(payment,
+        {preprocess_with_devices,
+            PricingDevice,
+            LedgerDevice,
+            {chargable, IsChargable}
+        }
+    ),
     case {IsChargable, (PricingDevice =/= false) and (LedgerDevice =/= false)} of
-        {false, _} -> {ok, Messages};
-        {true, false} -> {ok, Messages};
+        {false, _} ->
+            ?event(payment, non_chargable_route),
+            {ok, Messages};
+        {true, false} ->
+            ?event(payment, {p4_pre_pricing_response, {error, <<"infinity">>}}),
+            {ok, Messages};
         {true, true} ->
             PricingMsg = #{ <<"device">> => PricingDevice },
             LedgerMsg = #{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"estimate">>,
-                <<"type">> => <<"pre">>,
                 <<"request">> => Request,
                 <<"body">> => Messages
             },
@@ -77,32 +87,61 @@ preprocess(State, Raw, NodeMsg) ->
                     {error,
                         <<"Node will not service this request "
                             "under any circumstances.">>};
+                {ok, 0} ->
+                    % The device has estimated the cost of the request to be
+                    % zero, so we proceed.
+                    {ok, Messages};
                 {ok, Price} ->
-                    % The device has estimated the cost of the request. We 
-                    % forward the request to the ledger device to check if we
-                    % have enough funds to service the request.
-                    LedgerReq =
-                        #{
-                            <<"path">> => <<"debit">>,
-                            <<"amount">> => Price,
-                            <<"type">> => <<"pre">>,
-                            <<"request">> => Request
-                        },
+                    % The device has estimated the cost of the request. We check
+                    % the user's balance to see if they have enough funds to
+                    % service the request.
+                    LedgerReq = #{
+                        <<"path">> => <<"balance">>,
+                        <<"account">> =>
+                            case hb_message:signers(Request) of
+                                [Signer] -> Signer;
+                                [] -> <<"unknown">>;
+                                Multiple -> Multiple
+                            end,
+                        <<"request">> => Request
+                    },
                     ?event(payment, {p4_pre_pricing_estimate, Price}),
                     case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
-                        {ok, true} ->
+                        {ok, Sufficient} when
+                                Sufficient =:= true orelse
+                                Sufficient =:= <<"infinity">> ->
                             % The ledger device has confirmed that the user has
                             % enough funds for the request, so we proceed.
-                            {ok, Messages};
-                        {ok, false} ->
-                            ?event(payment, {pre_ledger_validation, false}),
-                            {error, 
-                                #{
-                                    <<"status">> => 429,
-                                    <<"body">> => <<"Insufficient funds">>,
-                                    <<"price">> => Price
+                            ?event(payment,
+                                {p4_pre_ledger_response,
+                                    {balance_check, guaranteed}
                                 }
-                            };
+                            ),
+                            {ok, Messages};
+                        {ok, Balance} when Balance >= Price ->
+                            % The user has enough funds to service the request,
+                            % so we proceed.
+                            ?event(payment,
+                                {p4_pre_ledger_response,
+                                    {balance_check, sufficient}
+                                }
+                            ),
+                            {ok, Messages};
+                        {ok, Balance} ->
+                            % The user does not have enough funds to service
+                            % the request, so we don't proceed.
+                            ?event(payment,
+                                {insufficient_funds,
+                                    {balance, Balance},
+                                    {price, Price}
+                                }
+                            ),
+                            {error, #{
+                                <<"status">> => 429,
+                                <<"body">> => <<"Insufficient funds">>,
+                                <<"price">> => Price,
+                                <<"balance">> => Balance
+                            }};
                         {error, Error} ->
                             % The ledger device is unable to process the request,
                             % so we don't proceed.
@@ -124,14 +163,16 @@ postprocess(State, RawResponse, NodeMsg) ->
         ),
     Request = hb_ao:get(<<"request">>, RawResponse, NodeMsg),
     ?event(payment, {post_processing_with_devices, PricingDevice, LedgerDevice}),
-    case (PricingDevice =/= false) and (LedgerDevice =/= false) of
-        false -> {ok, Response};
+    ?event({postprocess, {request, Request}, {response, Response}}),
+    case ((PricingDevice =/= false) and (LedgerDevice =/= false)) andalso
+            is_chargable_req(Request, NodeMsg) of
+        false ->
+            {ok, Response};
         true ->
             PricingMsg = #{ <<"device">> => PricingDevice },
             LedgerMsg = #{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"price">>,
-                <<"type">> => <<"post">>,
                 <<"request">> => Request,
                 <<"body">> => Response
             },
@@ -148,25 +189,26 @@ postprocess(State, RawResponse, NodeMsg) ->
             ?event(payment, {p4_post_pricing_response, PricingRes}),
             case PricingRes of
                 {ok, Price} ->
-                    % We have successfully estimated the cost of the request,
+                    % We have successfully determined the cost of the request,
                     % so we proceed to debit the user's account.
                     LedgerReq =
                         #{
                             <<"path">> => <<"debit">>,
-                            <<"type">> => <<"post">>,
                             <<"amount">> => Price,
                             <<"request">> => Request
                         },
                     ?event({p4_ledger_request, LedgerReq}),
-                    {ok, Resp} = 
-                        hb_ao:resolve(
-                            LedgerMsg,
-                            LedgerReq,
-                            NodeMsg
-                        ),
-                    ?event(payment, {p4_post_ledger_response, Resp}),
-                    % Return the original request.
-                    {ok, Response};
+                    case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
+                        {ok, _} ->
+                            ?event(payment, {p4_post_ledger_response, {ok, Price}}),
+                            % Return the original response.
+                            {ok, Response};
+                        {error, Error} ->
+                            ?event(payment, {p4_post_ledger_response, {error, Error}}),
+                            % The debit failed, so we return the error from the
+                            % ledger device.
+                            {error, Error}
+                    end;
                 {error, PricingError} ->
                     % The pricing device is unable to process the request,
                     % so we don't proceed.
@@ -281,7 +323,7 @@ non_chargable_route_test() ->
             p4_non_chargable_routes =>
                 [
                     #{ <<"template">> => <<"/~p4@1.0/balance">> },
-                    #{ <<"template">> => <<"/~meta@1.0/*">> }
+                    #{ <<"template">> => <<"/~meta@1.0/*/*">> }
                 ],
             preprocessor => Processor,
             postprocessor => Processor,
@@ -295,11 +337,12 @@ non_chargable_route_test() ->
     Res = hb_http:get(Node, GoodSignedReq, #{}),
     ?event({res1, Res}),
     ?assertMatch({ok, 0}, Res),
-    Req2 = #{ <<"path">> => <<"/~meta@1.0/info">> },
+    Req2 = #{ <<"path">> => <<"/~meta@1.0/info/operator">> },
     GoodSignedReq2 = hb_message:commit(Req2, Wallet),
     Res2 = hb_http:get(Node, GoodSignedReq2, #{}),
     ?event({res2, Res2}),
-    ?assertMatch({ok, #{ <<"operator">> := _ }}, Res2),
+    OperatorAddress = hb_util:human_id(hb:address()),
+    ?assertEqual({ok, OperatorAddress}, Res2),
     Req3 = #{ <<"path">> => <<"/~scheduler@1.0">> },
     BadSignedReq3 = hb_message:commit(Req3, Wallet),
     Res3 = hb_http:get(Node, BadSignedReq3, #{}),
