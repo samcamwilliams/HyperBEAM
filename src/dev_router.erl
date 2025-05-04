@@ -37,82 +37,85 @@
 %% a new route with a remote router node. This function should also be itempotent
 %% so that it can be called only once.
 register(_M1, _M2, Opts) ->
-	Registered = hb_opts:get(router_registered, false, Opts),
-	% Check if the route is already registered
-	case Registered of
-		true ->
-			{error, <<"Route already registered.">>};
-		false ->
-			% Validate node history
-			case hb_opts:validate_node_history(Opts) of
-				{ok, _} ->
-					RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
-					Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
-					Price = hb_opts:get(<<"router_price">>, not_found, Opts),
-					Template = hb_opts:get(<<"router_template">>, not_found, Opts),
-					% Check if any required parameters are missing
-					Missing = [
-						{<<"router_peer_location">>, RouterNode},
-						{<<"router_prefix">>, Prefix},
-						{<<"router_price">>, Price},
-						{<<"router_template">>, Template}
-					],
-					MissingParams = [Param || {Param, Value} <- Missing, Value =:= not_found],
-					{ok, Attestion} = dev_snp:generate(
-						#{}, 
-						#{}, 
-						#{ 
-							priv_wallet => hb:wallet(), 
-							snp_hashes => hb_opts:get(snp_hashes, #{}, Opts)
-						}
-					),
-					?event(debug_register, {attestion, Attestion}),
-					case MissingParams of
-						[] ->
-							case hb_http:post(RouterNode, #{
-								<<"path">> => <<"/router~node-process@1.0/schedule">>,
-								<<"method">> => <<"POST">>,
-								<<"body">> =>
-									hb_message:commit(
-										#{
-											<<"path">> => <<"register">>,
-											<<"route">> =>
-												#{
-													<<"prefix">> => Prefix,
-													<<"template">> => Template,
-													<<"price">> => Price
-												},
-											<<"body">> => Attestion
-										},
-										Opts
-									)
-							}, Opts) of
-								{ok, _} ->
-									hb_http_server:set_opts(Opts#{ router_registered => true }),
-									{ok, <<"Route registered.">>};
-								{error, _} ->
-									{error, <<"Failed to register route.">>}
-							end;
-						_ ->
-							% Some parameters are missing, return error message
-							ParamList = lists:foldl(
-								fun(Param, Acc) ->
-									case Acc of
-										<<>> -> Param;
-										_ -> <<Acc/binary, ", ", Param/binary>>
-									end
-								end,
-								<<>>,
-								MissingParams
-							),
-							ErrorMsg = <<"Missing required parameters: ", ParamList/binary>>,
-							{error, ErrorMsg}
-					end;
-				{error, Reason} ->
-					% Node history validation failed
-					{error, Reason}
-			end
-	end.
+    Registered = hb_opts:get(router_registered, false, Opts),
+    % Check if the route is already registered
+    case Registered of
+        true ->
+            {error, <<"Route already registered.">>};
+        false ->
+            % Validate node history
+            case hb_opts:validate_node_history(Opts) of
+                {ok, _} ->
+                    RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
+                    Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
+                    Price = hb_opts:get(<<"router_price">>, not_found, Opts),
+                    Template = hb_opts:get(<<"router_template">>, not_found, Opts),
+                    % Check if any required parameters are missing
+                    Missing = [
+                        {<<"router_peer_location">>, RouterNode},
+                        {<<"router_prefix">>, Prefix},
+                        {<<"router_price">>, Price},
+                        {<<"router_template">>, Template}
+                    ],
+                    MissingParams = 
+                        [Param || {Param, Value} <- Missing, Value =:= not_found],
+                    {ok, Attestion} = dev_snp:generate(
+                        #{}, 
+                        #{}, 
+                        #{ 
+                            priv_wallet => hb:wallet(), 
+                            snp_hashes => hb_opts:get(snp_hashes, #{}, Opts)
+                        }
+                    ),
+                    ?event(debug_register, {attestion, Attestion}),
+                    case MissingParams of
+                        [] ->
+                            case hb_http:post(RouterNode, #{
+                                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                                <<"method">> => <<"POST">>,
+                                <<"body">> =>
+                                    hb_message:commit(
+                                        #{
+                                            <<"path">> => <<"register">>,
+                                            <<"route">> =>
+                                                #{
+                                                    <<"prefix">> => Prefix,
+                                                    <<"template">> => Template,
+                                                    <<"price">> => Price
+                                                },
+                                            <<"body">> => Attestion
+                                        },
+                                        Opts
+                                    )
+                            }, Opts) of
+                                {ok, _} ->
+                                    hb_http_server:set_opts(
+                                        Opts#{ router_registered => true }
+                                    ),
+                                    {ok, <<"Route registered.">>};
+                                {error, _} ->
+                                    {error, <<"Failed to register route.">>}
+                            end;
+                        _ ->
+                            % Some parameters are missing, return error message
+                            ParamList = lists:foldl(
+                                fun(Param, Acc) ->
+                                    case Acc of
+                                        <<>> -> Param;
+                                        _ -> <<Acc/binary, ", ", Param/binary>>
+                                    end
+                                end,
+                                <<>>,
+                                MissingParams
+                            ),
+                            ErrorMsg = <<"Missing required parameters: ", ParamList/binary>>,
+                            {error, ErrorMsg}
+                    end;
+                {error, Reason} ->
+                    % Node history validation failed
+                    {error, Reason}
+            end
+    end.
 
 %% @doc Device function that returns all known routes.
 routes(M1, M2, Opts) ->
@@ -473,10 +476,10 @@ preprocess(Msg1, Msg2, Opts) ->
             {_, Match} = match(#{ <<"routes">> => TemplateRoutes}, Req, Opts),
             case Match of
                 no_matching_route -> 
-					{ok, #{
-						<<"status">> => 404,
-						<<"message">> => <<"No matching template found in the given routes.">>
-					}};
+                    {ok, #{
+                        <<"status">> => 404,
+                        <<"message">> => <<"No matching template found in the given routes.">>
+                    }};
                 _ -> 
                     {ok,
                         [
@@ -700,21 +703,21 @@ dynamic_router_test() ->
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
-		trusted => [#{
-			vcpus => 1,
-			vcpu_type => 5, 
-			vmm_type => 1,
-			guest_features => 1,
-			firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-			kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-			initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-			append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
-		}],
+        trusted => [#{
+            vcpus => 1,
+            vcpu_type => 5, 
+            vmm_type => 1,
+            guest_features => 1,
+            firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+            kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+            initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+            append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+        }],
         store => [
-						#{
-							<<"store-module">> => hb_store_fs,
-							<<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
-			}
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+            }
         ],
         priv_wallet => ar_wallet:new(),
         preprocessor => #{
@@ -751,7 +754,7 @@ dynamic_router_test() ->
     ?event(debug_dynrouter, {store, Store}),
     % Register workers with the dynamic router with varied prices.
     {ok, [Req]} = file:consult(<<"test/admissible-report.eterm">>),
-	lists:foreach(fun(X) ->
+    lists:foreach(fun(X) ->
         case hb_http:post(
             Node,
             #{
@@ -770,7 +773,7 @@ dynamic_router_test() ->
                                     <<"template">> => <<"/.*~process@1.0/.*">>,
                                     <<"price">> => X * 250
                                 },
-							<<"body">> => Req
+                            <<"body">> => Req
                         },
                         Opts
                     )
@@ -787,129 +790,11 @@ dynamic_router_test() ->
     % background worker (ex: a `~cron@1.0/every' task).
     {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
-	% Meta info is a part of the exempt routes. Make sure this returns our address
+    % Meta info is a part of the exempt routes. Make sure this returns our address
     {ok, _} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
-	% ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
-	% {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
+    % ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
+    % {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
     ?assertEqual(ok, Status).
-
-%% @doc Example of a Lua script being used as the `route_provider' for a
-%% HyperBEAM node. The script referenced by the scriptid dynamically adjusts the
-%% likelihood of routing to a given node, depending upon price and performance.
-%% Also includes preprocessing support for routing
-%% Note: This test may fail if graphql endpoints are not available.
-dynamic_router_scriptid_test() ->
-    Run = hb_util:bin(rand:uniform(1337)),
-    Node = hb_http_server:start_node(Opts = #{
-		trusted => [#{
-			vcpus => 1,
-			vcpu_type => 5, 
-			vmm_type => 1,
-			guest_features => 1,
-			firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-			kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-			initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-			append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
-		}],
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            },
-			#{ <<"store-module">> => hb_store_gateway,
-				<<"store">> =>
-					[
-						#{
-							<<"store-module">> => hb_store_fs,
-							<<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
-						}
-					]
-			}
-        ],
-        priv_wallet => ar_wallet:new(),
-        preprocessor => #{
-          <<"device">> => <<"router@1.0">>
-        },
-        route_provider => #{
-            <<"path">> =>
-                    <<"/router~node-process@1.0/compute/routes~message@1.0">>
-        },
-        node_processes => #{
-            <<"router">> => #{
-                <<"type">> => <<"Process">>,
-                <<"device">> => <<"process@1.0">>,
-                <<"execution-device">> => <<"lua@5.3a">>,
-                <<"scheduler-device">> => <<"scheduler@1.0">>,
-                <<"script">> => <<"eUF8sn43ke1_JoX780Vs287JFv_1wSXqQ97V2WHx_rs">>,
-                % Set script-specific factors for the test
-                <<"pricing-weight">> => 9,
-                <<"performance-weight">> => 1,
-                <<"score-preference">> => 4,
-                <<"is-admissible">> => #{ 
-                  <<"device">> => <<"snp@1.0">>
-                }
-            }
-        },
-		routes => [
-            #{
-                % Routes for GraphQL requests to use a remote GraphQL API.
-                <<"template">> => <<"/graphql">>,
-                <<"nodes">> =>
-                    [
-						#{
-							<<"prefix">> => <<"https://arweave-search.goldsky.com">>,
-							<<"opts">> => #{ http_client => httpc, protocol => http2 }
-						}
-                    ]
-            }
-        ]
-    }),
-    % mergeRight this takes our defined Opts and merges them into the
-    % node opts configs.
-    Store = hb_opts:get(store, no_store, Opts),
-    ?event(debug_dynrouter, {store, Store}),
-    % Register workers with the dynamic router with varied prices.
-    {ok, [Req]} = file:consult(<<"test/admissible-report.eterm">>),
-	lists:foreach(fun(X) ->
-        case hb_http:post(
-            Node,
-            #{
-                <<"path">> => <<"/router~node-process@1.0/schedule">>,
-                <<"method">> => <<"POST">>,
-                <<"body">> =>
-                    hb_message:commit(
-                        #{
-                            <<"path">> => <<"register">>,
-                            <<"route">> =>
-                                #{
-                                    <<"prefix">> =>
-                                        <<
-                                            "http://149.28.249.192:10000"
-                                        >>,
-                                    <<"template">> => <<"/.*~process@1.0/.*">>,
-                                    <<"price">> => X * 250
-                                },
-							<<"body">> => Req
-                        },
-                        Opts
-                    )
-            },
-            Opts
-        ) of
-            {ok, Res} ->
-                ?event(debug_dynrouter, { res, Res});
-            {failure, Res} ->
-                ?event(debug_router_register, { failure, Res})
-        end
-    end, lists:seq(1, 1)),
-    % Force computation of the current state. This should be done with a 
-    % background worker (ex: a `~cron@1.0/every' task).
-    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
-    ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
-	% Meta info is a part of the exempt routes. Make sure this returns our address
-    {ok, _} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
-    ?assertEqual(ok, Status).
-
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the
@@ -937,7 +822,7 @@ dynamic_routing_by_performance() ->
         priv_wallet => ar_wallet:new(),
         route_provider => #{
             <<"path">> =>
-				<<"/perf-router~node-process@1.0/compute/routes~message@1.0">>
+                <<"/perf-router~node-process@1.0/compute/routes~message@1.0">>
         },
         node_processes => #{
             <<"perf-router">> => #{

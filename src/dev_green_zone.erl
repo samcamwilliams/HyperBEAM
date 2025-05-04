@@ -27,8 +27,8 @@ sane basic requirements for a green zone:
 Each of these options is derived from the present node's configuration.
 """.
 default_zone_required_opts(Opts) ->
-	#{
-		trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
+    #{
+        trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
         load_remote_devices => hb_opts:get(load_remote_devices, false, Opts),
         preload_devices => hb_opts:get(preload_devices, [], Opts),
         % store => hb_opts:get(store, [], Opts),
@@ -37,7 +37,7 @@ default_zone_required_opts(Opts) ->
         postprocessor => hb_opts:get(postprocessor, undefined, Opts),
         scheduling_mode => disabled,
         initialized => permanent
-	}.
+    }.
 
 
 -doc """
@@ -56,47 +56,47 @@ AES key, and an empty trusted nodes list are stored in the node's configuration.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
 init(_M1, _M2, Opts) ->
     ?event(green_zone, {init, start}),
-	case hb_opts:validate_node_history(Opts) of
+    case hb_opts:validate_node_history(Opts) of
         {ok, 1} ->
-			RequiredConfig = hb_opts:get(
-				<<"green_zone_required_config">>,
-				default_zone_required_opts(Opts),
-				Opts
-			),
-			?event(green_zone, {init, required_config, RequiredConfig}),
-			% Check if a wallet exists; create one if absent.
-			NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
-				undefined -> 
-					?event(green_zone, {init, wallet, missing}),
-					hb:wallet();
-				ExistingWallet ->
-					?event(green_zone, {init, wallet, found}),
-					ExistingWallet
-			end,
-			% Generate a new 256-bit AES key if we have not already joined
-			% a green zone.
-			GreenZoneAES =
-				case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
-					undefined ->
-						?event(green_zone, {init, aes_key, generated}),
-						crypto:strong_rand_bytes(32);
-					ExistingAES ->
-						?event(green_zone, {init, aes_key, found}),
-						ExistingAES
-				end,
-			% Store the wallet, AES key, and an empty trusted nodes map.
-			hb_http_server:set_opts(Opts#{
-				priv_wallet => NodeWallet,
-				priv_green_zone_aes => GreenZoneAES,
-				trusted_nodes => #{},
-				green_zone_required_opts => RequiredConfig
-			}),
-			?event(green_zone, {init, complete}),
-			{ok, <<"Green zone initialized successfully.">>};
-		{error, Reason} ->
-			{error, Reason}
-	end.
-	
+            RequiredConfig = hb_opts:get(
+                <<"green_zone_required_config">>,
+                default_zone_required_opts(Opts),
+                Opts
+            ),
+            ?event(green_zone, {init, required_config, RequiredConfig}),
+            % Check if a wallet exists; create one if absent.
+            NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
+                undefined -> 
+                    ?event(green_zone, {init, wallet, missing}),
+                    hb:wallet();
+                ExistingWallet ->
+                    ?event(green_zone, {init, wallet, found}),
+                    ExistingWallet
+            end,
+            % Generate a new 256-bit AES key if we have not already joined
+            % a green zone.
+            GreenZoneAES =
+                case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
+                    undefined ->
+                        ?event(green_zone, {init, aes_key, generated}),
+                        crypto:strong_rand_bytes(32);
+                    ExistingAES ->
+                        ?event(green_zone, {init, aes_key, found}),
+                        ExistingAES
+                end,
+            % Store the wallet, AES key, and an empty trusted nodes map.
+            hb_http_server:set_opts(Opts#{
+                priv_wallet => NodeWallet,
+                priv_green_zone_aes => GreenZoneAES,
+                trusted_nodes => #{},
+                green_zone_required_opts => RequiredConfig
+            }),
+            ?event(green_zone, {init, complete}),
+            {ok, <<"Green zone initialized successfully.">>};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+    
 
 -doc """
 Initiate the join process for a node (Node B).
@@ -121,19 +121,19 @@ Based on the presence of a peer address:
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	case hb_opts:validate_node_history(Opts, 0, 1) of
-		{ok, _N} ->
-			PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
-			PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
-			?event(green_zone, {join_peer, PeerLocation, PeerID}),
-			if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
-				validate_join(M1, M2, Opts);
-			true ->
-				join_peer(PeerLocation, PeerID, M1, M2, Opts)
-			end;
-		{error, Reason} ->
-			{error, Reason}
-	end.
+    case hb_opts:validate_node_history(Opts, 0, 1) of
+        {ok, _N} ->
+            PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
+            PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
+            ?event(green_zone, {join_peer, PeerLocation, PeerID}),
+            if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
+                validate_join(M1, M2, Opts);
+            true ->
+                join_peer(PeerLocation, PeerID, M1, M2, Opts)
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -doc """
 Retrieve and encrypt the node's private key.
@@ -157,7 +157,7 @@ key(_M1, _M2, Opts) ->
     % Retrieve the shared AES key and the node's wallet.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     {{KeyType, Priv, Pub}, _PubKey} = hb_opts:get(priv_wallet, undefined, Opts),
-	?event(green_zone, 
+    ?event(green_zone, 
         {get_key, wallet, hb_util:human_id(ar_wallet:to_address(Pub))}),
     case GreenZoneAES of
         undefined ->
@@ -175,7 +175,7 @@ key(_M1, _M2, Opts) ->
                 <<>>,
                 true
             ),
-			
+            
             % Log successful encryption of the private key.
             ?event(green_zone, {get_key, encrypt, complete}),
             {ok, #{
@@ -304,39 +304,39 @@ In this flow (executed on Node B):
     M2 :: term(),
     Opts :: map()) -> {ok, map()} | {error, map()}.
 join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
-	% Check here if the node is already part of a green zone.
-	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, InitOpts),
-	case (GreenZoneAES == undefined) andalso 
+    % Check here if the node is already part of a green zone.
+    GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, InitOpts),
+    case (GreenZoneAES == undefined) andalso 
          maybe_set_zone_opts(PeerLocation, PeerID, M2, InitOpts) of
-		{ok, Opts} ->
-			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
-			WalletPub = element(2, Wallet),
-			?event(green_zone, {remove_uncommitted, Report}),
-			MergedReq = hb_ao:set(
-				Report, 
-				<<"public-key">>,
-				base64:encode(term_to_binary(WalletPub)),
-				Opts
-			),
-			% Create an committed join request using the wallet.
-			Req = hb_message:commit(MergedReq, Wallet),
-			?event({join_req, {explicit, Req}}),
-			?event({verify_res, hb_message:verify(Req)}),
-			% Log that the commitment report is being sent to the peer.
-			?event(green_zone, {join, sending_commitment, PeerLocation, PeerID, Req}),
-			case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, Opts) of
-				{ok, Resp} ->
-					% Log the response received from the peer.
-					?event(green_zone, {join, join_response, PeerLocation, PeerID, Resp}),
+        {ok, Opts} ->
+            Wallet = hb_opts:get(priv_wallet, undefined, Opts),
+            {ok, Report} = dev_snp:generate(#{}, #{}, Opts),
+            WalletPub = element(2, Wallet),
+            ?event(green_zone, {remove_uncommitted, Report}),
+            MergedReq = hb_ao:set(
+                Report, 
+                <<"public-key">>,
+                base64:encode(term_to_binary(WalletPub)),
+                Opts
+            ),
+            % Create an committed join request using the wallet.
+            Req = hb_message:commit(MergedReq, Wallet),
+            ?event({join_req, {explicit, Req}}),
+            ?event({verify_res, hb_message:verify(Req)}),
+            % Log that the commitment report is being sent to the peer.
+            ?event(green_zone, {join, sending_commitment, PeerLocation, PeerID, Req}),
+            case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, Opts) of
+                {ok, Resp} ->
+                    % Log the response received from the peer.
+                    ?event(green_zone, {join, join_response, PeerLocation, PeerID, Resp}),
                     % Ensure that the response is from the expected peer, avoiding
                     % the risk of a man-in-the-middle attack.
                     Signers = hb_message:signers(Resp),
-					?event(green_zone, {join, signers, Signers}),
-					IsVerified = hb_message:verify(Resp, Signers),
-					?event(green_zone, {join, verify, IsVerified}),
-					IsPeerSigner = lists:member(PeerID, Signers),
-					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
+                    ?event(green_zone, {join, signers, Signers}),
+                    IsVerified = hb_message:verify(Resp, Signers),
+                    ?event(green_zone, {join, verify, IsVerified}),
+                    IsPeerSigner = lists:member(PeerID, Signers),
+                    ?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
                     case IsPeerSigner andalso IsVerified of
                         false ->
                             % The response is not from the expected peer.
@@ -352,48 +352,48 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                             % shared AES key.
                             ?event(green_zone, {oldOpts, {explicit, InitOpts}}),
                             ?event(green_zone, {newOpts, {explicit, Opts}}),
-							NewOpts = Opts#{
-								priv_green_zone_aes => AESKey
-							},
+                            NewOpts = Opts#{
+                                priv_green_zone_aes => AESKey
+                            },
                             hb_http_server:set_opts(NewOpts),
-							?event(successfully_joined_greenzone),
-							ShouldMount = hb_ao:get(<<"should_mount">>, M2, false, NewOpts),
-							case ShouldMount of
-								true ->
-									try_mount_encrypted_volume(AESKey, NewOpts);
-								false ->
-									?event(debug, <<"Not mounting encrypted volume.">>)
-							end,
+                            ?event(successfully_joined_greenzone),
+                            ShouldMount = hb_ao:get(<<"should_mount">>, M2, false, NewOpts),
+                            case ShouldMount of
+                                true ->
+                                    try_mount_encrypted_volume(AESKey, NewOpts);
+                                false ->
+                                    ?event(debug, <<"Not mounting encrypted volume.">>)
+                            end,
 
                             {ok, #{ 
                                 <<"body">> => 
-									<<"Node joined green zone successfully.">>, 
+                                    <<"Node joined green zone successfully.">>, 
                                 <<"status">> => 200
                             }}
                     end;
-				{error, Reason} ->
-					{error, #{<<"status">> => 400, <<"reason">> => Reason}};
-				{unavailable, Reason} ->
-					?event(green_zone, {
+                {error, Reason} ->
+                    {error, #{<<"status">> => 400, <<"reason">> => Reason}};
+                {unavailable, Reason} ->
+                    ?event(green_zone, {
                         join_error,
                         peer_unavailable,
                         PeerLocation,
                         PeerID,
                         Reason
                     }),
-					{error, #{
+                    {error, #{
                         <<"status">> => 503,
                         <<"body">> => <<"Peer node is unreachable.">>
                     }}
-			end;
-		false ->
-			?event(green_zone, {join, already_joined}),
-			{error, <<"Node already part of green zone.">>};
+            end;
+        false ->
+            ?event(green_zone, {join, already_joined}),
+            {error, <<"Node already part of green zone.">>};
         {error, Reason} ->
             % Log the error and return the initial options.
             ?event(green_zone, {join, error, Reason}),
             {error, Reason}
-	end.
+    end.
 
 -doc """
 If the operator requests it, the node can automatically adopt the 
@@ -414,7 +414,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
             % the initial options unchanged.
             {ok, InitOpts};
         AdoptConfig ->
-			?event(green_zone, {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}),
+            ?event(green_zone, {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}),
             % Request the required config from the peer.
             RequiredConfigRes =
                 hb_http:get(
@@ -422,34 +422,34 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
                     <<"/~meta@1.0/info/green_zone_required_opts">>,
                     InitOpts
                 ),
-			% Ensure the response is okay.
-			?event({req_opts_get_result, RequiredConfigRes}),
-			case RequiredConfigRes of
-				{error, Reason} ->
-					% Log the error and return the initial options.
-					?event(green_zone, {join_error, get_req_opts_failed, Reason}),
-					{error, <<"Could not get required config from peer.">>};
-				{ok, RequiredConfig} ->
-					% Print the required config response.
-					Signers = hb_message:signers(RequiredConfig),
-					?event(green_zone, {req_conf_signers, {explicit, Signers}}),
-					% Extract and log the verification steps
-					IsVerified = hb_message:verify(RequiredConfig, Signers),
-					?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
-					% Combined check
-					case lists:member(PeerID, Signers) andalso IsVerified of
-						false ->
-							% The response is not from the expected peer.
-							{error, <<"Peer gave invalid signature for required config.">>};
-						true ->
-							% Generate the node message that should be set prior to 
-							% joining a green zone.
-							NodeMessage =
-								calculate_node_message(RequiredConfig, Req, AdoptConfig),
-							% Adopt the node message.
-							hb_http_server:set_opts(NodeMessage, InitOpts)
-					end
-			end
+            % Ensure the response is okay.
+            ?event({req_opts_get_result, RequiredConfigRes}),
+            case RequiredConfigRes of
+                {error, Reason} ->
+                    % Log the error and return the initial options.
+                    ?event(green_zone, {join_error, get_req_opts_failed, Reason}),
+                    {error, <<"Could not get required config from peer.">>};
+                {ok, RequiredConfig} ->
+                    % Print the required config response.
+                    Signers = hb_message:signers(RequiredConfig),
+                    ?event(green_zone, {req_conf_signers, {explicit, Signers}}),
+                    % Extract and log the verification steps
+                    IsVerified = hb_message:verify(RequiredConfig, Signers),
+                    ?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
+                    % Combined check
+                    case lists:member(PeerID, Signers) andalso IsVerified of
+                        false ->
+                            % The response is not from the expected peer.
+                            {error, <<"Peer gave invalid signature for required config.">>};
+                        true ->
+                            % Generate the node message that should be set prior to 
+                            % joining a green zone.
+                            NodeMessage =
+                                calculate_node_message(RequiredConfig, Req, AdoptConfig),
+                            % Adopt the node message.
+                            hb_http_server:set_opts(NodeMessage, InitOpts)
+                    end
+            end
     end.
 
 -doc """
@@ -473,7 +473,7 @@ calculate_node_message(RequiredOpts, Req, true) ->
             ],
             hb_message:uncommitted(Req)
         ),
-	% Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
+    % Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
     % The required config should override the request, if necessary.
     maps:merge(StrippedReq, RequiredOpts);
 calculate_node_message(RequiredOpts, Req, <<"true">>) ->
@@ -502,11 +502,11 @@ When Node A receives a POST join request from Node B, this routine is executed:
 -spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
 validate_join(_M1, Req, Opts) ->
-	case validate_peer_opts(Req, Opts) of
-		true -> do_nothing;
-		false -> throw(invalid_join_request)
-	end,
-	?event(green_zone, {join, start}),
+    case validate_peer_opts(Req, Opts) of
+        true -> do_nothing;
+        false -> throw(invalid_join_request)
+    end,
+    ?event(green_zone, {join, start}),
     % Retrieve the commitment report and address from the join request.
     Report = hb_ao:get(<<"report">>, Req, Opts),
     NodeAddr = hb_ao:get(<<"address">>, Req, Opts),
@@ -552,29 +552,29 @@ validate_join(_M1, Req, Opts) ->
     end.
 
 validate_peer_opts(Req, Opts) ->
-	?event(green_zone, {validate_peer_opts, start, Req}),
-	% Get the required config from the local node's configuration.
-	RequiredConfig =
-		hb_ao:normalize_keys(
-			hb_opts:get(green_zone_required_opts, #{}, Opts)),
-	?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
-	PeerOpts =
-		hb_ao:normalize_keys(
-			hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
-	?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
-	% Add the required config itself to the required options of the peer. This
-	% enforces that the new peer will also enforce the required config on peers
-	% that join them.
-	FullRequiredOpts = RequiredConfig#{
-		green_zone_required_opts => RequiredConfig
-	},
-	?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
-	% Debug: Check if PeerOpts is a map
-	?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
-	% Debug: Get node_history safely
-	NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
-	?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
-	% Debug: Check length of node_history
+    ?event(green_zone, {validate_peer_opts, start, Req}),
+    % Get the required config from the local node's configuration.
+    RequiredConfig =
+        hb_ao:normalize_keys(
+            hb_opts:get(green_zone_required_opts, #{}, Opts)),
+    ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
+    PeerOpts =
+        hb_ao:normalize_keys(
+            hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
+    ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
+    % Add the required config itself to the required options of the peer. This
+    % enforces that the new peer will also enforce the required config on peers
+    % that join them.
+    FullRequiredOpts = RequiredConfig#{
+        green_zone_required_opts => RequiredConfig
+    },
+    ?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
+    % Debug: Check if PeerOpts is a map
+    ?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
+    % Debug: Get node_history safely
+    NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
+    ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
+    % Debug: Check length of node_history
     case NodeHistory of
         List when length(List) =< 1 ->
             ?event(green_zone, {validate_peer_opts, history_check, correct_length}),
@@ -599,7 +599,7 @@ validate_peer_opts(Req, Opts) ->
             end;
         false -> {error, not_a_list}
     end.
-	
+    
 
 -doc """
 Add a joining node's details to the trusted nodes list.
@@ -616,17 +616,17 @@ and public key.
     Report :: map(),
     RequesterPubKey :: term(), Opts :: map()) -> ok.
 add_trusted_node(NodeAddr, Report, RequesterPubKey, Opts) ->
-	% Retrieve the current trusted nodes map.
-	TrustedNodes = hb_opts:get(trusted_nodes, #{}, Opts),
-	% Add the joining node's details to the trusted nodes.
-	UpdatedTrustedNodes = maps:put(NodeAddr, #{
-		report => Report,
-		public_key => RequesterPubKey
-	}, TrustedNodes),
-	% Update configuration with the new trusted nodes and AES key.
-	ok = hb_http_server:set_opts(Opts#{
-		trusted_nodes => UpdatedTrustedNodes
-	}).
+    % Retrieve the current trusted nodes map.
+    TrustedNodes = hb_opts:get(trusted_nodes, #{}, Opts),
+    % Add the joining node's details to the trusted nodes.
+    UpdatedTrustedNodes = maps:put(NodeAddr, #{
+        report => Report,
+        public_key => RequesterPubKey
+    }, TrustedNodes),
+    % Update configuration with the new trusted nodes and AES key.
+    ok = hb_http_server:set_opts(Opts#{
+        trusted_nodes => UpdatedTrustedNodes
+    }).
 
 -doc """
 Encrypt the shared AES key with the requester's RSA public key.
@@ -697,107 +697,109 @@ communication, ensuring that only nodes in the green zone can access the data.
 """.
 % Attempts to mount an encrypted disk using the green zone AES key
 try_mount_encrypted_volume(AESKey, Opts) ->
-	Device = <<"/dev/sdc">>,
-	Partition = <<Device/binary, "1">>,
-	PartitionType = <<"ext4">>,
-	VolumeName = <<"hyperbeam_secure">>,
-	MountPoint = <<"/root/mnt/", VolumeName/binary>>,
-	StorePath = <<MountPoint/binary, "/store">>,
-	
-	?event(green_zone, {try_mount_encrypted_volume, start}),
-	?event(green_zone, {try_mount_encrypted_volume, device, Device}),
-	?event(green_zone, {try_mount_encrypted_volume, partition, Partition}),
-	?event(green_zone, {try_mount_encrypted_volume, partition_type, PartitionType}),
-	?event(green_zone, {try_mount_encrypted_volume, volume_name, VolumeName}),
-	?event(green_zone, {try_mount_encrypted_volume, mount_point, MountPoint}),
-	
+    Device = <<"/dev/sdc">>,
+    Partition = <<Device/binary, "1">>,
+    PartitionType = <<"ext4">>,
+    VolumeName = <<"hyperbeam_secure">>,
+    MountPoint = <<"/root/mnt/", VolumeName/binary>>,
+    StorePath = <<MountPoint/binary, "/store">>,
+    
+    ?event(green_zone, {try_mount_encrypted_volume, start}),
+    ?event(green_zone, {try_mount_encrypted_volume, device, Device}),
+    ?event(green_zone, {try_mount_encrypted_volume, partition, Partition}),
+    ?event(green_zone, {try_mount_encrypted_volume, partition_type, PartitionType}),
+    ?event(green_zone, {try_mount_encrypted_volume, volume_name, VolumeName}),
+    ?event(green_zone, {try_mount_encrypted_volume, mount_point, MountPoint}),
+    
 
-	% First check if the base device exists
-	case hb_volume:check_for_device(Device) of
-		false ->
-			% Base device doesn't exist
-			?event(green_zone, 
-					{device_check, error, <<"Base device not found">>});
-		true ->
-			% Check if the partition exists
-			case hb_volume:check_for_device(Partition) of
-				true ->
-					% Partition exists, try mounting it
-					?event(green_zone, {mount_volume, attempt, Partition}),
-					case hb_volume:mount_disk(Partition, AESKey, 
-												MountPoint, VolumeName) of
-						{ok, MountResult} ->
-							?event(green_zone, 
-									{mount_volume, success, MountResult}),
-							% Update store paths to use the mounted volume
-							CurrentStore = hb_opts:get(store, [], Opts),
-							case hb_volume:change_node_store(StorePath, CurrentStore) of
-								{ok, #{<<"store">> := NewStore} = StoreResult} ->
-									?event(green_zone, 
-											{store_update, success, StoreResult}),
-									% Update the node's configuration with the new store
-									ok = hb_http_server:set_opts(Opts#{
-										store => NewStore
-									}),
-									?event(green_zone, {store_update, config_updated});
-								{error, StoreError} ->
-									?event(green_zone, 
-											{store_update, error, StoreError})
-							end;
-						{error, MountError} ->
-							?event(green_zone, 
-									{mount_volume, error, MountError})
-					end;
-				false ->
-					% Partition doesn't exist, create it
-					?event(green_zone, {create_partition, attempt, Device}),
-					case hb_volume:create_partition(Device, PartitionType) of
-						{ok, PartitionResult} ->
-							?event(green_zone, 
-									{partition_create, success, PartitionResult}),
-							% Format the new partition
-							case hb_volume:format_disk(Partition, AESKey) of
-								{ok, FormatResult} ->
-									?event(green_zone, 
-											{format_disk, success, FormatResult}),
-									% Try mounting the formatted partition
-									case hb_volume:mount_disk(
-											Partition, AESKey, 
-											MountPoint, VolumeName) of
-										{ok, RetryMountResult} ->
-											?event(green_zone, 
-													{mount_volume, success, 
-													RetryMountResult}),
-											% Update store paths to use the mounted volume
-											CurrentStore = hb_opts:get(store, [], Opts),
-											case hb_volume:change_node_store(StorePath, CurrentStore) of
-												{ok, #{<<"store">> := NewStore} = StoreResult} ->
-													?event(green_zone, 
-															{store_update, success, StoreResult}),
-													% Update the node's configuration with the new store
-													ok = hb_http_server:set_opts(Opts#{
-														store => NewStore
-													}),
-													?event(green_zone, {store_update, config_updated});
-												{error, StoreError} ->
-													?event(green_zone, 
-															{store_update, error, StoreError})
-											end;
-										{error, RetryMountError} ->
-											?event(green_zone, 
-													{mount_volume, error, 
-													RetryMountError})
-									end;
-								{error, FormatError} ->
-									?event(green_zone, 
-											{format_disk, error, FormatError})
-							end;
-						{error, PartitionError} ->
-							?event(green_zone, 
-									{partition_create, error, PartitionError})
-					end
-			end
-	end.
+    % First check if the base device exists
+    case hb_volume:check_for_device(Device) of
+        false ->
+            % Base device doesn't exist
+            ?event(green_zone, 
+                    {device_check, error, <<"Base device not found">>});
+        true ->
+            % Check if the partition exists
+            case hb_volume:check_for_device(Partition) of
+                true ->
+                    % Partition exists, try mounting it
+                    ?event(green_zone, {mount_volume, attempt, Partition}),
+                    case hb_volume:mount_disk(Partition, AESKey, 
+                                                MountPoint, VolumeName) of
+                        {ok, MountResult} ->
+                            ?event(green_zone, 
+                                    {mount_volume, success, MountResult}),
+                            % Update store paths to use the mounted volume
+                            CurrentStore = hb_opts:get(store, [], Opts),
+                            case hb_volume:change_node_store(StorePath, CurrentStore) of
+                                {ok, #{<<"store">> := NewStore} = StoreResult} ->
+                                    ?event(green_zone, 
+                                            {store_update, success, StoreResult}),
+                                    % Update the node's configuration with the new store
+                                    ok = hb_http_server:set_opts(
+                                        Opts#{
+                                            store => NewStore
+                                        }
+                                    ),
+                                    ?event(green_zone, {store_update, config_updated});
+                                {error, StoreError} ->
+                                    ?event(green_zone, 
+                                            {store_update, error, StoreError})
+                            end;
+                        {error, MountError} ->
+                            ?event(green_zone, 
+                                    {mount_volume, error, MountError})
+                    end;
+                false ->
+                    % Partition doesn't exist, create it
+                    ?event(green_zone, {create_partition, attempt, Device}),
+                    case hb_volume:create_partition(Device, PartitionType) of
+                        {ok, PartitionResult} ->
+                            ?event(green_zone, 
+                                    {partition_create, success, PartitionResult}),
+                            % Format the new partition
+                            case hb_volume:format_disk(Partition, AESKey) of
+                                {ok, FormatResult} ->
+                                    ?event(green_zone, 
+                                            {format_disk, success, FormatResult}),
+                                    % Try mounting the formatted partition
+                                    case hb_volume:mount_disk(
+                                            Partition, AESKey, 
+                                            MountPoint, VolumeName) of
+                                        {ok, RetryMountResult} ->
+                                            ?event(green_zone, 
+                                                    {mount_volume, success, 
+                                                    RetryMountResult}),
+                                            % Update store paths to use the mounted volume
+                                            CurrentStore = hb_opts:get(store, [], Opts),
+                                            case hb_volume:change_node_store(StorePath, CurrentStore) of
+                                                {ok, #{<<"store">> := NewStore} = StoreResult} ->
+                                                    ?event(green_zone, 
+                                                            {store_update, success, StoreResult}),
+                                                    % Update the node's configuration with the new store
+                                                    ok = hb_http_server:set_opts(Opts#{
+                                                        store => NewStore
+                                                    }),
+                                                    ?event(green_zone, {store_update, config_updated});
+                                                {error, StoreError} ->
+                                                    ?event(green_zone, 
+                                                            {store_update, error, StoreError})
+                                            end;
+                                        {error, RetryMountError} ->
+                                            ?event(green_zone, 
+                                                    {mount_volume, error, 
+                                                    RetryMountError})
+                                    end;
+                                {error, FormatError} ->
+                                    ?event(green_zone, 
+                                            {format_disk, error, FormatError})
+                            end;
+                        {error, PartitionError} ->
+                            ?event(green_zone, 
+                                    {partition_create, error, PartitionError})
+                    end
+            end
+    end.
 
 -doc """
 Test RSA operations with the existing wallet structure.
