@@ -6229,8 +6229,8 @@ the node should fulfil services for users.
 
 The device requires the following node message settings in order to function:
 
-- `p4_pricing_device`: The device that will estimate the cost of a request.
-- `p4_ledger_device`: The device that will act as a payment ledger.
+- `p4_pricing-device`: The device that will estimate the cost of a request.
+- `p4_ledger-device`: The device that will act as a payment ledger.
 
 The pricing device should implement the following keys:
 
@@ -6316,7 +6316,7 @@ Postprocess the request after it has been fulfilled.
 `preprocess(State, Raw, NodeMsg) -> any()`
 
 Estimate the cost of a transaction and decide whether to proceed with
-a request. The default behavior if `pricing_device` or `p4_balances` are
+a request. The default behavior if `pricing-device` or `p4_balances` are
 not set is to proceed, so it is important that a user initialize them.
 
 <a name="test_opts-1"></a>

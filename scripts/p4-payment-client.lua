@@ -1,0 +1,40 @@
+--- A simple script that can be used as a `~p4@1.0` ledger device, marshalling
+--- requests to a local process.
+
+-- Find the user's balance in the current ledger state.
+function balance(base, request)
+    local status, res = ao.resolve({
+        path =
+            base["ledger-path"]
+            .. "/now/balance/"
+            .. request["target"]
+    })
+    ao.event({ "client received balance response", 
+        { status = status, res = res, target = request["target"] } }
+    )
+    -- If the balance request fails (most likely because the user has no balance),
+    -- return a balance of 0.
+    if status ~= "ok" then
+        return "ok", 0
+    end
+
+    -- We have successfully retrieved the balance, so return it.
+    return "ok", res
+end
+
+-- Debit the user's balance in the current ledger state.
+function debit(base, request)
+    ao.event({ "client starting debit", { request = request, base = base } })
+    local status, process = ao.resolve({
+        path = base["ledger-path"] .. "/schedule/process"
+    })
+    ao.event({ "client received ledger process", { status = status, process = process } })
+    local status, res = ao.resolve(process, request)
+    ao.event({ "client received schedule response", { status = status, res = res } })
+    status, res = ao.resolve({
+        path = base["ledger-path"] .. "/compute/balance/" .. request["target"],
+        slot = res.slot
+    })
+    ao.event({ "confirmed balance", { status = status, res = res } })
+    return "ok"
+end

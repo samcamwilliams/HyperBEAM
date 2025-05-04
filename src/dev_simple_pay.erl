@@ -41,7 +41,7 @@ debit(_, RawReq, NodeMsg) ->
             {ok, false};
         [Signer] ->
             UserBalance = get_balance(Signer, NodeMsg),
-            Price = hb_ao:get(<<"amount">>, RawReq, 0, NodeMsg),
+            Price = hb_ao:get(<<"quantity">>, RawReq, 0, NodeMsg),
             ?event(payment,
                 {debit,
                     {user, Signer},
@@ -168,8 +168,8 @@ test_opts(Ledger) ->
     ProcessorMsg =
         #{
             <<"device">> => <<"p4@1.0">>,
-            <<"ledger_device">> => <<"simple-pay@1.0">>,
-            <<"pricing_device">> => <<"simple-pay@1.0">>
+            <<"ledger-device">> => <<"simple-pay@1.0">>,
+            <<"pricing-device">> => <<"simple-pay@1.0">>
         },
     {
         Address,

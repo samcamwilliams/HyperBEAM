@@ -256,8 +256,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                             % If the compute_slot function returns an error,
                             % we return the error details, along with the current
                             % slot.
+                            ErrMsg =
+                                if is_map(Error) ->
+                                    Error;
+                                true -> #{ <<"error">> => Error }
+                                end,
                             {error,
-                                Error#{
+                                ErrMsg#{
                                     <<"phase">> => <<"compute">>,
                                     <<"attempted-slot">> => NextSlot
                                 }

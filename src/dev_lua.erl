@@ -282,6 +282,7 @@ process_response({ok, [Status, MsgResult], NewState}, Priv) ->
     % and add the previous `priv' element back into the resulting message.
     case decode(MsgResult) of
         Msg when is_map(Msg) ->
+            ?event(lua, {response, {status, Status}, {msg, Msg}}),
             {hb_util:atom(Status), Msg#{
                 <<"priv">> => Priv#{
                     <<"state">> => NewState

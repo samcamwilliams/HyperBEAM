@@ -5,8 +5,8 @@
 %%%
 %%% The device requires the following node message settings in order to function:
 %%%
-%%% - `p4_pricing_device': The device that will estimate the cost of a request.
-%%% - `p4_ledger_device': The device that will act as a payment ledger.
+%%% - `p4_pricing-device': The device that will estimate the cost of a request.
+%%% - `p4_ledger-device': The device that will act as a payment ledger.
 %%%
 %%% The pricing device should implement the following keys:
 %%% <pre>
@@ -44,11 +44,11 @@
 ]).
 
 %% @doc Estimate the cost of a transaction and decide whether to proceed with
-%% a request. The default behavior if `pricing_device' or `p4_balances' are
+%% a request. The default behavior if `pricing-device' or `p4_balances' are
 %% not set is to proceed, so it is important that a user initialize them.
 preprocess(State, Raw, NodeMsg) ->
-    PricingDevice = hb_ao:get(<<"pricing_device">>, State, false, NodeMsg),
-    LedgerDevice = hb_ao:get(<<"ledger_device">>, State, false, NodeMsg),
+    PricingDevice = hb_ao:get(<<"pricing-device">>, State, false, NodeMsg),
+    LedgerDevice = hb_ao:get(<<"ledger-device">>, State, false, NodeMsg),
     Messages = hb_ao:get(<<"body">>, Raw, NodeMsg#{ hashpath => ignore }),
     Request = hb_ao:get(<<"request">>, Raw, NodeMsg),
     IsChargable = is_chargable_req(Request, NodeMsg),
@@ -67,8 +67,8 @@ preprocess(State, Raw, NodeMsg) ->
             ?event(payment, {p4_pre_pricing_response, {error, <<"infinity">>}}),
             {ok, Messages};
         {true, true} ->
-            PricingMsg = #{ <<"device">> => PricingDevice },
-            LedgerMsg = #{ <<"device">> => LedgerDevice },
+            PricingMsg = State#{ <<"device">> => PricingDevice },
+            LedgerMsg = State#{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"estimate">>,
                 <<"request">> => Request,
@@ -97,7 +97,7 @@ preprocess(State, Raw, NodeMsg) ->
                     % service the request.
                     LedgerReq = #{
                         <<"path">> => <<"balance">>,
-                        <<"account">> =>
+                        <<"target">> =>
                             case hb_message:signers(Request) of
                                 [Signer] -> Signer;
                                 [] -> <<"unknown">>;
@@ -145,7 +145,13 @@ preprocess(State, Raw, NodeMsg) ->
                         {error, Error} ->
                             % The ledger device is unable to process the request,
                             % so we don't proceed.
-                            ?event(payment, {pre_ledger_validation, {error, Error}}),
+                            ?event(payment,
+                                {pre_ledger_validation,
+                                    {error, Error},
+                                    {base, LedgerMsg},
+                                    {req, LedgerReq}
+                                }
+                            ),
                             {error, {error_checking_ledger, Error}}
                     end
             end
@@ -153,8 +159,8 @@ preprocess(State, Raw, NodeMsg) ->
 
 %% @doc Postprocess the request after it has been fulfilled.
 postprocess(State, RawResponse, NodeMsg) ->
-    PricingDevice = hb_ao:get(<<"pricing_device">>, State, false, NodeMsg),
-    LedgerDevice = hb_ao:get(<<"ledger_device">>, State, false, NodeMsg),
+    PricingDevice = hb_ao:get(<<"pricing-device">>, State, false, NodeMsg),
+    LedgerDevice = hb_ao:get(<<"ledger-device">>, State, false, NodeMsg),
     Response =
         hb_ao:get(
             <<"body">>,
@@ -169,8 +175,8 @@ postprocess(State, RawResponse, NodeMsg) ->
         false ->
             {ok, Response};
         true ->
-            PricingMsg = #{ <<"device">> => PricingDevice },
-            LedgerMsg = #{ <<"device">> => LedgerDevice },
+            PricingMsg = State#{ <<"device">> => PricingDevice },
+            LedgerMsg = State#{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"price">>,
                 <<"request">> => Request,
@@ -190,13 +196,24 @@ postprocess(State, RawResponse, NodeMsg) ->
             case PricingRes of
                 {ok, Price} ->
                     % We have successfully determined the cost of the request,
-                    % so we proceed to debit the user's account.
+                    % so we proceed to debit the user's account. We sign the
+                    % request with the node's private key, as it is the node
+                    % that is performing the debit, not the user.
                     LedgerReq =
-                        #{
-                            <<"path">> => <<"debit">>,
-                            <<"amount">> => Price,
-                            <<"request">> => Request
-                        },
+                        hb_message:commit(
+                            #{
+                                <<"path">> => <<"debit">>,
+                                <<"quantity">> => Price,
+                                <<"target">> =>
+                                    case hb_message:signers(Request) of
+                                        [Signer] -> Signer;
+                                        [] -> <<"unknown">>;
+                                        Multiple -> Multiple
+                                    end,
+                                <<"request">> => Request
+                            },
+                            hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg)
+                        ),
                     ?event({p4_ledger_request, LedgerReq}),
                     case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
                         {ok, _} ->
@@ -224,13 +241,13 @@ balance(_, Req, NodeMsg) ->
             preprocessor_not_set,
             NodeMsg
         ),
-    LedgerDevice = hb_ao:get(<<"ledger_device">>, Preprocessor, false, NodeMsg),
-    LedgerMsg = #{ <<"device">> => LedgerDevice },
+    LedgerDevice = hb_ao:get(<<"ledger-device">>, Preprocessor, false, NodeMsg),
+    LedgerMsg = Preprocessor#{ <<"device">> => LedgerDevice },
     LedgerReq = #{
         <<"path">> => <<"balance">>,
         <<"request">> => Req
     },
-    ?event({ledger_message, {ledger_msg, LedgerMsg}}),
+    ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
     case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
         {ok, Balance} ->
             {ok, Balance};
@@ -276,8 +293,8 @@ test_opts(Opts, PricingDev, LedgerDev) ->
     ProcessorMsg =
         #{
             <<"device">> => <<"p4@1.0">>,
-            <<"pricing_device">> => PricingDev,
-            <<"ledger_device">> => LedgerDev
+            <<"pricing-device">> => PricingDev,
+            <<"ledger-device">> => LedgerDev
         },
     Opts#{
         preprocessor => ProcessorMsg,
@@ -315,8 +332,8 @@ non_chargable_route_test() ->
     Processor =
         #{
             <<"device">> => <<"p4@1.0">>,
-            <<"ledger_device">> => <<"simple-pay@1.0">>,
-            <<"pricing_device">> => <<"simple-pay@1.0">>
+            <<"ledger-device">> => <<"simple-pay@1.0">>,
+            <<"pricing-device">> => <<"simple-pay@1.0">>
         },
     Node = hb_http_server:start_node(
         #{
@@ -348,3 +365,104 @@ non_chargable_route_test() ->
     Res3 = hb_http:get(Node, BadSignedReq3, #{}),
     ?event({res3, Res3}),
     ?assertMatch({error, _}, Res3).
+
+%% @doc Ensure that Lua scripts can be used as pricing and ledger devices. Our
+%% scripts come in two parts:
+%% - A `process' script which is executed as a persistent `local-process' on the
+%%   node, and which maintains the state of the ledger.
+%% - A `client' script, which is executed as a `p4@1.0' device, marshalling
+%%   requests to the `process' script.
+lua_pricing_test() ->
+    HostWallet = ar_wallet:new(),
+    ClientWallet = ar_wallet:new(),
+    {ok, ProcessScript} = file:read_file("scripts/p4-payment-process.lua"),
+    {ok, ClientScript} = file:read_file("scripts/p4-payment-client.lua"),
+    Processor =
+        #{
+            <<"device">> => <<"p4@1.0">>,
+            <<"ledger-device">> => <<"lua@5.3a">>,
+            <<"pricing-device">> => <<"simple-pay@1.0">>,
+            <<"script">> => #{
+                <<"content-type">> => <<"text/x-lua">>,
+                <<"module">> => <<"scripts/p4-payment-client.lua">>,
+                <<"body">> => ClientScript
+            },
+            <<"ledger-path">> => <<"/ledger~node-process@1.0">>
+        },
+    Node =
+        hb_http_server:start_node(
+            #{
+                p4_non_chargable_routes =>
+                    [
+                        #{
+                            <<"template">> =>
+                                <<"/*~node-process@1.0/*">>
+                        }
+                    ],
+                preprocessor => Processor,
+                postprocessor => Processor,
+                operator => ar_wallet:to_address(HostWallet),
+                node_processes => #{
+                    <<"ledger">> => #{
+                        <<"device">> => <<"process@1.0">>,
+                        <<"execution-device">> => <<"lua@5.3a">>,
+                        <<"scheduler-device">> => <<"scheduler@1.0">>,
+                        <<"script">> => #{
+                            <<"content-type">> => <<"text/x-lua">>,
+                            <<"module">> => <<"scripts/p4-payment-process.lua">>,
+                            <<"body">> => ProcessScript
+                        },
+                        <<"operator">> =>
+                            hb_util:human_id(ar_wallet:to_address(HostWallet))
+                    }
+                }
+            }
+        ),
+    Req = #{
+        <<"path">> => <<"/greeting">>,
+        <<"greeting">> => <<"Hello, world!">>
+    },
+    SignedReq = hb_message:commit(Req, ClientWallet),
+    Res = hb_http:get(Node, SignedReq, #{}),
+    ?event({expected_failure, Res}),
+    ?assertMatch({error, _}, Res),
+    {ok, TopupRes} =
+        hb_http:post(
+            Node,
+            hb_message:commit(
+                #{
+                    <<"path">> => <<"/ledger~node-process@1.0/schedule">>,
+                    <<"body">> =>
+                        hb_message:commit(
+                            #{
+                                <<"path">> => <<"credit-notice">>,
+                                <<"quantity">> => 100,
+                                <<"recipient">> =>
+                                    hb_util:human_id(
+                                        ar_wallet:to_address(ClientWallet)
+                                    )
+                            },
+                            HostWallet
+                        )
+                },
+                HostWallet
+            ),
+            #{}
+        ),
+    ?event({topup_res, TopupRes}),
+    ResAfterTopup = hb_http:get(Node, SignedReq, #{}),
+    ?event({res_after_topup, ResAfterTopup}),
+    ?assertMatch({ok, <<"Hello, world!">>}, ResAfterTopup),
+    Res3 = hb_http:get(Node, SignedReq, #{}),
+    ?event({res3, Res3}),
+    ?assertMatch({ok, <<"Hello, world!">>}, Res3),
+    Res4 = hb_http:get(Node, SignedReq, #{}),
+    ?event({res4, Res4}),
+    ?assertMatch({ok, <<"Hello, world!">>}, Res4),
+    ?hr(),
+    ?hr(),
+    ?hr(),
+    ?hr(),
+    {ok, Balance} = hb_http:get(Node, <<"/ledger~node-process@1.0/now/balance">>, #{}),
+    ?event({balance, Balance}),
+    ?assertMatch({ok, 98}, Balance).
