@@ -11,13 +11,11 @@ Node = nil -- also needs to be authority
 
 Tokens = {"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc"}
 
--- for every message check if any 
--- locked credits are able to be 
--- made available
+-- Always check if any deposits are unlockable
 local function always(msg)
   if LockPeriod ~= "Infinite" then
       local results = Utils.reduce(function (acc, record)
-          local _isUnlocked = (bint(record.Height) + bint(LockPeriod)) > bint(msg['Block-Height'])
+          local _isUnlocked = bint(record.Until) <= bint(msg['Block-Height'])
           if _isUnlocked then
               table.insert(acc.Unlocked, record)
           else
@@ -37,16 +35,21 @@ local function always(msg)
   end
 end
 
-
+-- Handle deposit from Token
 local function deposit(msg)
   assert(Utils.includes(msg.From, Tokens), "must be from a valid token")
   assert(bint(msg.Quantity) > bint(0), "must be greater than zero")
 
   Balances[msg.Sender] = Balances[msg.Sender] or "0"
-  -- update account balance
+  -- increment account balance
   Balances[msg.Sender] = tostring(bint(Balances[msg.Sender]) + bint(msg.Quantity))
-  table.insert(Locked, { Account = msg.Sender, Quantity = msg.Quantity, Height = msg['Block-Height'] })
-  -- credit node
+  -- add deposit to locked table
+  table.insert(Locked, {
+      Account = msg.Sender,
+      Quantity = msg.Quantity,
+      Until = tostring(bint(msg['Block-Height']) + bint(LockPeriod))
+  })
+  -- send credit to node
   Send({
     device = "patch@1.0",
     cache = {
@@ -61,8 +64,10 @@ local function deposit(msg)
   })
 end
 
+-- (optional) handle receipt from node
 local function receipt (msg)
   if msg.From == Node then
+      -- all deposits from account becomes claimable
       local results = Utils.reduce(function (acc, record)
           local _isUnlocked = msg.Signer == record.Account
           if _isUnlocked then
@@ -85,6 +90,7 @@ local function receipt (msg)
   end
 end
 
+-- Operator withdrawls claimable tokens
 local function withdraw(msg)
   assert(Utils.includes(msg.Token, Tokens), "must be a valid token")
   assert(bint(msg.Quantity) > bint(0), "must be greater than zero")
@@ -111,4 +117,5 @@ end, always)
 Handlers.add("Credit-Notice", deposit)
 Handlers.add("Withdraw", withdraw)
 Handlers.add("Receipt", receipt)
+-- Notes: do account holders need to check their balance?
 -- Handlers.add("Balance", balance)
