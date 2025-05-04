@@ -2,7 +2,6 @@
 %%% as well as generating them, if called in an appropriate environment.
 -module(dev_snp).
 -export([generate/3, verify/3, trusted/3]).
--export([init/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -define(COMMITTED_PARAMETERS, [vcpus, vcpu_type, vmm_type, guest_features,
@@ -18,10 +17,17 @@
     vcpu_type => 5, 
     vmm_type => 1,
     guest_features => 1,
-    firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-    kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-    initrd => <<"853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c">>,
-    append => <<"6cb8a0082b483849054f93b203aa7d98439736e44163d614f79380ca368cc77e">>
+    firmware =>
+        <<
+            "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e"
+                "7e408c582ee48a74b289f3acec78510"
+        >>,
+    kernel =>
+        <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+    initrd =>
+        <<"853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c">>,
+    append =>
+        <<"6cb8a0082b483849054f93b203aa7d98439736e44163d614f79380ca368cc77e">>
 }).
 
 real_node_test() ->
@@ -49,42 +55,6 @@ real_node_test() ->
         ?assertEqual({ok, true}, Result)
     end.
 
-%% @doc Should take in options to set for the device such as kernel, initrd, firmware,
-%% and append hashes and make them available to the device. Only runnable once,
-%% and only if the operator is not set to an address (and thus, the node has not
-%% had any priviledged access).
-init(_M1, M2, Opts) ->
-    ExistingTrusted = hb_opts:get(trusted, [], Opts),
-    % First check if SNP is already initialized
-    case ExistingTrusted of
-        [] ->
-            % Not initialized yet, proceed with validation
-            case dev_meta:validate_request(M2, Opts) of
-                {ok, _} ->
-                    % Valid request, initialize SNP
-                    SnpHashes = hb_ao:get(<<"data">>, M2, Opts),
-                    SNPDecoded = hb_json:decode(SnpHashes),
-                    Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
-                    
-                    % Add new hash configuration to the list
-                    NewTrusted = ExistingTrusted ++ [Hashes],
-                    
-                    ok = hb_http_server:set_opts(Opts#{
-                        % Set trusted to the combined list
-                        trusted => NewTrusted
-                    }),
-                    {ok, <<"SNP node initialized successfully.">>};
-                Error = {error, _} ->
-                    % Invalid request
-                    Error
-            end;
-        _ ->
-            % Already initialized
-            {error, #{
-                <<"status">>  => 400,
-                <<"message">> => <<"SNP node already initialized.">>
-            }}
-    end.
 
 %% @doc Verify an commitment report message; validating the identity of a 
 %% remote node, its ephemeral private address, and the integrity of the report.
@@ -151,7 +121,15 @@ verify(M1, M2, NodeOpts) ->
 		maps:from_list(
 			lists:map(
 				fun({Key, Val}) -> {binary_to_existing_atom(Key), Val} end,
-				maps:to_list(maps:with(lists:map(fun atom_to_binary/1, ?COMMITTED_PARAMETERS), Msg))
+				maps:to_list(
+                    maps:with(
+                        lists:map(
+                            fun atom_to_binary/1,
+                            ?COMMITTED_PARAMETERS
+                        ),
+                        Msg
+                    )
+                )
 			)
 		),
 	?event({args, Args}),
@@ -159,7 +137,11 @@ verify(M1, M2, NodeOpts) ->
     ?event({expected_measurement, Expected}),
     Measurement = hb_ao:get(<<"measurement">>, Msg, NodeOpts),
     ?event({measurement, {explicit,Measurement}}),
-    {ok, MeasurementIsValid} = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
+    {ok, MeasurementIsValid} =
+        dev_snp_nif:verify_measurement(
+            ReportJSON,
+            list_to_binary(Expected)
+        ),
     ?event({measurement_is_valid, MeasurementIsValid}),
     % Step 6: Check the report's integrity.
     {ok, ReportIsValid} = dev_snp_nif:verify_signature(ReportJSON),
@@ -243,7 +225,6 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             not_found -> M1#{ <<"device">> => <<"snp@1.0">> };
             Device -> {as, Device, M1}
         end,
-    %?event({starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
     Result = lists:all(
         fun(ReportKey) ->
             ReportVal = hb_ao:get(ReportKey, Msg, NodeOpts),
@@ -287,7 +268,13 @@ trusted(_Msg1, Msg2, NodeOpts) ->
             _ when is_list(TrustedSoftware) ->
                 lists:any(
                     fun(TrustedMap) ->
-                        PropertyName = hb_ao:get(Key, TrustedMap, not_found, NodeOpts),
+                        PropertyName =
+                            hb_ao:get(
+                                Key,
+                                TrustedMap,
+                                not_found,
+                                NodeOpts
+                            ),
                         PropertyName == Body
                     end,
                     TrustedSoftware
@@ -317,10 +304,15 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
 % 			vcpu_type => 5, 
 % 			vmm_type => 1,
 % 			guest_features => 16#1,
-% 			firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
-% 			kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
-% 			initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
-% 			append => "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
+% 			firmware =>
+%               "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b7"
+%                   "88e7e408c582ee48a74b289f3acec78510",
+% 			kernel =>
+%               "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
+% 			initrd =>
+%               "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
+% 			append =>
+%               "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
 % 		},
 %     Wallet = ar_wallet:new(),
 %     Addr = hb_util:human_id(ar_wallet:to_address(Wallet)),
