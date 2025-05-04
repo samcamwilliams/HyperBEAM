@@ -274,7 +274,7 @@ do_from(RawTX) ->
                         }
                 end;
             _ ->
-                Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
+                Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner, TX#tx.signature_type)),
                 WithoutBaseCommitment =
                     maps:without(
                         [

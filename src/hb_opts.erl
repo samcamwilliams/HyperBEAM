@@ -165,8 +165,28 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
-                #{ <<"store-module">> => hb_store_gateway,
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-mainnet">>
+                },
+                #{
+                    <<"store-module">> => hb_store_gateway,
+                    <<"subindex">> => [
+                        #{
+                            <<"name">> => <<"Data-Protocol">>,
+                            <<"value">> => <<"ao">>
+                        }
+                    ],
+                    <<"store">> => 
+                     [
+                        #{
+                            <<"store-module">> => hb_store_fs,
+                            <<"prefix">> => <<"cache-mainnet">>
+                         }
+                     ]
+                },
+                #{
+                    <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
                             #{
