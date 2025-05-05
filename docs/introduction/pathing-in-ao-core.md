@@ -88,15 +88,17 @@ Depending on the `[PATH]` provided:
 
 ## Examples
 
+The following examples illustrate using HyperPATH with various AO-Core processes and devices. While these cover a few specific use cases, HyperBEAM's extensible nature allows interaction with any device or process via HyperPATH. For a deeper understanding, we encourage exploring the [source code](https://github.com/permaweb/hyperbeam) and experimenting with different paths.
+
 ### Example 1: Accessing Full Process State
 
-To get the complete, real-time state of a process identified by `<procId>`, use the `/now` path component with the `~process@1.0` device:
+To get the complete, real-time state of a process identified by `<procId>`, use the `/now` path component with the [`~process@1.0`](../devices/process-at-1-0.md) device:
 
 ```
 GET /<procId>~process@1.0/now
 ```
 
-This instructs the AO-Core node to load the process and execute the `now` function on the `~process@1.0` device.
+This instructs the AO-Core node to load the process and execute the `now` function on the [`~process@1.0`](../devices/process-at-1-0.md) device.
 
 ### Example 2: Navigating to Specific Process Data
 
@@ -106,19 +108,20 @@ If a process maintains its state in a map and you want to access a specific fiel
 GET /<procId>~process@1.0/compute/at-slot
 ```
 
-This accesses the `compute` key on the `~process@1.0` device and then navigates to the `at-slot` key within the resulting state map.
+This accesses the `compute` key on the [`~process@1.0`](../devices/process-at-1-0.md) device and then navigates to the `at-slot` key within the resulting state map. Using this path, you will see the latest 'slot' of your process (the number of interactions it has received). Every piece of relevant information about your process can be accessed similarly, effectively providing a native API.
+
 (Note: This represents direct navigation within the process state structure. For accessing data specifically published via the `~patch@1.0` device, see the documentation on [Exposing Process State](../build/exposing-process-state.md), which typically uses the `/cache/` path.)
 
 ### Example 3: Basic `~message@1.0` Usage
 
-Here's a simpler use of `~message@1.0` to create a message and retrieve a value:
+Here's a simple example of using [`~message@1.0`](../devices/message-at-1-0.md) to create a message and retrieve a value:
 
 ```
 GET /~message@1.0&greeting="Hello"&count+integer=42/count
 ```
 
 1.  **Base:** `/` - The base URL of the HyperBEAM node.
-2.  **Root Device:** `~message@1.0`
+2.  **Root Device:** [`~message@1.0`](../devices/message-at-1-0.md)
 3.  **Query Params:** `greeting="Hello"` (binary) and `count+integer=42` (integer), forming the message `#{ <<"greeting">> => <<"Hello">>, <<"count">> => 42 }`.
 4.  **Path:** `/count` tells `~message@1.0` to retrieve the value associated with the key `count`.
 
@@ -126,7 +129,7 @@ GET /~message@1.0&greeting="Hello"&count+integer=42/count
 
 ### Example 4: Using the `~message@1.0` Device with Type Casting
 
-The `~message@1.0` device can be used to construct and query transient messages, utilizing type casting in query parameters.
+The [`~message@1.0`](../devices/message-at-1-0.md) device can be used to construct and query transient messages, utilizing type casting in query parameters.
 
 Consider the following URL:
 
@@ -136,7 +139,7 @@ GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&conf
 
 HyperBEAM processes this as follows:
 
-1.  Root Device: `~message@1.0`
+1.  Root Device: [`~message@1.0`](../devices/message-at-1-0.md)
 2.  Query Parameters (with type casting):
     *   `name="Alice"` -> `#{ <<"name">> => <<"Alice">> }` (binary)
     *   `age+integer=30` -> `#{ <<"age">> => 30 }` (integer)

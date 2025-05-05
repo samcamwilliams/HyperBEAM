@@ -70,7 +70,7 @@ ${NEON_GREEN}             ++++*        ${BLACK}${BOLD}| |__  _   _ _ __   ___ _ 
 ${NEON_GREEN}           :+++*${BRIGHT_YELLOW}##       ${BLACK}${BOLD} | '_ \\| | | | '_ \\ / _ \\ '__| ${NC}
 ${NEON_GREEN}          ++**${BRIGHT_YELLOW}####       ${BLACK}${BOLD} | | | | |_| | |_) |  __/ |    ${NC}
 ${NEON_GREEN}        +++${BRIGHT_YELLOW}####${NEON_GREEN}***       ${BLACK}${BOLD} |_| |_|\\__, | .__/ \\___|_|    ${NC}
-${NEON_GREEN}       +*${BRIGHT_YELLOW}##${NEON_GREEN}****${MAGENTA}+--      ${BLACK}${BOLD}        |___/|_|              ${NC}
+${NEON_GREEN}        +*${BRIGHT_YELLOW}##${NEON_GREEN}****${MAGENTA}+--      ${BLACK}${BOLD}        |___/|_|              ${NC}
 ${MAGENTA}    -**${BRIGHT_YELLOW}##${NEON_GREEN}**${MAGENTA}+------       ${BLACK}${BOLD}                	BEAM.${NC}
 ${MAGENTA}   -##${NEON_GREEN}*+${BRIGHT_RED}---:::::::
 ${GRAY}  =${GRAY}%%${NEON_GREEN}*+${BRIGHT_RED}=-:::::::::${GRAY}        DECENTRALIZED OPERATING SYSTEM${NC}
