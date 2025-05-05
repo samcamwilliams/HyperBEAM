@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `~lua@5.3a` device enables the execution of Lua scripts within an AO process. It utilizes the `luerl` Erlang library to provide a Lua 5.3 compatible environment.
-
-**Status:** Stable
+The [`~lua@5.3a`](../resources/source-code/dev_lua.md) device enables the execution of Lua scripts within the HyperBEAM environment. It provides an isolated sandbox where Lua code can process incoming messages, interact with other devices, and manage state.
 
 ## Core Concept: Lua Script Execution
 

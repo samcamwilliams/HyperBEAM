@@ -2,9 +2,9 @@
 
 ## Overview
 
-The `~meta@1.0` device serves as the primary configuration and information endpoint for a HyperBEAM node. It's the default entry point for processing requests and allows querying or modifying the node's settings.
+The [`~meta@1.0`](../resources/source-code/dev_meta.md) device provides access to metadata and configuration information about the local HyperBEAM node and the broader AO network.
 
-**Status:** Stable
+This device is essential for:
 
 ## Core Functions (Keys)
 

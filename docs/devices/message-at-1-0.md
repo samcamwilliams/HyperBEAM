@@ -4,8 +4,6 @@
 
 The [`~message@1.0`](../resources/source-code/dev_message.md) device is a fundamental built-in device in HyperBEAM. It serves as the identity device for standard AO-Core messages, which are represented as Erlang maps internally. Its primary function is to allow manipulation and inspection of these message maps directly via HyperPATH requests, without needing a persistent process state.
 
-**Status:** Stable
-
 This device is particularly useful for:
 
 *   Creating and modifying transient messages on the fly using query parameters.

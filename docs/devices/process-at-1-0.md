@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `~process@1.0` device provides the core abstraction for persistent, shared computations within AO, analogous to smart contracts in other systems but with greater flexibility. It orchestrates the interaction between scheduling, state management, and computation execution for a specific process instance.
-
-**Status:** Stable
+The [`~process@1.0`](../resources/source-code/dev_process.md) device represents a persistent, shared execution environment within HyperBEAM, analogous to a process or actor in other systems. It allows for stateful computation and interaction over time.
 
 ## Core Concept: Orchestration
 

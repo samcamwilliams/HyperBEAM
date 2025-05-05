@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `~relay@1.0` device is responsible for forwarding messages (HTTP requests) from one HyperBEAM node to another node or to any external HTTP(S) endpoint.
-
-**Status:** Stable
+The [`~relay@1.0`](../resources/source-code/dev_relay.md) device enables HyperBEAM nodes to send messages to external HTTP endpoints or other AO nodes.
 
 ## Core Concept: Message Forwarding
 

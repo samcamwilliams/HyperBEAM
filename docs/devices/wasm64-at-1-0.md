@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `~wasm64@1.0` device enables the execution of WebAssembly (WASM) code within an AO process, specifically targeting the WASM Memory64 specification. It uses `hb_beamr`, an Erlang wrapper for the WebAssembly Micro Runtime (WAMR), as its backend.
-
-**Status:** Stable
+The [`~wasm64@1.0`](../resources/source-code/dev_wasm64.md) device enables the execution of 64-bit WebAssembly (WASM) code within the HyperBEAM environment. It provides a sandboxed environment for running compiled code from various languages (like Rust, C++, Go) that target WASM.
 
 ## Core Concept: WASM Execution
 

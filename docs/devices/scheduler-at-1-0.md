@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `~scheduler@1.0` device is responsible for managing the order of message execution for an AO process. It maintains the list of pending messages (assignments) and provides them sequentially to the process's Execution Device.
-
-**Status:** Stable
+The [`~scheduler@1.0`](../resources/source-code/dev_scheduler.md) device manages the queueing and ordering of messages targeted at a specific process (`~process@1.0`). It ensures that messages are processed according to defined scheduling rules.
 
 ## Core Concept: Message Ordering
 

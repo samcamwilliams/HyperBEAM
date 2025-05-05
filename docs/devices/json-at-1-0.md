@@ -2,9 +2,13 @@
 
 ## Overview
 
-The `json` device provides a structured way to access and interact with JSON (JavaScript Object Notation) data within the HyperBEAM environment. It allows processes to read, query, and potentially modify JSON objects stored or referenced by the device. It can also be used via HyperPATH chaining to serialize arbitrary data from other devices.
+The [`~json@1.0`](../resources/source-code/dev_json.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
 
-**Status:** Stable
+This device is useful for:
+
+*   Serializing and deserializing JSON data.
+*   Querying and modifying JSON objects.
+*   Integrating with other devices and operations via HyperPATH chaining.
 
 ## Core Functions (Keys)
 

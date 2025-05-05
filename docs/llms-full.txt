@@ -1,4 +1,4 @@
-Generated: 2025-05-05T19:29:57Z
+Generated: 2025-05-05T19:33:12Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -430,7 +430,7 @@ Each device listed here represents a specific capability available to AO process
 
 ## Available Devices
 
-Below is a list of documented built-in devices. Each page details the device's purpose, status, available functions (keys), and usage examples where applicable.
+Below is a list of documented built-in devices. Each page details the device's purpose, available functions (keys), and usage examples where applicable.
 
 *   **[`~message@1.0`](./message-at-1-0.md):** Base message handling and manipulation.
 *   **[`~meta@1.0`](./meta-at-1-0.md):** Node configuration and metadata.
@@ -449,10 +449,6 @@ Devices are typically referenced using a name and version, like `~<name>@<versio
 
 Versioning indicates the specific interface and behavior of the device. Changes to a device that break backward compatibility usually result in a version increment.
 
-## Status Indicators
-
-Each device page will include a status indicator (e.g., `Stable`, `Beta`, `Experimental`) to help you gauge its production readiness and likelihood of future changes.
-
 --- END OF FILE: docs/devices/index.md ---
 
 --- START OF FILE: docs/devices/json-at-1-0.md ---
@@ -460,9 +456,13 @@ Each device page will include a status indicator (e.g., `Stable`, `Beta`, `Exper
 
 ## Overview
 
-The `json` device provides a structured way to access and interact with JSON (JavaScript Object Notation) data within the HyperBEAM environment. It allows processes to read, query, and potentially modify JSON objects stored or referenced by the device. It can also be used via HyperPATH chaining to serialize arbitrary data from other devices.
+The [`~json@1.0`](../resources/source-code/dev_json.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
 
-**Status:** Stable
+This device is useful for:
+
+*   Serializing and deserializing JSON data.
+*   Querying and modifying JSON objects.
+*   Integrating with other devices and operations via HyperPATH chaining.
 
 ## Core Functions (Keys)
 
@@ -501,9 +501,7 @@ This retrieves the node configuration from the meta device and serializes it to 
 
 ## Overview
 
-The `~lua@5.3a` device enables the execution of Lua scripts within an AO process. It utilizes the `luerl` Erlang library to provide a Lua 5.3 compatible environment.
-
-**Status:** Stable
+The [`~lua@5.3a`](../resources/source-code/dev_lua.md) device enables the execution of Lua scripts within the HyperBEAM environment. It provides an isolated sandbox where Lua code can process incoming messages, interact with other devices, and manage state.
 
 ## Core Concept: Lua Script Execution
 
@@ -578,8 +576,6 @@ This device offers a lightweight, integrated scripting capability for AO process
 ## Overview
 
 The [`~message@1.0`](../resources/source-code/dev_message.md) device is a fundamental built-in device in HyperBEAM. It serves as the identity device for standard AO-Core messages, which are represented as Erlang maps internally. Its primary function is to allow manipulation and inspection of these message maps directly via HyperPATH requests, without needing a persistent process state.
-
-**Status:** Stable
 
 This device is particularly useful for:
 
@@ -656,9 +652,9 @@ GET /~message@1.0&hello=world&k=v/k
 
 ## Overview
 
-The `~meta@1.0` device serves as the primary configuration and information endpoint for a HyperBEAM node. It's the default entry point for processing requests and allows querying or modifying the node's settings.
+The [`~meta@1.0`](../resources/source-code/dev_meta.md) device provides access to metadata and configuration information about the local HyperBEAM node and the broader AO network.
 
-**Status:** Stable
+This device is essential for:
 
 ## Core Functions (Keys)
 
@@ -715,9 +711,7 @@ Before a node can process general requests, it usually needs to be initialized. 
 
 ## Overview
 
-The `~process@1.0` device provides the core abstraction for persistent, shared computations within AO, analogous to smart contracts in other systems but with greater flexibility. It orchestrates the interaction between scheduling, state management, and computation execution for a specific process instance.
-
-**Status:** Stable
+The [`~process@1.0`](../resources/source-code/dev_process.md) device represents a persistent, shared execution environment within HyperBEAM, analogous to a process or actor in other systems. It allows for stateful computation and interaction over time.
 
 ## Core Concept: Orchestration
 
@@ -793,9 +787,7 @@ Processes often require an initialization step before they can process messages.
 
 ## Overview
 
-The `~relay@1.0` device is responsible for forwarding messages (HTTP requests) from one HyperBEAM node to another node or to any external HTTP(S) endpoint.
-
-**Status:** Stable
+The [`~relay@1.0`](../resources/source-code/dev_relay.md) device enables HyperBEAM nodes to send messages to external HTTP endpoints or other AO nodes.
 
 ## Core Concept: Message Forwarding
 
@@ -845,9 +837,7 @@ When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by
 
 ## Overview
 
-The `~scheduler@1.0` device is responsible for managing the order of message execution for an AO process. It maintains the list of pending messages (assignments) and provides them sequentially to the process's Execution Device.
-
-**Status:** Stable
+The [`~scheduler@1.0`](../resources/source-code/dev_scheduler.md) device manages the queueing and ordering of messages targeted at a specific process (`~process@1.0`). It ensures that messages are processed according to defined scheduling rules.
 
 ## Core Concept: Message Ordering
 
@@ -900,9 +890,7 @@ These keys are typically accessed via the `~process@1.0` device, which delegates
 
 ## Overview
 
-The `~wasm64@1.0` device enables the execution of WebAssembly (WASM) code within an AO process, specifically targeting the WASM Memory64 specification. It uses `hb_beamr`, an Erlang wrapper for the WebAssembly Micro Runtime (WAMR), as its backend.
-
-**Status:** Stable
+The [`~wasm64@1.0`](../resources/source-code/dev_wasm64.md) device enables the execution of 64-bit WebAssembly (WASM) code within the HyperBEAM environment. It provides a sandboxed environment for running compiled code from various languages (like Rust, C++, Go) that target WASM.
 
 ## Core Concept: WASM Execution
 
