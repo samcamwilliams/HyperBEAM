@@ -1,45 +1,212 @@
-#{<<"address">> =>
-      <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU">>,
-  <<"append">> =>
-      <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>,
+#{<<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
+  <<"access-control-allow-origin">> => <<"*">>,
+  <<"address">> => <<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhko">>,
+  <<"body-keys">> =>
+      <<"\"local-hashes\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\"">>,
   <<"commitments">> =>
-      #{<<"8jSC03sthCzoR5fu_u557HJErVeWpKG_sVxDUqnH6nw">> =>
-            #{<<"alg">> => <<"hmac-sha256">>,
-              <<"commitment-device">> => <<"httpsig@1.0">>,
-              <<"signature">> =>
-                  <<"http-sig-037590df99c805ad=:bgROGLITSlQh+a0IumKbVQn3Hkqqq8/eFYY5Yz7nSK2WRNXgQR5BdUnqrQI0hYO7Boi8cZ+KlLfYMR9Yyvkdv4dQio6eKbAv+ZYbpuEIofn/pu/ScPQA2aCbzyfyQYttFFk3+vqLhVxohnZB9acbwbsXjY5A9ttC8Y/WQQMBdnGJYp1iq+00O5iwDW2yErl/V5PfNyR46N6NB+4w71M9CbHI0HQ0sv2j7W60T8SDfH5sSr8vic0RcPpLMSqqNvBI7OqggtywHZ3PzAxUFJORz4Dwgzf78ERaI6C4lm91cHDQhHf7le7RPToyes7sA/K/MG4C8jw1aostFypsZ9ZJOczV8GPZzkGgJdN1xoFWDPLtJ2OfEizoD/GCPsZjYbtbaO/3fecVoHiG8JUsdGQ8LWRxSjnhu8IDPjZ65JQW1vr5OIwGN8Gho3aiMluExvHIq14c3AaGvW8KJYuqORscI1GXLzkyEcm2TeVzneurGuhA/IMV4haHGJoz+Xp93A+jouu9UhvZlEBlGLee4yuHXMFHRTwiO/0SkJeGE8KJAXl9Kh9CiAuIbNshL7zZGXlMbn7IopB5z2ckyzJtDFbQj41kZc2zm+B7pTU8DhdsFYHkDT0ipvXRWVMrrFSkQqTcyysrfY5Ur6W8Da2Yil2mfMYjFOovGEwQ99jBSn5mfbs=:">>,
-              <<"signature-input">> =>
-                  <<"http-sig-037590df99c805ad=(\"address\" \"ao-types\" \"append\" \"content-digest\" \"content-type\" \"firmware\" \"guest_features\" \"initrd\" \"kernel\" \"nonce\" \"report\" \"vcpu_type\" \"vcpus\" \"vmm_type\");alg=\"rsa-pss-sha512\";keyid=\"o987RvpWhYgDA9rte9WJmVnws2z6YX_khhBrQOBCOyxQG5lj3i7aJIXfEwV-X3GPWRSMQ_7inIi4Fw7ocUDIXp4EWhiCSU4JTywxzbwcgRzH42bTk8AsEm7uQrIWqCYbinQ92Qsn3qnW4jhcpa1wPASRlv3vYAQIu6eXKuloXpIjx8rFOLTzTje9NFVWmjypP9oShtjI8Y7VdEjjl5ILMqu5ZfwlIsssbx9J6jDvN9nMCj8-j1YyKh-Uq3aJKeYxeytSSYvGU4mHrG3j2HYooct9LXOwTh89sXsc7gCvSafpI8j7ZFGRrP28FhRhCjzYhiCT88efsWxAjkv1C1JYf5jJLtLFfEl-Y39jpGPXnIaofeMJ9X2X_Xfx86KOKSqoOU-DmFKfPdt4JjqaafI1_Asvxp60enS1BdvgfLr34K8gq6Yyos47FrzhqCW_BWOF77vgp-w5PV-tcs2uO1oKpUghy1eaTeeNdKHjlQj9huOjv7kOMBGfOWtZDW1sO9ChYB3DDTT3AAwo6bVjj0iiiwWGbzWecwT9OPLetRCymVPEFvTQWXK6-1Qu3WNoYqFtC_pFqHo-owxaHS37ySTfB1A04C5a6m3TEP9hLWde52C5frMdfchYuy5pqoNqMb3sznGRQhOwmcWxb3unq9tytAYNmEpQhzZ-sHapTs1Y080\"">>},
-        <<"hX5dq-8t47sppGAKw2rSyefDks80H0WNK3i3wmh3eJU">> =>
+      #{<<"MUzFIkeqzt8Tm_SG7Ht-Oj1NWwJEY8ln1f-8ys45Otw">> =>
             #{<<"alg">> => <<"rsa-pss-sha512">>,
               <<"commitment-device">> => <<"httpsig@1.0">>,
               <<"committer">> =>
-                  <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU">>,
+                  <<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhko">>,
               <<"signature">> =>
-                  <<"http-sig-037590df99c805ad=:bgROGLITSlQh+a0IumKbVQn3Hkqqq8/eFYY5Yz7nSK2WRNXgQR5BdUnqrQI0hYO7Boi8cZ+KlLfYMR9Yyvkdv4dQio6eKbAv+ZYbpuEIofn/pu/ScPQA2aCbzyfyQYttFFk3+vqLhVxohnZB9acbwbsXjY5A9ttC8Y/WQQMBdnGJYp1iq+00O5iwDW2yErl/V5PfNyR46N6NB+4w71M9CbHI0HQ0sv2j7W60T8SDfH5sSr8vic0RcPpLMSqqNvBI7OqggtywHZ3PzAxUFJORz4Dwgzf78ERaI6C4lm91cHDQhHf7le7RPToyes7sA/K/MG4C8jw1aostFypsZ9ZJOczV8GPZzkGgJdN1xoFWDPLtJ2OfEizoD/GCPsZjYbtbaO/3fecVoHiG8JUsdGQ8LWRxSjnhu8IDPjZ65JQW1vr5OIwGN8Gho3aiMluExvHIq14c3AaGvW8KJYuqORscI1GXLzkyEcm2TeVzneurGuhA/IMV4haHGJoz+Xp93A+jouu9UhvZlEBlGLee4yuHXMFHRTwiO/0SkJeGE8KJAXl9Kh9CiAuIbNshL7zZGXlMbn7IopB5z2ckyzJtDFbQj41kZc2zm+B7pTU8DhdsFYHkDT0ipvXRWVMrrFSkQqTcyysrfY5Ur6W8Da2Yil2mfMYjFOovGEwQ99jBSn5mfbs=:">>,
+                  <<"http-sig-090102a5929e0167=:nlgbw8TPIG8v0IpdCeicb1pDQZyJOKsGbAeRTLP2xS2Dt9AbbVJoKOsRGikgGyJcnaTJN9JU4BhOCVft79+O/pGq+WQMd7212qRKbb93eVQoiLTYlAQv3wJss/UNCxWAjrGZFLWQK1haL2lD4Edjd+XX/xdABz75qNZSWI+1A8v+8OPMB4w+mcIgziL40rYsDPxx/vB3qPQyrDl9myFQMw5F2VpNM4GJAk8dlr6zDg04HekgV7x3Mc1w+L3iPK50SFU15zttgDxh6CB13QbCCAEVX/3Jzfzv5bGrhvUUjq1i7P4kAZx4fEbqjZ1TuJ6sB0wLs63VFGdEBVf6/eDSuYMCt3nfz7AvHV7awo12bwts7fm957bZiAq4DzgRC36GdKt3nDCjyVe10UiQi1kLhY7B8uZ9YHnoI4v5wigd/HC3AExIIzUObzJpUWtaeFurBLAul+9reGpwwSaGMxilNk08Bdhw1gth/OX5o43DUA0zXYIC96bqPmAvuzPSAjO7V9Xz07Hr0lA3g2ByEbzaK4jLyosU0v/e2drhvU4XZ49j+YNhQlrF6ASo5p3zA2R+wniSPEF+LFYBZrCRXJy+eQe4tqKJuzpGih7aubOwwrNNgb67rkxOwVufg0VGBqQ4iPUG2CK5yBBBm/gPb5OH85LYlO4zkURKmemTo6ctOKQ=:">>,
               <<"signature-input">> =>
-                  <<"http-sig-037590df99c805ad=(\"address\" \"ao-types\" \"append\" \"content-digest\" \"content-type\" \"firmware\" \"guest_features\" \"initrd\" \"kernel\" \"nonce\" \"report\" \"vcpu_type\" \"vcpus\" \"vmm_type\");alg=\"rsa-pss-sha512\";keyid=\"o987RvpWhYgDA9rte9WJmVnws2z6YX_khhBrQOBCOyxQG5lj3i7aJIXfEwV-X3GPWRSMQ_7inIi4Fw7ocUDIXp4EWhiCSU4JTywxzbwcgRzH42bTk8AsEm7uQrIWqCYbinQ92Qsn3qnW4jhcpa1wPASRlv3vYAQIu6eXKuloXpIjx8rFOLTzTje9NFVWmjypP9oShtjI8Y7VdEjjl5ILMqu5ZfwlIsssbx9J6jDvN9nMCj8-j1YyKh-Uq3aJKeYxeytSSYvGU4mHrG3j2HYooct9LXOwTh89sXsc7gCvSafpI8j7ZFGRrP28FhRhCjzYhiCT88efsWxAjkv1C1JYf5jJLtLFfEl-Y39jpGPXnIaofeMJ9X2X_Xfx86KOKSqoOU-DmFKfPdt4JjqaafI1_Asvxp60enS1BdvgfLr34K8gq6Yyos47FrzhqCW_BWOF77vgp-w5PV-tcs2uO1oKpUghy1eaTeeNdKHjlQj9huOjv7kOMBGfOWtZDW1sO9ChYB3DDTT3AAwo6bVjj0iiiwWGbzWecwT9OPLetRCymVPEFvTQWXK6-1Qu3WNoYqFtC_pFqHo-owxaHS37ySTfB1A04C5a6m3TEP9hLWde52C5frMdfchYuy5pqoNqMb3sznGRQhOwmcWxb3unq9tytAYNmEpQhzZ-sHapTs1Y080\"">>}},
-  <<"firmware">> =>
-      <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-  <<"guest_features">> => 1,
-  <<"initrd">> =>
-      <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-  <<"kernel">> =>
-      <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+                  <<"http-sig-090102a5929e0167=(\"address\" \"content-digest\" \"content-type\" \"nonce\" \"report\");alg=\"rsa-pss-sha512\";keyid=\"tNJiPXooFZFAslsMCDA05lWiyfuGLc085ng3Vyxd9g8vZvJpH_4pHe4litklE2qXZM4o_w3jWbxLf-gb6wlp0Vnrqfw1SOvG5LywCwUHUB2n8DQD4QxXY4lGHB8vqnM3d0eXFbvEknLyTny_0MicPOfjnHxKxYQms4922uUzXpHRgsdfLBM3zxM9IKa9vBuiaJJEMFDqyYah3jZ3Xw4iigLnMqN3qBxa09EtN1OaTXg7nC-b9Yh_pqdhxFmvqFqrC9bj3fBedRIC3sqa1HSRfEp1MJOP6h29xle7LfzdhLzubbKC0J6CDo5X99hwMHpURn-vtwBNbutYrVUKax_LXeKdYRYRxTlS-jm7jus4-4NW5vozdwQksSsQMimq-oi3AUvwezWnS06KPMQyornPW7_PQAIGeEaUm30Y_HZfkEgGXoDDuc2o8193lzUZ2EH2PQfYXieBiqX8iU2vbZwigli6uWVdyFkLrfyQNB65XdtF1WstQWAjDTXuL-G-TfScvQLYxhRlw-VZemxh4txUEOstzgZy0hX60lS6OY-mGpe4UrtT-JcaqTFEYVXXFR8dErKnEtG2ddlhO3DmOxYIULYGtpLFfJfqVANOvF0uThKKB38dZ9xVbF9NmyDthsauuPpgw4H2OKmKu7wdqy9Xpfr1aUA2W-3eXD5RG2cBbzE\"">>},
+        <<"wz_orm9yH4NE3LynHuaCHQbnu-JSnxPrLgPW1te5vLY">> =>
+            #{<<"alg">> => <<"hmac-sha256">>,
+              <<"commitment-device">> => <<"httpsig@1.0">>,
+              <<"signature">> =>
+                  <<"http-sig-090102a5929e0167=:nlgbw8TPIG8v0IpdCeicb1pDQZyJOKsGbAeRTLP2xS2Dt9AbbVJoKOsRGikgGyJcnaTJN9JU4BhOCVft79+O/pGq+WQMd7212qRKbb93eVQoiLTYlAQv3wJss/UNCxWAjrGZFLWQK1haL2lD4Edjd+XX/xdABz75qNZSWI+1A8v+8OPMB4w+mcIgziL40rYsDPxx/vB3qPQyrDl9myFQMw5F2VpNM4GJAk8dlr6zDg04HekgV7x3Mc1w+L3iPK50SFU15zttgDxh6CB13QbCCAEVX/3Jzfzv5bGrhvUUjq1i7P4kAZx4fEbqjZ1TuJ6sB0wLs63VFGdEBVf6/eDSuYMCt3nfz7AvHV7awo12bwts7fm957bZiAq4DzgRC36GdKt3nDCjyVe10UiQi1kLhY7B8uZ9YHnoI4v5wigd/HC3AExIIzUObzJpUWtaeFurBLAul+9reGpwwSaGMxilNk08Bdhw1gth/OX5o43DUA0zXYIC96bqPmAvuzPSAjO7V9Xz07Hr0lA3g2ByEbzaK4jLyosU0v/e2drhvU4XZ49j+YNhQlrF6ASo5p3zA2R+wniSPEF+LFYBZrCRXJy+eQe4tqKJuzpGih7aubOwwrNNgb67rkxOwVufg0VGBqQ4iPUG2CK5yBBBm/gPb5OH85LYlO4zkURKmemTo6ctOKQ=:">>,
+              <<"signature-input">> =>
+                  <<"http-sig-090102a5929e0167=(\"address\" \"content-digest\" \"content-type\" \"nonce\" \"report\");alg=\"rsa-pss-sha512\";keyid=\"tNJiPXooFZFAslsMCDA05lWiyfuGLc085ng3Vyxd9g8vZvJpH_4pHe4litklE2qXZM4o_w3jWbxLf-gb6wlp0Vnrqfw1SOvG5LywCwUHUB2n8DQD4QxXY4lGHB8vqnM3d0eXFbvEknLyTny_0MicPOfjnHxKxYQms4922uUzXpHRgsdfLBM3zxM9IKa9vBuiaJJEMFDqyYah3jZ3Xw4iigLnMqN3qBxa09EtN1OaTXg7nC-b9Yh_pqdhxFmvqFqrC9bj3fBedRIC3sqa1HSRfEp1MJOP6h29xle7LfzdhLzubbKC0J6CDo5X99hwMHpURn-vtwBNbutYrVUKax_LXeKdYRYRxTlS-jm7jus4-4NW5vozdwQksSsQMimq-oi3AUvwezWnS06KPMQyornPW7_PQAIGeEaUm30Y_HZfkEgGXoDDuc2o8193lzUZ2EH2PQfYXieBiqX8iU2vbZwigli6uWVdyFkLrfyQNB65XdtF1WstQWAjDTXuL-G-TfScvQLYxhRlw-VZemxh4txUEOstzgZy0hX60lS6OY-mGpe4UrtT-JcaqTFEYVXXFR8dErKnEtG2ddlhO3DmOxYIULYGtpLFfJfqVANOvF0uThKKB38dZ9xVbF9NmyDthsauuPpgw4H2OKmKu7wdqy9Xpfr1aUA2W-3eXD5RG2cBbzE\"">>}},
+  <<"content-type">> =>
+      <<"multipart/form-data; boundary=\"vdudqoOrKNIiG0S6xNgD4F-vcu6qZgZg26qKqEjiHMw\"">>,
+  <<"date">> => <<"Tue, 06 May 2025 15:40:59 GMT">>,
+  <<"local-hashes">> =>
+      #{<<"append">> =>
+            <<"1cd04d5e2d9ede21542993060d3906155882d75df934c23f00b2a5f006005d6f">>,
+        <<"firmware">> =>
+            <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+        <<"guest_features">> => 1,
+        <<"initrd">> =>
+            <<"331f9f710b389a203dead24d7cb8939e23c092bcbf46631c6958fc8035df98e6">>,
+        <<"kernel">> =>
+            <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+        <<"vcpu_type">> => 5,<<"vcpus">> => 32,<<"vmm_type">> => 1},
   <<"node-message">> =>
-      #{<<"snp_hashes">> =>
-            #{<<"append">> =>
-                  <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>,
-              <<"firmware">> =>
-                  <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-              <<"guest_features">> => 1,
-              <<"initrd">> =>
-                  <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-              <<"kernel">> =>
-                  <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-              <<"vcpu_type">> => 5,<<"vcpus">> => 1,<<"vmm_type">> => 1}},
+      #{<<"debug_metadata">> => true,
+        <<"gateway">> => <<"https://arweave.net">>,
+        <<"operator">> => <<"trustless">>,
+        <<"process_now_from_cache">> => false,
+        <<"debug_print_map_line_threshold">> => 30,<<"http_client">> => gun,
+        <<"http_keepalive">> => 120000,
+        <<"green_zone_peer_location">> => <<"http://104.238.162.231:80">>,
+        <<"short_trace_len">> => 5,<<"debug_print_trace">> => short,
+        <<"router_template">> => <<"/.*~process@1.0/.*">>,
+        <<"scheduler_location_ttl">> => 604800000,<<"compute_mode">> => lazy,
+        <<"snp_trusted">> =>
+            #{<<"1">> =>
+                  #{<<"append">> =>
+                        <<"1cd04d5e2d9ede21542993060d3906155882d75df934c23f00b2a5f006005d6f">>,
+                    <<"firmware">> =>
+                        <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+                    <<"guest_features">> => 1,
+                    <<"initrd">> =>
+                        <<"331f9f710b389a203dead24d7cb8939e23c092bcbf46631c6958fc8035df98e6">>,
+                    <<"kernel">> =>
+                        <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+                    <<"vcpu_type">> => 5,<<"vcpus">> => 32,
+                    <<"vmm_type">> => 1}},
+        <<"hb_config_location">> => <<"config.flat">>,
+        <<"process_workers">> => false,<<"initialized">> => permanent,
+        <<"only">> => local,<<"cache_lookup_hueristics">> => false,
+        <<"address">> => <<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhko">>,
+        <<"store">> =>
+            [#{<<"prefix">> => <<"cache-mainnet">>,
+               <<"store-module">> => hb_store_fs},
+             #{<<"store">> =>
+                   [#{<<"prefix">> => <<"cache-mainnet">>,
+                      <<"store-module">> => hb_store_fs}],
+               <<"store-module">> => hb_store_gateway,
+               <<"subindex">> =>
+                   [#{<<"name">> => <<"Data-Protocol">>,
+                      <<"value">> => <<"ao">>}]},
+             #{<<"store">> =>
+                   [#{<<"prefix">> => <<"cache-mainnet">>,
+                      <<"store-module">> => hb_store_fs}],
+               <<"store-module">> => hb_store_gateway}],
+        <<"router_peer_location">> => <<"http://104.238.162.231:80">>,
+        <<"debug_show_priv">> => false,
+        <<"routes">> =>
+            [#{<<"node">> => #{<<"prefix">> => <<"http://localhost:6363">>},
+               <<"template">> => <<"/result/.*">>},
+             #{<<"nodes">> =>
+                   [#{<<"opts">> =>
+                          #{<<"http_client">> => httpc,
+                            <<"protocol">> => http2},
+                      <<"prefix">> =>
+                          <<"https://arweave-search.goldsky.com">>},
+                    #{<<"opts">> =>
+                          #{<<"http_client">> => gun,<<"protocol">> => http2},
+                      <<"prefix">> => <<"https://arweave.net">>}],
+               <<"template">> => <<"/graphql">>},
+             #{<<"node">> =>
+                   #{<<"opts">> =>
+                         #{<<"http_client">> => gun,<<"protocol">> => http2},
+                     <<"prefix">> => <<"https://arweave.net">>},
+               <<"template">> => <<"/raw">>}],
+        <<"debug_print">> => false,<<"green_zone_adopt_config">> => true,
+        <<"bundler_ans104">> => <<"https://up.arweave.net:443">>,
+        <<"client_error_strategy">> => throw,
+        <<"http_request_send_timeout">> => 60000,
+        <<"http_extra_opts">> =>
+            #{<<"cache_control">> => [<<"always">>],
+              <<"force_message">> => true},
+        <<"router_price">> => 250,<<"force_signed">> => true,
+        <<"green_zone_peer_id">> =>
+            <<"WYx0U4wjrRmDdW2ApRpPaesLAofs2YRLqhCDG7rHCiA">>,
+        <<"access_remote_cache_for_client">> => false,
+        <<"await_inprogress">> => named,<<"http_connect_timeout">> => 5000,
+        <<"method">> => <<"POST">>,
+        <<"stack_print_prefixes">> => ["hb","dev","ar"],
+        <<"scheduling_mode">> => local_confirmation,
+        <<"http_server">> => <<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhko">>,
+        <<"debug_print_binary_max">> => 60,<<"debug_ids">> => false,
+        <<"relay_http_client">> => httpc,<<"debug_stack_depth">> => 40,
+        <<"preloaded_devices">> =>
+            [#{<<"module">> => dev_codec_ans104,
+               <<"name">> => <<"ans104@1.0">>},
+             #{<<"module">> => dev_cu,<<"name">> => <<"compute@1.0">>},
+             #{<<"module">> => dev_cache,<<"name">> => <<"cache@1.0">>},
+             #{<<"module">> => dev_cacheviz,<<"name">> => <<"cacheviz@1.0">>},
+             #{<<"module">> => dev_cron,<<"name">> => <<"cron@1.0">>},
+             #{<<"module">> => dev_dedup,<<"name">> => <<"dedup@1.0">>},
+             #{<<"module">> => dev_delegated_compute,
+               <<"name">> => <<"delegated-compute@1.0">>},
+             #{<<"module">> => dev_faff,<<"name">> => <<"faff@1.0">>},
+             #{<<"module">> => dev_codec_flat,<<"name">> => <<"flat@1.0">>},
+             #{<<"module">> => dev_genesis_wasm,
+               <<"name">> => <<"genesis-wasm@1.0">>},
+             #{<<"module">> => dev_green_zone,
+               <<"name">> => <<"greenzone@1.0">>},
+             #{<<"module">> => dev_codec_httpsig,
+               <<"name">> => <<"httpsig@1.0">>},
+             #{<<"module">> => dev_hyperbuddy,
+               <<"name">> => <<"hyperbuddy@1.0">>},
+             #{<<"module">> => dev_codec_json,<<"name">> => <<"json@1.0">>},
+             #{<<"module">> => dev_json_iface,
+               <<"name">> => <<"json-iface@1.0">>},
+             #{<<"module">> => dev_local_name,
+               <<"name">> => <<"local-name@1.0">>},
+             #{<<"module">> => dev_lookup,<<"name">> => <<"lookup@1.0">>},
+             #{<<"module">> => dev_lua,<<"name">> => <<"lua@5.3a">>},
+             #{<<"module">> => dev_manifest,<<"name">> => <<"manifest@1.0">>},
+             #{<<"module">> => dev_message,<<"name">> => <<"message@1.0">>},
+             #{<<"module">> => dev_meta,<<"name">> => <<"meta@1.0">>},
+             #{<<"module">> => dev_monitor,<<"name">> => <<"monitor@1.0">>},
+             #{<<"module">> => dev_multipass,
+               <<"name">> => <<"multipass@1.0">>},
+             #{<<"module">> => dev_name,<<"name">> => <<"name@1.0">>},
+             #{<<"module">> => dev_node_process,
+               <<"name">> => <<"node-process@1.0">>},
+             #{<<"module">> => dev_p4,<<"name">> => <<"p4@1.0">>},
+             #{<<"module">> => dev_patch,<<"name">> => <<"patch@1.0">>},
+             #{<<"module">> => dev_poda,<<"name">> => <<"poda@1.0">>},
+             #{<<"module">> => dev_process,<<"name">> => <<"process@1.0">>},
+             #{<<"module">> => dev_push,<<"name">> => <<"push@1.0">>},
+             #{<<"module">> => dev_relay,<<"name">> => <<"relay@1.0">>},
+             #{<<"module">> => dev_router,<<"name">> => <<"router@1.0">>},
+             #{<<"module">> => dev_scheduler,
+               <<"name">> => <<"scheduler@1.0">>},
+             #{<<"module">> => dev_simple_pay,
+               <<"name">> => <<"simple-pay@1.0">>},
+             #{<<"module">> => dev_snp,<<"name">> => <<"snp@1.0">>},
+             #{<<"module">> => dev_stack,<<"name">> => <<"stack@1.0">>},
+             #{<<"module">> => dev_codec_structured,
+               <<"name">> => <<"structured@1.0">>},
+             #{<<"module">> => dev_test,<<"name">> => <<"test-device@1.0">>},
+             #{<<"module">> => dev_wasi,<<"name">> => <<"wasi@1.0">>},
+             #{<<"module">> => dev_wasm,<<"name">> => <<"wasm-64@1.0">>}],
+        <<"cache_writers">> =>
+            [<<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhko">>],
+        <<"wasm_allow_aot">> => false,<<"store_all_signed">> => true,
+        <<"ans104_trust_gql">> => true,
+        <<"commitment_device">> => <<"httpsig@1.0">>,
+        <<"router_prefix">> => <<"http://45.63.87.141:80">>,
+        <<"path">> => <<"info">>,<<"debug_committers">> => false,
+        <<"port">> => 10000,<<"load_remote_devices">> => false,
+        <<"node_history">> =>
+            [#{<<"green_zone_adopt_config">> => true,
+               <<"green_zone_peer_id">> =>
+                   <<"WYx0U4wjrRmDdW2ApRpPaesLAofs2YRLqhCDG7rHCiA">>,
+               <<"green_zone_peer_location">> =>
+                   <<"http://104.238.162.231:80">>,
+               <<"initialized">> => <<"permanent">>,
+               <<"method">> => <<"POST">>,<<"operator">> => <<"trustless">>,
+               <<"path">> => <<"info">>,
+               <<"router_peer_location">> => <<"http://104.238.162.231:80">>,
+               <<"router_prefix">> => <<"http://45.63.87.141:80">>,
+               <<"router_price">> => 250,
+               <<"router_template">> => <<"/.*~process@1.0/.*">>,
+               <<"snp_trusted">> =>
+                   #{<<"1">> =>
+                         #{<<"append">> =>
+                               <<"1cd04d5e2d9ede21542993060d3906155882d75df934c23f00b2a5f006005d6f">>,
+                           <<"firmware">> =>
+                               <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+                           <<"guest_features">> => 1,
+                           <<"initrd">> =>
+                               <<"331f9f710b389a203dead24d7cb8939e23c092bcbf46631c6958fc8035df98e6">>,
+                           <<"kernel">> =>
+                               <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+                           <<"vcpu_type">> => 5,<<"vcpus">> => 32,
+                           <<"vmm_type">> => 1}}}],
+        <<"mode">> => debug,<<"trusted_device_signers">> => [],
+        <<"debug_print_indent">> => 2,<<"host">> => <<"localhost">>},
   <<"nonce">> =>
-      <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNUaRnUQ9kEJRZOxLc-x7Df9QPQ3bXwr5ypzJjO8sLoPyw">>,
+      <<"RgkBAqWSngFnbProgEMo63CP-8rWzUqGZJfVLcvGhkq6UIQQXWQCMBHKZ-vInbikLnxaEouWBH4sK82v-Tc8MQ">>,
   <<"report">> =>
-      <<"{\"version\":2,\"guest_svn\":0,\"policy\":196608,\"family_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"image_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"vmpl\":1,\"sig_algo\":1,\"current_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"plat_info\":3,\"_author_key_en\":0,\"_reserved_0\":0,\"report_data\":[94,3,117,144,223,153,200,5,173,98,247,84,148,241,12,220,66,8,139,230,238,117,76,124,214,104,220,29,13,102,72,213,26,70,117,16,246,65,9,69,147,177,45,207,177,236,55,253,64,244,55,109,124,43,231,42,115,38,51,188,176,186,15,203],\"measurement\":[57,145,156,83,216,77,75,73,242,17,131,95,71,138,47,87,91,44,72,35,26,227,241,105,23,212,36,168,251,224,172,31,33,175,179,197,217,106,227,52,65,65,10,56,83,147,108,11],\"host_data\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"id_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"author_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"report_id\":[76,118,205,58,46,223,75,32,141,9,113,137,69,229,230,102,49,239,64,145,130,106,21,147,154,141,222,210,40,40,121,150],\"report_id_ma\":[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255],\"reported_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_1\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"chip_id\":[6,154,118,21,12,115,53,47,251,19,195,100,155,12,239,102,116,131,103,189,106,202,153,3,114,175,16,182,24,166,229,214,231,126,164,15,129,52,233,142,196,43,43,8,89,238,118,246,21,144,209,16,165,197,134,105,214,250,155,148,50,78,87,203],\"committed_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"current_build\":20,\"current_minor\":55,\"current_major\":1,\"_reserved_2\":0,\"committed_build\":20,\"committed_minor\":55,\"committed_major\":1,\"_reserved_3\":0,\"launch_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_4\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"signature\":{\"r\":[138,148,186,128,71,51,247,60,105,88,141,122,210,86,243,251,47,29,103,42,19,175,211,36,51,76,141,38,238,92,243,151,248,221,67,169,218,238,183,69,185,175,126,118,102,19,26,127,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[22,54,131,107,105,173,251,102,149,189,15,32,93,137,43,67,179,251,128,188,92,185,191,94,239,74,100,155,198,108,28,156,115,87,251,239,27,40,243,157,140,202,105,132,53,216,166,236,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"_reserved\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}">>,
-  <<"vcpu_type">> => 5,<<"vcpus">> => 1,<<"vmm_type">> => 1}.
+      <<"{\"version\":2,\"guest_svn\":0,\"policy\":196608,\"family_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"image_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"vmpl\":1,\"sig_algo\":1,\"current_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"plat_info\":3,\"_author_key_en\":0,\"_reserved_0\":0,\"report_data\":[70,9,1,2,165,146,158,1,103,108,250,232,128,67,40,235,112,143,251,202,214,205,74,134,100,151,213,45,203,198,134,74,186,80,132,16,93,100,2,48,17,202,103,235,200,157,184,164,46,124,90,18,139,150,4,126,44,43,205,175,249,55,60,49],\"measurement\":[31,122,36,229,188,77,57,178,66,57,26,19,5,210,56,57,35,219,108,0,98,7,1,68,112,159,195,22,57,236,164,98,97,146,146,21,49,37,51,66,168,246,170,126,158,26,30,244],\"host_data\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"id_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"author_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"report_id\":[100,82,198,16,47,73,170,64,127,192,77,233,169,122,111,132,114,154,110,45,181,116,7,237,244,124,79,119,125,166,185,7],\"report_id_ma\":[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255],\"reported_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_1\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"chip_id\":[44,133,7,150,94,29,138,44,76,165,176,140,203,58,169,229,118,40,160,15,80,80,178,86,196,32,215,193,25,28,233,80,104,195,55,189,205,6,125,126,51,141,212,52,130,29,216,5,113,220,218,96,53,0,228,12,199,106,162,151,133,173,135,254],\"committed_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"current_build\":20,\"current_minor\":55,\"current_major\":1,\"_reserved_2\":0,\"committed_build\":20,\"committed_minor\":55,\"committed_major\":1,\"_reserved_3\":0,\"launch_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_4\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"signature\":{\"r\":[14,125,4,160,206,115,231,200,154,250,115,72,232,108,111,166,48,121,250,53,106,77,151,26,90,253,129,1,117,85,0,4,188,187,117,6,254,188,117,139,24,188,176,66,230,149,204,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[137,90,182,71,100,79,14,100,132,198,124,247,171,136,154,76,104,255,121,40,39,110,148,217,18,69,7,110,93,213,12,152,198,246,2,118,151,246,72,139,23,178,151,163,220,177,60,247,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"_reserved\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}">>,
+  <<"server">> => <<"Cowboy">>,<<"status">> => 200,
+  <<"transfer-encoding">> => <<"chunked">>}.

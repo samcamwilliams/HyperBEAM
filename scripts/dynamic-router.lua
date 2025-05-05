@@ -207,7 +207,6 @@ function register(state, assignment, opts)
     local status, is_admissible = "ok", "not_found"
     if state["is-admissible"] then
         req.path = "verify"
-        -- Remove commitments of the register/verify message
         -- Add a target node of the id of the register message
         req.target = "body"
         -- This only works when there is a real message for state['is_admissible']
