@@ -86,6 +86,7 @@
 <tr><td><a href="hb_http_client_sup.md" class="module">hb_http_client_sup</a></td></tr>
 <tr><td><a href="hb_http_server.md" class="module">hb_http_server</a></td></tr>
 <tr><td><a href="hb_json.md" class="module">hb_json</a></td></tr>
+<tr><td><a href="hb_keccak.md" class="module">hb_keccak</a></td></tr>
 <tr><td><a href="hb_logger.md" class="module">hb_logger</a></td></tr>
 <tr><td><a href="hb_message.md" class="module">hb_message</a></td></tr>
 <tr><td><a href="hb_metrics_collector.md" class="module">hb_metrics_collector</a></td></tr>

@@ -23,8 +23,9 @@ the execution parameters of all downstream requests to be controlled.<a name="in
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#allowed_methods-2">allowed_methods/2</a></td><td>Return the list of allowed methods for the HTTP server.</td></tr><tr><td valign="top"><a href="#cors_reply-2">cors_reply/2*</a></td><td>Reply to CORS preflight requests.</td></tr><tr><td valign="top"><a href="#get_opts-1">get_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_request-3">handle_request/3*</a></td><td>Handle all non-CORS preflight requests as AO-Core requests.</td></tr><tr><td valign="top"><a href="#http3_conn_sup_loop-0">http3_conn_sup_loop/0*</a></td><td></td></tr><tr><td valign="top"><a href="#init-2">init/2</a></td><td>Entrypoint for all HTTP requests.</td></tr><tr><td valign="top"><a href="#new_server-1">new_server/1*</a></td><td></td></tr><tr><td valign="top"><a href="#read_body-1">read_body/1*</a></td><td>Helper to grab the full body of a HTTP request, even if it's chunked.</td></tr><tr><td valign="top"><a href="#read_body-2">read_body/2*</a></td><td></td></tr><tr><td valign="top"><a href="#set_default_opts-1">set_default_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#set_opts-1">set_opts/1</a></td><td>Update the <code>Opts</code> map that the HTTP server uses for all future
-requests.</td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td>Starts the HTTP server.</td></tr><tr><td valign="top"><a href="#start-1">start/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_http2-3">start_http2/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_http3-3">start_http3/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_node-0">start_node/0</a></td><td>Test that we can start the server, send a message, and get a response.</td></tr><tr><td valign="top"><a href="#start_node-1">start_node/1</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#allowed_methods-2">allowed_methods/2</a></td><td>Return the list of allowed methods for the HTTP server.</td></tr><tr><td valign="top"><a href="#cors_reply-2">cors_reply/2*</a></td><td>Reply to CORS preflight requests.</td></tr><tr><td valign="top"><a href="#get_opts-1">get_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_request-3">handle_request/3*</a></td><td>Handle all non-CORS preflight requests as AO-Core requests.</td></tr><tr><td valign="top"><a href="#http3_conn_sup_loop-0">http3_conn_sup_loop/0*</a></td><td></td></tr><tr><td valign="top"><a href="#init-2">init/2</a></td><td>Entrypoint for all HTTP requests.</td></tr><tr><td valign="top"><a href="#new_server-1">new_server/1*</a></td><td></td></tr><tr><td valign="top"><a href="#read_body-1">read_body/1*</a></td><td>Helper to grab the full body of a HTTP request, even if it's chunked.</td></tr><tr><td valign="top"><a href="#read_body-2">read_body/2*</a></td><td></td></tr><tr><td valign="top"><a href="#set_default_opts-1">set_default_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#set_opts-1">set_opts/1</a></td><td>Merges the provided <code>Opts</code> with uncommitted values from <code>Request</code>,
+preserves the http_server value, and updates node_history by prepending
+the <code>Request</code>.</td></tr><tr><td valign="top"><a href="#set_opts-2">set_opts/2</a></td><td></td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td>Starts the HTTP server.</td></tr><tr><td valign="top"><a href="#start-1">start/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_http2-3">start_http2/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_http3-3">start_http3/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_node-0">start_node/0</a></td><td>Test that we can start the server, send a message, and get a response.</td></tr><tr><td valign="top"><a href="#start_node-1">start_node/1</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -111,8 +112,16 @@ Helper to grab the full body of a HTTP request, even if it's chunked.
 
 `set_opts(Opts) -> any()`
 
-Update the `Opts` map that the HTTP server uses for all future
-requests.
+Merges the provided `Opts` with uncommitted values from `Request`,
+preserves the http_server value, and updates node_history by prepending
+the `Request`. If a server reference exists, updates the Cowboy environment
+variable 'node_msg' with the resulting options map.
+
+<a name="set_opts-2"></a>
+
+### set_opts/2 ###
+
+`set_opts(Request, Opts) -> any()`
 
 <a name="start-0"></a>
 

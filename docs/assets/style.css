@@ -12,12 +12,12 @@ h2 {
 
 p {
 	font-size: clamp(0.6rem, 1.5vw, 0.7rem);
-	line-height: 2.5;
+	line-height: 1.75;
 }
 
 li {
 	font-size: clamp(0.6rem, 1.5vw, 0.75rem);
-	line-height: 2.5;
+	line-height: 1.75;
 }
 
 img {
@@ -29,13 +29,41 @@ input {
 }
 
 body {
-	--docs-max-width: 50rem;
+	--docs-max-width: 53rem;
 	--homepage-max-width: 90rem;
 	--sections-max-width: 80rem;
 	--parallax-perspective: 2rem;
 	--md-accent-fg-color: #a1a1a1 !important;
 }
 
+/* 
+h1, h2, h3, h4, h5, h6 {
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 10px;
+}
+*/
+
+.md-content h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-weight: 400 !important;
+}
+
+.md-content h2 {
+	border-top: 1px solid #ccc;
+	padding-top: 1.5rem;
+}
+
+.md-content h3,
+h4,
+h5,
+h6 {
+	border-top: 1px solid #e5e5e58a;
+	padding-top: 1rem;
+}
 
 /* Body and Header Customization */
 .md-header {
@@ -45,6 +73,14 @@ body {
 .md-grid {
 	/* transition: all 1s; this occurs on initial load, causing strange UI artifact */
 	max-width: var(--docs-max-width);
+}
+
+.md-main__inner {
+	gap: 2.25rem;
+}
+
+.md-content {
+	max-width: 35rem;
 }
 
 .custom-homepage-header {
@@ -293,7 +329,7 @@ body {
 	flex: 1 0 0;
 	border-radius: 4px;
 	border: 1px solid #2b2b2b;
-	background: rgba(0, 0, 0, 0.8);
+	background: rgba(0, 0, 0, 0.75);
 	justify-content: space-between;
 	align-items: start;
 	padding: 8px;
@@ -303,7 +339,7 @@ body {
 }
 
 .hero-button-card:hover {
-	background: rgba(0, 0, 0, 0.4);
+	background: rgba(0, 0, 0, 1);
 	border: 1px solid rgb(149, 149, 149);
 }
 
@@ -595,7 +631,7 @@ body {
 }
 
 .card span {
-	background: white;
+	/* background: white; */
 	width: fit-content;
 }
 
@@ -627,7 +663,7 @@ body {
 	padding: 12.5px 60px;
 	border-radius: 4px;
 	font-size: clamp(0.6rem, 1.5vw, 0.7rem);
-
+	cursor: pointer;
 }
 
 .fig-container {
