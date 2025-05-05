@@ -288,9 +288,9 @@ log_step "Generating LLM context files"
 LLM_SUMMARY_FILE="$ROOT_DIR/docs/llms.txt"
 LLM_FULL_FILE="$ROOT_DIR/docs/llms-full.txt"
 DOC_DIRS=(
-    "$ROOT_DIR/docs/begin"
+    "$ROOT_DIR/docs/introduction"
     "$ROOT_DIR/docs/run"
-    "$ROOT_DIR/docs/guides"
+    "$ROOT_DIR/docs/build"
     "$ROOT_DIR/docs/devices"
     "$ROOT_DIR/docs/resources"
 )

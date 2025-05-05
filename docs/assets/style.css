@@ -45,6 +45,9 @@ body {
 .md-grid {
 	/* transition: all 1s; this occurs on initial load, causing strange UI artifact */
 	max-width: var(--docs-max-width);
+}
+
+.md-main__inner {
 	gap: 2.25rem;
 }
 
