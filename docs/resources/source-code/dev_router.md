@@ -42,7 +42,8 @@ The structure of the routes should be as follows:
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_route_test-0">add_route_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#apply_route-2">apply_route/2*</a></td><td>Apply a node map's rules for transforming the path of the message.</td></tr><tr><td valign="top"><a href="#apply_routes-3">apply_routes/3*</a></td><td>Generate a <code>uri</code> key for each node in a route.</td></tr><tr><td valign="top"><a href="#binary_to_bignum-1">binary_to_bignum/1*</a></td><td>Cast a human-readable or native-encoded ID to a big integer.</td></tr><tr><td valign="top"><a href="#by_base_determinism_test-0">by_base_determinism_test/0*</a></td><td>Ensure that <code>By-Base</code> always chooses the same node for the same
-hashpath.</td></tr><tr><td valign="top"><a href="#choose-5">choose/5*</a></td><td>Implements the load distribution strategies if given a cluster.</td></tr><tr><td valign="top"><a href="#choose_1_test-1">choose_1_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#choose_n_test-1">choose_n_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#device_call_from_singleton_test-0">device_call_from_singleton_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_route_provider_test-0">dynamic_route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_router_test-0">dynamic_router_test/0*</a></td><td>Example of a Lua script being used as the <code>route_provider</code> for a
+hashpath.</td></tr><tr><td valign="top"><a href="#choose-5">choose/5*</a></td><td>Implements the load distribution strategies if given a cluster.</td></tr><tr><td valign="top"><a href="#choose_1_test-1">choose_1_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#choose_n_test-1">choose_n_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#device_call_from_singleton_test-0">device_call_from_singleton_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_route_provider_test-0">dynamic_route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_router_invalid_report_test-0">dynamic_router_invalid_report_test/0*</a></td><td>Example of a Lua script being used as the <code>route_provider</code> for a
+HyperBEAM node.</td></tr><tr><td valign="top"><a href="#dynamic_router_test-0">dynamic_router_test/0*</a></td><td>Example of a Lua script being used as the <code>route_provider</code> for a
 HyperBEAM node.</td></tr><tr><td valign="top"><a href="#dynamic_routing_by_performance-0">dynamic_routing_by_performance/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_routing_by_performance_test_-0">dynamic_routing_by_performance_test_/0*</a></td><td>Demonstrates routing tables being dynamically created and adjusted
 according to the real-time performance of nodes.</td></tr><tr><td valign="top"><a href="#explicit_route_test-0">explicit_route_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#extract_base-2">extract_base/2*</a></td><td>Extract the base message ID from a request message.</td></tr><tr><td valign="top"><a href="#field_distance-2">field_distance/2*</a></td><td>Calculate the minimum distance between two numbers
 (either progressing backwards or forwards), assuming a
@@ -130,6 +131,17 @@ Implements the load distribution strategies if given a cluster.
 ### dynamic_route_provider_test/0 * ###
 
 `dynamic_route_provider_test() -> any()`
+
+<a name="dynamic_router_invalid_report_test-0"></a>
+
+### dynamic_router_invalid_report_test/0 * ###
+
+`dynamic_router_invalid_report_test() -> any()`
+
+Example of a Lua script being used as the `route_provider` for a
+HyperBEAM node. This test specifically sends an invalid attestation report
+(with mismatched firmware hash) which should be rejected by the SNP
+validation system. It tests the error handling for invalid attestations.
 
 <a name="dynamic_router_test-0"></a>
 
