@@ -29,7 +29,7 @@ input {
 }
 
 body {
-	--docs-max-width: 50rem;
+	--docs-max-width: 53rem;
 	--homepage-max-width: 90rem;
 	--sections-max-width: 80rem;
 	--parallax-perspective: 2rem;
@@ -45,6 +45,11 @@ body {
 .md-grid {
 	/* transition: all 1s; this occurs on initial load, causing strange UI artifact */
 	max-width: var(--docs-max-width);
+	gap: 2.25rem;
+}
+
+.md-content {
+	max-width: 35rem;
 }
 
 .custom-homepage-header {
@@ -595,7 +600,7 @@ body {
 }
 
 .card span {
-	background: white;
+	/* background: white; */
 	width: fit-content;
 }
 
