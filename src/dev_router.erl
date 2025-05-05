@@ -64,7 +64,7 @@ register(_M1, _M2, Opts) ->
                         #{}, 
                         #{ 
                             priv_wallet => hb:wallet(), 
-                            snp_hashes => hb_opts:get(snp_hashes, #{}, Opts)
+                            trusted => hb_opts:get(trusted, [], Opts)
                         }
                     ),
                     ?event(debug_register, {attestion, Attestion}),
