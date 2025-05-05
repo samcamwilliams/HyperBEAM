@@ -755,7 +755,8 @@ get_schedule(Msg1, Msg2, Opts) ->
                 true ->
                     case get_remote_schedule(ProcID, From, To, Redirect, Opts) of
                         {ok, Res} ->
-                            case Format of
+							NormalizedFormat = uri_string:percent_decode(Format),
+                            case NormalizedFormat of
                                 <<"application/aos-2">> ->
                                     {ok, Formatted} = dev_scheduler_formats:assignments_to_aos2(
                                         ProcID,
@@ -1205,6 +1206,7 @@ generate_local_schedule(Format, ProcID, From, To, Opts) ->
     ?event({got_assignments, length(Assignments), {more, More}}),
     % Determine and apply the formatting function to use for generation 
     % of the response, based on the `Accept' header.
+	io:format("ACCEPT FORMAT123: ~p~n", [Format]),
     FormatterFun =
         case Format of
             <<"application/aos-2">> ->
