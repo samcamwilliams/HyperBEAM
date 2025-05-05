@@ -64,7 +64,7 @@ register(_M1, _M2, Opts) ->
                         #{}, 
                         #{ 
                             priv_wallet => hb:wallet(), 
-                            snp_hashes => hb_opts:get(snp_hashes, #{}, Opts)
+                            snp_trusted => hb_opts:get(snp_trusted, #{}, Opts)
                         }
                     ),
                     ?event(debug_register, {attestion, Attestion}),
@@ -703,16 +703,19 @@ dynamic_router_test() ->
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
-        trusted => [#{
-            vcpus => 1,
-            vcpu_type => 5, 
-            vmm_type => 1,
-            guest_features => 1,
-            firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-            kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-            initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-            append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
-        }],
+        snp_trusted => #{
+            <<"1">> =>
+                #{
+                    <<"vcpus">> => 1,
+                    <<"vcpu_type">> => 5, 
+                    <<"vmm_type">> => 1,
+                    <<"guest_features">> => 1,
+                    <<"firmware">> => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+                    <<"kernel">> => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+                    <<"initrd">> => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+                    <<"append">> => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+                }
+        },
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
@@ -795,6 +798,115 @@ dynamic_router_test() ->
     % ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
     % {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
     ?assertEqual(ok, Status).
+
+%% @doc Example of a Lua script being used as the `route_provider' for a
+%% HyperBEAM node. This test specifically sends an invalid attestation report
+%% (with mismatched firmware hash) which should be rejected by the SNP
+%% validation system. It tests the error handling for invalid attestations.
+dynamic_router_invalid_report_test() ->
+    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
+    Run = hb_util:bin(rand:uniform(1337)),
+    Node = hb_http_server:start_node(Opts = #{
+        snp_trusted => #{
+            <<"1">> =>
+                #{
+                    <<"vcpus">> => 1,
+                    <<"vcpu_type">> => 5, 
+                    <<"vmm_type">> => 1,
+                    <<"guest_features">> => 1,
+                    <<"firmware">> => <<"b8c5d4082d5738db6b0fb0294174992734645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+                    <<"kernel">> => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+                    <<"initrd">> => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+                    <<"append">> => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+                }
+        },
+        store => [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+            }
+        ],
+        priv_wallet => ar_wallet:new(),
+        preprocessor => #{
+          <<"device">> => <<"router@1.0">>
+        },
+        route_provider => #{
+            <<"path">> =>
+                    <<"/router~node-process@1.0/compute/routes~message@1.0">>
+        },
+        node_processes => #{
+            <<"router">> => #{
+                <<"type">> => <<"Process">>,
+                <<"device">> => <<"process@1.0">>,
+                <<"execution-device">> => <<"lua@5.3a">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"module">> => <<"dynamic-router">>,
+                    <<"body">> => Script
+                },
+                % Set script-specific factors for the test
+                <<"pricing-weight">> => 9,
+                <<"performance-weight">> => 1,
+                <<"score-preference">> => 4,
+                <<"is-admissible">> => #{ 
+                  <<"device">> => <<"snp@1.0">>
+                }
+            }
+        }
+    }),
+    % mergeRight this takes our defined Opts and merges them into the
+    % node opts configs.
+    Store = hb_opts:get(store, no_store, Opts),
+    ?event(debug_dynrouter, {store, Store}),
+    % Register workers with the dynamic router with varied prices.
+    {ok, [Req]} = file:consult(<<"test/admissible-report.eterm">>),
+    lists:foreach(fun(X) ->
+        case hb_http:post(
+            Node,
+            #{
+                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:commit(
+                        #{
+                            <<"path">> => <<"register">>,
+                            <<"route">> =>
+                                #{
+                                    <<"prefix">> =>
+                                        <<
+                                            "http://149.28.249.192:10000"
+                                        >>,
+                                    <<"template">> => <<"/.*~process@1.0/.*">>,
+                                    <<"price">> => X * 250
+                                },
+                            <<"body">> => Req
+                        },
+                        Opts
+                    )
+            },
+            Opts
+        ) of
+            {ok, Res} ->
+                ?event(debug_dynrouter, { res, Res});
+            {failure, Res} ->
+                ?event(debug_router_register, { failure, Res})
+        end
+    end, lists:seq(1, 1)),
+    % Force computation of the current state. This should be done with a 
+    % background worker (ex: a `~cron@1.0/every' task).
+    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
+    ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
+    Routes = hb_ao:get(<<"routes">>, NodeRoutes, Opts),
+    % This should be 0, as the invalid report should have been rejected.
+    ?event(debug_dynrouter, {routes_length, length(Routes)}),
+    ?assertEqual(0, length(Routes)),
+    % Meta info is a part of the exempt routes. Make sure this returns our address
+    {ok, _} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
+    % ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
+    % {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
+    ?assertEqual(ok, Status).
+
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the

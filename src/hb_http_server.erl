@@ -291,8 +291,8 @@ handle_request(RawReq, Body, ServerID) ->
     StartTime = os:system_time(millisecond),
     Req = RawReq#{ start_time => StartTime },
     NodeMsg = get_opts(#{ http_server => ServerID }),
-    case cowboy_req:path(RawReq) of
-        <<"/">> ->
+    case {cowboy_req:path(RawReq), cowboy_req:qs(RawReq)} of
+        {<<"/">>, <<>>} ->
             % If the request is for the root path, serve a redirect to the default 
             % request of the node.
             cowboy_req:reply(
