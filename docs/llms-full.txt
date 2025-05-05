@@ -1,4 +1,4 @@
-Generated: 2025-05-05T15:53:23Z
+Generated: 2025-05-05T16:18:13Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -462,62 +462,36 @@ Each device page will include a status indicator (e.g., `Stable`, `Beta`, `Exper
 
 The `json` device provides a structured way to access and interact with JSON (JavaScript Object Notation) data within the HyperBEAM environment. It allows processes to read, query, and potentially modify JSON objects stored or referenced by the device. It can also be used via HyperPATH chaining to serialize arbitrary data from other devices.
 
-**Status:** Experimental <!-- TODO: Update status -->
+**Status:** Stable
 
 ## Core Functions (Keys)
 
-These keys are typically accessed via HyperPATHs relative to the device's mount point (e.g., `/data/myJson`) or used in HyperPATH chains.
+### Serialization
 
-*   **`GET /<MountPoint>/<HyperPATH>` (Read Action)**
-    *   **Action:** Retrieves the data located at the specified `<HyperPATH>` within the device's *own* stored JSON structure. The device serializes the targeted JSON fragment (object, array, value) into a standard JSON string format.
-    *   **Example:** `GET /data/myJson/user/settings` on the example JSON below would return the string `"{\"theme\":\"dark\",\"notifications\":true}"`.
-    *   **HyperPATH:** Required. Specifies the target within the device's JSON data.
+*   **`GET /~json@1.0/serialize` (Direct Serialize Action)**
+    *   **Action:** Serializes the input message or data into a JSON string.
+    *   **Example:** `GET /~json@1.0/serialize` - serializes the current message as JSON.
+    *   **HyperPATH:** The path segment `/serialize` directly follows the device identifier.
 
-*   **`/<PreviousPath>/serialize` (Serialize Action)**
-    *   **Action:** Takes arbitrary input data (piped from the `<PreviousPath>` segment of a HyperPATH chain) and returns its serialized JSON string representation.
-    *   **Example:** `GET /~meta@1.0/info /~json@1.0/serialize` - fetches node info and then pipes it to this device to serialize the result as JSON.
-    *   **HyperPATH:** This segment (`/serialize`) is appended to a previous HyperPATH segment.
+*   **`GET /<PreviousPath>/~json@1.0/serialize` (Chained Serialize Action)**
+    *   **Action:** Takes arbitrary data output from `<PreviousPath>` (another device or operation) and returns its serialized JSON string representation.
+    *   **Example:** `GET /~meta@1.0/info/~json@1.0/serialize` - fetches node info from the meta device and then pipes it to the JSON device to serialize the result as JSON.
+    *   **HyperPATH:** This segment (`/~json@1.0/serialize`) is appended to a previous HyperPATH segment.
 
-*   **`GET /<MountPoint>/query?<HyperPATHQuery>` (Query Action)**
-    *   **Action:** Performs a more complex query against the device's *own* stored JSON data using a specific query syntax (details TBD).
-    *   **Example:** <!-- TODO: Add Query example -->
-    *   **HyperPATH:** Required. The base path to the device's data.
-    *   **Query Parameter:** `?query=<HyperPATHQuery>` (Syntax TBD).
+## HyperPATH Chaining Example
 
-<!-- TODO: Add details on Update, Delete, or other potential actions -->
+The JSON device is particularly useful in HyperPATH chains to convert output from other devices into JSON format:
 
-## Example JSON Data
-
-Assuming `json` is mounted at `/data/myJson` and holds the following JSON:
-
-```json
-{
-  "user": {
-    "name": "Alice",
-    "id": 123,
-    "settings": {
-      "theme": "dark",
-      "notifications": true
-    }
-  },
-  "items": [
-    {"sku": "abc", "price": 10},
-    {"sku": "def", "price": 20}
-  ]
-}
+```
+GET /~meta@1.0/info/~json@1.0/serialize
 ```
 
-**Access Examples:**
+This retrieves the node configuration from the meta device and serializes it to JSON.
 
--   Get user name: `GET /data/myJson/user/name`
--   Get theme setting: `GET /data/myJson/user/settings/theme`
--   Get first item price: `GET /data/myJson/items[0]/price`
+## See Also
 
-## Events
-
-<!-- TODO: Details about events emitted by the device, e.g., DataChanged -->
-
-<!-- TODO: Link to source module if available --> 
+- [Message Device](./message-at-1-0.md) - Works well with JSON serialization
+- [Meta Device](./meta-at-1-0.md) - Can provide configuration data to serialize
 
 [json module](../resources/source-code/dev_codec_json.md)
 --- END OF FILE: docs/devices/json-at-1-0.md ---
@@ -993,7 +967,7 @@ This setup allows AO processes to leverage the computational power and language 
 --- START OF FILE: docs/introduction/ao-devices.md ---
 # AO Devices
 
-In AO-Core and its implementation HyperBEAM, **Devices** are modular components responsible for processing and interpreting [Messages](./what-is-ao-core.md#messages). They define the specific logic for how computations are performed, data is handled, or interactions occur within the AO ecosystem.
+In AO-Core and its implementation HyperBEAM, **Devices** are modular components responsible for processing and interpreting [Messages](./what-is-ao-core.md#core-concepts). They define the specific logic for how computations are performed, data is handled, or interactions occur within the AO ecosystem.
 
 Think of Devices as specialized engines or services that can be plugged into the AO framework. This modularity is key to AO's flexibility and extensibility.
 
@@ -1082,11 +1056,11 @@ Under the surface, these keys represent AO-Core messages. As we progress through
 
 ### State Navigation
 
-You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `at-slot`, you can access it like this:
+You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `cache`, you can access it like this:
 ```
-/<procId>~process@1.0/compute/at-slot
+/<procId>~process@1.0/compute/now/cache
 ```
-This shows the latest 'slot' (number of interactions) of your process. Each response is:
+This shows the 'cache' of your process. Each response is:
 
 - A message with a signature attesting to its correctness
 - A hashpath describing its generation
@@ -1101,34 +1075,6 @@ Beyond path segments, HyperBEAM URLs can include query parameters that utilize a
 - **Supported Types**: Common types include `integer`, `float`, `list`, `map`, `atom`, `binary` (often implicit), and `resolve` (for path resolution). List values often follow the [HTTP Structured Fields format (RFC 8941)](https://www.rfc-editor.org/rfc/rfc8941.html).
 
 This powerful feature enables the expression of complex data structures directly in URLs.
-
-**Example:**
-
-Consider the following URL:
-
-```
-GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&config+map=key1="val1";key2=true/[PATH]
-```
-
-HyperBEAM processes this as follows:
-
-1.  Root Device: `~message@1.0`
-2.  Query Parameters:
-    *   `name="Alice"`: Key `name`, implicit type `binary`, value `<<"Alice">>`.
-    *   `age+integer=30`: Key `age`, type `integer`, value `30`.
-    *   `items+list="apple",1,"banana"`: Key `items`, type `list`, value `[<<"apple">>, 1, <<"banana">>]` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
-    *   `config+map=key1="val1";key2=true`: Key `config`, type `map`, value `#{<<"key1">> => <<"val1">>, <<"key2">> => true}` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
-3.  Initial Message Map: `#{ <<"name">> => <<"Alice">>, <<"age">> => 30, <<"items">> => [<<"apple">>, 1, <<"banana">>], <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }`
-
-Depending on the `[PATH]` provided:
-
-*   **If `[PATH]` is `/items/1`:**
-    *   The path instructs the `~message@1.0` device to access the key `items` and then the element at index `1` (0-indexed internally, so the *second* element).
-    *   Response: The integer `1`.
-
-*   **If `[PATH]` is `/config/key1`:**
-    *   The path instructs the `~message@1.0` device to access the key `config` (which resolves to the map `#{<<"key1">> => <<"val1">>, <<"key2">> => true}`), and then access the key `key1` within that map.
-    *   Response: The binary `<<"val1">>`.
 
 ## Examples
 
@@ -1149,10 +1095,10 @@ This instructs the AO-Core node to load the process and execute the `now` functi
 If a process maintains its state in a map and you want to access a specific field, like `at-slot`, using the faster `/compute` endpoint:
 
 ```
-GET /<procId>~process@1.0/compute/at-slot
+GET /<procId>~process@1.0/compute/cache
 ```
 
-This accesses the `compute` key on the [`~process@1.0`](../devices/process-at-1-0.md) device and then navigates to the `at-slot` key within the resulting state map. Using this path, you will see the latest 'slot' of your process (the number of interactions it has received). Every piece of relevant information about your process can be accessed similarly, effectively providing a native API.
+This accesses the `compute` key on the [`~process@1.0`](../devices/process-at-1-0.md) device and then navigates to the `cache` key within the resulting state map. Using this path, you will see the latest 'cache' of your process (the number of interactions it has received). Every piece of relevant information about your process can be accessed similarly, effectively providing a native API.
 
 (Note: This represents direct navigation within the process state structure. For accessing data specifically published via the `~patch@1.0` device, see the documentation on [Exposing Process State](../build/exposing-process-state.md), which typically uses the `/cache/` path.)
 
@@ -1183,14 +1129,15 @@ GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&conf
 
 HyperBEAM processes this as follows:
 
-1.  Root Device: [`~message@1.0`](../devices/message-at-1-0.md)
-2.  Query Parameters (with type casting):
+1.  **Base:** `/` - The base URL of the HyperBEAM node.
+2.  **Root Device:** [`~message@1.0`](../devices/message-at-1-0.md)
+3.  **Query Parameters (with type casting):**
     *   `name="Alice"` -> `#{ <<"name">> => <<"Alice">> }` (binary)
     *   `age+integer=30` -> `#{ <<"age">> => 30 }` (integer)
     *   `items+list="apple",1,"banana"` -> `#{ <<"items">> => [<<"apple">>, 1, <<"banana">>] }` (list)
     *   `config+map=key1="val1";key2=true` -> `#{ <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }` (map)
-3.  Initial Message Map: A combination of the above key-value pairs.
-4.  Path Evaluation:
+4.  **Initial Message Map:** A combination of the above key-value pairs.
+5.  **Path Evaluation:**
     *   If `[PATH]` is `/items/1`, the response is the integer `1`.
     *   If `[PATH]` is `/config/key1`, the response is the binary `<<"val1">>`.
 
@@ -1225,7 +1172,7 @@ AO-Core revolves around three fundamental components:
 
 AO-Core transforms the permanent data storage of Arweave into a global, shared computation space, enabling the creation of complex, autonomous, and scalable decentralized applications.
 
-*See also: [The AO-Core Protocol Specification (Draft)](https://github.com/permaweb/ao-core/blob/main/spec.md)* 
+<!-- *See also: [The AO-Core Protocol Specification (Draft)](https://github.com/permaweb/ao-core/blob/main/spec.md)*  -->
 --- END OF FILE: docs/introduction/what-is-ao-core.md ---
 
 --- START OF FILE: docs/introduction/what-is-hyperbeam.md ---
@@ -1243,7 +1190,7 @@ HyperBEAM is the primary, production-ready implementation of the [AO-Core protoc
 
 ## Core Components & Features
 
-*   **Preloaded Devices:** HyperBEAM comes with a suite of built-in devices (e.g., `~meta`, `~relay`, `~process`, `~scheduler`, `~wasm64`) providing essential functionalities for node operation, computation, and communication.
+*   **Preloaded Devices:** HyperBEAM comes with a suite of built-in devices (e.g., [`~meta`](../devices/meta-at-1-0.md), [`~relay`](../devices/relay-at-1-0.md), [`~process`](../devices/process-at-1-0.md), [`~scheduler`](../devices/scheduler-at-1-0.md), [`~wasm64`](../devices/wasm64-at-1-0.md)) providing essential functionalities for node operation, computation, and communication.
 *   **HTTP Interface:** Nodes expose an HTTP server, allowing interaction via standard web requests and HyperPATHs.
 *   **Modularity:** Its design allows for easy extension and addition of new devices and functionalities.
 *   **Developer Tooling:** Includes tools for testing (`rebar3 eunit`), debugging (`?event` logging), and profiling (`eflame`).

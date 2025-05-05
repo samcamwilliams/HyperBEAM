@@ -38,11 +38,11 @@ Under the surface, these keys represent AO-Core messages. As we progress through
 
 ### State Navigation
 
-You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `at-slot`, you can access it like this:
+You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `cache`, you can access it like this:
 ```
-/<procId>~process@1.0/compute/at-slot
+/<procId>~process@1.0/compute/now/cache
 ```
-This shows the latest 'slot' (number of interactions) of your process. Each response is:
+This shows the 'cache' of your process. Each response is:
 
 - A message with a signature attesting to its correctness
 - A hashpath describing its generation
@@ -57,34 +57,6 @@ Beyond path segments, HyperBEAM URLs can include query parameters that utilize a
 - **Supported Types**: Common types include `integer`, `float`, `list`, `map`, `atom`, `binary` (often implicit), and `resolve` (for path resolution). List values often follow the [HTTP Structured Fields format (RFC 8941)](https://www.rfc-editor.org/rfc/rfc8941.html).
 
 This powerful feature enables the expression of complex data structures directly in URLs.
-
-**Example:**
-
-Consider the following URL:
-
-```
-GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&config+map=key1="val1";key2=true/[PATH]
-```
-
-HyperBEAM processes this as follows:
-
-1.  Root Device: `~message@1.0`
-2.  Query Parameters:
-    *   `name="Alice"`: Key `name`, implicit type `binary`, value `<<"Alice">>`.
-    *   `age+integer=30`: Key `age`, type `integer`, value `30`.
-    *   `items+list="apple",1,"banana"`: Key `items`, type `list`, value `[<<"apple">>, 1, <<"banana">>]` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
-    *   `config+map=key1="val1";key2=true`: Key `config`, type `map`, value `#{<<"key1">> => <<"val1">>, <<"key2">> => true}` (parsed using [Structured Fields](https://www.rfc-editor.org/rfc/rfc8941.html)).
-3.  Initial Message Map: `#{ <<"name">> => <<"Alice">>, <<"age">> => 30, <<"items">> => [<<"apple">>, 1, <<"banana">>], <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }`
-
-Depending on the `[PATH]` provided:
-
-*   **If `[PATH]` is `/items/1`:**
-    *   The path instructs the `~message@1.0` device to access the key `items` and then the element at index `1` (0-indexed internally, so the *second* element).
-    *   Response: The integer `1`.
-
-*   **If `[PATH]` is `/config/key1`:**
-    *   The path instructs the `~message@1.0` device to access the key `config` (which resolves to the map `#{<<"key1">> => <<"val1">>, <<"key2">> => true}`), and then access the key `key1` within that map.
-    *   Response: The binary `<<"val1">>`.
 
 ## Examples
 
@@ -105,10 +77,10 @@ This instructs the AO-Core node to load the process and execute the `now` functi
 If a process maintains its state in a map and you want to access a specific field, like `at-slot`, using the faster `/compute` endpoint:
 
 ```
-GET /<procId>~process@1.0/compute/at-slot
+GET /<procId>~process@1.0/compute/cache
 ```
 
-This accesses the `compute` key on the [`~process@1.0`](../devices/process-at-1-0.md) device and then navigates to the `at-slot` key within the resulting state map. Using this path, you will see the latest 'slot' of your process (the number of interactions it has received). Every piece of relevant information about your process can be accessed similarly, effectively providing a native API.
+This accesses the `compute` key on the [`~process@1.0`](../devices/process-at-1-0.md) device and then navigates to the `cache` key within the resulting state map. Using this path, you will see the latest 'cache' of your process (the number of interactions it has received). Every piece of relevant information about your process can be accessed similarly, effectively providing a native API.
 
 (Note: This represents direct navigation within the process state structure. For accessing data specifically published via the `~patch@1.0` device, see the documentation on [Exposing Process State](../build/exposing-process-state.md), which typically uses the `/cache/` path.)
 
@@ -139,14 +111,15 @@ GET /~message@1.0&name="Alice"&age+integer=30&items+list="apple",1,"banana"&conf
 
 HyperBEAM processes this as follows:
 
-1.  Root Device: [`~message@1.0`](../devices/message-at-1-0.md)
-2.  Query Parameters (with type casting):
+1.  **Base:** `/` - The base URL of the HyperBEAM node.
+2.  **Root Device:** [`~message@1.0`](../devices/message-at-1-0.md)
+3.  **Query Parameters (with type casting):**
     *   `name="Alice"` -> `#{ <<"name">> => <<"Alice">> }` (binary)
     *   `age+integer=30` -> `#{ <<"age">> => 30 }` (integer)
     *   `items+list="apple",1,"banana"` -> `#{ <<"items">> => [<<"apple">>, 1, <<"banana">>] }` (list)
     *   `config+map=key1="val1";key2=true` -> `#{ <<"config">> => #{<<"key1">> => <<"val1">>, <<"key2">> => true} }` (map)
-3.  Initial Message Map: A combination of the above key-value pairs.
-4.  Path Evaluation:
+4.  **Initial Message Map:** A combination of the above key-value pairs.
+5.  **Path Evaluation:**
     *   If `[PATH]` is `/items/1`, the response is the integer `1`.
     *   If `[PATH]` is `/config/key1`, the response is the binary `<<"val1">>`.
 
