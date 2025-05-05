@@ -40,7 +40,7 @@ Under the surface, these keys represent AO-Core messages. As we progress through
 
 You can browse through sub-messages and data fields by accessing them as keys. For example, if a process stores its interaction count in a field named `cache`, you can access it like this:
 ```
-/<procId>~process@1.0/compute/now/cache
+/<procId>~process@1.0/compute/cache
 ```
 This shows the 'cache' of your process. Each response is:
 
