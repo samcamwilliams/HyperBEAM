@@ -104,6 +104,7 @@ set_balance(Signer, Amount, NodeMsg) ->
         }
     ),
     hb_http_server:set_opts(
+        #{},
         NewMsg = NodeMsg#{
             simple_pay_ledger =>
                 hb_ao:set(

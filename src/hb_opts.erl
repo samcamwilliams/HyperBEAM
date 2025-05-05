@@ -13,7 +13,8 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, load_bin/1, default_message/0, mimic_default_types/2]).
+-export([get/1, get/2, get/3, load/1, load_bin/1]).
+-export([default_message/0, mimic_default_types/2, validate_node_history/1, validate_node_history/3]).
 -include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
@@ -117,7 +118,7 @@ default_message() ->
         mode => debug,
         % Every modification to `Opts' called directly by the node operator
         % should be recorded here.
-		node_history => [],
+        node_history => [],
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
@@ -130,7 +131,7 @@ default_message() ->
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => false,
-		trusted => [],
+        trusted => [],
         routes => [
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
@@ -338,7 +339,7 @@ config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
-			load_bin(Bin);
+            load_bin(Bin);
         _ -> {error, not_found}
     end.
 load_bin(Bin) ->
@@ -372,6 +373,43 @@ mimic_default_types(Map, Mode) ->
         maps:to_list(Map)
     )).
     
+%% @doc Validate that the node_history length is within an acceptable range.
+%% @param Opts The options map containing node_history
+%% @param MinLength The minimum acceptable length of node_history
+%% @param MaxLength The maximum acceptable length of node_history
+%% @returns {ok, Length} if MinLength =< Length =< MaxLength,
+%% or {error, Reason} if the length is outside the range.
+validate_node_history(Opts) ->
+    validate_node_history(Opts, 1, 1).
+validate_node_history(Opts, MinLength, MaxLength) ->
+    Length = length(hb_opts:get(node_history, [], Opts)),
+    if
+        Length >= MinLength, Length =< MaxLength -> 
+            {ok, Length};
+        Length < MinLength -> 
+            {
+                error,
+                <<
+                    "Node history too short. Expected at least ",
+                    (integer_to_binary(MinLength))/binary,
+                    " entries, got ",
+                    (integer_to_binary(Length))/binary,
+                    "."
+                >>
+            };
+        true -> 
+            {
+                error,
+                <<
+                    "Node history too long. Expected at most ",
+                    (integer_to_binary(MaxLength))/binary,
+                    " entries, got ",
+                    (integer_to_binary(Length))/binary,
+                    "."
+                >>
+            }
+    end.
+
 %%% Tests
 
 -ifdef(TEST).
@@ -419,4 +457,24 @@ load_test() ->
     ?assertEqual(<<"https://ao.computer">>, maps:get(host, Conf)),
     % An atom, where the key contained a header-key `-' rather than a `_'.
     ?assertEqual(false, maps:get(await_inprogress, Conf)).
+
+validate_node_history_test() ->
+    % Test default values (min=1, max=1)
+    ?assertEqual({ok, 1}, validate_node_history(#{node_history => [entry1]})),
+    ?assertEqual({error, <<"Node history too short. Expected at least 1 entries, got 0.">>}, 
+                 validate_node_history(#{})),
+    ?assertEqual({error, <<"Node history too long. Expected at most 1 entries, got 2.">>}, 
+                 validate_node_history(#{node_history => [entry1, entry2]})),
+    % Test with custom range
+    ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 2)),
+    ?assertEqual({ok, 1}, validate_node_history(#{node_history => [entry1]}, 0, 2)),
+    ?assertEqual({ok, 2}, validate_node_history(#{node_history => [entry1, entry2]}, 0, 2)),
+    % Test range validations
+    ?assertEqual({error, <<"Node history too short. Expected at least 2 entries, got 1.">>}, 
+                 validate_node_history(#{node_history => [entry1]}, 2, 4)),
+    ?assertEqual({error, <<"Node history too long. Expected at most 2 entries, got 3.">>}, 
+                 validate_node_history(#{node_history => [entry1, entry2, entry3]}, 1, 2)),
+    % Test edge cases
+    ?assertEqual({ok, 3}, validate_node_history(#{node_history => [entry1, entry2, entry3]}, 3, 3)),
+    ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 0)).
 -endif.
