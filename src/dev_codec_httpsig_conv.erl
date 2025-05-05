@@ -788,16 +788,16 @@ group_maps_flat_compatible_test() ->
 encode_message_with_links_test() ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
-        <<"untyped">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
-        <<"typed">> =>
-            {link,
-                hb_util:human_id(crypto:strong_rand_bytes(32)),
-                #{ <<"type">> => <<"integer">> }
-            }
+        <<"typed-key">> => 4
     },
-    Encoded = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-    ?event(debug_links, {encoded, Encoded}),
-    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-    ?event({decoded, Decoded}),
-    ?assertEqual(Msg, Decoded).
+    {ok, Path} = hb_cache:write(Msg, #{}),
+    {ok, Read} = hb_cache:read(Path, #{}),
+    % Ensure that the message now has a lazy link
+    ?assertMatch({link, _, _}, maps:get(<<"typed-key">>, Read, #{})),
+    % Encode and decode the message as `httpsig@1.0`
+    Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
+    ?event(debug_links, {encoded, Enc}),
+    Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
+    % Ensure that the result is the same as the original message
+    ?event({decoded, Dec}),
+    ?assert(hb_message:match(Msg, Dec, strict, #{})).
