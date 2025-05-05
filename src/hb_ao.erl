@@ -169,6 +169,8 @@ resolve_many(ListMsg, Opts) when is_map(ListMsg) ->
     resolve_many(ListOfMessages, Opts);
 resolve_many({as, DevID, Msg}, Opts) ->
     subresolve(#{}, DevID, Msg, Opts);
+resolve_many([{resolve, Subres}], Opts) ->
+    resolve_many(Subres, Opts);
 resolve_many(MsgList, Opts) ->
     ?event(ao_core, {resolve_many, MsgList}, Opts),
     Res = do_resolve_many(MsgList, Opts),
@@ -185,7 +187,7 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
                 {
                     stage,
                     11,
-                    resolved_message_of_many,
+                    resolved_step,
                     {msg3, Msg3},
                     {opts, Opts}
                 },
@@ -193,6 +195,7 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
             ),
             do_resolve_many([Msg3 | MsgList], Opts);
         Res ->
+            % The result is not a resolvable message. Return it.
             ?event(ao_core, {stage, 11, resolve_many_terminating_early, Res}),
             Res
     end.
@@ -246,6 +249,29 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
             if is_map(Msg2Inner) -> Msg2Inner; true -> #{ <<"path">> => Msg2Inner } end
         ),
     subresolve(RawMsg1, DevID, Msg2, Opts);
+resolve_stage(1, {resolve, Subres}, Msg2, Opts) ->
+    % If the first message is a `{resolve, Subres}' tuple, we should execute it
+    % directly, then apply the request to the result.
+    ?event(ao_core, {stage, 1, subresolving_base_message, {subres, Subres}}, Opts),
+    % Unlike the `request' case for pre-subresolutions, we do not need to unset
+    % the `force_message' option, because the result should be a message, anyway.
+    % If it is not, it is more helpful to have the message placed into the `body'
+    % of a result, which can then be executed upon.
+    case resolve_many(Subres, Opts) of
+        {ok, Msg1} ->
+            ?event(ao_core, {stage, 1, subresolve_success, {new_base, Msg1}}, Opts),
+            resolve_stage(1, Msg1, Msg2, Opts);
+        OtherRes ->
+            ?event(ao_core,
+                {stage,
+                    1,
+                    subresolve_failed,
+                    {subres, Subres},
+                    {res, OtherRes}},
+                Opts
+            ),
+            OtherRes
+    end;
 resolve_stage(1, Msg1, {resolve, Subres}, Opts) ->
     % If the second message is a `{resolve, Subresolution}' tuple, we should
     % execute the subresolution directly to gain the underlying `Msg2' for 

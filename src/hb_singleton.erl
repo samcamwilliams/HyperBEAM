@@ -101,7 +101,6 @@ to(Messages) ->
             end,
             {#{}, 0, #{}},
             Messages),
-
     MessageWithTypeAndScopes =
         maps:fold(
             fun
@@ -186,6 +185,7 @@ path_messages(RawBin) when is_binary(RawBin) ->
 normalize_base([]) -> [];
 normalize_base([First|Rest]) when ?IS_ID(First) -> [First|Rest];
 normalize_base([{as, DevID, First}|Rest]) -> [{as, DevID, First}|Rest];
+normalize_base([Subres = {resolve, _}|Rest]) -> [Subres|Rest];
 normalize_base(Rest) -> [#{}|Rest].
 
 %% @doc Split the path into segments, filtering out empty segments and
@@ -279,28 +279,28 @@ parse_scope(KeyBin) ->
 
 %% @doc Step 5: Merge the base message with the scoped messages.
 build_messages(Msgs, ScopedModifications) ->
-    do_build(1, Msgs, ScopedModifications).
-
-do_build(_, [], _ScopedKeys) -> [];
-do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
+    build(1, Msgs, ScopedModifications).
+build(_, [], _ScopedKeys) -> [];
+build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
-    StepMsg = hb_message:convert(
-        Merged = maps:merge(Msg, ScopedKey),
-        <<"structured@1.0">>,
-        #{ topic => ao_internal }
-    ),
+    StepMsg =
+        hb_message:convert(
+            Merged = maps:merge(Msg, ScopedKey),
+            <<"structured@1.0">>,
+            #{ topic => ao_internal }
+        ),
     ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
-    [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys)];
-do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
-    [Msg | do_build(I + 1, Rest, ScopedKeys)];
-do_build(I, [Msg | Rest], ScopedKeys) ->
-    ScopedKey = lists:nth(I, ScopedKeys),
-    StepMsg = hb_message:convert(
-        maps:merge(Msg, ScopedKey),
-        <<"structured@1.0">>,
-        #{ topic => ao_internal }
-    ),
-    [StepMsg | do_build(I + 1, Rest, ScopedKeys)].
+    [{as, DevID, StepMsg} | build(I + 1, Rest, ScopedKeys)];
+build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
+    [Msg | build(I + 1, Rest, ScopedKeys)];
+build(I, [Msg | Rest], ScopedKeys) ->
+    StepMsg =
+        hb_message:convert(
+            maps:merge(Msg, lists:nth(I, ScopedKeys)),
+            <<"structured@1.0">>,
+            #{ topic => ao_internal }
+        ),
+    [StepMsg | build(I + 1, Rest, ScopedKeys)].
 
 %% @doc Parse a path part into a message or an ID.
 %% Applies the syntax rules outlined in the module doc, in the following order:
