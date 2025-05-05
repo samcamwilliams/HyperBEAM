@@ -1,4 +1,4 @@
-Generated: 2025-05-05T19:38:20Z
+Generated: 2025-05-05T19:47:30Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -1221,7 +1221,7 @@ In essence, HyperBEAM is the engine that drives the AO Computer, enabling a visi
 
 *   **Initialization Flow:** When a HyperBEAM node starts, it initializes the name service, scheduler registry, timestamp server, and HTTP server, establishing core services for process management, timing, communication, and storage.
 *   **Compute Model:** Computation follows the pattern `Message1(Message2) => Message3`, where messages are resolved through their devices and paths.
-*   **Scheduler System:** The scheduler component manages execution order using "slots" - sequential positions that organize computation in a deterministic way. For details, see the [`~scheduler` device documentation](../devices/scheduler-at-1-0.md#slot-system).
+*   **Scheduler System:** The scheduler component manages execution order using ["slots"](../devices/scheduler-at-1-0.md#slot-system)—sequential positions that guarantee deterministic computation.
 *   **Process Slots:** Each process has numbered slots starting from 0 that track message execution order, ensuring consistent computation even across distributed nodes.
 
 ## HTTP API and Pathing
@@ -3492,7 +3492,6 @@ Decode the `ao-ids` key into a map.
 
 
 
-* [Data Types](#types)
 
 This module implements HTTP Message Signatures as described in RFC-9421
 (https://datatracker.ietf.org/doc/html/rfc9421), as an AO-Core device.
@@ -16466,7 +16465,6 @@ Helper function for setting the complete private element of a message.
 
 
 
-* [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format
 into an ordered list of messages to evaluate.
@@ -17296,7 +17294,6 @@ the message is signed. Returns {ok, Path} on HTTP 200, or
 
 
 
-* [Data Types](#types)
 
 A process wrapper over rocksdb storage.
 
@@ -17922,7 +17919,6 @@ Write a key with a value to the store.
 
 
 
-* [Data Types](#types)
 
 A module for parsing and converting between Erlang and HTTP Structured
 Fields, as described in RFC-9651.
@@ -19849,7 +19845,6 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 
 
 
-* [Data Types](#types)
 
 Distributed under the Mozilla Public License v2.0.
 

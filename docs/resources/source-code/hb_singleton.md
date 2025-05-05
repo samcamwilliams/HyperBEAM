@@ -2,7 +2,6 @@
 
 
 
-* [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format
 into an ordered list of messages to evaluate.

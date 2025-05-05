@@ -129,6 +129,7 @@ find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -na
     /^\* \[Description\]\(#description\)$/ { next; }
     /^\* \[Function Index\]\(#index\)$/ { next; }
     /^\* \[Function Details\]\(#functions\)$/ { next; }
+	/^\* \[Data Types\]\(#types\)$/ { next; }
     { print; }
   ' "$file" > "$TEMP_MODULE_FILE"
 
