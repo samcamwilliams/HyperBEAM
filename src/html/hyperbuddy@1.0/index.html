@@ -24,11 +24,22 @@
                     href="/~cacheviz@1.0/index?target=."
                     target="_blank"
                 >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        fill="var(--indicator-color)"
+                        viewBox="0 0 256 256"
+                    >
+                        <path
+                            d="M200,80v32a8,8,0,0,1-16,0V88H160a8,8,0,0,1,0-16h32A8,8,0,0,1,200,80ZM96,168H72V144a8,8,0,0,0-16,0v32a8,8,0,0,0,8,8H96a8,8,0,0,0,0-16ZM232,56V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"
+                        ></path>
+                    </svg>
                     Cache Visualizer
                 </a>
                 <div class="header-inner">
                     <div class="header-hyperbeam-chain">
-                        <video autoplay muted loop playsinline width="500">
+                        <video autoplay muted loop playsinline width="600">
                             <source
                                 src="https://arweave.net/kvebTQY2E5J7Zx-SSnsbwxIqS0-BxII9Bb0bQc__Rmg"
                                 type="video/mp4"
@@ -73,21 +84,32 @@
                 </div>
             </div>
 
-            <div class="explorer-view">
-                <div class="signature-wrapper border-wrapper-primary">
-                    <div class="signature-line">
-                        <span>Signature</span>
-                        <p>-</p>
-                    </div>
-                    <div class="signature-line">
-                        <span>Signer</span>
-                        <p>-</p>
-                    </div>
-                </div>
-                <div class="explorer-view-flex">
-                    <div class="explorers-wrapper">
+            <div class="explorer-view-flex">
+                <div class="explorers-wrapper">
+                    <div class="explorer-view">
+                        <div class="signature-wrapper border-wrapper-primary">
+                            <div class="signature-line">
+                                <span>Signature</span>
+                                <p>-</p>
+                            </div>
+                            <div class="signature-line">
+                                <span>Signer</span>
+                                <p>-</p>
+                            </div>
+                        </div>
                         <div class="explorer-wrapper">
                             <div class="explorer-header">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="20"
+                                    height="20"
+                                    fill="var(--indicator-color)"
+                                    viewBox="0 0 256 256"
+                                >
+                                    <path
+                                        d="M232,80a55.67,55.67,0,0,1-16.4,39.6l-30.07,30.06a8,8,0,0,1-11.31-11.32l30.07-30.06a40,40,0,1,0-56.57-56.56L117.66,81.77a8,8,0,0,1-11.32-11.32L136.4,40.4A56,56,0,0,1,232,80Zm-93.66,94.22-30.06,30.06a40,40,0,1,1-56.56-56.57l30.05-30.05a8,8,0,0,0-11.32-11.32L40.4,136.4a56,56,0,0,0,79.2,79.2l30.06-30.07a8,8,0,0,0-11.32-11.31Z"
+                                    ></path>
+                                </svg>
                                 <p>Links</p>
                             </div>
                             <div id="links-explorer" class="explorer"></div>
@@ -100,6 +122,17 @@
 
                         <div class="explorer-wrapper">
                             <div class="explorer-header">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="20"
+                                    height="20"
+                                    fill="var(--indicator-color)"
+                                    viewBox="0 0 256 256"
+                                >
+                                    <path
+                                        d="M120,176h-8v-4a28,28,0,0,0-56,0v4H48a8,8,0,0,0-8,8v40a8,8,0,0,0,8,8h72a8,8,0,0,0,8-8V184A8,8,0,0,0,120,176Zm-48-4a12,12,0,0,1,24,0v4H72Zm40,44H56V192h56ZM213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40v88a8,8,0,0,0,16,0V40h88V88a8,8,0,0,0,8,8h48V216H160a8,8,0,0,0,0,16h40a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160Z"
+                                    ></path>
+                                </svg>
                                 <p>Signed Headers</p>
                             </div>
                             <div
@@ -113,28 +146,27 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="visual-wrapper">
-                        <div class="tabs-wrapper">
-                            <div class="tabs">
-                                <button
-                                    class="tab-button active"
-                                    data-id="cacheviz@1.0/index"
-                                    data-tab="cacheviz-tab"
-                                >
-                                    Cacheviz
-                                </button>
-                                <button
-                                    class="tab-button"
-                                    data-id="hyperbuddy@1.0/format"
-                                    data-tab="hyperbuddy-tab"
-                                >
-                                    Hyperbuddy
-                                </button>
-                            </div>
+                </div>
+                <div class="visual-wrapper">
+                    <div class="tabs-wrapper">
+                        <div class="tabs">
+                            <button
+                                class="tab-button active"
+                                data-id="cacheviz@1.0/index"
+                                data-tab="cacheviz-tab"
+                            >
+                                Cacheviz
+                            </button>
+                            <button
+                                class="tab-button"
+                                data-id="hyperbuddy@1.0/format"
+                                data-tab="hyperbuddy-tab"
+                            >
+                                Hyperbuddy
+                            </button>
                         </div>
-                        <div class="visual-body"></div>
                     </div>
+                    <div class="visual-body"></div>
                 </div>
             </div>
         </div>
@@ -464,7 +496,7 @@
                     iframe.style.height = "100%";
                     return iframe;
                 };
-                
+
                 const initial = document.querySelector(".tab-button.active");
                 if (initial)
                     container.appendChild(makeIframe(initial.dataset.id));
@@ -488,7 +520,7 @@
         </script>
 
         <script type="module">
-            import { fetchInfo } from "/~hyperbuddy@1.0/devices.js"
+            import { fetchInfo } from "/~hyperbuddy@1.0/devices.js";
 
             fetchInfo();
         </script>
