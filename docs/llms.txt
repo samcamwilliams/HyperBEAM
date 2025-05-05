@@ -1,4 +1,4 @@
-Generated: 2025-05-02T22:37:19Z
+Generated: 2025-05-05T13:38:10Z
 
 ## HyperBEAM Documentation Summary
 
@@ -117,6 +117,7 @@ Key sections include: Getting Started (begin), Running HyperBEAM (run), Develope
 * [[Module hb_http_client_sup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_client_sup.erl)](./resources/source-code/hb_http_client_sup.html)
 * [[Module hb_http_server.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_server.erl)](./resources/source-code/hb_http_server.html)
 * [[Module hb_json.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_json.erl)](./resources/source-code/hb_json.html)
+* [[Module hb_keccak.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_keccak.erl)](./resources/source-code/hb_keccak.html)
 * [[Module hb_logger.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_logger.erl)](./resources/source-code/hb_logger.html)
 * [[Module hb_message.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_message.erl)](./resources/source-code/hb_message.html)
 * [[Module hb_metrics_collector.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_metrics_collector.erl)](./resources/source-code/hb_metrics_collector.html)

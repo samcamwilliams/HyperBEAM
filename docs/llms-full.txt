@@ -1,4 +1,4 @@
-Generated: 2025-05-02T22:37:19Z
+Generated: 2025-05-05T13:38:10Z
 
 --- START OF FILE: docs/devices/index.md ---
 # Devices
@@ -1934,7 +1934,7 @@ Verify the given transaction actually has the given identifier.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compress_ecdsa_pubkey-1">compress_ecdsa_pubkey/1*</a></td><td></td></tr><tr><td valign="top"><a href="#hash_address-1">hash_address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#hmac-1">hmac/1</a></td><td></td></tr><tr><td valign="top"><a href="#hmac-2">hmac/2</a></td><td></td></tr><tr><td valign="top"><a href="#load_key-1">load_key/1</a></td><td>Read the keyfile for the key with the given address from disk.</td></tr><tr><td valign="top"><a href="#load_keyfile-1">load_keyfile/1</a></td><td>Extract the public and private key from a keyfile.</td></tr><tr><td valign="top"><a href="#new-0">new/0</a></td><td></td></tr><tr><td valign="top"><a href="#new-1">new/1</a></td><td></td></tr><tr><td valign="top"><a href="#new_keyfile-2">new_keyfile/2</a></td><td>Generate a new wallet public and private key, with a corresponding keyfile.</td></tr><tr><td valign="top"><a href="#sign-2">sign/2</a></td><td>Sign some data with a private key.</td></tr><tr><td valign="top"><a href="#sign-3">sign/3</a></td><td>sign some data, hashed using the provided DigestType.</td></tr><tr><td valign="top"><a href="#to_address-1">to_address/1</a></td><td>Generate an address from a public key.</td></tr><tr><td valign="top"><a href="#to_address-2">to_address/2</a></td><td></td></tr><tr><td valign="top"><a href="#to_rsa_address-1">to_rsa_address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify that a signature is correct.</td></tr><tr><td valign="top"><a href="#verify-4">verify/4</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath-1">wallet_filepath/1*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath-3">wallet_filepath/3*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath2-1">wallet_filepath2/1*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_name-3">wallet_name/3*</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compress_ecdsa_pubkey-1">compress_ecdsa_pubkey/1*</a></td><td></td></tr><tr><td valign="top"><a href="#hash_address-1">hash_address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#hmac-1">hmac/1</a></td><td></td></tr><tr><td valign="top"><a href="#hmac-2">hmac/2</a></td><td></td></tr><tr><td valign="top"><a href="#load_key-1">load_key/1</a></td><td>Read the keyfile for the key with the given address from disk.</td></tr><tr><td valign="top"><a href="#load_keyfile-1">load_keyfile/1</a></td><td>Extract the public and private key from a keyfile.</td></tr><tr><td valign="top"><a href="#new-0">new/0</a></td><td></td></tr><tr><td valign="top"><a href="#new-1">new/1</a></td><td></td></tr><tr><td valign="top"><a href="#new_keyfile-2">new_keyfile/2</a></td><td>Generate a new wallet public and private key, with a corresponding keyfile.</td></tr><tr><td valign="top"><a href="#sign-2">sign/2</a></td><td>Sign some data with a private key.</td></tr><tr><td valign="top"><a href="#sign-3">sign/3</a></td><td>sign some data, hashed using the provided DigestType.</td></tr><tr><td valign="top"><a href="#to_address-1">to_address/1</a></td><td>Generate an address from a public key.</td></tr><tr><td valign="top"><a href="#to_address-2">to_address/2</a></td><td></td></tr><tr><td valign="top"><a href="#to_ecdsa_address-1">to_ecdsa_address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#to_rsa_address-1">to_rsa_address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify that a signature is correct.</td></tr><tr><td valign="top"><a href="#verify-4">verify/4</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath-1">wallet_filepath/1*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath-3">wallet_filepath/3*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_filepath2-1">wallet_filepath2/1*</a></td><td></td></tr><tr><td valign="top"><a href="#wallet_name-3">wallet_name/3*</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -2033,6 +2033,12 @@ Generate an address from a public key.
 ### to_address/2 ###
 
 `to_address(PubKey, X2) -> any()`
+
+<a name="to_ecdsa_address-1"></a>
+
+### to_ecdsa_address/1 * ###
+
+`to_ecdsa_address(PubKey) -> any()`
 
 <a name="to_rsa_address-1"></a>
 
@@ -2465,12 +2471,18 @@ their value.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td></td></tr><tr><td valign="top"><a href="#deep_nesting_test-0">deep_nesting_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#deserialize-1">deserialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#empty_map_test-0">empty_map_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Convert a flat map to a TABM.</td></tr><tr><td valign="top"><a href="#inject_at_path-3">inject_at_path/3*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_paths_test-0">multiple_paths_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#nested_conversion_test-0">nested_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#path_list_test-0">path_list_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serialize-1">serialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#simple_conversion_test-0">simple_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM to a flat map.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#binary_passthrough_test-0">binary_passthrough_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td></td></tr><tr><td valign="top"><a href="#deep_nesting_test-0">deep_nesting_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#deserialize-1">deserialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#empty_map_test-0">empty_map_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Convert a flat map to a TABM.</td></tr><tr><td valign="top"><a href="#inject_at_path-3">inject_at_path/3*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_paths_test-0">multiple_paths_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#nested_conversion_test-0">nested_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#path_list_test-0">path_list_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serialize-1">serialize/1</a></td><td></td></tr><tr><td valign="top"><a href="#simple_conversion_test-0">simple_conversion_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM to a flat map.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
 
 ## Function Details ##
+
+<a name="binary_passthrough_test-0"></a>
+
+### binary_passthrough_test/0 * ###
+
+`binary_passthrough_test() -> any()`
 
 <a name="commit-3"></a>
 
@@ -9067,8 +9079,7 @@ as well as generating them, if called in an appropriate environment.
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#execute_is_trusted-3">execute_is_trusted/3*</a></td><td>Ensure that all of the software hashes are trusted.</td></tr><tr><td valign="top"><a href="#generate-3">generate/3</a></td><td>Generate an commitment report and emit it as a message, including all of
 the necessary data to generate the nonce (ephemeral node address + node
 message ID), as well as the expected measurement (firmware, kernel, and VMSAs
-hashes).</td></tr><tr><td valign="top"><a href="#generate_nonce-2">generate_nonce/2*</a></td><td>Generate the nonce to use in the commitment report.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Should take in options to set for the device such as kernel, initrd, firmware,
-and append hashes and make them available to the device.</td></tr><tr><td valign="top"><a href="#is_debug-1">is_debug/1*</a></td><td>Ensure that the node's debug policy is disabled.</td></tr><tr><td valign="top"><a href="#real_node_test-0">real_node_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#report_data_matches-3">report_data_matches/3*</a></td><td>Ensure that the report data matches the expected report data.</td></tr><tr><td valign="top"><a href="#trusted-3">trusted/3</a></td><td>Default implementation of a resolver for trusted software.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify an commitment report message; validating the identity of a
+hashes).</td></tr><tr><td valign="top"><a href="#generate_nonce-2">generate_nonce/2*</a></td><td>Generate the nonce to use in the commitment report.</td></tr><tr><td valign="top"><a href="#is_debug-1">is_debug/1*</a></td><td>Ensure that the node's debug policy is disabled.</td></tr><tr><td valign="top"><a href="#real_node_test-0">real_node_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#report_data_matches-3">report_data_matches/3*</a></td><td>Ensure that the report data matches the expected report data.</td></tr><tr><td valign="top"><a href="#trusted-3">trusted/3</a></td><td>Default implementation of a resolver for trusted software.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify an commitment report message; validating the identity of a
 remote node, its ephemeral private address, and the integrity of the report.</td></tr></table>
 
 
@@ -9104,17 +9115,6 @@ hashes).
 `generate_nonce(RawAddress, RawNodeMsgID) -> any()`
 
 Generate the nonce to use in the commitment report.
-
-<a name="init-3"></a>
-
-### init/3 ###
-
-`init(M1, M2, Opts) -> any()`
-
-Should take in options to set for the device such as kernel, initrd, firmware,
-and append hashes and make them available to the device. Only runnable once,
-and only if the operator is not set to an address (and thus, the node has not
-had any priviledged access).
 
 <a name="is_debug-1"></a>
 
@@ -11577,7 +11577,7 @@ A module that helps to render given Key graphs into the .dot files.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_arc-4">add_arc/4*</a></td><td>Add an arc to the graph.</td></tr><tr><td valign="top"><a href="#add_node-3">add_node/3*</a></td><td>Add a node to the graph.</td></tr><tr><td valign="top"><a href="#cache_path_to_dot-2">cache_path_to_dot/2</a></td><td>Generate a dot file from a cache path and options/store.</td></tr><tr><td valign="top"><a href="#cache_path_to_dot-3">cache_path_to_dot/3</a></td><td></td></tr><tr><td valign="top"><a href="#cache_path_to_graph-3">cache_path_to_graph/3*</a></td><td>Main function to collect graph elements.</td></tr><tr><td valign="top"><a href="#collect_output-2">collect_output/2*</a></td><td>Helper function to collect output from port.</td></tr><tr><td valign="top"><a href="#dot_to_svg-1">dot_to_svg/1</a></td><td>Convert a dot graph to SVG format.</td></tr><tr><td valign="top"><a href="#extract_label-1">extract_label/1*</a></td><td>Extract a label from a path.</td></tr><tr><td valign="top"><a href="#graph_to_dot-1">graph_to_dot/1*</a></td><td>Generate the DOT file from the graph.</td></tr><tr><td valign="top"><a href="#prepare_deeply_nested_complex_message-0">prepare_deeply_nested_complex_message/0</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_signed_data-0">prepare_signed_data/0</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_unsigned_data-0">prepare_unsigned_data/0</a></td><td></td></tr><tr><td valign="top"><a href="#process_composite_node-6">process_composite_node/6*</a></td><td>Process a composite (directory) node.</td></tr><tr><td valign="top"><a href="#process_simple_node-6">process_simple_node/6*</a></td><td>Process a simple (leaf) node.</td></tr><tr><td valign="top"><a href="#render-1">render/1</a></td><td>Render the given Key into svg.</td></tr><tr><td valign="top"><a href="#render-2">render/2</a></td><td></td></tr><tr><td valign="top"><a href="#test_signed-2">test_signed/2*</a></td><td></td></tr><tr><td valign="top"><a href="#test_unsigned-1">test_unsigned/1*</a></td><td></td></tr><tr><td valign="top"><a href="#traverse_store-4">traverse_store/4*</a></td><td>Traverse the store recursively to build the graph.</td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_arc-4">add_arc/4*</a></td><td>Add an arc to the graph.</td></tr><tr><td valign="top"><a href="#add_node-3">add_node/3*</a></td><td>Add a node to the graph.</td></tr><tr><td valign="top"><a href="#cache_path_to_dot-2">cache_path_to_dot/2</a></td><td>Generate a dot file from a cache path and options/store.</td></tr><tr><td valign="top"><a href="#cache_path_to_dot-3">cache_path_to_dot/3</a></td><td></td></tr><tr><td valign="top"><a href="#cache_path_to_graph-3">cache_path_to_graph/3</a></td><td>Main function to collect graph elements.</td></tr><tr><td valign="top"><a href="#collect_output-2">collect_output/2*</a></td><td>Helper function to collect output from port.</td></tr><tr><td valign="top"><a href="#dot_to_svg-1">dot_to_svg/1</a></td><td>Convert a dot graph to SVG format.</td></tr><tr><td valign="top"><a href="#extract_label-1">extract_label/1*</a></td><td>Extract a label from a path.</td></tr><tr><td valign="top"><a href="#get_graph_data-1">get_graph_data/1</a></td><td>Get graph data for the Three.js visualization.</td></tr><tr><td valign="top"><a href="#get_label-1">get_label/1*</a></td><td>Extract a readable label from a path.</td></tr><tr><td valign="top"><a href="#get_node_type-1">get_node_type/1*</a></td><td>Convert node color from hb_cache_render to node type for visualization.</td></tr><tr><td valign="top"><a href="#graph_to_dot-1">graph_to_dot/1*</a></td><td>Generate the DOT file from the graph.</td></tr><tr><td valign="top"><a href="#prepare_deeply_nested_complex_message-0">prepare_deeply_nested_complex_message/0</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_signed_data-0">prepare_signed_data/0</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_unsigned_data-0">prepare_unsigned_data/0</a></td><td></td></tr><tr><td valign="top"><a href="#process_composite_node-6">process_composite_node/6*</a></td><td>Process a composite (directory) node.</td></tr><tr><td valign="top"><a href="#process_simple_node-6">process_simple_node/6*</a></td><td>Process a simple (leaf) node.</td></tr><tr><td valign="top"><a href="#render-1">render/1</a></td><td>Render the given Key into svg.</td></tr><tr><td valign="top"><a href="#render-2">render/2</a></td><td></td></tr><tr><td valign="top"><a href="#test_signed-2">test_signed/2*</a></td><td></td></tr><tr><td valign="top"><a href="#test_unsigned-1">test_unsigned/1*</a></td><td></td></tr><tr><td valign="top"><a href="#traverse_store-4">traverse_store/4*</a></td><td>Traverse the store recursively to build the graph.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -11616,7 +11616,7 @@ Generate a dot file from a cache path and options/store
 
 <a name="cache_path_to_graph-3"></a>
 
-### cache_path_to_graph/3 * ###
+### cache_path_to_graph/3 ###
 
 `cache_path_to_graph(ToRender, GraphOpts, StoreOrOpts) -> any()`
 
@@ -11645,6 +11645,30 @@ Convert a dot graph to SVG format
 `extract_label(Path) -> any()`
 
 Extract a label from a path
+
+<a name="get_graph_data-1"></a>
+
+### get_graph_data/1 ###
+
+`get_graph_data(Opts) -> any()`
+
+Get graph data for the Three.js visualization
+
+<a name="get_label-1"></a>
+
+### get_label/1 * ###
+
+`get_label(Path) -> any()`
+
+Extract a readable label from a path
+
+<a name="get_node_type-1"></a>
+
+### get_node_type/1 * ###
+
+`get_node_type(Color) -> any()`
+
+Convert node color from hb_cache_render to node type for visualization
 
 <a name="graph_to_dot-1"></a>
 
@@ -13130,8 +13154,9 @@ the execution parameters of all downstream requests to be controlled.<a name="in
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#allowed_methods-2">allowed_methods/2</a></td><td>Return the list of allowed methods for the HTTP server.</td></tr><tr><td valign="top"><a href="#cors_reply-2">cors_reply/2*</a></td><td>Reply to CORS preflight requests.</td></tr><tr><td valign="top"><a href="#get_opts-1">get_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_request-3">handle_request/3*</a></td><td>Handle all non-CORS preflight requests as AO-Core requests.</td></tr><tr><td valign="top"><a href="#http3_conn_sup_loop-0">http3_conn_sup_loop/0*</a></td><td></td></tr><tr><td valign="top"><a href="#init-2">init/2</a></td><td>Entrypoint for all HTTP requests.</td></tr><tr><td valign="top"><a href="#new_server-1">new_server/1*</a></td><td></td></tr><tr><td valign="top"><a href="#read_body-1">read_body/1*</a></td><td>Helper to grab the full body of a HTTP request, even if it's chunked.</td></tr><tr><td valign="top"><a href="#read_body-2">read_body/2*</a></td><td></td></tr><tr><td valign="top"><a href="#set_default_opts-1">set_default_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#set_opts-1">set_opts/1</a></td><td>Update the <code>Opts</code> map that the HTTP server uses for all future
-requests.</td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td>Starts the HTTP server.</td></tr><tr><td valign="top"><a href="#start-1">start/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_http2-3">start_http2/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_http3-3">start_http3/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_node-0">start_node/0</a></td><td>Test that we can start the server, send a message, and get a response.</td></tr><tr><td valign="top"><a href="#start_node-1">start_node/1</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#allowed_methods-2">allowed_methods/2</a></td><td>Return the list of allowed methods for the HTTP server.</td></tr><tr><td valign="top"><a href="#cors_reply-2">cors_reply/2*</a></td><td>Reply to CORS preflight requests.</td></tr><tr><td valign="top"><a href="#get_opts-1">get_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_request-3">handle_request/3*</a></td><td>Handle all non-CORS preflight requests as AO-Core requests.</td></tr><tr><td valign="top"><a href="#http3_conn_sup_loop-0">http3_conn_sup_loop/0*</a></td><td></td></tr><tr><td valign="top"><a href="#init-2">init/2</a></td><td>Entrypoint for all HTTP requests.</td></tr><tr><td valign="top"><a href="#new_server-1">new_server/1*</a></td><td></td></tr><tr><td valign="top"><a href="#read_body-1">read_body/1*</a></td><td>Helper to grab the full body of a HTTP request, even if it's chunked.</td></tr><tr><td valign="top"><a href="#read_body-2">read_body/2*</a></td><td></td></tr><tr><td valign="top"><a href="#set_default_opts-1">set_default_opts/1</a></td><td></td></tr><tr><td valign="top"><a href="#set_opts-1">set_opts/1</a></td><td>Merges the provided <code>Opts</code> with uncommitted values from <code>Request</code>,
+preserves the http_server value, and updates node_history by prepending
+the <code>Request</code>.</td></tr><tr><td valign="top"><a href="#set_opts-2">set_opts/2</a></td><td></td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td>Starts the HTTP server.</td></tr><tr><td valign="top"><a href="#start-1">start/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_http2-3">start_http2/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_http3-3">start_http3/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_node-0">start_node/0</a></td><td>Test that we can start the server, send a message, and get a response.</td></tr><tr><td valign="top"><a href="#start_node-1">start_node/1</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -13218,8 +13243,16 @@ Helper to grab the full body of a HTTP request, even if it's chunked.
 
 `set_opts(Opts) -> any()`
 
-Update the `Opts` map that the HTTP server uses for all future
-requests.
+Merges the provided `Opts` with uncommitted values from `Request`,
+preserves the http_server value, and updates node_history by prepending
+the `Request`. If a server reference exists, updates the Cowboy environment
+variable 'node_msg' with the resulting options map.
+
+<a name="set_opts-2"></a>
+
+### set_opts/2 ###
+
+`set_opts(Request, Opts) -> any()`
 
 <a name="start-0"></a>
 
@@ -13715,6 +13748,87 @@ Takes a term in Erlang's native form and encodes it as a JSON string.
 
 
 --- END OF FILE: docs/resources/source-code/hb_json.md ---
+
+--- START OF FILE: docs/resources/source-code/hb_keccak.md ---
+# [Module hb_keccak.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_keccak.erl)
+
+
+
+
+<a name="index"></a>
+
+## Function Index ##
+
+
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#hash_to_checksum_address-2">hash_to_checksum_address/2*</a></td><td></td></tr><tr><td valign="top"><a href="#init-0">init/0*</a></td><td></td></tr><tr><td valign="top"><a href="#keccak_256-1">keccak_256/1</a></td><td></td></tr><tr><td valign="top"><a href="#keccak_256_key_test-0">keccak_256_key_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#keccak_256_key_to_address_test-0">keccak_256_key_to_address_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#keccak_256_test-0">keccak_256_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#key_to_ethereum_address-1">key_to_ethereum_address/1</a></td><td></td></tr><tr><td valign="top"><a href="#sha3_256-1">sha3_256/1</a></td><td></td></tr><tr><td valign="top"><a href="#sha3_256_test-0">sha3_256_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to_hex-1">to_hex/1*</a></td><td></td></tr></table>
+
+
+<a name="functions"></a>
+
+## Function Details ##
+
+<a name="hash_to_checksum_address-2"></a>
+
+### hash_to_checksum_address/2 * ###
+
+`hash_to_checksum_address(Last40, Hash) -> any()`
+
+<a name="init-0"></a>
+
+### init/0 * ###
+
+`init() -> any()`
+
+<a name="keccak_256-1"></a>
+
+### keccak_256/1 ###
+
+`keccak_256(Bin) -> any()`
+
+<a name="keccak_256_key_test-0"></a>
+
+### keccak_256_key_test/0 * ###
+
+`keccak_256_key_test() -> any()`
+
+<a name="keccak_256_key_to_address_test-0"></a>
+
+### keccak_256_key_to_address_test/0 * ###
+
+`keccak_256_key_to_address_test() -> any()`
+
+<a name="keccak_256_test-0"></a>
+
+### keccak_256_test/0 * ###
+
+`keccak_256_test() -> any()`
+
+<a name="key_to_ethereum_address-1"></a>
+
+### key_to_ethereum_address/1 ###
+
+`key_to_ethereum_address(Key) -> any()`
+
+<a name="sha3_256-1"></a>
+
+### sha3_256/1 ###
+
+`sha3_256(Bin) -> any()`
+
+<a name="sha3_256_test-0"></a>
+
+### sha3_256_test/0 * ###
+
+`sha3_256_test() -> any()`
+
+<a name="to_hex-1"></a>
+
+### to_hex/1 * ###
+
+`to_hex(Bin) -> any()`
+
+
+--- END OF FILE: docs/resources/source-code/hb_keccak.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_logger.md ---
 # [Module hb_logger.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_logger.erl)
@@ -14738,7 +14852,7 @@ with a refusal to execute.<a name="index"></a>
 changes during the lifetime of a node.</td></tr><tr><td valign="top"><a href="#config_lookup-2">config_lookup/2*</a></td><td>An abstraction for looking up configuration variables.</td></tr><tr><td valign="top"><a href="#default_message-0">default_message/0</a></td><td>The default configuration options of the hyperbeam node.</td></tr><tr><td valign="top"><a href="#get-1">get/1</a></td><td>Get an option from the global options, optionally overriding with a
 local <code>Opts</code> map if <code>prefer</code> or <code>only</code> is set to <code>local</code>.</td></tr><tr><td valign="top"><a href="#get-2">get/2</a></td><td></td></tr><tr><td valign="top"><a href="#get-3">get/3</a></td><td></td></tr><tr><td valign="top"><a href="#global_get-2">global_get/2*</a></td><td>Get an environment variable or configuration key.</td></tr><tr><td valign="top"><a href="#load-1">load/1</a></td><td>Parse a <code>flat@1.0</code> encoded file into a map, matching the types of the
 keys to those in the default message.</td></tr><tr><td valign="top"><a href="#load_bin-1">load_bin/1</a></td><td></td></tr><tr><td valign="top"><a href="#mimic_default_types-2">mimic_default_types/2</a></td><td>Mimic the types of the default message for a given map.</td></tr><tr><td valign="top"><a href="#normalize_default-1">normalize_default/1*</a></td><td>Get an option from environment variables, optionally consulting the
-<code>hb_features</code> of the node if a conditional default tuple is provided.</td></tr></table>
+<code>hb_features</code> of the node if a conditional default tuple is provided.</td></tr><tr><td valign="top"><a href="#validate_node_history-1">validate_node_history/1</a></td><td>Validate that the node_history length is within an acceptable range.</td></tr><tr><td valign="top"><a href="#validate_node_history-3">validate_node_history/3</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -14837,6 +14951,20 @@ Mimic the types of the default message for a given map.
 
 Get an option from environment variables, optionally consulting the
 `hb_features` of the node if a conditional default tuple is provided.
+
+<a name="validate_node_history-1"></a>
+
+### validate_node_history/1 ###
+
+`validate_node_history(Opts) -> any()`
+
+Validate that the node_history length is within an acceptable range.
+
+<a name="validate_node_history-3"></a>
+
+### validate_node_history/3 ###
+
+`validate_node_history(Opts, MinLength, MaxLength) -> any()`
 
 
 --- END OF FILE: docs/resources/source-code/hb_opts.md ---
@@ -15730,10 +15858,10 @@ tabm_message() = map()
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#all_path_parts-2">all_path_parts/2*</a></td><td>Extract all of the parts from the binary, given (a list of) separators.</td></tr><tr><td valign="top"><a href="#append_path-2">append_path/2*</a></td><td></td></tr><tr><td valign="top"><a href="#apply_types-1">apply_types/1*</a></td><td>Step 3: Apply types to values and remove specifiers.</td></tr><tr><td valign="top"><a href="#basic_hashpath_test-0">basic_hashpath_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#basic_hashpath_to_test-0">basic_hashpath_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#build_messages-2">build_messages/2*</a></td><td>Step 5: Merge the base message with the scoped messages.</td></tr><tr><td valign="top"><a href="#decode_string-1">decode_string/1*</a></td><td>Attempt Cowboy URL decode, then sanitize the result.</td></tr><tr><td valign="top"><a href="#do_build-3">do_build/3*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Normalize a singleton TABM message into a list of executable AO-Core
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#all_path_parts-2">all_path_parts/2*</a></td><td>Extract all of the parts from the binary, given (a list of) separators.</td></tr><tr><td valign="top"><a href="#append_path-2">append_path/2*</a></td><td></td></tr><tr><td valign="top"><a href="#apply_types-1">apply_types/1*</a></td><td>Step 3: Apply types to values and remove specifiers.</td></tr><tr><td valign="top"><a href="#basic_hashpath_test-0">basic_hashpath_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#basic_hashpath_to_test-0">basic_hashpath_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#build-3">build/3*</a></td><td></td></tr><tr><td valign="top"><a href="#build_messages-2">build_messages/2*</a></td><td>Step 5: Merge the base message with the scoped messages.</td></tr><tr><td valign="top"><a href="#decode_string-1">decode_string/1*</a></td><td>Attempt Cowboy URL decode, then sanitize the result.</td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Normalize a singleton TABM message into a list of executable AO-Core
 messages.</td></tr><tr><td valign="top"><a href="#group_scoped-2">group_scoped/2*</a></td><td>Step 4: Group headers/query by N-scope.</td></tr><tr><td valign="top"><a href="#inlined_keys_test-0">inlined_keys_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#inlined_keys_to_test-0">inlined_keys_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_join-2">maybe_join/2*</a></td><td>Join a list of items with a separator, or return the first item if there
 is only one item.</td></tr><tr><td valign="top"><a href="#maybe_subpath-1">maybe_subpath/1*</a></td><td>Check if the string is a subpath, returning it in parsed form,
-or the original string with a specifier.</td></tr><tr><td valign="top"><a href="#maybe_typed-2">maybe_typed/2*</a></td><td>Parse a key's type (applying it to the value) and device name if present.</td></tr><tr><td valign="top"><a href="#multiple_inlined_keys_test-0">multiple_inlined_keys_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_inlined_keys_to_test-0">multiple_inlined_keys_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_messages_test-0">multiple_messages_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_messages_to_test-0">multiple_messages_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize_base-1">normalize_base/1*</a></td><td>Normalize the base path.</td></tr><tr><td valign="top"><a href="#parse_explicit_message_test-0">parse_explicit_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#parse_full_path-1">parse_full_path/1*</a></td><td>Parse the relative reference into path, query, and fragment.</td></tr><tr><td valign="top"><a href="#parse_inlined_key_val-1">parse_inlined_key_val/1*</a></td><td>Extrapolate the inlined key-value pair from a path segment.</td></tr><tr><td valign="top"><a href="#parse_part-1">parse_part/1*</a></td><td>Parse a path part into a message or an ID.</td></tr><tr><td valign="top"><a href="#parse_part_mods-2">parse_part_mods/2*</a></td><td>Parse part modifiers:
+or the original string with a specifier.</td></tr><tr><td valign="top"><a href="#maybe_typed-2">maybe_typed/2*</a></td><td>Parse a key's type (applying it to the value) and device name if present.</td></tr><tr><td valign="top"><a href="#multiple_inlined_keys_test-0">multiple_inlined_keys_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_inlined_keys_to_test-0">multiple_inlined_keys_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_messages_test-0">multiple_messages_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#multiple_messages_to_test-0">multiple_messages_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize_base-1">normalize_base/1*</a></td><td>Normalize the base path.</td></tr><tr><td valign="top"><a href="#parse_explicit_message_test-0">parse_explicit_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#parse_full_path-1">parse_full_path/1*</a></td><td>Parse the relative reference into path, query, and fragment.</td></tr><tr><td valign="top"><a href="#parse_inlined_key_val-1">parse_inlined_key_val/1*</a></td><td>Extrapolate the inlined key-value pair from a path segment.</td></tr><tr><td valign="top"><a href="#parse_inlined_keys-2">parse_inlined_keys/2*</a></td><td>Parse inlined key-value pairs from a path segment.</td></tr><tr><td valign="top"><a href="#parse_part-1">parse_part/1*</a></td><td>Parse a path part into a message or an ID.</td></tr><tr><td valign="top"><a href="#parse_part_mods-2">parse_part_mods/2*</a></td><td>Parse part modifiers:
 1.</td></tr><tr><td valign="top"><a href="#parse_scope-1">parse_scope/1*</a></td><td>Get the scope of a key.</td></tr><tr><td valign="top"><a href="#part-2">part/2*</a></td><td>Extract the characters from the binary until a separator is found.</td></tr><tr><td valign="top"><a href="#part-4">part/4*</a></td><td></td></tr><tr><td valign="top"><a href="#path_messages-1">path_messages/1*</a></td><td>Step 2: Decode, split and sanitize the path.</td></tr><tr><td valign="top"><a href="#path_parts-2">path_parts/2*</a></td><td>Split the path into segments, filtering out empty segments and
 segments that are too long.</td></tr><tr><td valign="top"><a href="#path_parts_test-0">path_parts_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#scoped_key_test-0">scoped_key_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#scoped_key_to_test-0">scoped_key_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_to_test-0">simple_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#single_message_test-0">single_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_inlined_test-0">subpath_in_inlined_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_inlined_to_test-0">subpath_in_inlined_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_key_test-0">subpath_in_key_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_key_to_test-0">subpath_in_key_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_path_test-0">subpath_in_path_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#subpath_in_path_to_test-0">subpath_in_path_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a list of AO-Core message into TABM message.</td></tr><tr><td valign="top"><a href="#to_suite_test_-0">to_suite_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#type-1">type/1*</a></td><td></td></tr><tr><td valign="top"><a href="#typed_key_test-0">typed_key_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#typed_key_to_test-0">typed_key_to_test/0*</a></td><td></td></tr></table>
 
@@ -15776,6 +15904,12 @@ Step 3: Apply types to values and remove specifiers.
 
 `basic_hashpath_to_test() -> any()`
 
+<a name="build-3"></a>
+
+### build/3 * ###
+
+`build(I, Rest, ScopedKeys) -> any()`
+
 <a name="build_messages-2"></a>
 
 ### build_messages/2 * ###
@@ -15792,17 +15926,11 @@ Step 5: Merge the base message with the scoped messages.
 
 Attempt Cowboy URL decode, then sanitize the result.
 
-<a name="do_build-3"></a>
-
-### do_build/3 * ###
-
-`do_build(I, Rest, ScopedKeys) -> any()`
-
 <a name="from-1"></a>
 
 ### from/1 ###
 
-`from(RawMsg) -> any()`
+`from(Path) -> any()`
 
 Normalize a singleton TABM message into a list of executable AO-Core
 messages.
@@ -15909,6 +16037,15 @@ Parse the relative reference into path, query, and fragment.
 Extrapolate the inlined key-value pair from a path segment. If the
 key has a value, it may provide a type (as with typical keys), but if a
 value is not provided, it is assumed to be a boolean `true`.
+
+<a name="parse_inlined_keys-2"></a>
+
+### parse_inlined_keys/2 * ###
+
+`parse_inlined_keys(InlinedMsgBin, Msg) -> any()`
+
+Parse inlined key-value pairs from a path segment. Each key-value pair
+is separated by `&` and is of the form `K=V`.
 
 <a name="parse_part-1"></a>
 
@@ -18097,7 +18234,8 @@ as well as a standard map of HyperBEAM runtime options.
 `human_id(Bin) -> any()`
 
 Convert a native binary ID to a human readable ID. If the ID is already
-a human readable ID, it is returned as is.
+a human readable ID, it is returned as is. If it is an ethereum address, it
+is returned as is.
 
 <a name="human_int-1"></a>
 
@@ -18999,6 +19137,7 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 <tr><td><a href="hb_http_client_sup.md" class="module">hb_http_client_sup</a></td></tr>
 <tr><td><a href="hb_http_server.md" class="module">hb_http_server</a></td></tr>
 <tr><td><a href="hb_json.md" class="module">hb_json</a></td></tr>
+<tr><td><a href="hb_keccak.md" class="module">hb_keccak</a></td></tr>
 <tr><td><a href="hb_logger.md" class="module">hb_logger</a></td></tr>
 <tr><td><a href="hb_message.md" class="module">hb_message</a></td></tr>
 <tr><td><a href="hb_metrics_collector.md" class="module">hb_metrics_collector</a></td></tr>
