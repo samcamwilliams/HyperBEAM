@@ -131,7 +131,7 @@ default_message() ->
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => false,
-        trusted => [],
+        snp_trusted => #{},
         routes => [
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
