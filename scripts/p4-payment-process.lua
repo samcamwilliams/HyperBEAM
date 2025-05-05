@@ -58,8 +58,8 @@ function debit(base, assignment)
     end
     ao.event({ "process debit valid", { assignment = assignment } })
     base.balance = base.balance or {}
-    base.balance[assignment.body.target] =
-        (base.balance[assignment.body.target] or 0) - assignment.body.quantity
+    base.balance[assignment.body.account] =
+        (base.balance[assignment.body.account] or 0) - assignment.body.quantity
     
     ao.event({ "process debit success", { balances = base.balance } })
     return "ok", base

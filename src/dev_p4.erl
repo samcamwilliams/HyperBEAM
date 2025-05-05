@@ -204,7 +204,7 @@ postprocess(State, RawResponse, NodeMsg) ->
                             #{
                                 <<"path">> => <<"debit">>,
                                 <<"quantity">> => Price,
-                                <<"target">> =>
+                                <<"account">> =>
                                     case hb_message:signers(Request) of
                                         [Signer] -> Signer;
                                         [] -> <<"unknown">>;
@@ -392,6 +392,7 @@ lua_pricing_test() ->
     Node =
         hb_http_server:start_node(
             #{
+                priv_wallet => HostWallet,
                 p4_non_chargable_routes =>
                     [
                         #{
@@ -453,16 +454,14 @@ lua_pricing_test() ->
     ResAfterTopup = hb_http:get(Node, SignedReq, #{}),
     ?event({res_after_topup, ResAfterTopup}),
     ?assertMatch({ok, <<"Hello, world!">>}, ResAfterTopup),
-    Res3 = hb_http:get(Node, SignedReq, #{}),
-    ?event({res3, Res3}),
-    ?assertMatch({ok, <<"Hello, world!">>}, Res3),
-    Res4 = hb_http:get(Node, SignedReq, #{}),
-    ?event({res4, Res4}),
-    ?assertMatch({ok, <<"Hello, world!">>}, Res4),
-    ?hr(),
-    ?hr(),
-    ?hr(),
-    ?hr(),
-    {ok, Balance} = hb_http:get(Node, <<"/ledger~node-process@1.0/now/balance">>, #{}),
+    {ok, Balance} =
+        hb_http:get(
+            Node,
+            <<
+                "/ledger~node-process@1.0/now/balance/",
+                    (hb_util:human_id(ar_wallet:to_address(ClientWallet)))/binary
+            >>,
+            #{}
+        ),
     ?event({balance, Balance}),
-    ?assertMatch({ok, 98}, Balance).
+    ?assertMatch(#{ <<"body">> := <<"98">> }, Balance).

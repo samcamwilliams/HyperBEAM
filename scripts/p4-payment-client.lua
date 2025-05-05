@@ -25,14 +25,14 @@ end
 -- Debit the user's balance in the current ledger state.
 function debit(base, request)
     ao.event({ "client starting debit", { request = request, base = base } })
-    local status, process = ao.resolve({
-        path = base["ledger-path"] .. "/schedule/process"
+    local status, res = ao.resolve({
+        path = "(" .. base["ledger-path"] .. ")/schedule",
+        method = "POST",
+        body = request
     })
-    ao.event({ "client received ledger process", { status = status, process = process } })
-    local status, res = ao.resolve(process, request)
     ao.event({ "client received schedule response", { status = status, res = res } })
     status, res = ao.resolve({
-        path = base["ledger-path"] .. "/compute/balance/" .. request["target"],
+        path = base["ledger-path"] .. "/compute/balance/" .. request["account"],
         slot = res.slot
     })
     ao.event({ "confirmed balance", { status = status, res = res } })
