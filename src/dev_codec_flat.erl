@@ -2,7 +2,7 @@
 %%% (potentially multi-layer) paths as their keys, and a normal TABM binary as 
 %%% their value.
 -module(dev_codec_flat).
--export([from/3, to/3, commit/3, verify/3, committed/3]).
+-export([from/3, to/3, commit/3, verify/3]).
 %%% Testing utilities
 -export([serialize/1, serialize/2, deserialize/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -11,7 +11,6 @@
 %%% Route signature functions to the `dev_codec_httpsig' module
 commit(Msg, Req, Opts) -> dev_codec_httpsig:commit(Msg, Req, Opts).
 verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
-committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 
 %% @doc Convert a flat map to a TABM.
 from(Bin, _, _Opts) when is_binary(Bin) -> {ok, Bin};
