@@ -121,7 +121,7 @@
 %%      9: Notify waiters.
 %%     10: Fork worker.
 %%     11: Recurse or terminate.
-resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
+resolve(SingletonMsg, Opts) ->
     resolve_many(hb_singleton:from(SingletonMsg), Opts).
 
 resolve(Msg1, Path, Opts) when not is_map(Path) ->
@@ -246,6 +246,36 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
             if is_map(Msg2Inner) -> Msg2Inner; true -> #{ <<"path">> => Msg2Inner } end
         ),
     subresolve(RawMsg1, DevID, Msg2, Opts);
+resolve_stage(1, Msg1, {resolve, Subres}, Opts) ->
+    % If the second message is a `{resolve, Subresolution}' tuple, we should
+    % execute the subresolution directly to gain the underlying `Msg2' for 
+    % our execution. We assume that the subresolution is already in a normalized,
+    % executable form, so we pass it to `resolve_many' for execution.
+    ?event(ao_core, {stage, 1, subresolving_request_message, {subres, Subres}}, Opts),
+    % We make sure to unset the `force_message' option so that if the subresolution
+    % returns a literal, the rest of `resolve' will normalize it to a path.
+    case resolve_many(Subres, maps:without([force_message], Opts)) of
+        {ok, Msg2} ->
+            ?event(
+                ao_core,
+                {stage, 1, request_subresolve_success, {msg2, Msg2}},
+                Opts
+            ),
+            resolve_stage(1, Msg1, Msg2, Opts);
+        OtherRes ->
+            ?event(
+                ao_core,
+                {
+                    stage,
+                    1,
+                    request_subresolve_failed,
+                    {subres, Subres},
+                    {res, OtherRes}
+                },
+                Opts
+            ),
+            OtherRes
+    end;
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(ao_core, {stage, 1, list_normalize}, Opts),
@@ -494,6 +524,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                 )
         end,
     resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(7, Msg1, Msg2, {ok, {resolve, Sublist}}, ExecName, Opts) ->
+    ?event(ao_core, {stage, 7, ExecName, subresolve_result}, Opts),
+    % If the result is a `{resolve, Sublist}' tuple, we need to execute it
+    % as a sub-resolution.
+    resolve_stage(7, Msg1, Msg2, resolve_many(Sublist, Opts), ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     ?event(ao_core, {stage, 7, ExecName, generate_hashpath}, Opts),
     % Cryptographic linking. Now that we have generated the result, we
@@ -593,7 +628,11 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
                 case map_size(maps:without([<<"path">>], Req)) of
                     0 -> Msg1b;
                     _ ->
-                        set(Msg1b, maps:without([<<"path">>], Req), Opts#{ force_message => false })
+                        set(
+                            Msg1b,
+                            maps:without([<<"path">>], Req),
+                            Opts#{ force_message => false }
+                        )
                 end,
             ?event(subresolution,
                 {subresolve_modified_base, Msg1c},
@@ -711,6 +750,8 @@ maybe_force_message({Status, Res}, Opts) ->
 
 force_message({Status, Res}, Opts) when is_list(Res) ->
     force_message({Status, normalize_keys(Res)}, Opts);
+force_message({Status, Subres = {resolve, _}}, _Opts) ->
+    {Status, Subres};
 force_message({Status, Literal}, _Opts) when not is_map(Literal) ->
     ?event({force_message_from_literal, Literal}),
     {Status, #{ <<"ao-result">> => <<"body">>, <<"body">> => Literal }};

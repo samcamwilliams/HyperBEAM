@@ -135,6 +135,8 @@ type(_Value) -> unknown.
 
 %% @doc Normalize a singleton TABM message into a list of executable AO-Core
 %% messages.
+from(Path) when is_binary(Path) ->
+    from(#{ <<"path">> => Path });
 from(RawMsg) ->
     RawPath = maps:get(<<"path">>, RawMsg, <<>>),
     ?event(parsing, {raw_path, RawPath}),
@@ -162,15 +164,16 @@ from(RawMsg) ->
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
-    {Path, QKVList} =
-        case binary:split(RelativeRef, <<"?">>) of
-            [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
-            [P] -> {P, []}
+    {Path, QueryMap} =
+        case part([$?], RelativeRef) of
+            {$?, Base, Query} ->
+                {Base, parse_inlined_keys(Query, #{})};
+            {no_match, Base, <<>>} -> {Base, #{}}
         end,
     {
         ok,
         lists:map(fun(Part) -> decode_string(Part) end, path_parts($/, Path)),
-        maps:from_list(QKVList)
+        QueryMap
     }.
 
 %% @doc Step 2: Decode, split and sanitize the path. Split by `/' but avoid
@@ -334,13 +337,18 @@ parse_part_mods(<<"~", PartMods/binary>>, Msg) ->
     % Apply the device specifier
     {as, maybe_subpath(DeviceBin), MsgWithInlines};
 parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
+    parse_inlined_keys(InlinedMsgBin, Msg).
+
+%% @doc Parse inlined key-value pairs from a path segment. Each key-value pair
+%% is separated by `&' and is of the form `K=V'.
+parse_inlined_keys(InlinedMsgBin, Msg) ->
     InlinedKeys = path_parts($&, InlinedMsgBin),
     MsgWithInlined =
         lists:foldl(
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
                 ?event({inlined_key, {explicit, Key}, {explicit, Val}}),
-                maps:put(Key, Val, Acc)
+                Acc#{ Key => Val }
             end,
             Msg,
             InlinedKeys
