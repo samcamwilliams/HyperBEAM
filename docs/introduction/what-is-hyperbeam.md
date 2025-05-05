@@ -26,24 +26,8 @@ In essence, HyperBEAM is the engine that drives the AO Computer, enabling a visi
 
 *   **Initialization Flow:** When a HyperBEAM node starts, it initializes the name service, scheduler registry, timestamp server, and HTTP server, establishing core services for process management, timing, communication, and storage.
 *   **Compute Model:** Computation follows the pattern `Message1(Message2) => Message3`, where messages are resolved through their devices and paths.
-*   **Scheduler System:** The scheduler component manages execution order using "slots" - sequential positions that organize computation in a deterministic way.
+*   **Scheduler System:** The scheduler component manages execution order using "slots" - sequential positions that organize computation in a deterministic way. For details, see the [`~scheduler` device documentation](../devices/scheduler-at-1-0.md#slot-system).
 *   **Process Slots:** Each process has numbered slots starting from 0 that track message execution order, ensuring consistent computation even across distributed nodes.
-
-## Slot System
-
-Slots are a fundamental concept in the HyperBEAM scheduler component, providing a structured mechanism for organizing and sequencing computation.
-
-*   **Sequential Ordering:** Slots act as numbered containers (starting at 0) that hold specific messages or tasks to be processed in a deterministic order.
-*   **State Tracking:** The "current-slot" field tracks process execution state, indicating which messages have been processed and which are pending.
-*   **Assignment Storage:** Each slot contains an "assignment" - the cryptographically verified message waiting to be executed.
-*   **Schedule Organization:** The collection of all slots for a process forms its "schedule", which can be queried to view ranges of assignments.
-*   **Application Scenarios:**
-    * **Scheduling Messages:** When a message is posted to a process, it's assigned to the next available slot
-    * **Status Monitoring:** Clients can query a process's current slot to check progress
-    * **Task Retrieval:** Processes find their next task by requesting the next slot number
-    * **Distributed Consistency:** Slots ensure deterministic execution order across nodes
-
-This slotting mechanism is central to AO processes built on HyperBEAM, allowing for deterministic, verifiable computation that maintains consistency across a distributed system.
 
 ## HTTP API and Pathing
 
