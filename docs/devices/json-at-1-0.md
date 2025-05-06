@@ -2,7 +2,7 @@
 
 ## Overview
 
-The [`~json@1.0`](../resources/source-code/dev_json.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
+The [`~json@1.0`](../resources/source-code/dev_json_iface.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
 
 This device is useful for:
 
@@ -36,7 +36,7 @@ This retrieves the node configuration from the meta device and serializes it to 
 
 ## See Also
 
-- [Message Device](./message-at-1-0.md) - Works well with JSON serialization
-- [Meta Device](./meta-at-1-0.md) - Can provide configuration data to serialize
+- [Message Device](../resources/source-code/dev_message.md) - Works well with JSON serialization
+- [Meta Device](../resources/source-code/dev_meta.md) - Can provide configuration data to serialize
 
 [json module](../resources/source-code/dev_codec_json.md)

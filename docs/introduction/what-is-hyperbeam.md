@@ -25,7 +25,7 @@ In essence, HyperBEAM is the engine that drives the AO Computer, enabling a visi
 ## Architecture
 
 *   **Initialization Flow:** When a HyperBEAM node starts, it initializes the name service, scheduler registry, timestamp server, and HTTP server, establishing core services for process management, timing, communication, and storage.
-*   **Compute Model:** Computation follows the pattern `Message1(Message2) => Message3`, where messages are resolved through their devices and paths.
+*   **Compute Model:** Computation follows the pattern \`Message1(Message2) => Message3\`, where messages are resolved through their devices and [paths](./pathing-in-ao-core.md). The integrity and history of these computations are ensured by **hashpaths**, which serves as a cryptographic audit trail.
 *   **Scheduler System:** The scheduler component manages execution order using ["slots"](../devices/scheduler-at-1-0.md#slot-system) — sequential positions that guarantee deterministic computation.
 *   **Process Slots:** Each process has numbered slots starting from 0 that track message execution order, ensuring consistent computation even across distributed nodes.
 
