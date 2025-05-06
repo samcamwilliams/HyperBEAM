@@ -1,4 +1,4 @@
-Generated: 2025-05-06T17:11:19Z
+Generated: 2025-05-06T20:35:30Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -456,7 +456,7 @@ Versioning indicates the specific interface and behavior of the device. Changes 
 
 ## Overview
 
-The [`~json@1.0`](../resources/source-code/dev_json.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
+The [`~json@1.0`](../resources/source-code/dev_json_iface.md) device provides a mechanism to interact with JSON (JavaScript Object Notation) data structures using HyperPATHs. It allows treating a JSON document or string as a stateful entity against which HyperPATH queries can be executed.
 
 This device is useful for:
 
@@ -490,8 +490,8 @@ This retrieves the node configuration from the meta device and serializes it to 
 
 ## See Also
 
-- [Message Device](./message-at-1-0.md) - Works well with JSON serialization
-- [Meta Device](./meta-at-1-0.md) - Can provide configuration data to serialize
+- [Message Device](../resources/source-code/dev_message.md) - Works well with JSON serialization
+- [Meta Device](../resources/source-code/dev_meta.md) - Can provide configuration data to serialize
 
 [json module](../resources/source-code/dev_codec_json.md)
 --- END OF FILE: docs/devices/json-at-1-0.md ---
@@ -505,14 +505,14 @@ The [`~lua@5.3a`](../resources/source-code/dev_lua.md) device enables the execut
 
 ## Core Concept: Lua Script Execution
 
-This device allows processes to perform computations defined in Lua scripts. Similar to the `~wasm64@1.0` device, it manages the lifecycle of a Lua execution state associated with the process.
+This device allows processes to perform computations defined in Lua scripts. Similar to the [`~wasm64@1.0`](../resources/source-code/dev_wasm.md) device, it manages the lifecycle of a Lua execution state associated with the process.
 
 ## Key Functions (Keys)
 
-These keys are typically used within an execution stack (managed by `dev_stack`) for an AO process.
+These keys are typically used within an execution stack (managed by [`dev_stack`](../resources/source-code/dev_stack.md)) for an AO process.
 
 *   **`init`**
-    *   **Action:** Initializes the Lua environment for the process. It finds and loads the Lua script(s) associated with the process, creates a `luerl` state, applies sandboxing rules if specified, installs the `dev_lua_lib` (providing AO-specific functions like `ao.send`), and stores the initialized state in the process's private area (`priv/state`).
+    *   **Action:** Initializes the Lua environment for the process. It finds and loads the Lua script(s) associated with the process, creates a `luerl` state, applies sandboxing rules if specified, installs the [`dev_lua_lib`](../resources/source-code/dev_lua_lib.md) (providing AO-specific functions like `ao.send`), and stores the initialized state in the process's private area (`priv/state`).
     *   **Inputs (Expected in Process Definition or `init` Message):**
         *   `script`: Can be:
             *   An Arweave Transaction ID of the Lua script file.
@@ -547,19 +547,19 @@ The `sandbox` option in the process definition restricts potentially harmful Lua
 
 ## AO Library (`dev_lua_lib`)
 
-The `init` function automatically installs a helper library (`dev_lua_lib`) into the Lua state. This library typically provides functions for interacting with the AO environment from within the Lua script, such as:
+The `init` function automatically installs a helper library ([`dev_lua_lib`](../resources/source-code/dev_lua_lib.md)) into the Lua state. This library typically provides functions for interacting with the AO environment from within the Lua script, such as:
 
 *   `ao.send({ Target = ..., ... })`: To send messages from the process.
 *   Access to message tags and data.
 
 ## Usage within `dev_stack`
 
-Like `~wasm64@1.0`, the `~lua@5.3a` device is typically used within an execution stack.
+Like [`~wasm64@1.0`](../resources/source-code/dev_wasm.md), the `~lua@5.3a` device is typically used within an execution stack.
 
 ```text
 # Example Process Definition Snippet
-Execution-Device: stack@1.0
-Execution-Stack: "scheduler@1.0", "lua@5.3a"
+Execution-Device: [`stack@1.0`](../resources/source-code/dev_stack.md)
+Execution-Stack: "[`scheduler@1.0`](../resources/source-code/dev_scheduler.md)", "lua@5.3a"
 Script: <LuaScriptTxID>
 Sandbox: true
 ```
@@ -582,7 +582,7 @@ This device is particularly useful for:
 *   Creating and modifying transient messages on the fly using query parameters.
 *   Retrieving specific values from a message map.
 *   Inspecting the keys of a message.
-*   Handling message commitments and verification (though often delegated to specialized commitment devices like `httpsig@1.0`).
+*   Handling message commitments and verification (though often delegated to specialized commitment devices like [`httpsig@1.0`](../resources/source-code/dev_codec_httpsig.md)).
 
 ## Core Functionality
 
@@ -616,8 +616,8 @@ The `message@1.0` device reserves several keys for specific operations:
 *   **`set_path`**: A special case for setting the `path` key itself, which cannot be done via the standard `set` operation.
 *   **`remove`**: Removes one or more specified keys from the message. Requires an `item` or `items` parameter.
 *   **`keys`**: Returns a list of all public (non-private) keys present in the message map.
-*   **`id`**: Calculates and returns the ID (hash) of the message. Considers active commitments based on specified `committers`. May delegate ID calculation to a device specified by the message's `id-device` key or the default (`httpsig@1.0`).
-*   **`commit`**: Creates a commitment (e.g., a signature) for the message. Requires parameters like `commitment-device` and potentially committer information. Delegates the actual commitment generation to the specified device (default `httpsig@1.0`).
+*   **`id`**: Calculates and returns the ID (hash) of the message. Considers active commitments based on specified `committers`. May delegate ID calculation to a device specified by the message\'s `id-device` key or the default ([`httpsig@1.0`](../resources/source-code/dev_codec_httpsig.md)).
+*   **`commit`**: Creates a commitment (e.g., a signature) for the message. Requires parameters like `commitment-device` and potentially committer information. Delegates the actual commitment generation to the specified device (default [`httpsig@1.0`](../resources/source-code/dev_codec_httpsig.md)).
 *   **`committers`**: Returns a list of committers associated with the commitments in the message. Can be filtered by request parameters.
 *   **`commitments`**: Used internally and in requests to filter or specify which commitments to operate on (e.g., for `id` or `verify`).
 *   **`verify`**: Verifies the commitments attached to the message. Can be filtered by `committers` or specific `commitment` IDs in the request. Delegates verification to the device specified in each commitment (`commitment-device`).
@@ -680,7 +680,7 @@ While the `info` key is the primary interaction point, the `NodeMsg` managed by 
 *   `operator`: The address designated as the node operator (defaults to the address derived from `priv_wallet`).
 *   `initialized`: Status indicating if the node setup is temporary or permanent.
 *   `preprocessor` / `postprocessor`: Optional messages defining pre/post-processing logic for requests.
-*   `routes`: Routing table used by `dev_router`.
+*   `routes`: Routing table used by [`dev_router`](../resources/source-code/dev_router.md).
 *   `store`: Configuration for data storage.
 *   `trace`: Debug tracing options.
 *   `p4_*`: Payment configuration.
@@ -690,7 +690,7 @@ While the `info` key is the primary interaction point, the `NodeMsg` managed by 
 
 ## Utility Functions (Internal/Module Level)
 
-The `dev_meta.erl` module also contains helper functions used internally or callable from other Erlang modules:
+The [`dev_meta.erl`](../resources/source-code/dev_meta.md) module also contains helper functions used internally or callable from other Erlang modules:
 
 *   `is_operator(<RequestMsg>, <NodeMsg>) -> boolean()`: Checks if the signer of `RequestMsg` matches the configured `operator` in `NodeMsg`.
 
@@ -703,7 +703,6 @@ The `~meta` device applies the node's configured `preprocessor` message before r
 Before a node can process general requests, it usually needs to be initialized. Attempts to access devices other than `~meta@1.0/info` before initialization typically result in an error. Initialization often involves setting essential parameters like the operator key via a `POST` to `info`.
 
 [meta module](../resources/source-code/dev_meta.md)
-
 --- END OF FILE: docs/devices/meta-at-1-0.md ---
 
 --- START OF FILE: docs/devices/process-at-1-0.md ---
@@ -717,9 +716,9 @@ The [`~process@1.0`](../resources/source-code/dev_process.md) device represents 
 
 A message tagged with `Device: process@1.0` (the "Process Definition Message") doesn't typically perform computation itself. Instead, it defines *which other devices* should be used for key aspects of its lifecycle:
 
-*   **Scheduler Device:** Determines the order of incoming messages (assignments) to be processed. (Defaults to `~scheduler@1.0`).
-*   **Execution Device:** Executes the actual computation based on the current state and the scheduled message. Often configured as `dev_stack` to allow multiple computational steps (e.g., running WASM, applying cron jobs, handling proofs).
-*   **Push Device:** Handles the injection of new messages into the process's schedule. (Defaults to `~push@1.0`).
+*   **Scheduler Device:** Determines the order of incoming messages (assignments) to be processed. (Defaults to [`~scheduler@1.0`](../resources/source-code/dev_scheduler.md)).
+*   **Execution Device:** Executes the actual computation based on the current state and the scheduled message. Often configured as [`dev_stack`](../resources/source-code/dev_stack.md) to allow multiple computational steps (e.g., running WASM, applying cron jobs, handling proofs).
+*   **Push Device:** Handles the injection of new messages into the process\'s schedule. (Defaults to [`~push@1.0`](../resources/source-code/dev_push.md)).
 
 The `~process@1.0` device acts as a router, intercepting requests and delegating them to the appropriate configured device (scheduler, executor, etc.) by temporarily swapping the device tag on the message before resolving.
 
@@ -737,7 +736,7 @@ These keys are accessed via HyperPATHs relative to the Process Definition Messag
 *   **`GET /<ProcessID>~process@1.0/compute/<TargetSlotOrMsgID>`**
     *   **Action:** Computes the process state up to a specific point identified by `<TargetSlotOrMsgID>` (either a slot number or a message ID within the schedule). It retrieves assignments from the Scheduler Device and applies them sequentially using the configured Execution Device.
     *   **Response:** The process state message after executing up to the target slot/message.
-    *   **Caching:** Results are cached aggressively (see `dev_process_cache`) to avoid recomputation.
+    *   **Caching:** Results are cached aggressively (see [`dev_process_cache`](../resources/source-code/dev_process_cache.md)) to avoid recomputation.
 *   **`GET /<ProcessID>~process@1.0/now`**
     *   **Action:** Computes and returns the `Results` key from the *latest* known state of the process. This typically involves computing all pending assignments.
     *   **Response:** The value of the `Results` key from the final state.
@@ -754,13 +753,13 @@ A typical process definition message might look like this (represented conceptua
 
 ```text
 Device: process@1.0
-Scheduler-Device: scheduler@1.0
-Execution-Device: stack@1.0
-Execution-Stack: "scheduler@1.0", "cron@1.0", "wasm64@1.0", "PoDA@1.0"
+Scheduler-Device: [`scheduler@1.0`](../resources/source-code/dev_scheduler.md)
+Execution-Device: [`stack@1.0`](../resources/source-code/dev_stack.md)
+Execution-Stack: "[`scheduler@1.0`](../resources/source-code/dev_scheduler.md)", "[`cron@1.0`](../resources/source-code/dev_cron.md)", "[`wasm64@1.0`](../resources/source-code/dev_wasm.md)", "[`PoDA@1.0`](../resources/source-code/dev_poda.md)"
 Cron-Frequency: 10-Minutes
 WASM-Image: <WASMImageTxID>
 PoDA:
-    Device: PoDA/1.0
+    Device: [`PoDA/1.0`](../resources/source-code/dev_poda.md)
     Authority: <AddressA>
     Authority: <AddressB>
     Quorum: 2
@@ -772,7 +771,7 @@ This defines a process that uses:
 
 ## State Management & Caching
 
-`~process@1.0` relies heavily on caching (`dev_process_cache`) to optimize performance. Full state snapshots and intermediate results are cached periodically (configurable via `Cache-Frequency` and `Cache-Keys` options) to avoid recomputing the entire history for every request.
+`~process@1.0` relies heavily on caching ([`dev_process_cache`](../resources/source-code/dev_process_cache.md)) to optimize performance. Full state snapshots and intermediate results are cached periodically (configurable via `Cache-Frequency` and `Cache-Keys` options) to avoid recomputing the entire history for every request.
 
 ## Initialization (`init`)
 
@@ -814,7 +813,7 @@ This device acts as an HTTP client within the AO ecosystem. It allows a node or 
     *   **Inputs:** Same as `call`.
     *   **Response:** `{ok, <<"OK">>}`.
 *   **`preprocess`**
-    *   **Action:** This function is designed to be used as a node's global `preprocessor` (configured via `~meta@1.0`). When configured, it intercepts *all* incoming requests to the node and automatically rewrites them to be relayed via the `call` key. This effectively turns the node into a pure forwarding proxy, using its routing table (`dev_router`) to determine the destination.
+    *   **Action:** This function is designed to be used as a node's global `preprocessor` (configured via [`~meta@1.0`](../resources/source-code/dev_meta.md)). When configured, it intercepts *all* incoming requests to the node and automatically rewrites them to be relayed via the `call` key. This effectively turns the node into a pure forwarding proxy, using its routing table ([`dev_router`](../resources/source-code/dev_router.md)) to determine the destination.
     *   **Response:** A message structure that invokes `/~relay@1.0/call` with the original request as the target body.
 
 ## Use Cases
@@ -826,7 +825,7 @@ This device acts as an HTTP client within the AO ecosystem. It allows a node or 
 
 ## Interaction with Routing
 
-When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by `hb_http:request/2`. This function often utilizes the node's routing configuration (`dev_router`) to determine the specific peer/URL to send the request to, especially if the target path is an AO process ID or another internal identifier rather than a full external URL.
+When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by `hb_http:request/2`. This function often utilizes the node's routing configuration ([`dev_router`](../resources/source-code/dev_router.md)) to determine the specific peer/URL to send the request to, especially if the target path is an AO process ID or another internal identifier rather than a full external URL.
 
 [relay module](../resources/source-code/dev_relay.md)
 
@@ -837,13 +836,13 @@ When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by
 
 ## Overview
 
-The [`~scheduler@1.0`](../resources/source-code/dev_scheduler.md) device manages the queueing and ordering of messages targeted at a specific process (`~process@1.0`). It ensures that messages are processed according to defined scheduling rules.
+The [`~scheduler@1.0`](../resources/source-code/dev_scheduler.md) device manages the queueing and ordering of messages targeted at a specific process ([`~process@1.0`](../resources/source-code/dev_process.md)). It ensures that messages are processed according to defined scheduling rules.
 
 ## Core Concept: Message Ordering
 
-When messages are sent to an AO process (typically via the `~push@1.0` device or a `POST` to the process's `/schedule` endpoint), they are added to a queue managed by the Scheduler Device associated with that process. The scheduler ensures that messages are processed one after another in a deterministic order, typically based on arrival time and potentially other factors like message nonces or timestamps (depending on the specific scheduler implementation details).
+When messages are sent to an AO process (typically via the [`~push@1.0`](../resources/source-code/dev_push.md) device or a `POST` to the process's `/schedule` endpoint), they are added to a queue managed by the Scheduler Device associated with that process. The scheduler ensures that messages are processed one after another in a deterministic order, typically based on arrival time and potentially other factors like message nonces or timestamps (depending on the specific scheduler implementation details).
 
-The `~process@1.0` device interacts with its configured Scheduler Device (which defaults to `~scheduler@1.0`) primarily through the `next` key to retrieve the next message to be executed.
+The [`~process@1.0`](../resources/source-code/dev_process.md) device interacts with its configured Scheduler Device (which defaults to `~scheduler@1.0`) primarily through the `next` key to retrieve the next message to be executed.
 
 ## Slot System
 
@@ -863,7 +862,7 @@ This slotting mechanism is central to AO processes built on HyperBEAM, allowing 
 
 ## Key Functions (Keys)
 
-These keys are typically accessed via the `~process@1.0` device, which delegates the calls to its configured scheduler.
+These keys are typically accessed via the [`~process@1.0`](../resources/source-code/dev_process.md) device, which delegates the calls to its configured scheduler.
 
 *   **`schedule` (Handler for `GET /<ProcessID>~process@1.0/schedule`)**
     *   **Action:** Retrieves the list of pending assignments (messages) for the process. May support cursor-based traversal for long schedules.
@@ -878,7 +877,7 @@ These keys are typically accessed via the `~process@1.0` device, which delegates
 *   **`status` (Handler for `GET /<ProcessID>~process@1.0/status`)**
     *   **Action:** Retrieves status information about the scheduler for the process.
     *   **Response:** A status message.
-*   **`next` (Internal Key used by `~process@1.0`)**
+*   **`next` (Internal Key used by [`~process@1.0`](../resources/source-code/dev_process.md))**
     *   **Action:** Retrieves the next assignment message from the schedule based on the process's current `at-slot` state.
     *   **State Management:** Requires the current process state (`Msg1`) containing the `at-slot` key.
     *   **Response:** `{ok, #{ "body" => <NextAssignmentMsg>, "state" => <UpdatedProcessState> }}` or `{error, Reason}` if no next assignment is found.
@@ -890,8 +889,8 @@ These keys are typically accessed via the `~process@1.0` device, which delegates
 
 ## Interaction with Other Components
 
-*   **`~process@1.0`:** The primary user of the scheduler, calling `next` to drive process execution.
-*   **`~push@1.0`:** Often used to add messages to the schedule via `POST /schedule`.
+*   **[`~process@1.0`](../resources/source-code/dev_process.md):** The primary user of the scheduler, calling `next` to drive process execution.
+*   **[`~push@1.0`](../resources/source-code/dev_push.md):** Often used to add messages to the schedule via `POST /schedule`.
 *   **`dev_scheduler_cache`:** Internal module used for caching assignments locally on the node to reduce latency.
 *   **Scheduling Unit (SU):** Schedulers may interact with external entities (like Arweave gateways or dedicated SU nodes) to fetch or commit schedules, although `~scheduler@1.0` aims for a simpler, often node-local or SU-client model.
 
@@ -906,7 +905,7 @@ These keys are typically accessed via the `~process@1.0` device, which delegates
 
 ## Overview
 
-The [`~wasm64@1.0`](../resources/source-code/dev_wasm64.md) device enables the execution of 64-bit WebAssembly (WASM) code within the HyperBEAM environment. It provides a sandboxed environment for running compiled code from various languages (like Rust, C++, Go) that target WASM.
+The [`~wasm64@1.0`](../resources/source-code/dev_wasm.md) device enables the execution of 64-bit WebAssembly (WASM) code within the HyperBEAM environment. It provides a sandboxed environment for running compiled code from various languages (like Rust, C++, Go) that target WASM.
 
 ## Core Concept: WASM Execution
 
@@ -916,7 +915,7 @@ The device manages the lifecycle of a WASM instance associated with the process 
 
 ## Key Functions (Keys)
 
-These keys are typically used within an execution stack (managed by `dev_stack`) for an AO process.
+These keys are typically used within an execution stack (managed by [`dev_stack`](../resources/source-code/dev_stack.md)) for an AO process.
 
 *   **`init`**
     *   **Action:** Initializes the WASM environment for the process. It locates the WASM image (binary), starts a WAMR instance, and stores the instance handle and helper functions (for reading/writing WASM memory) in the process's private state (`priv/...`).
@@ -953,12 +952,12 @@ These keys are typically used within an execution stack (managed by `dev_stack`)
 
 ## Usage within `dev_stack`
 
-The `~wasm64@1.0` device is almost always used as part of an execution stack configured in the Process Definition Message and managed by `dev_stack`. `dev_stack` ensures that `init` is called on the first pass, `compute` on subsequent passes, and potentially `snapshot` or `terminate` as needed.
+The `~wasm64@1.0` device is almost always used as part of an execution stack configured in the Process Definition Message and managed by [`dev_stack`](../resources/source-code/dev_stack.md). [`dev_stack`](../resources/source-code/dev_stack.md) ensures that `init` is called on the first pass, `compute` on subsequent passes, and potentially `snapshot` or `terminate` as needed.
 
 ```text
 # Example Process Definition Snippet
-Execution-Device: stack@1.0
-Execution-Stack: "scheduler@1.0", "wasm64@1.0"
+Execution-Device: [`stack@1.0`](../resources/source-code/dev_stack.md)
+Execution-Stack: "[`scheduler@1.0`](../resources/source-code/dev_scheduler.md)", "wasm64@1.0"
 WASM-Image: <WASMImageTxID>
 ```
 
@@ -1288,7 +1287,7 @@ You can build a wide range of applications, including:
 
 ### Is HyperBEAM open source?
 
-Yes, HyperBEAM is open-source software licensed under the MIT License.
+Yes, HyperBEAM is open-source software licensed under the Business Source License License.
 
 ### What is the current focus or phase of HyperBEAM development?
 
