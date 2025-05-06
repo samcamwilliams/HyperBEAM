@@ -165,7 +165,7 @@ a:hover {
 	width: 100%;
 	position: relative;
 	display: flex;
-	align-items: flex-end;
+	align-items: center;
 	justify-content: space-between;
 	overflow: hidden;
 	flex-wrap: wrap;
@@ -215,9 +215,8 @@ a:hover {
 	display: flex;
 	flex-direction: column;
 	gap: 15px;
-	padding: 25px;
-	align-items: flex-end;
-	justify-content: flex-end;
+	padding: 64px;
+	align-items: flex-start;
 	z-index: 2;
 }
 
@@ -857,6 +856,10 @@ a:hover {
 	background: var(--active-action-bg) !important;
 }
 
+.explorer-body-row-indicator {
+	transition: all 100ms;
+}
+
 .explorer-body-row-indicator::before {
 	content: "›";
 	font-size: 24px;
@@ -918,7 +921,7 @@ a:hover {
 .tx-address {
 	text-decoration: underline !important;
 	text-decoration-color: var(--indicator-color) !important;
-	text-decoration-thickness: 2px !important;
+	text-decoration-thickness: 1px !important;
 }
 
 .explorer-action {
