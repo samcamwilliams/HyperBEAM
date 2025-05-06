@@ -200,31 +200,19 @@ function recalculate(state, _, opts)
     return "ok", state
 end
 
-local function findId(commitments, alg)
-  local id = ""
-  for k,v in pairs(commitments) do
-    if v["alg"] == alg then
-        id = k
-    end
-  end
-  return id
-end
-
 -- Register a new host to a route.
 function register(state, assignment, opts)
     state = ensure_defaults(state)
     local req = assignment.body
     local status, is_admissible = "ok", "not_found"
-    if state["is-admissible"] and state["is-admissible"].device == "snp@1.0" then
+    if state["is-admissible"] then
         req.path = "verify"
-        -- remove commitments of the register/verify message
-        req.commitments = nil
-        -- add a target node of the id of the register message
-        req.target = findId(req.body.commitments, "rsa-pss-sha512")
-        -- this only works when there is a real message for state['is_admissible']
+        -- Add a target node of the id of the register message
+        req.target = "body"
+        -- This only works when there is a real message for state['is_admissible']
         status, is_admissible = ao.resolve(state["is-admissible"], req)
     end
-    ao.event("is_admissible", { status, is_admissible })
+    ao.event("debug_dynrouter", { "is_admissible", { status, is_admissible } })
     if status == "ok" and is_admissible ~= false then
         state = add_node(state, req)
         return recalculate(state, assignment, opts)
@@ -234,7 +222,6 @@ function register(state, assignment, opts)
         ao.event("error", { "untrusted peer requested", req})
         return "ok", state
     end
-    return "ok", state
 end
 
 -- Update the performance of a host by its reference.
