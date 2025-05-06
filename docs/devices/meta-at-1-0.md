@@ -30,7 +30,7 @@ While the `info` key is the primary interaction point, the `NodeMsg` managed by 
 *   `operator`: The address designated as the node operator (defaults to the address derived from `priv_wallet`).
 *   `initialized`: Status indicating if the node setup is temporary or permanent.
 *   `preprocessor` / `postprocessor`: Optional messages defining pre/post-processing logic for requests.
-*   `routes`: Routing table used by `dev_router`.
+*   `routes`: Routing table used by [`dev_router`](../resources/source-code/dev_router.md).
 *   `store`: Configuration for data storage.
 *   `trace`: Debug tracing options.
 *   `p4_*`: Payment configuration.
