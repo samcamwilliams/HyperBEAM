@@ -40,7 +40,7 @@ While the `info` key is the primary interaction point, the `NodeMsg` managed by 
 
 ## Utility Functions (Internal/Module Level)
 
-The `dev_meta.erl` module also contains helper functions used internally or callable from other Erlang modules:
+The [`dev_meta.erl`](../resources/source-code/dev_meta.md) module also contains helper functions used internally or callable from other Erlang modules:
 
 *   `is_operator(<RequestMsg>, <NodeMsg>) -> boolean()`: Checks if the signer of `RequestMsg` matches the configured `operator` in `NodeMsg`.
 
