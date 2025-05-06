@@ -178,7 +178,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                         ID = hb_util:human_id(MsgID),
                         {error, #{
                             <<"status">> => 404,
-                            <<"unavilable">> => ID,
+                            <<"unavailable">> => ID,
                             <<"body">> =>
                                 <<
                                     "Message necessary to resolve request ",
