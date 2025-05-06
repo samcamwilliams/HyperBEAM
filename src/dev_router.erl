@@ -24,7 +24,7 @@
 %%%                map or a path regex.
 %%% </pre>
 -module(dev_router).
--export([routes/3, route/2, route/3, preprocess/3]).
+-export([routes/3, route/2, route/3, request/3]).
 -export([match/3, is_relevant/3, register/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -467,7 +467,7 @@ is_relevant(_Msg1, Msg2, Opts) ->
   end.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-preprocess(Msg1, Msg2, Opts) ->
+request(Msg1, Msg2, Opts) ->
     ?event(debug_preprocess, called_preprocess),
     case is_relevant(Msg1, Msg2, Opts) of
         {ok, true} ->
@@ -477,25 +477,39 @@ preprocess(Msg1, Msg2, Opts) ->
             case Match of
                 no_matching_route -> 
                     {ok, #{
-                        <<"status">> => 404,
-                        <<"message">> => <<"No matching template found in the given routes.">>
+                        <<"body">> =>
+                            [#{
+                                <<"status">> => 404,
+                                <<"message">> =>
+                                    <<"No matching template found in the given routes.">>
+                            }]
                     }};
                 _ -> 
                     {ok,
-                        [
-                            #{ <<"device">> => <<"relay@1.0">> },
-                            #{
-                                <<"path">> => <<"call">>,
-                                <<"target">> => <<"body">>,
-                                <<"body">> =>
-                                    hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore })
-                            }
-                        ]
+                        #{
+                            <<"body">> =>
+                                [
+                                    #{ <<"device">> => <<"relay@1.0">> },
+                                    #{
+                                        <<"path">> => <<"call">>,
+                                        <<"target">> => <<"body">>,
+                                        <<"body">> =>
+                                            hb_ao:get(
+                                                <<"request">>,
+                                                Msg2,
+                                                Opts#{ hashpath => ignore }
+                                            )
+                                    }
+                                ]
+                        }
                     }
             end;
         {ok, false} ->
             ?event(debug_preprocess, is_not_relevant),
-            {ok, hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })}
+            {ok, #{
+                <<"body">> =>
+                    hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })
+            }}
     end.
 
 %%% Tests
@@ -708,10 +722,15 @@ dynamic_router_test() ->
             vcpu_type => 5, 
             vmm_type => 1,
             guest_features => 1,
-            firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-            kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-            initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-            append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+            firmware =>
+                <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a622"
+                    "44b788e7e408c582ee48a74b289f3acec78510">>,
+            kernel =>
+                <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+            initrd =>
+                <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+            append =>
+                <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
         }],
         store => [
             #{
@@ -720,12 +739,14 @@ dynamic_router_test() ->
             }
         ],
         priv_wallet => ar_wallet:new(),
-        preprocessor => #{
-          <<"device">> => <<"router@1.0">>
-        },
+        on => 
+            #{
+                <<"request">> => #{
+                    <<"device">> => <<"router@1.0">>
+                }
+            },
         route_provider => #{
-            <<"path">> =>
-                    <<"/router~node-process@1.0/compute/routes~message@1.0">>
+            <<"path">> => <<"/router~node-process@1.0/compute/routes~message@1.0">>
         },
         node_processes => #{
             <<"router">> => #{
@@ -851,7 +872,7 @@ dynamic_routing_by_performance() ->
         }
     }),
     % Start and add a series of nodes with decreasing performance, via lag 
-    % introduced with a preprocessor set to `~test@1.0/delay'.
+    % introduced with a hook set to `~test@1.0/delay'.
     _XNodes =
         lists:map(
             fun(X) ->
@@ -860,15 +881,18 @@ dynamic_routing_by_performance() ->
                 XNode =
                     hb_http_server:start_node(
                         #{
-                            preprocessor => #{
-                                <<"device">> => <<"test-device@1.0">>,
-                                <<"path">> => <<"delay">>,
-                                <<"duration">> => (X - 1) * 50, % Delay by some ms
-                                <<"return">> => [
-                                    #{ <<"node">> => X },
-                                    <<"node">>
-                                ]
-                            }
+                            on =>
+                                #{
+                                    <<"request">> => #{
+                                        <<"device">> => <<"test-device@1.0">>,
+                                        <<"path">> => <<"delay">>,
+                                        <<"duration">> => (X - 1) * 50,
+                                        <<"return">> => [
+                                            #{ <<"node">> => X },
+                                            <<"node">>
+                                        ]
+                                    }
+                                }
                         }
                     ),
                 % Register the node with the router.

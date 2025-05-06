@@ -33,7 +33,7 @@
 %%% the debit must be applied to the ledger, whereas the `pre' type is used to
 %%% check whether the debit would succeed before execution.
 -module(dev_p4).
--export([preprocess/3, postprocess/3, balance/3]).
+-export([request/3, response/3, balance/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -46,7 +46,7 @@
 %% @doc Estimate the cost of a transaction and decide whether to proceed with
 %% a request. The default behavior if `pricing-device' or `p4_balances' are
 %% not set is to proceed, so it is important that a user initialize them.
-preprocess(State, Raw, NodeMsg) ->
+request(State, Raw, NodeMsg) ->
     PricingDevice = hb_ao:get(<<"pricing-device">>, State, false, NodeMsg),
     LedgerDevice = hb_ao:get(<<"ledger-device">>, State, false, NodeMsg),
     Messages = hb_ao:get(<<"body">>, Raw, NodeMsg#{ hashpath => ignore }),
@@ -62,10 +62,10 @@ preprocess(State, Raw, NodeMsg) ->
     case {IsChargable, (PricingDevice =/= false) and (LedgerDevice =/= false)} of
         {false, _} ->
             ?event(payment, non_chargable_route),
-            {ok, Messages};
+            {ok, #{ <<"body">> => Messages }};
         {true, false} ->
             ?event(payment, {p4_pre_pricing_response, {error, <<"infinity">>}}),
-            {ok, Messages};
+            {ok, #{ <<"body">> => Messages }};
         {true, true} ->
             PricingMsg = State#{ <<"device">> => PricingDevice },
             LedgerMsg = State#{ <<"device">> => LedgerDevice },
@@ -90,7 +90,7 @@ preprocess(State, Raw, NodeMsg) ->
                 {ok, 0} ->
                     % The device has estimated the cost of the request to be
                     % zero, so we proceed.
-                    {ok, Messages};
+                    {ok, #{ <<"body">> => Messages }};
                 {ok, Price} ->
                     % The device has estimated the cost of the request. We check
                     % the user's balance to see if they have enough funds to
@@ -117,7 +117,7 @@ preprocess(State, Raw, NodeMsg) ->
                                     {balance_check, guaranteed}
                                 }
                             ),
-                            {ok, Messages};
+                            {ok, #{ <<"body">> => Messages }};
                         {ok, Balance} when Balance >= Price ->
                             % The user has enough funds to service the request,
                             % so we proceed.
@@ -126,7 +126,7 @@ preprocess(State, Raw, NodeMsg) ->
                                     {balance_check, sufficient}
                                 }
                             ),
-                            {ok, Messages};
+                            {ok, #{ <<"body">> => Messages }};
                         {ok, Balance} ->
                             % The user does not have enough funds to service
                             % the request, so we don't proceed.
@@ -152,13 +152,16 @@ preprocess(State, Raw, NodeMsg) ->
                                     {req, LedgerReq}
                                 }
                             ),
-                            {error, {error_checking_ledger, Error}}
+                            {error, #{
+                                <<"status">> => 500,
+                                <<"body">> => <<"Error checking ledger balance.">>
+                            }}
                     end
             end
     end.
 
 %% @doc Postprocess the request after it has been fulfilled.
-postprocess(State, RawResponse, NodeMsg) ->
+response(State, RawResponse, NodeMsg) ->
     PricingDevice = hb_ao:get(<<"pricing-device">>, State, false, NodeMsg),
     LedgerDevice = hb_ao:get(<<"ledger-device">>, State, false, NodeMsg),
     Response =
@@ -169,11 +172,11 @@ postprocess(State, RawResponse, NodeMsg) ->
         ),
     Request = hb_ao:get(<<"request">>, RawResponse, NodeMsg),
     ?event(payment, {post_processing_with_devices, PricingDevice, LedgerDevice}),
-    ?event({postprocess, {request, Request}, {response, Response}}),
+    ?event({response_hook, {request, Request}, {response, Response}}),
     case ((PricingDevice =/= false) and (LedgerDevice =/= false)) andalso
             is_chargable_req(Request, NodeMsg) of
         false ->
-            {ok, Response};
+            {ok, #{ <<"body">> => Response }};
         true ->
             PricingMsg = State#{ <<"device">> => PricingDevice },
             LedgerMsg = State#{ <<"device">> => LedgerDevice },
@@ -219,7 +222,7 @@ postprocess(State, RawResponse, NodeMsg) ->
                         {ok, _} ->
                             ?event(payment, {p4_post_ledger_response, {ok, Price}}),
                             % Return the original response.
-                            {ok, Response};
+                            {ok, #{ <<"body">> => Response }};
                         {error, Error} ->
                             ?event(payment, {p4_post_ledger_response, {error, Error}}),
                             % The debit failed, so we return the error from the
@@ -235,24 +238,24 @@ postprocess(State, RawResponse, NodeMsg) ->
 
 %% @doc Get the balance of a user in the ledger.
 balance(_, Req, NodeMsg) ->
-    Preprocessor =
-        hb_opts:get(
-            <<"preprocessor">>,
-            preprocessor_not_set,
-            NodeMsg
-        ),
-    LedgerDevice = hb_ao:get(<<"ledger-device">>, Preprocessor, false, NodeMsg),
-    LedgerMsg = Preprocessor#{ <<"device">> => LedgerDevice },
-    LedgerReq = #{
-        <<"path">> => <<"balance">>,
-        <<"request">> => Req
-    },
-    ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
-    case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
-        {ok, Balance} ->
-            {ok, Balance};
-        {error, Error} ->
-            {error, Error}
+    case dev_hook:find(<<"request">>, NodeMsg) of
+        [] ->
+            {error, <<"No request hook found.">>};
+        [Handler] ->
+            LedgerDevice =
+                hb_ao:get(<<"ledger-device">>, Handler, false, NodeMsg),
+            LedgerMsg = Handler#{ <<"device">> => LedgerDevice },
+            LedgerReq = #{
+                <<"path">> => <<"balance">>,
+                <<"request">> => Req
+            },
+            ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
+            case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
+                {ok, Balance} ->
+                    {ok, Balance};
+                {error, Error} ->
+                    {error, Error}
+            end
     end.
 
 %% @doc The node operator may elect to make certain routes non-chargable, using 
@@ -297,8 +300,10 @@ test_opts(Opts, PricingDev, LedgerDev) ->
             <<"ledger-device">> => LedgerDev
         },
     Opts#{
-        preprocessor => ProcessorMsg,
-        postprocessor => ProcessorMsg
+        on => #{
+            <<"request">> => ProcessorMsg,
+            <<"response">> => ProcessorMsg
+        }
     }.
 
 %% @doc Simple test of p4's capabilities with the `faff@1.0' device.
@@ -342,8 +347,10 @@ non_chargable_route_test() ->
                     #{ <<"template">> => <<"/~p4@1.0/balance">> },
                     #{ <<"template">> => <<"/~meta@1.0/*/*">> }
                 ],
-            preprocessor => Processor,
-            postprocessor => Processor,
+            on => #{
+                <<"request">> => Processor,
+                <<"response">> => Processor
+            },
             operator => hb:address()
         }
     ),
@@ -400,8 +407,10 @@ lua_pricing_test() ->
                                 <<"/*~node-process@1.0/*">>
                         }
                     ],
-                preprocessor => Processor,
-                postprocessor => Processor,
+                on => #{
+                    <<"request">> => Processor,
+                    <<"response">> => Processor
+                },
                 operator => ar_wallet:to_address(HostWallet),
                 node_processes => #{
                     <<"ledger">> => #{
