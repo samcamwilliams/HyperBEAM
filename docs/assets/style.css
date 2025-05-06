@@ -75,7 +75,22 @@ h6 {
 /* Body and Header Customization */
 .md-header {
 	box-shadow: none !important;
-	z-index: 25;
+	z-index: 100;
+	transition: transform 0.3s ease;
+	position: fixed;
+	width: 100%;
+}
+
+.header-hidden {
+	transform: translateY(-100%);
+}
+
+.md-main {
+	transition: padding-top 0.3s ease;
+}
+
+.header-hidden + .md-main {
+	padding-top: 0;
 }
 
 [dir=ltr] .md-sidebar--primary {
