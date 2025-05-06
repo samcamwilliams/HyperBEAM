@@ -76,13 +76,15 @@ h6 {
 .md-header {
 	box-shadow: none !important;
 	z-index: 100;
-	transition: transform 0.3s ease;
+	transition: transform 0.3s ease-in-out;
 	position: fixed;
 	width: 100%;
+	transform: translateY(0);
 }
 
 .header-hidden {
 	transform: translateY(-100%);
+	transition: transform 0.15s ease-in-out;
 }
 
 .md-main {
