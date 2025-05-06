@@ -94,10 +94,12 @@ format_error_trace(Trace) ->
                 ParsingTrace;
             Stage ->
                 StageEmoji = stage_to_emoji(Stage),
-                <<ParsingTrace/binary,
-                  "\n",
-                  StageEmoji/binary,
-                  " Resolved steps of your execution">>
+                try << ParsingTrace/binary, "\n", StageEmoji/binary,
+                        " Resolved steps of your execution" >>
+                catch
+                    error:badarg ->
+                        iolist_to_binary(io_lib:format("~p", [ParsingTrace]))
+                end
         end,
     % Add error information
     case maps:get(error, TraceMap, undefined) of

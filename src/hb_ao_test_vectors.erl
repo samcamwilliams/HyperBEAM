@@ -265,8 +265,9 @@ resolve_binary_key_test(Opts) ->
         {ok, <<"1">>},
         hb_ao:resolve(
             #{
-                <<"Test-Header">> => <<"1">> },
-                <<"Test-Header">>,
+                <<"Test-Header">> => <<"1">>
+            },
+            <<"Test-Header">>,
             Opts
         )
     ).
