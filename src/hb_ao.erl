@@ -1179,7 +1179,7 @@ find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 find_exported_function(_Msg, _Mod, _Key, Arity, _Opts) when Arity < 0 ->
     not_found;
 find_exported_function(Msg, Mod, Key, Arity, Opts) when not is_atom(Key) ->
-	try binary_to_existing_atom(normalize_key(Key), latin1) of
+	try hb_util:key_to_atom(Key, false) of
 		KeyAtom -> find_exported_function(Msg, Mod, KeyAtom, Arity, Opts)
 	catch _:_ -> not_found
 	end;

@@ -354,7 +354,7 @@ mimic_default_types(Map, Mode) ->
     Default = default_message(),
     maps:from_list(lists:map(
         fun({Key, Value}) ->
-            NewKey = hb_util:key_to_atom(Key, Mode),
+            NewKey = try hb_util:key_to_atom(Key, Mode) catch _:_ -> Key end,
             NewValue = 
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
