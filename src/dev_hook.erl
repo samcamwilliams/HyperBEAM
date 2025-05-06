@@ -149,10 +149,11 @@ execute_handler(HookName, Handler, Req, Opts) ->
         % Resolve the handler message, setting the path to the handler name if
         % it is not already set. We ensure to ignore the hashpath such that the
         % handler does not affect the hashpath of a request's output.
+        ?event(hook, {resolving_handler, HookName, Handler, Req}),
         hb_ao:resolve(
             Handler,
             Req#{
-                <<"path">> => hb_ao:get(<<"path">>, Req, HookName, Opts)
+                <<"path">> => hb_ao:get(<<"path">>, Handler, HookName, Opts)
             },
             Opts#{ hashpath => ignore }
         )
