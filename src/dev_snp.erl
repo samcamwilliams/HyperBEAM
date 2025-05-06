@@ -70,10 +70,21 @@ real_node_test() ->
 %% 6. Verify the report's certificate chain to hardware root of trust.
 verify(M1, M2, NodeOpts) ->
     ?event(snp_verify, verify_called),
-    ?event(snp_verify, { m2, M2}),
-    {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
-    % MsgWithJSONReport = hb_ao:get(<<"body">>, M2, NodeOpts),
-    ?event(snp_verify, { reportMsg, MsgWithJSONReport }),
+    ?event(debug_verify, { m2, M2}),
+    % Search for a `body' key in the message, and if found use it as the source
+    % of the report. If not found, use the message itself as the source.
+    MsgWithJSONReport =
+        hb_util:ok(
+            hb_message:with_only_committed(
+                hb_ao:get(<<"body">>, M2, M2, NodeOpts#{ hashpath => ignore }),
+                NodeOpts
+            )
+        ),
+    {ok, [FromFile]} = file:consult(<<"test/admissible-report.eterm">>),
+    {ok, OnlyCommittedFromFile} = hb_message:with_only_committed(FromFile, NodeOpts),
+    ?event(debug_verify, {reportMsg, MsgWithJSONReport }),
+    ?event(debug_verify, {onlyCommittedFromFile, OnlyCommittedFromFile}),
+    ?event(debug_verify, {match, hb_message:match(OnlyCommittedFromFile, FromFile, strict)}),
     % Normalize the request message
     ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
     ?event(snp_verify, { reportJSON, ReportJSON }),
@@ -103,9 +114,9 @@ verify(M1, M2, NodeOpts) ->
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
-    Signers = hb_message:signers(M2),
+    Signers = hb_message:signers(MsgWithJSONReport),
     ?event({snp_signers, {explicit, Signers}}),
-    SigIsValid = hb_message:verify(M2, Signers),
+    SigIsValid = hb_message:verify(MsgWithJSONReport, Signers),
     ?event({snp_sig_is_valid, SigIsValid}),
     AddressIsValid = lists:member(Address, Signers),
     ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
