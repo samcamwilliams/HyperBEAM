@@ -7,10 +7,11 @@
 %%% resolver. Additionally, a post-processor can be set, which is executed after
 %%% the AO-Core resolver has returned a result.
 -module(dev_meta).
--export([info/1, info/3, handle/2, adopt_node_message/2, is/2, is/3]).
-%%% Public API
+-export([info/1, info/3, build/3, handle/2, adopt_node_message/2, is/2, is/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+%%% Include the auto-generated build info header file.
+-include_lib("_build/hb_buildinfo.hrl").
 
 %% @doc Ensure that the helper function `adopt_node_message/2' is not exported.
 %% The naming of this method carefully avoids a clash with the exported `info/3'
@@ -21,7 +22,26 @@
 %% info call will match the three-argument version of the function. If in the 
 %% future the `request' is added as an argument to AO-Core's internal `info'
 %% function, we will need to find a different approach.
-info(_) -> #{ exports => [info] }.
+info(_) -> #{ exports => [info, build] }.
+
+%% @doc Emits the version number and commit hash of the HyperBEAM node source,
+%% if available.
+%% 
+%% We include the short hash separately, as the length of this hash may change in
+%% the future, depending on the git version/config used to build the node.
+%% Subsequently, rather than embedding the `git-short-hash-length', for the
+%% avoidance of doubt, we include the short hash separately, as well as its long
+%% hash.
+build(_, _, _NodeMsg) ->
+    {ok,
+        #{
+            <<"node">> => <<"HyperBEAM">>,
+            <<"version">> => ?HYPERBEAM_VERSION,
+            <<"commit">> => ?HB_BUILD_COMMIT,
+            <<"commit-short">> => ?HB_BUILD_COMMIT_SHORT,
+            <<"build-time">> => ?HB_BUILD_TIME
+        }
+    }.
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
