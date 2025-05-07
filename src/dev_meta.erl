@@ -260,6 +260,7 @@ status_code(ok) -> 200;
 status_code(error) -> 400;
 status_code(created) -> 201;
 status_code(not_found) -> 404;
+status_code(failure) -> 500;
 status_code(unavailable) -> 503.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
