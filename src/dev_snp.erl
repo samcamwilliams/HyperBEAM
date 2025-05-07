@@ -70,21 +70,23 @@ real_node_test() ->
 %% 6. Verify the report's certificate chain to hardware root of trust.
 verify(M1, M2, NodeOpts) ->
     ?event(snp_verify, verify_called),
-    ?event(snp_verify, { m2, M2}),
-    {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
-    % MsgWithJSONReport = hb_ao:get(<<"body">>, M2, NodeOpts),
-    ?event(snp_verify, { reportMsg, MsgWithJSONReport }),
+    % Search for a `body' key in the message, and if found use it as the source
+    % of the report. If not found, use the message itself as the source.
+    MsgWithJSONReport =
+        hb_util:ok(
+            hb_message:with_only_committed(
+                hb_ao:get(<<"body">>, M2, M2, NodeOpts#{ hashpath => ignore }),
+                NodeOpts
+            )
+        ),
     % Normalize the request message
     ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
-    ?event(snp_verify, { reportJSON, ReportJSON }),
     Report = hb_json:decode(ReportJSON),
-    ?event(snp_verify, { report, Report}),
     Msg =
         maps:merge(
             maps:without([<<"report">>], MsgWithJSONReport),
             Report
         ),
-    ?event({verify, Msg}),
     % Step 1: Verify the nonce.
     Address = hb_ao:get(<<"address">>, Msg, NodeOpts),
     ?event({snp_address, Address}),
@@ -103,9 +105,9 @@ verify(M1, M2, NodeOpts) ->
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
-    Signers = hb_message:signers(M2),
+    Signers = hb_message:signers(MsgWithJSONReport),
     ?event({snp_signers, {explicit, Signers}}),
-    SigIsValid = hb_message:verify(M2, Signers),
+    SigIsValid = hb_message:verify(MsgWithJSONReport, Signers),
     ?event({snp_sig_is_valid, SigIsValid}),
     AddressIsValid = lists:member(Address, Signers),
     ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
@@ -182,14 +184,18 @@ generate(_M1, _M2, Opts) ->
     RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
     ?event({snp_node_msg, NodeMsg}),
     ?event({snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
+    ?event({snp_node_msg_id_bin, {explicit, io:format("~p", [RawPublicNodeMsgID])}}),
     % Generate the commitment report.
     ?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
     ?event({snp_report_data, byte_size(ReportData)}),
+
+    LocalHashes = hd(hb_opts:get(snp_trusted, [#{}], Opts)),
+    ?event(snp_local_hashes, {explicit, LocalHashes}),
+    
     {ok, ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
     ?event({snp_report_json, ReportJSON}),
-    LocalHashes = hb_private:reset(hb_ao:get(<<"snp_trusted/1">>, Opts, #{})),
-    ?event(snp_local_hashes, {explicit, LocalHashes}),
+
     ?event(
         {snp_report_generated,
             {nonce, ReportData},
@@ -264,36 +270,29 @@ trusted(_Msg1, Msg2, NodeOpts) ->
     ?event(trusted, {body, {explicit, Body}}),
     %% Get trusted software list from node options
     % This is the set of approved configurations for attestation
-    TrustedSoftware = hb_opts:get(snp_trusted, #{}, NodeOpts),
-    ?event(trusted,{trusted_software, {explicit, TrustedSoftware}}),
-    ?event(trusted, {msg2, {explicit, Msg2}}),
-    ?event(trusted, {node_opts, {explicit, NodeOpts}}),
+    TrustedSoftware = hb_opts:get(snp_trusted, [#{}], NodeOpts),
     %% Check if the value exists in any of the trusted maps in the list
     IsTrusted = 
         case TrustedSoftware of
             % Handle empty trusted software list
-            #{} when map_size(TrustedSoftware) =:= 0 -> 
+            [] -> 
                 false;
-            % Process map of trusted configurations
-            #{} when is_map(TrustedSoftware) ->
-                % Iterate through all trusted entries (fold accumulates a boolean result)
-                maps:fold(
-                    fun(_EntryKey, TrustedMap, Acc) ->
-                        % Short-circuit if we've already found a match
-                        Acc orelse
-                        % Otherwise check if this entry matches
-                        case is_map(TrustedMap) of
-                            true ->
-                                % Get the value for the specified key from the trusted entry
-                                PropertyName = hb_ao:get(Key, TrustedMap, NodeOpts),
+            % Process list of trusted configurations
+            [_|_] when is_list(TrustedSoftware) ->
+                % Check if any trusted configuration matches
+                lists:any(
+                    fun(TrustedMap) ->
+                        % Check if this entry is a valid map
+                        is_map(TrustedMap) andalso
+                        % Get the value for the specified key from the trusted entry
+                        case hb_ao:get(Key, TrustedMap, not_found, NodeOpts) of
+                            not_found -> false;
+                            PropertyName ->
                                 ?event(trusted, {property_name, { explicit, PropertyName}}),
                                 % Compare to see if it matches the expected value
-                                PropertyName == Body;
-                            % Not a map, so not a valid trusted entry
-                            false -> false
+                                PropertyName == Body
                         end
                     end,
-                    false,  % Initial accumulator value (not trusted)
                     TrustedSoftware
                 );
             
@@ -305,8 +304,8 @@ trusted(_Msg1, Msg2, NodeOpts) ->
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
-    ?event({generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
-    ?event({expected_nonce, binary_to_list(ReportData)}),
+    ?event({generated_nonce, {explicit, generate_nonce(Address, NodeMsgID)}}),
+    ?event({expected_nonce, {explicit, ReportData}}),
     generate_nonce(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate the nonce to use in the commitment report.
