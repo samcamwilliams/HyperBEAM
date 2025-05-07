@@ -37,8 +37,8 @@ build(_, _, _NodeMsg) ->
         #{
             <<"node">> => <<"HyperBEAM">>,
             <<"version">> => ?HYPERBEAM_VERSION,
-            <<"commit">> => ?HB_BUILD_COMMIT,
-            <<"commit-short">> => ?HB_BUILD_COMMIT_SHORT,
+            <<"source">> => ?HB_BUILD_SOURCE,
+            <<"source-short">> => ?HB_BUILD_SOURCE_SHORT,
             <<"build-time">> => ?HB_BUILD_TIME
         }
     }.
@@ -646,3 +646,27 @@ modify_request_test() ->
         }),
     {ok, Res} = hb_http:get(Node, <<"/added">>, #{}),
     ?assertEqual(<<"value">>, Res).
+
+%% @doc Test that version information is available and returned correctly.
+buildinfo_test() ->
+    Node = hb_http_server:start_node(#{}),
+    ?assertEqual(
+        {ok, <<"HyperBEAM">>},
+        hb_http:get(Node, <<"/~meta@1.0/build/node">>, #{})
+    ),
+    ?assertEqual(
+        {ok, ?HYPERBEAM_VERSION},
+        hb_http:get(Node, <<"/~meta@1.0/build/version">>, #{})
+    ),
+    ?assertEqual(
+        {ok, ?HB_BUILD_SOURCE},
+        hb_http:get(Node, <<"/~meta@1.0/build/source">>, #{})
+    ),
+    ?assertEqual(
+        {ok, ?HB_BUILD_SOURCE_SHORT},
+        hb_http:get(Node, <<"/~meta@1.0/build/source-short">>, #{})
+    ),
+    ?assertEqual(
+        {ok, ?HB_BUILD_TIME},
+        hb_http:get(Node, <<"/~meta@1.0/build/build-time">>, #{})
+    ).
