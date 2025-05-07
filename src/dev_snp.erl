@@ -304,8 +304,8 @@ trusted(_Msg1, Msg2, NodeOpts) ->
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
-    ?event({generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
-    ?event({expected_nonce, binary_to_list(ReportData)}),
+    ?event({generated_nonce, {explicit, generate_nonce(Address, NodeMsgID)}}),
+    ?event({expected_nonce, {explicit, ReportData}}),
     generate_nonce(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate the nonce to use in the commitment report.

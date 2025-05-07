@@ -354,7 +354,9 @@ template_matches(ToMatch, Template, _Opts) when is_map(Template) ->
     hb_message:match(Template, ToMatch, primary);
 template_matches(ToMatch, Regex, Opts) when is_binary(Regex) ->
     MsgPath = find_target_path(ToMatch, Opts),
-    hb_path:regex_matches(MsgPath, Regex).
+    Matches = hb_path:regex_matches(MsgPath, Regex),
+	?event(debug_template_matches, {matches, Matches, msg_path, MsgPath, regex, Regex}),
+	Matches.
 
 %% @doc Implements the load distribution strategies if given a cluster.
 choose(0, _, _, _, _) -> [];
@@ -700,11 +702,13 @@ local_dynamic_router_test() ->
 dynamic_router_test() ->
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
     Run = hb_util:bin(rand:uniform(1337)),
+	ExecWallet = hb:wallet("test/admissible-report-wallet.json"),
+	ProxyWallet = ar_wallet:new(),
     ExecNode =
         hb_http_server:start_node(
-            #{ priv_wallet => ExecWallet = hb:wallet("test/admissible-report-wallet.json") }
+        	ExecOpts = #{ priv_wallet => ExecWallet }
         ),
-    Node = hb_http_server:start_node(Opts = #{
+    Node = hb_http_server:start_node(ProxyOpts = #{
         snp_trusted => [
 			#{
 				<<"vcpus">> => 32,
@@ -723,7 +727,7 @@ dynamic_router_test() ->
                 <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
             }
         ],
-        priv_wallet => ProxyWallet = ar_wallet:new(),
+        priv_wallet => ProxyWallet,
         on => 
             #{
                 <<"request">> => #{
@@ -757,7 +761,7 @@ dynamic_router_test() ->
         }
     }),    % mergeRight this takes our defined Opts and merges them into the
     % node opts configs.
-    Store = hb_opts:get(store, no_store, Opts),
+    Store = hb_opts:get(store, no_store, ProxyOpts),
     ?event(debug_dynrouter, {store, Store}),
     % Register workers with the dynamic router with varied prices.
     {ok, [Req]} = file:consult(<<"test/admissible-report.eterm">>),
@@ -775,15 +779,15 @@ dynamic_router_test() ->
                                 <<"route">> =>
                                     #{
                                         <<"prefix">> => ExecNode,
-                                        <<"template">> => <<"/a.*">>,
+                                        <<"template">> => <<"/c">>,
                                         <<"price">> => X * 250
                                     },
-                                <<"body">> => Req
+                                <<"body">> => hb_message:commit(Req, ExecOpts)
                             },
-                            Opts#{ priv_wallet => ExecWallet }
+                            ExecOpts
                         )
                 },
-                Opts
+                ExecOpts
             ),
         Res
     end, lists:seq(1, 1)),
@@ -804,11 +808,11 @@ dynamic_router_test() ->
     ),
     ?assertEqual(
         {ok, ProxyWalletAddr},
-        hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts)
+        hb_http:get(Node, <<"/~meta@1.0/info/address">>, ProxyOpts)
     ),
     % Ensure that computation is done by the exec node.
-    ResMsg = hb_http:get(Node, <<"/a?a+list=1">>, Opts),
-    ?assertEqual({ok, [ExecNodeAddr]}, hb_message:signers(ResMsg)).
+    {ok, ResMsg} = hb_http:get(Node, <<"/c?c+list=1">>, ExecOpts),
+    ?assertEqual([ExecNodeAddr], hb_message:signers(ResMsg)).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the

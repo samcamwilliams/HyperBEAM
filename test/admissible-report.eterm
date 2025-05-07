@@ -1,194 +1,41 @@
-#{<<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
-  <<"access-control-allow-origin">> => <<"*">>,
-  <<"address">> => <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
-  <<"body-keys">> =>
-      <<"\"local-hashes\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\", \"node-message\"">>,
-  <<"commitments">> =>
-      #{<<"m4G8f9IAHz11SU45Pn7M_BQFTAmAdVJkTgJI1oLgzPU">> =>
-            #{<<"alg">> => <<"rsa-pss-sha512">>,
-              <<"commitment-device">> => <<"httpsig@1.0">>,
-              <<"committer">> =>
-                  <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
-              <<"signature">> =>
-                  <<"http-sig-afdb642246ba94a2=:kDArFXcl+NrikUS+Jwc9RbdKb5ZygZzqA0eb2q+y7gD1o7E2R5UiFptJDwv8KkNQUFqD8EFKJFrMPmRg6bubv+Yft5hPa5XYedHnu+QoYZ5r9C8ISMRQYqyis1OZG0RNTsSLCOBhPo4nx6roZuPkhGwV4GNC3kru4j6HYU7i5wzO/euhDWPh8clDIoP02zUU0P4sSCrEX/NKtXj34B0bBA7xDb7RgTQNpSwq8QwtiGE/Ntcg8NlMdOWNiVuyKWQyaRusoQXXx5hBsUhU1YH+2XAy/kBYL8gbmK3WyC2CxyN/cBufbeGca7V2Yu6gmGnhPEFkpsqWTocnA51OCFHcBEzaQsHoh8Ape+TT3bcofGQ25w4fuh4IuXjhgSuvdL9bb1HiJKwCz2qO4a3ZpCsRRk7r3VAYwiNHPAz8RLiBYW/gp6/LKjfB89z8ifSXN0JobupuqxUDMKifBbwQDLjmqmroLxa5DmckXaF2IbpNFvf6FYafN7Nw6JK+7+n9t2u8Bwob0eNBw6NgvRca4YgqGrD8VlJkqLG6EAtG4Wzq7vSMqFsMww2JXJ401/Q7bLv66MKeVn01RicGnSniNFsRLJ45fugomcBCAkD7PKxj+0jP2Ig9sglYUAIBitOSFYJodY/APNByHZgQox6TLdiYFNf+3ujAI4tvzsuhaHSebv0=:">>,
-              <<"signature-input">> =>
-                  <<"http-sig-afdb642246ba94a2=(\"address\" \"content-digest\" \"content-type\" \"nonce\" \"report\");alg=\"rsa-pss-sha512\";keyid=\"u6PCfoy-ExmoBXPZojc1oqL3wmSSywwjFGzr4ERqucFFp-ACA3KylqpgiBNGfobTokOQht4QKyMRDnf_LoO0is6idVuaVxp37L_3QRlSebn4VilPtlWcOr2rfSYbhM8TjBzwFoj1BpeQJzD4vYK9thyp2hlHVBB2ZFNAwB_22_Mr1atOYdZstv23eWo1Pb2Rwv_vwuvsK_-kffjRL6lTy7OjMwGL6UBnyWaInTSH74m4ihxS_vql8jMBySlB2ChhTpzsJi-JrrcBvCqbWhVK7ULXhVs8LvCMqCNG5w38ts8rfYtZYYjlcHOA_NER6PtYkS5nz9LVZtpZ4_QGNy7Xohqf9t0jrcYEmeSOV4EXhbLqxdwm_ITwoZbe6ZnXcSBUMOdMzaM7q0aIT8HOOI3MvLzl5uFRUdjfZ_irJOC0vb0IrsvRicC7jGQo0mBv8M2EE5l2otBO5aQFgpFqYphiCAMLhyTnsOUTvkA4yw40xXVstMzEJ2pxYOWiEvP1qPj-kjnq_7uHBa9TWzJ7bxiO_BzHMbKd7sb3r2jicsemmeMm4yeQzOT6Tf3jvNE17emV6K51SyWN6UNJUTJ9HpEhqZ0Y17nI3oOLOPsNMMXQ9_rmbP7Tv8dCbq9sRGnjmX1Svrs6SwNVpfoUT8NmG2tqM5VGKXo4mknLOr-1g-PBekM\"">>},
-        <<"x-uvQsMN7K09sepgBx1gKvQ6QV5jtWoehPNsjD7S-u4">> =>
-            #{<<"alg">> => <<"hmac-sha256">>,
-              <<"commitment-device">> => <<"httpsig@1.0">>,
-              <<"signature">> =>
-                  <<"http-sig-afdb642246ba94a2=:kDArFXcl+NrikUS+Jwc9RbdKb5ZygZzqA0eb2q+y7gD1o7E2R5UiFptJDwv8KkNQUFqD8EFKJFrMPmRg6bubv+Yft5hPa5XYedHnu+QoYZ5r9C8ISMRQYqyis1OZG0RNTsSLCOBhPo4nx6roZuPkhGwV4GNC3kru4j6HYU7i5wzO/euhDWPh8clDIoP02zUU0P4sSCrEX/NKtXj34B0bBA7xDb7RgTQNpSwq8QwtiGE/Ntcg8NlMdOWNiVuyKWQyaRusoQXXx5hBsUhU1YH+2XAy/kBYL8gbmK3WyC2CxyN/cBufbeGca7V2Yu6gmGnhPEFkpsqWTocnA51OCFHcBEzaQsHoh8Ape+TT3bcofGQ25w4fuh4IuXjhgSuvdL9bb1HiJKwCz2qO4a3ZpCsRRk7r3VAYwiNHPAz8RLiBYW/gp6/LKjfB89z8ifSXN0JobupuqxUDMKifBbwQDLjmqmroLxa5DmckXaF2IbpNFvf6FYafN7Nw6JK+7+n9t2u8Bwob0eNBw6NgvRca4YgqGrD8VlJkqLG6EAtG4Wzq7vSMqFsMww2JXJ401/Q7bLv66MKeVn01RicGnSniNFsRLJ45fugomcBCAkD7PKxj+0jP2Ig9sglYUAIBitOSFYJodY/APNByHZgQox6TLdiYFNf+3ujAI4tvzsuhaHSebv0=:">>,
-              <<"signature-input">> =>
-                  <<"http-sig-afdb642246ba94a2=(\"address\" \"content-digest\" \"content-type\" \"nonce\" \"report\");alg=\"rsa-pss-sha512\";keyid=\"u6PCfoy-ExmoBXPZojc1oqL3wmSSywwjFGzr4ERqucFFp-ACA3KylqpgiBNGfobTokOQht4QKyMRDnf_LoO0is6idVuaVxp37L_3QRlSebn4VilPtlWcOr2rfSYbhM8TjBzwFoj1BpeQJzD4vYK9thyp2hlHVBB2ZFNAwB_22_Mr1atOYdZstv23eWo1Pb2Rwv_vwuvsK_-kffjRL6lTy7OjMwGL6UBnyWaInTSH74m4ihxS_vql8jMBySlB2ChhTpzsJi-JrrcBvCqbWhVK7ULXhVs8LvCMqCNG5w38ts8rfYtZYYjlcHOA_NER6PtYkS5nz9LVZtpZ4_QGNy7Xohqf9t0jrcYEmeSOV4EXhbLqxdwm_ITwoZbe6ZnXcSBUMOdMzaM7q0aIT8HOOI3MvLzl5uFRUdjfZ_irJOC0vb0IrsvRicC7jGQo0mBv8M2EE5l2otBO5aQFgpFqYphiCAMLhyTnsOUTvkA4yw40xXVstMzEJ2pxYOWiEvP1qPj-kjnq_7uHBa9TWzJ7bxiO_BzHMbKd7sb3r2jicsemmeMm4yeQzOT6Tf3jvNE17emV6K51SyWN6UNJUTJ9HpEhqZ0Y17nI3oOLOPsNMMXQ9_rmbP7Tv8dCbq9sRGnjmX1Svrs6SwNVpfoUT8NmG2tqM5VGKXo4mknLOr-1g-PBekM\"">>}},
-  <<"content-type">> =>
-      <<"multipart/form-data; boundary=\"syPbfM2BcCISTiyNupdYh776Pn2zzcbP35BlzhutKC4\"">>,
-  <<"date">> => <<"Wed, 07 May 2025 14:56:03 GMT">>,
-  <<"local-hashes">> =>
-      #{<<"append">> =>
-            <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>,
-        <<"firmware">> =>
-            <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-        <<"guest_features">> => 1,
-        <<"initrd">> =>
-            <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
-        <<"kernel">> =>
-            <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-        <<"vcpu_type">> => 5,<<"vcpus">> => 32,<<"vmm_type">> => 1},
-  <<"node-message">> =>
-      #{<<"debug_metadata">> => true,
-        <<"gateway">> => <<"https://arweave.net">>,
-        <<"operator">> => <<"trustless">>,
-        <<"process_now_from_cache">> => false,
-        <<"debug_print_map_line_threshold">> => 30,<<"http_client">> => gun,
-        <<"http_keepalive">> => 120000,<<"short_trace_len">> => 5,
-        <<"debug_print_trace">> => short,
-        <<"scheduler_location_ttl">> => 604800000,<<"compute_mode">> => lazy,
-        <<"snp_trusted">> =>
-            [#{<<"append">> =>
-                   <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>,
-               <<"firmware">> =>
-                   <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-               <<"guest_features">> => 1,
-               <<"initrd">> =>
-                   <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
-               <<"kernel">> =>
-                   <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-               <<"vcpu_type">> => 5,<<"vcpus">> => 32,<<"vmm_type">> => 1}],
-        <<"hb_config_location">> => <<"config.flat">>,
-        <<"process_workers">> => false,<<"initialized">> => permanent,
-        <<"only">> => local,<<"cache_lookup_hueristics">> => false,
-        <<"address">> => <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
-        <<"store">> =>
-            [#{<<"prefix">> => <<"cache-mainnet">>,
-               <<"store-module">> => hb_store_fs},
-             #{<<"store">> =>
-                   [#{<<"prefix">> => <<"cache-mainnet">>,
-                      <<"store-module">> => hb_store_fs}],
-               <<"store-module">> => hb_store_gateway,
-               <<"subindex">> =>
-                   [#{<<"name">> => <<"Data-Protocol">>,
-                      <<"value">> => <<"ao">>}]},
-             #{<<"store">> =>
-                   [#{<<"prefix">> => <<"cache-mainnet">>,
-                      <<"store-module">> => hb_store_fs}],
-               <<"store-module">> => hb_store_gateway}],
-        <<"debug_show_priv">> => false,
-        <<"routes">> =>
-            [#{<<"node">> => #{<<"prefix">> => <<"http://localhost:6363">>},
-               <<"template">> => <<"/result/.*">>},
-             #{<<"nodes">> =>
-                   [#{<<"opts">> =>
-                          #{<<"http_client">> => httpc,
-                            <<"protocol">> => http2},
-                      <<"prefix">> =>
-                          <<"https://arweave-search.goldsky.com">>},
-                    #{<<"opts">> =>
-                          #{<<"http_client">> => gun,<<"protocol">> => http2},
-                      <<"prefix">> => <<"https://arweave.net">>}],
-               <<"template">> => <<"/graphql">>},
-             #{<<"node">> =>
-                   #{<<"opts">> =>
-                         #{<<"http_client">> => gun,<<"protocol">> => http2},
-                     <<"prefix">> => <<"https://arweave.net">>},
-               <<"template">> => <<"/raw">>}],
-        <<"debug_print">> => false,
-        <<"bundler_ans104">> => <<"https://up.arweave.net:443">>,
-        <<"client_error_strategy">> => throw,
-        <<"http_request_send_timeout">> => 60000,
-        <<"http_extra_opts">> =>
-            #{<<"cache_control">> => [<<"always">>],
-              <<"force_message">> => true},
-        <<"force_signed">> => true,
-        <<"access_remote_cache_for_client">> => false,
-        <<"await_inprogress">> => named,<<"http_connect_timeout">> => 5000,
-        <<"method">> => <<"POST">>,
-        <<"stack_print_prefixes">> => ["hb","dev","ar"],
-        <<"scheduling_mode">> => local_confirmation,
-        <<"http_server">> => <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
-        <<"debug_print_binary_max">> => 60,<<"debug_ids">> => false,
-        <<"relay_http_client">> => httpc,<<"debug_stack_depth">> => 40,
-        <<"preloaded_devices">> =>
-            [#{<<"module">> => dev_codec_ans104,
-               <<"name">> => <<"ans104@1.0">>},
-             #{<<"module">> => dev_cu,<<"name">> => <<"compute@1.0">>},
-             #{<<"module">> => dev_cache,<<"name">> => <<"cache@1.0">>},
-             #{<<"module">> => dev_cacheviz,<<"name">> => <<"cacheviz@1.0">>},
-             #{<<"module">> => dev_cron,<<"name">> => <<"cron@1.0">>},
-             #{<<"module">> => dev_dedup,<<"name">> => <<"dedup@1.0">>},
-             #{<<"module">> => dev_delegated_compute,
-               <<"name">> => <<"delegated-compute@1.0">>},
-             #{<<"module">> => dev_faff,<<"name">> => <<"faff@1.0">>},
-             #{<<"module">> => dev_codec_flat,<<"name">> => <<"flat@1.0">>},
-             #{<<"module">> => dev_genesis_wasm,
-               <<"name">> => <<"genesis-wasm@1.0">>},
-             #{<<"module">> => dev_green_zone,
-               <<"name">> => <<"greenzone@1.0">>},
-             #{<<"module">> => dev_codec_httpsig,
-               <<"name">> => <<"httpsig@1.0">>},
-             #{<<"module">> => dev_hyperbuddy,
-               <<"name">> => <<"hyperbuddy@1.0">>},
-             #{<<"module">> => dev_codec_json,<<"name">> => <<"json@1.0">>},
-             #{<<"module">> => dev_json_iface,
-               <<"name">> => <<"json-iface@1.0">>},
-             #{<<"module">> => dev_local_name,
-               <<"name">> => <<"local-name@1.0">>},
-             #{<<"module">> => dev_lookup,<<"name">> => <<"lookup@1.0">>},
-             #{<<"module">> => dev_lua,<<"name">> => <<"lua@5.3a">>},
-             #{<<"module">> => dev_manifest,<<"name">> => <<"manifest@1.0">>},
-             #{<<"module">> => dev_message,<<"name">> => <<"message@1.0">>},
-             #{<<"module">> => dev_meta,<<"name">> => <<"meta@1.0">>},
-             #{<<"module">> => dev_monitor,<<"name">> => <<"monitor@1.0">>},
-             #{<<"module">> => dev_multipass,
-               <<"name">> => <<"multipass@1.0">>},
-             #{<<"module">> => dev_name,<<"name">> => <<"name@1.0">>},
-             #{<<"module">> => dev_node_process,
-               <<"name">> => <<"node-process@1.0">>},
-             #{<<"module">> => dev_p4,<<"name">> => <<"p4@1.0">>},
-             #{<<"module">> => dev_patch,<<"name">> => <<"patch@1.0">>},
-             #{<<"module">> => dev_poda,<<"name">> => <<"poda@1.0">>},
-             #{<<"module">> => dev_process,<<"name">> => <<"process@1.0">>},
-             #{<<"module">> => dev_push,<<"name">> => <<"push@1.0">>},
-             #{<<"module">> => dev_relay,<<"name">> => <<"relay@1.0">>},
-             #{<<"module">> => dev_router,<<"name">> => <<"router@1.0">>},
-             #{<<"module">> => dev_scheduler,
-               <<"name">> => <<"scheduler@1.0">>},
-             #{<<"module">> => dev_simple_pay,
-               <<"name">> => <<"simple-pay@1.0">>},
-             #{<<"module">> => dev_snp,<<"name">> => <<"snp@1.0">>},
-             #{<<"module">> => dev_stack,<<"name">> => <<"stack@1.0">>},
-             #{<<"module">> => dev_codec_structured,
-               <<"name">> => <<"structured@1.0">>},
-             #{<<"module">> => dev_test,<<"name">> => <<"test-device@1.0">>},
-             #{<<"module">> => dev_wasi,<<"name">> => <<"wasi@1.0">>},
-             #{<<"module">> => dev_wasm,<<"name">> => <<"wasm-64@1.0">>}],
-        <<"cache_writers">> =>
-            [<<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>],
-        <<"wasm_allow_aot">> => false,<<"store_all_signed">> => true,
-        <<"ans104_trust_gql">> => true,
-        <<"commitment_device">> => <<"httpsig@1.0">>,<<"path">> => <<"info">>,
-        <<"debug_committers">> => false,<<"port">> => 10000,
-        <<"load_remote_devices">> => false,
-        <<"node_history">> =>
-            [#{<<"initialized">> => <<"permanent">>,
-               <<"method">> => <<"POST">>,<<"operator">> => <<"trustless">>,
-               <<"path">> => <<"info">>,
-               <<"snp_trusted">> =>
-                   [#{<<"append">> =>
-                          <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>,
-                      <<"firmware">> =>
-                          <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-                      <<"guest_features">> => 1,
-                      <<"initrd">> =>
-                          <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
-                      <<"kernel">> =>
-                          <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-                      <<"vcpu_type">> => 5,<<"vcpus">> => 32,
-                      <<"vmm_type">> => 1}]}],
-        <<"mode">> => debug,<<"trusted_device_signers">> => [],
-        <<"debug_print_indent">> => 2,<<"host">> => <<"localhost">>},
-  <<"nonce">> =>
-      <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597u1oNIVOLxb8DKDKLzqEoKGtOfZo0gtV0qLaShzz-VzLg">>,
-  <<"report">> =>
-      <<"{\"version\":2,\"guest_svn\":0,\"policy\":196608,\"family_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"image_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"vmpl\":1,\"sig_algo\":1,\"current_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"plat_info\":3,\"_author_key_en\":0,\"_reserved_0\":0,\"report_data\":[250,175,219,100,34,70,186,148,162,102,248,205,131,226,168,15,70,227,199,157,233,170,118,178,255,147,163,190,141,57,247,187,181,160,210,21,56,188,91,240,50,131,40,188,234,18,130,134,180,231,217,163,72,45,87,74,139,105,40,115,207,229,115,46],\"measurement\":[135,166,103,101,166,120,21,18,52,110,203,71,81,17,101,194,107,109,163,231,41,151,61,151,16,160,197,103,199,74,166,87,130,58,240,193,98,213,22,248,67,0,84,255,163,46,194,73],\"host_data\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"id_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"author_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"report_id\":[241,10,197,48,71,124,10,164,25,84,217,143,57,33,170,252,188,35,183,1,18,3,169,47,254,196,204,111,197,155,181,36],\"report_id_ma\":[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255],\"reported_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_1\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"chip_id\":[6,154,118,21,12,115,53,47,251,19,195,100,155,12,239,102,116,131,103,189,106,202,153,3,114,175,16,182,24,166,229,214,231,126,164,15,129,52,233,142,196,43,43,8,89,238,118,246,21,144,209,16,165,197,134,105,214,250,155,148,50,78,87,203],\"committed_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"current_build\":20,\"current_minor\":55,\"current_major\":1,\"_reserved_2\":0,\"committed_build\":20,\"committed_minor\":55,\"committed_major\":1,\"_reserved_3\":0,\"launch_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_4\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"signature\":{\"r\":[136,143,81,241,242,123,84,48,177,36,241,167,35,181,109,42,134,193,44,88,162,240,140,195,117,252,151,27,83,156,188,69,14,114,21,107,105,163,12,20,128,144,61,65,233,31,205,111,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[64,250,227,155,71,182,238,179,71,128,109,219,182,33,119,151,202,50,123,211,22,167,104,241,222,221,82,34,138,148,86,254,190,174,191,86,202,194,207,91,110,250,3,196,127,105,133,135,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"_reserved\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}">>,
-  <<"server">> => <<"Cowboy">>,<<"status">> => 200,
-  <<"transfer-encoding">> => <<"chunked">>}.
+#{
+	<<"address">> => <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
+	<<"local-hashes">> =>
+		#{
+			<<"append">> =>
+				<<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>,
+			<<"firmware">> =>
+				<<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+			<<"guest_features">> => 1,
+			<<"initrd">> =>
+				<<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
+			<<"kernel">> =>
+				<<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+			<<"vcpu_type">> => 5,
+			<<"vcpus">> => 32,
+			<<"vmm_type">> => 1
+		},
+	<<"node-message">> =>
+		#{
+			<<"address">> => <<"-q_bZCJGupSiZvjNg-KoD0bjx53pqnay_5Ojvo0597s">>,
+			<<"snp_trusted">> =>
+				[#{
+					<<"append">> =>
+						<<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>,
+					<<"firmware">> =>
+					<<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+					<<"guest_features">> => 1,
+					<<"initrd">> =>
+						<<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
+					<<"kernel">> =>
+						<<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+					<<"vcpu_type">> => 5,
+					<<"vcpus">> => 32,
+					<<"vmm_type">> => 1
+				}]
+		},
+	<<"nonce">> =>
+		<<"+q/bZCJGupSiZvjNg+KoD0bjx53pqnay/5Ojvo0597t+kqD7iwdTjAzQ35bcHZXitlIkgX0e3NnLV3thQJdRRA==">>,
+	<<"report">> =>
+		<<"{\"version\":2,\"guest_svn\":0,\"policy\":196608,\"family_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"image_id\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"vmpl\":1,\"sig_algo\":1,\"current_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"plat_info\":3,\"_author_key_en\":0,\"_reserved_0\":0,\"report_data\":[250,175,219,100,34,70,186,148,162,102,248,205,131,226,168,15,70,227,199,157,233,170,118,178,255,147,163,190,141,57,247,187,181,160,210,21,56,188,91,240,50,131,40,188,234,18,130,134,180,231,217,163,72,45,87,74,139,105,40,115,207,229,115,46],\"measurement\":[135,166,103,101,166,120,21,18,52,110,203,71,81,17,101,194,107,109,163,231,41,151,61,151,16,160,197,103,199,74,166,87,130,58,240,193,98,213,22,248,67,0,84,255,163,46,194,73],\"host_data\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"id_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"author_key_digest\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"report_id\":[241,10,197,48,71,124,10,164,25,84,217,143,57,33,170,252,188,35,183,1,18,3,169,47,254,196,204,111,197,155,181,36],\"report_id_ma\":[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255],\"reported_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_1\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"chip_id\":[6,154,118,21,12,115,53,47,251,19,195,100,155,12,239,102,116,131,103,189,106,202,153,3,114,175,16,182,24,166,229,214,231,126,164,15,129,52,233,142,196,43,43,8,89,238,118,246,21,144,209,16,165,197,134,105,214,250,155,148,50,78,87,203],\"committed_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"current_build\":20,\"current_minor\":55,\"current_major\":1,\"_reserved_2\":0,\"committed_build\":20,\"committed_minor\":55,\"committed_major\":1,\"_reserved_3\":0,\"launch_tcb\":{\"bootloader\":4,\"tee\":0,\"_reserved\":[0,0,0,0],\"snp\":22,\"microcode\":213},\"_reserved_4\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"signature\":{\"r\":[136,143,81,241,242,123,84,48,177,36,241,167,35,181,109,42,134,193,44,88,162,240,140,195,117,252,151,27,83,156,188,69,14,114,21,107,105,163,12,20,128,144,61,65,233,31,205,111,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[64,250,227,155,71,182,238,179,71,128,109,219,182,33,119,151,202,50,123,211,22,167,104,241,222,221,82,34,138,148,86,254,190,174,191,86,202,194,207,91,110,250,3,196,127,105,133,135,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"_reserved\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}">>
+}.
