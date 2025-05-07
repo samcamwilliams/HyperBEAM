@@ -588,7 +588,7 @@ local_process_route_provider_test() ->
 %% likelihood of routing to a given node, depending upon price and performance.
 local_dynamic_router_test() ->
     BenchRoutes = 50,
-    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
+    {ok, Script} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
         store => [
@@ -700,9 +700,9 @@ local_dynamic_router_test() ->
 %% likelihood of routing to a given node, depending upon price and performance.
 %% also include preprocessing support for routing
 dynamic_router_test() ->
-    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
+    {ok, Script} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
-	ExecWallet = hb:wallet("test/admissible-report-wallet.json"),
+	ExecWallet = hb:wallet(<<"test/admissible-report-wallet.json">>),
 	ProxyWallet = ar_wallet:new(),
     ExecNode =
         hb_http_server:start_node(
@@ -715,10 +715,14 @@ dynamic_router_test() ->
 				<<"vcpu_type">> => 5, 
 				<<"vmm_type">> => 1,
 				<<"guest_features">> => 1,
-				<<"firmware">> => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-				<<"kernel">> => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-				<<"initrd">> => <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
-				<<"append">> => <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
+				<<"firmware">> =>
+                    <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+				<<"kernel">> =>
+                    <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+				<<"initrd">> =>
+                    <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
+				<<"append">> =>
+                    <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
 			}
 		],
         store => [
@@ -824,11 +828,11 @@ dynamic_routing_by_performance() ->
     % Setup test parameters
     TestNodes = 4,
     BenchRoutes = 16,
-    TestPath = <<"/.*/.*">>,
+    TestPath = <<"/worker">>,
     % Start the main node for the test, loading the `dynamic-router' script and
     % the http_monitor to generate performance messages.
-    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
-    Run = hb_util:bin(rand:uniform(1337)),
+    {ok, Script} = file:read_file(<<"scripts/dynamic-router.lua">>),
+    Run = hb_util:bin(rand:uniform(1337_000)),
     Node = hb_http_server:start_node(Opts = #{
         relay_http_client => gun,
         store => [
@@ -883,11 +887,13 @@ dynamic_routing_by_performance() ->
                                     <<"request">> => #{
                                         <<"device">> => <<"test-device@1.0">>,
                                         <<"path">> => <<"delay">>,
-                                        <<"duration">> => (X - 1) * 50,
-                                        <<"return">> => [
-                                            #{ <<"node">> => X },
-                                            <<"node">>
-                                        ]
+                                        <<"duration">> => (X - 1) * 100,
+                                        <<"return">> => #{
+                                            <<"body">> => [
+                                                #{ <<"worker">> => X },
+                                                <<"worker">>
+                                            ]
+                                        }
                                     }
                                 }
                         }
@@ -918,7 +924,6 @@ dynamic_routing_by_performance() ->
             end,
             lists:seq(1, TestNodes)
         ),
-    timer:sleep(2000),
     % Force calculation of the process state.
     {ok, ResBefore} =
         hb_http:get(
@@ -935,7 +940,7 @@ dynamic_routing_by_performance() ->
             % will then apply the routes and the request to the test node set.
             Res = hb_http:get(
                 Node,
-                << "/~relay@1.0/call?relay-path=/~scheduler@1.0/info" >>,
+                << "/~relay@1.0/call?relay-path=/worker" >>,
                 Opts
             ),
             ?event(debug_dynrouter, {recvd, Res})
@@ -956,20 +961,25 @@ dynamic_routing_by_performance() ->
     ),
     % Get the new weights
     {ok, After} = hb_http:get(Node, PerfPath, Opts),
-    SortedWeights =
-        lists:map(
-            fun(N) ->
-                hb_ao:get(
-                    <<(integer_to_binary(N))/binary, "/weight">>,
-                    After,
-                    Opts
-                )
-            end,
-            lists:seq(1, TestNodes)
+    WeightsByWorker =
+        maps:from_list(
+            lists:map(
+                fun(N) ->
+                    {
+                        N,
+                        hb_ao:get(
+                            <<(integer_to_binary(N))/binary, "/weight">>,
+                            After,
+                            Opts
+                        )
+                    }
+                end,
+                lists:seq(1, TestNodes)
+            )
         ),
-    ?event(debug_dynrouter, {sorted_weights, SortedWeights}),
-    ?assert(hd(SortedWeights) > 0.3),
-    ?assert(lists:last(SortedWeights) < 0.4),
+    ?event(debug_dynrouter, {worker_weights, {explicit, WeightsByWorker}}),
+    ?assert(maps:get(1, WeightsByWorker) > 0.4),
+    ?assert(maps:get(TestNodes, WeightsByWorker) < 0.3),
     ok.
 
 weighted_random_strategy_test() ->
