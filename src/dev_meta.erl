@@ -559,7 +559,9 @@ request_response_hooks_test() ->
                             }
                         }
                 },
-            cache_control => [<<"no-store">>]
+            http_extra_opts => #{
+                <<"cache-control">> => [<<"no-store">>, <<"no-cache">>]
+            }
         }),
     hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     % Receive both of the responses from the hooks, if possible.
