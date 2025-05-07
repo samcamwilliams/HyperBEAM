@@ -618,6 +618,7 @@ test_aos_process(Opts, Stack) ->
                 <<"execution-device">> => <<"stack@1.0">>,
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
                 <<"output-prefix">> => <<"wasm">>,
+                <<"patch-from">> => <<"/results/outbox">>,
                 <<"passes">> => 2,
                 <<"stack-keys">> =>
                     [
