@@ -60,7 +60,7 @@ move(Mode, Msg1, Msg2, Opts) ->
                     {Msg2, <<"from">>},
                     {Msg1, <<"from">>}
                 ],
-                <<"/results/outbox">>,
+                <<"/">>,
                 Opts
             ),
         {FromMsg, PatchFromParts} =
@@ -78,7 +78,11 @@ move(Mode, Msg1, Msg2, Opts) ->
                     {Msg1, RawPatchFrom}
             end,
         ?event({patch_from_parts, {explicit, PatchFromParts}}),
-        PatchFrom = hb_path:to_binary(PatchFromParts),
+        PatchFrom =
+            case hb_path:to_binary(PatchFromParts) of
+                <<"">> -> <<"/">>;
+                Path -> Path
+            end,
         ?event({patch_from, PatchFrom}),
         PatchTo =
             hb_ao:get_first(
