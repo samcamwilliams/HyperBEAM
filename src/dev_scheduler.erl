@@ -755,7 +755,7 @@ get_schedule(Msg1, Msg2, Opts) ->
                 true ->
                     case get_remote_schedule(ProcID, From, To, Redirect, Opts) of
                         {ok, Res} ->
-                            case Format of
+                            case uri_string:percent_decode(Format) of
                                 <<"application/aos-2">> ->
                                     {ok, Formatted} = dev_scheduler_formats:assignments_to_aos2(
                                         ProcID,
