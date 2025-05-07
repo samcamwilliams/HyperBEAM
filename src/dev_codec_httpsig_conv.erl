@@ -287,6 +287,18 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
             % Return the encoded HTTPSig message without modification.
             {ok, EncOriginal}
     end;
+to(TABM, Req = #{<<"bundle">> := true}, FormatOpts, Opts) ->
+    to(TABM, Req, FormatOpts, Opts#{always_bundle => true});
+to(TABM, Req, FormatOpts, Opts = #{always_bundle := true}) ->
+    OptsWithoutBundle = hb_maps:without([always_bundle], Opts),
+    Loaded =
+        hb_message:convert(TABM, <<"structured@1.0">>, maps:without([always_bundle], Opts)),
+    EnsureLoaded = hb_cache:ensure_all_loaded(Loaded, Opts),
+    TABM2 = hb_message:convert(EnsureLoaded, tabm, Opts#{linkify_mode => false}),
+    to(TABM2,
+       Req,
+       FormatOpts,
+       maps:without([always_bundle], OptsWithoutBundle#{linkify_mode => false}));
 to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
