@@ -1,4 +1,4 @@
-Generated: 2025-05-06T21:04:20Z
+Generated: 2025-05-07T15:24:49Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -6018,7 +6018,7 @@ implement a case-insensitive key lookup rather than delegating to
 <code>maps:get/2</code>.</td></tr><tr><td valign="top"><a href="#case_insensitive_get_test-0">case_insensitive_get_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td>Commit to a message, using the <code>commitment-device</code> key to specify the
 device that should be used to commit to the message.</td></tr><tr><td valign="top"><a href="#commitment_ids_from_committers-2">commitment_ids_from_committers/2*</a></td><td>Returns a list of commitment IDs in a commitments map that are relevant
 for a list of given committer addresses.</td></tr><tr><td valign="top"><a href="#commitment_ids_from_request-3">commitment_ids_from_request/3*</a></td><td>Implements a standardized form of specifying commitment IDs for a
-message request.</td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td>Return the list of committed keys from a message.</td></tr><tr><td valign="top"><a href="#committers-1">committers/1</a></td><td>Return the committers of a message that are present in the given request.</td></tr><tr><td valign="top"><a href="#committers-2">committers/2</a></td><td></td></tr><tr><td valign="top"><a href="#committers-3">committers/3</a></td><td></td></tr><tr><td valign="top"><a href="#exec_for_commitment-5">exec_for_commitment/5*</a></td><td>Execute a function for a single commitment in the context of its
+message request.</td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td>Return the list of committed keys from a message.</td></tr><tr><td valign="top"><a href="#committers-1">committers/1</a></td><td>Return the committers of a message that are present in the given request.</td></tr><tr><td valign="top"><a href="#committers-2">committers/2</a></td><td></td></tr><tr><td valign="top"><a href="#committers-3">committers/3</a></td><td></td></tr><tr><td valign="top"><a href="#deep_unset_test-0">deep_unset_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#exec_for_commitment-5">exec_for_commitment/5*</a></td><td>Execute a function for a single commitment in the context of its
 parent message.</td></tr><tr><td valign="top"><a href="#get-2">get/2</a></td><td>Return the value associated with the key as it exists in the message's
 underlying Erlang map.</td></tr><tr><td valign="top"><a href="#get-3">get/3</a></td><td></td></tr><tr><td valign="top"><a href="#get_keys_mod_test-0">get_keys_mod_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#id-1">id/1</a></td><td>Return the ID of a message, using the <code>committers</code> list if it exists.</td></tr><tr><td valign="top"><a href="#id-2">id/2</a></td><td></td></tr><tr><td valign="top"><a href="#id-3">id/3</a></td><td></td></tr><tr><td valign="top"><a href="#id_device-1">id_device/1*</a></td><td>Locate the ID device of a message.</td></tr><tr><td valign="top"><a href="#info-0">info/0</a></td><td>Return the info for the identity device.</td></tr><tr><td valign="top"><a href="#is_private_mod_test-0">is_private_mod_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#key_from_device_test-0">key_from_device_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#keys-1">keys/1</a></td><td>Get the public keys of a message.</td></tr><tr><td valign="top"><a href="#keys_from_device_test-0">keys_from_device_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#private_keys_are_filtered_test-0">private_keys_are_filtered_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#remove-2">remove/2</a></td><td>Remove a key or keys from a message.</td></tr><tr><td valign="top"><a href="#remove_test-0">remove_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#run_test-0">run_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#set-3">set/3</a></td><td>Deep merge keys in a message.</td></tr><tr><td valign="top"><a href="#set_conflicting_keys_test-0">set_conflicting_keys_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#set_ignore_undefined_test-0">set_ignore_undefined_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#set_path-3">set_path/3</a></td><td>Special case of <code>set/3</code> for setting the <code>path</code> key.</td></tr><tr><td valign="top"><a href="#unset_with_set_test-0">unset_with_set_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify a message.</td></tr><tr><td valign="top"><a href="#verify_test-0">verify_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#with_relevant_commitments-3">with_relevant_commitments/3*</a></td><td>Return a message with only the relevant commitments for a given request.</td></tr></table>
 
@@ -6114,6 +6114,12 @@ Return the committers of a message that are present in the given request.
 ### committers/3 ###
 
 `committers(X1, X2, NodeOpts) -> any()`
+
+<a name="deep_unset_test-0"></a>
+
+### deep_unset_test/0 * ###
+
+`deep_unset_test() -> any()`
 
 <a name="exec_for_commitment-5"></a>
 
@@ -7027,26 +7033,63 @@ not set is to proceed, so it is important that a user initialize them.
 
 
 
-A device that finds `PATCH` requests in the `results/outbox`
-of its message, and applies them to it.
+A device that can be used to reorganize a message: Moving data from
+one path inside it to another.
 
 <a name="description"></a>
 
 ## Description ##
-This can be useful for processes
-whose computation would like to manipulate data outside of the `results` key
-of its message.<a name="index"></a>
+
+This device's function runs in two modes:
+
+1. When using `all` to move all data at the path given in `from` to the
+path given in `to`.
+2. When using `patches` to move all submessages in the source to the target,
+_if_ they have a `method` key of `PATCH` or a `device` key of `patch@1.0`.
+
+Source and destination paths may be prepended by `base:` or `req:` keys to
+indicate that they are relative to either of the message`s that the
+computation is being performed on.
+
+The search order for finding the source and destination keys is as follows,
+where `X` is either `from` or `to`:
+
+1. The `patch-X` key of the execution message.
+2. The `X` key of the execution message.
+3. The `patch-X` key of the request message.
+4. The `X` key of the request message.
+
+Additionally, this device implements the standard computation device keys,
+allowing it to be used as an element of an execution stack pipeline, etc.<a name="index"></a>
 
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Find <code>PATCH</code> requests in the <code>results/outbox</code> of the message, and apply
-them to the state.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Default process device hooks.</td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td></td></tr><tr><td valign="top"><a href="#patch_to_submessage_test-0">patch_to_submessage_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td></td></tr><tr><td valign="top"><a href="#uninitialized_patch_test-0">uninitialized_patch_test/0*</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#all-3">all/3</a></td><td>Get the value found at the <code>patch-from</code> key of the message, or the
+<code>from</code> key if the former is not present.</td></tr><tr><td valign="top"><a href="#all_mode_test-0">all_mode_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td></td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Necessary hooks for compliance with the <code>execution-device</code> standard.</td></tr><tr><td valign="top"><a href="#move-4">move/4*</a></td><td>Unified executor for the <code>all</code> and <code>patches</code> modes.</td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td></td></tr><tr><td valign="top"><a href="#patch_to_submessage_test-0">patch_to_submessage_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#patches-3">patches/3</a></td><td>Find relevant <code>PATCH</code> messages in the given source key of the execution
+and request messages, and apply them to the given destination key of the
+request.</td></tr><tr><td valign="top"><a href="#req_prefix_test-0">req_prefix_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td></td></tr><tr><td valign="top"><a href="#uninitialized_patch_test-0">uninitialized_patch_test/0*</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
 
 ## Function Details ##
+
+<a name="all-3"></a>
+
+### all/3 ###
+
+`all(Msg1, Msg2, Opts) -> any()`
+
+Get the value found at the `patch-from` key of the message, or the
+`from` key if the former is not present. Remove it from the message and set
+the new source to the value found.
+
+<a name="all_mode_test-0"></a>
+
+### all_mode_test/0 * ###
+
+`all_mode_test() -> any()`
 
 <a name="compute-3"></a>
 
@@ -7054,16 +7097,21 @@ them to the state.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></t
 
 `compute(Msg1, Msg2, Opts) -> any()`
 
-Find `PATCH` requests in the `results/outbox` of the message, and apply
-them to the state.
-
 <a name="init-3"></a>
 
 ### init/3 ###
 
 `init(Msg1, Msg2, Opts) -> any()`
 
-Default process device hooks.
+Necessary hooks for compliance with the `execution-device` standard.
+
+<a name="move-4"></a>
+
+### move/4 * ###
+
+`move(Mode, Msg1, Msg2, Opts) -> any()`
+
+Unified executor for the `all` and `patches` modes.
 
 <a name="normalize-3"></a>
 
@@ -7076,6 +7124,22 @@ Default process device hooks.
 ### patch_to_submessage_test/0 * ###
 
 `patch_to_submessage_test() -> any()`
+
+<a name="patches-3"></a>
+
+### patches/3 ###
+
+`patches(Msg1, Msg2, Opts) -> any()`
+
+Find relevant `PATCH` messages in the given source key of the execution
+and request messages, and apply them to the given destination key of the
+request.
+
+<a name="req_prefix_test-0"></a>
+
+### req_prefix_test/0 * ###
+
+`req_prefix_test() -> any()`
 
 <a name="snapshot-3"></a>
 
@@ -9756,7 +9820,8 @@ as well as generating them, if called in an appropriate environment.
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#execute_is_trusted-3">execute_is_trusted/3*</a></td><td>Ensure that all of the software hashes are trusted.</td></tr><tr><td valign="top"><a href="#generate-3">generate/3</a></td><td>Generate an commitment report and emit it as a message, including all of
 the necessary data to generate the nonce (ephemeral node address + node
 message ID), as well as the expected measurement (firmware, kernel, and VMSAs
-hashes).</td></tr><tr><td valign="top"><a href="#generate_nonce-2">generate_nonce/2*</a></td><td>Generate the nonce to use in the commitment report.</td></tr><tr><td valign="top"><a href="#is_debug-1">is_debug/1*</a></td><td>Ensure that the node's debug policy is disabled.</td></tr><tr><td valign="top"><a href="#real_node_test-0">real_node_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#report_data_matches-3">report_data_matches/3*</a></td><td>Ensure that the report data matches the expected report data.</td></tr><tr><td valign="top"><a href="#trusted-3">trusted/3</a></td><td>Default implementation of a resolver for trusted software.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify an commitment report message; validating the identity of a
+hashes).</td></tr><tr><td valign="top"><a href="#generate_nonce-2">generate_nonce/2*</a></td><td>Generate the nonce to use in the commitment report.</td></tr><tr><td valign="top"><a href="#is_debug-1">is_debug/1*</a></td><td>Ensure that the node's debug policy is disabled.</td></tr><tr><td valign="top"><a href="#real_node_test-0">real_node_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#report_data_matches-3">report_data_matches/3*</a></td><td>Ensure that the report data matches the expected report data.</td></tr><tr><td valign="top"><a href="#trusted-3">trusted/3</a></td><td>Validates if a given message parameter matches a trusted value from the SNP trusted list
+Returns {ok, true} if the message is trusted, {ok, false} otherwise.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td>Verify an commitment report message; validating the identity of a
 remote node, its ephemeral private address, and the integrity of the report.</td></tr></table>
 
 
@@ -9821,9 +9886,8 @@ Ensure that the report data matches the expected report data.
 
 `trusted(Msg1, Msg2, NodeOpts) -> any()`
 
-Default implementation of a resolver for trusted software. Searches the
-`trusted` key in the base message for a list of trusted values, and checks
-if the value in the request message is a member of that list.
+Validates if a given message parameter matches a trusted value from the SNP trusted list
+Returns {ok, true} if the message is trusted, {ok, false} otherwise
 
 <a name="verify-3"></a>
 
@@ -11122,7 +11186,7 @@ HyperBEAM device implementations are defined as follows:
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#deep_set-4">deep_set/4</a></td><td>Recursively search a map, resolving keys, and set the value of the key
 at the given path.</td></tr><tr><td valign="top"><a href="#default_module-0">default_module/0*</a></td><td>The default device is the identity device, which simply returns the
-value associated with any key as it exists in its Erlang map.</td></tr><tr><td valign="top"><a href="#device_set-4">device_set/4*</a></td><td>Call the device's <code>set</code> function.</td></tr><tr><td valign="top"><a href="#do_resolve_many-2">do_resolve_many/2*</a></td><td></td></tr><tr><td valign="top"><a href="#ensure_loaded-2">ensure_loaded/2*</a></td><td>Ensure that the message is loaded from the cache if it is an ID.</td></tr><tr><td valign="top"><a href="#error_execution-5">error_execution/5*</a></td><td>Handle an error in a device call.</td></tr><tr><td valign="top"><a href="#error_infinite-3">error_infinite/3*</a></td><td>Catch all return if we are in an infinite loop.</td></tr><tr><td valign="top"><a href="#error_invalid_intermediate_status-5">error_invalid_intermediate_status/5*</a></td><td></td></tr><tr><td valign="top"><a href="#error_invalid_message-3">error_invalid_message/3*</a></td><td>Catch all return if the message is invalid.</td></tr><tr><td valign="top"><a href="#find_exported_function-5">find_exported_function/5</a></td><td>Find the function with the highest arity that has the given name, if it
+value associated with any key as it exists in its Erlang map.</td></tr><tr><td valign="top"><a href="#device_set-4">device_set/4*</a></td><td>Call the device's <code>set</code> function.</td></tr><tr><td valign="top"><a href="#device_set-5">device_set/5*</a></td><td></td></tr><tr><td valign="top"><a href="#do_resolve_many-2">do_resolve_many/2*</a></td><td></td></tr><tr><td valign="top"><a href="#ensure_loaded-2">ensure_loaded/2*</a></td><td>Ensure that the message is loaded from the cache if it is an ID.</td></tr><tr><td valign="top"><a href="#error_execution-5">error_execution/5*</a></td><td>Handle an error in a device call.</td></tr><tr><td valign="top"><a href="#error_infinite-3">error_infinite/3*</a></td><td>Catch all return if we are in an infinite loop.</td></tr><tr><td valign="top"><a href="#error_invalid_intermediate_status-5">error_invalid_intermediate_status/5*</a></td><td></td></tr><tr><td valign="top"><a href="#error_invalid_message-3">error_invalid_message/3*</a></td><td>Catch all return if the message is invalid.</td></tr><tr><td valign="top"><a href="#find_exported_function-5">find_exported_function/5</a></td><td>Find the function with the highest arity that has the given name, if it
 exists.</td></tr><tr><td valign="top"><a href="#force_message-2">force_message/2</a></td><td></td></tr><tr><td valign="top"><a href="#get-2">get/2</a></td><td>Shortcut for resolving a key in a message without its status if it is
 <code>ok</code>.</td></tr><tr><td valign="top"><a href="#get-3">get/3</a></td><td></td></tr><tr><td valign="top"><a href="#get-4">get/4</a></td><td></td></tr><tr><td valign="top"><a href="#get_first-2">get_first/2</a></td><td>take a sequence of base messages and paths, then return the value of the
 first message that can be resolved using a path.</td></tr><tr><td valign="top"><a href="#get_first-3">get_first/3</a></td><td></td></tr><tr><td valign="top"><a href="#info-2">info/2</a></td><td>Get the info map for a device, optionally giving it a message if the
@@ -11145,7 +11209,10 @@ actually takes.</td></tr><tr><td valign="top"><a href="#verify_device_compatibil
 `deep_set(Msg, Rest, Value, Opts) -> any()`
 
 Recursively search a map, resolving keys, and set the value of the key
-at the given path.
+at the given path. This function has special cases for handling `set` calls
+where the path is an empty list (`/`). In this case, if the value is an
+immediate, non-complex term, we can set it directly. Otherwise, we use the
+device's `set` function to set the value.
 
 <a name="default_module-0"></a>
 
@@ -11165,6 +11232,12 @@ according to the `Message2` passed to it.
 `device_set(Msg, Key, Value, Opts) -> any()`
 
 Call the device's `set` function.
+
+<a name="device_set-5"></a>
+
+### device_set/5 * ###
+
+`device_set(Msg, Key, Value, Mode, Opts) -> any()`
 
 <a name="do_resolve_many-2"></a>
 
