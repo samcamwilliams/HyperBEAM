@@ -734,7 +734,7 @@ get_scheduler_slot_test() ->
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
-        <<"path">> => <<"Slot">>,
+        <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>
     },
     ?assertMatch(

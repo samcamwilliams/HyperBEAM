@@ -27,8 +27,8 @@ local function ensure_defaults(state)
     state.routes = state.routes or {}
     state["is-admissible"] =
         state["is-admissible"] or {
-            path = "/default",
-            default = true
+			path = "/default",
+            default = "true"
         }
     state["sampling-rate"] = state["sampling-rate"] or 0.1
     state["pricing-weight"] = state["pricing-weight"] or 1
@@ -287,7 +287,6 @@ end
 --- Tests
 function register_test()
     local state = {}
-  
     -- Simulate a register call upon a default state.
     local req = {
         path = "register",
