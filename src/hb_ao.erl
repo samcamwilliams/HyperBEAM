@@ -917,22 +917,33 @@ set(Msg1, Key, Value, Opts) ->
     deep_set(Msg1, Path, Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
-%% at the given path.
+%% at the given path. This function has special cases for handling `set' calls
+%% where the path is an empty list (`/'). In this case, if the value is an 
+%% immediate, non-complex term, we can set it directly. Otherwise, we use the
+%% device's `set' function to set the value.
+deep_set(Msg, [], Value, Opts) when is_map(Msg) or is_list(Msg) ->
+    device_set(Msg, <<"/">>, Value, Opts);
+deep_set(_Msg, [], Value, _Opts) ->
+    Value;
 deep_set(Msg, [Key], Value, Opts) ->
-    device_set(Msg, Key, Value, Opts);
+    DevRes = device_set(Msg, Key, Value, Opts),
+    ?event(debug, {deep_device_set_result, {msg, Msg}, {key, Key}, {res, DevRes}}),
+    DevRes;
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 
         {ok, SubMsg} ->
-            ?event(
+            ?event(debug,
                 {traversing_deeper_to_set,
                     {current_key, Key},
                     {current_value, SubMsg},
                     {rest, Rest}
                 }
             ),
-            device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts);
+            Res = device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), <<"explicit">>, Opts),
+            ?event(debug, {deep_set_result, {msg, Msg}, {key, Key}, {res, Res}}),
+            Res;
         _ ->
-            ?event(
+            ?event(debug,
                 {creating_new_map,
                     {current_key, Key},
                     {rest, Rest}
@@ -943,30 +954,43 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
 
 %% @doc Call the device's `set' function.
 device_set(Msg, Key, Value, Opts) ->
-    Req =
+    device_set(Msg, Key, Value, <<"deep">>, Opts).
+device_set(Msg, Key, Value, Mode, Opts) ->
+    ReqWithoutMode =
         case Key of
             <<"path">> ->
                 #{ <<"path">> => <<"set_path">>, <<"value">> => Value };
+            <<"/">> when is_map(Value) ->
+                % The value is a map and it is to be `set' at the root of the
+                % message. Subsequently, we call the device's `set' function
+                % with all of the keys found in the message, leading it to be
+                % merged into the message.
+                Value#{ <<"path">> => <<"set">> };
             _ ->
                 #{ <<"path">> => <<"set">>, Key => Value }
         end,
+    Req =
+        case Mode of
+            <<"deep">> -> ReqWithoutMode;
+            <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
+        end,
 	?event(
-        ao_internal,
+        debug,
         {
             calling_device_set,
             {msg, Msg},
             {applying_set, Req}
-        },
-        Opts
+        }
     ),
-	Res = hb_util:ok(
-        resolve(
-            Msg,
-            Req,
+	Res =
+        hb_util:ok(
+            resolve(
+                Msg,
+                Req,
+                internal_opts(Opts)
+            ),
             internal_opts(Opts)
         ),
-        internal_opts(Opts)
-    ),
 	?event(
         ao_internal,
         {device_set_result, Res},
@@ -1145,7 +1169,7 @@ find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 find_exported_function(_Msg, _Mod, _Key, Arity, _Opts) when Arity < 0 ->
     not_found;
 find_exported_function(Msg, Mod, Key, Arity, Opts) when not is_atom(Key) ->
-	try binary_to_existing_atom(normalize_key(Key), latin1) of
+	try hb_util:key_to_atom(Key, false) of
 		KeyAtom -> find_exported_function(Msg, Mod, KeyAtom, Arity, Opts)
 	catch _:_ -> not_found
 	end;
