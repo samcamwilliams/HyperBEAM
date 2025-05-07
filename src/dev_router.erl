@@ -60,7 +60,7 @@ register(_M1, _M2, Opts) ->
                         #{}, 
                         #{ 
                             priv_wallet => hb:wallet(), 
-                            snp_trusted => hb_opts:get(snp_trusted, #{}, Opts)
+                            snp_trusted => hb_opts:get(snp_trusted, [#{}], Opts)
                         }
                     ),
                     ?event(debug_register, {attestion, Attestion}),
@@ -702,22 +702,21 @@ dynamic_router_test() ->
     Run = hb_util:bin(rand:uniform(1337)),
     ExecNode =
         hb_http_server:start_node(
-            #{ priv_wallet => ExecWallet = ar_wallet:new()}
+            #{ priv_wallet => ExecWallet = hb:wallet("test/admissible-report-wallet.json") }
         ),
     Node = hb_http_server:start_node(Opts = #{
-        snp_trusted => #{
-            <<"1">> =>
-                #{
-                    <<"vcpus">> => 32,
-                    <<"vcpu_type">> => 5, 
-                    <<"vmm_type">> => 1,
-                    <<"guest_features">> => 1,
-                    <<"firmware">> => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-                    <<"kernel">> => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-                    <<"initrd">> => <<"331f9f710b389a203dead24d7cb8939e23c092bcbf46631c6958fc8035df98e6">>,
-                    <<"append">> => <<"1cd04d5e2d9ede21542993060d3906155882d75df934c23f00b2a5f006005d6f">>
-                }
-        },
+        snp_trusted => [
+			#{
+				<<"vcpus">> => 32,
+				<<"vcpu_type">> => 5, 
+				<<"vmm_type">> => 1,
+				<<"guest_features">> => 1,
+				<<"firmware">> => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+				<<"kernel">> => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+				<<"initrd">> => <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
+				<<"append">> => <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
+			}
+		],
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
@@ -756,8 +755,7 @@ dynamic_router_test() ->
                 }
             }
         }
-    }),
-    % mergeRight this takes our defined Opts and merges them into the
+    }),    % mergeRight this takes our defined Opts and merges them into the
     % node opts configs.
     Store = hb_opts:get(store, no_store, Opts),
     ?event(debug_dynrouter, {store, Store}),
