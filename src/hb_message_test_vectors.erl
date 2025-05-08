@@ -27,7 +27,35 @@ test_codecs() ->
 %% @doc Return a set of options for testing, taking the codec name as an
 %% argument. We do not presently use the codec name in the test, but we may
 %% wish to do so in the future.
-test_opts(_) ->
+suite_test_opts() ->
+    [
+        #{
+            name => normal,
+            desc => "Default opts",
+            opts => test_opts(normal)
+        },
+        #{
+            name => bundling,
+            desc => "Always bundle",
+            opts => test_opts(bundling),
+            skip => [<<"ID of linked message">>]
+        }
+    ].
+suite_test_opts(OptsName) ->
+    [O || O = #{name := OName} <- suite_test_opts(), OName == OptsName].
+
+test_opts(normal) ->
+    #{
+        store =>
+            [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST">>
+                }
+            ],
+        priv_wallet => hb:wallet()
+    };
+test_opts(bundling) ->
     #{
         store =>
             [
@@ -37,129 +65,128 @@ test_opts(_) ->
                 }
             ],
         priv_wallet => hb:wallet(),
-        always_bundle => os:getenv("BUNDLE", false)
+        always_bundle => true
     }.
+ 
+test_suite() ->
+    [
+        % Basic operations
+        {<<"Binary to binary">>,
+            fun binary_to_binary_test/2},
+        {<<"Match">>,
+            fun match_test/2},
+        {<<"Basic message encoding and decoding">>,
+            fun basic_message_codec_test/2},
+        {<<"Priv survives conversion">>,
+            fun priv_survives_conversion_test/2},
+        {<<"Message with body">>,
+            fun set_body_codec_test/2},
+        {<<"Message with large keys">>,
+            fun message_with_large_keys_test/2},
+        {<<"Structured field atom parsing">>,
+            fun structured_field_atom_parsing_test/2},
+        {<<"Structured field decimal parsing">>,
+            fun structured_field_decimal_parsing_test/2},
+        {<<"Unsigned id">>,
+            fun unsigned_id_test/2},
+        % Nested structures
+        {<<"Simple nested message">>,
+            fun simple_nested_message_test/2},
+        {<<"Message with simple embedded list">>,
+            fun message_with_simple_embedded_list_test/2},
+        {<<"Nested empty map">>,
+            fun nested_empty_map_test/2},
+        {<<"Nested structured fields">>,
+            fun nested_structured_fields_test/2},
+        {<<"Single layer message to encoding">>,
+            fun single_layer_message_to_encoding_test/2},
+        {<<"Nested body list">>,
+            fun nested_body_list_test/2},
+        {<<"Empty string in nested tag">>,
+            fun empty_string_in_nested_tag_test/2},
+        {<<"Deep typed message ID">>,
+            fun deep_typed_message_id_test/2},
+        {<<"Encode small balance table">>,
+            fun encode_small_balance_table_test/2},
+        {<<"Encode large balance table">>,
+            fun encode_large_balance_table_test/2},
+        % Signed messages
+        {<<"Signed message to message and back">>,
+            fun signed_message_encode_decode_verify_test/2},
+        {<<"Signed only committed data field">>,
+            fun signed_only_committed_data_field_test/2},
+        {<<"Signed nested message">>,
+            fun signed_nested_message_with_child_test/2},
+        {<<"Committed keys">>,
+            fun committed_keys_test/2},
+        {<<"Committed empty keys">>,
+            fun committed_empty_keys_test/2},
+        {<<"Signed list HTTP response">>,
+            fun signed_list_test/2},
+        {<<"Sign node message">>,
+            fun sign_node_message_test/2},
+        {<<"Complex signed message">>,
+            fun complex_signed_message_test/2},
+        {<<"Nested message with large keys">>,
+            fun nested_message_with_large_keys_test/2},
+        {<<"Nested signed message with typed list">>,
+            fun verify_nested_complex_signed_test/2},
+        % Complex structures
+        {<<"Nested message with large keys and content">>,
+            fun nested_message_with_large_keys_and_content_test/2},
+        {<<"Nested message with large content">>,
+            fun nested_message_with_large_content_test/2},
+        {<<"Deeply nested message with content">>,
+            fun deeply_nested_message_with_content_test/2},
+        {<<"Deeply nested message with only content">>,
+            fun deeply_nested_message_with_only_content/2},
+        {<<"Signed deep serialize and deserialize">>,
+            fun signed_deep_message_test/2},
+        {<<"Signed nested data key">>,
+            fun signed_nested_data_key_test/2},
+        {<<"Signed message with hashpath">>,
+            fun hashpath_sign_verify_test/2},
+        {<<"Message with derived components">>,
+            fun signed_message_with_derived_components_test/2},
+        {<<"Large body committed keys">>,
+            fun large_body_committed_keys_test/2},
+        {<<"Signed with inner signed">>,
+            fun signed_with_inner_signed_message_test/2},
+        {<<"Recursive nested list">>,
+            fun recursive_nested_list_test/2},
+        {<<"Sign links">>,
+            fun sign_links_test/2},
+        {<<"ID of linked message">>,
+            fun id_of_linked_message_test/2},
+        {<<"Sign deep message from lazy cache read">>,
+            fun sign_deep_message_from_lazy_cache_read_test/2},
+        {<<"ID of deep message and link message match">>,
+            fun id_of_deep_message_and_link_message_match_test/2},
+        {<<"Codec round-trip conversion is idempotent">>,
+            fun codec_roundtrip_conversion_is_idempotent_test/2}
+    ].
 
 %% @doc Organizes a test battery for the `hb_message' module and its codecs.
 suite_test_() ->
-    run([
-        % Basic operations
-        {<<"Binary to binary">>,
-            fun binary_to_binary_test/1},
-        {<<"Match">>,
-            fun match_test/1},
-        {<<"Basic message encoding and decoding">>,
-            fun basic_message_codec_test/1},
-        {<<"Priv survives conversion">>,
-            fun priv_survives_conversion_test/1},
-        {<<"Message with body">>,
-            fun set_body_codec_test/1},
-        {<<"Message with large keys">>,
-            fun message_with_large_keys_test/1},
-        {<<"Structured field atom parsing">>,
-            fun structured_field_atom_parsing_test/1},
-        {<<"Structured field decimal parsing">>,
-            fun structured_field_decimal_parsing_test/1},
-        {<<"Unsigned id">>,
-            fun unsigned_id_test/1},
-        % Nested structures
-        {<<"Simple nested message">>,
-            fun simple_nested_message_test/1},
-        {<<"Message with simple embedded list">>,
-            fun message_with_simple_embedded_list_test/1},
-        {<<"Nested empty map">>,
-            fun nested_empty_map_test/1},
-        {<<"Nested structured fields">>,
-            fun nested_structured_fields_test/1},
-        {<<"Single layer message to encoding">>,
-            fun single_layer_message_to_encoding_test/1},
-        {<<"Nested body list">>,
-            fun nested_body_list_test/1},
-        {<<"Empty string in nested tag">>,
-            fun empty_string_in_nested_tag_test/1},
-        {<<"Deep typed message ID">>,
-            fun deep_typed_message_id_test/1},
-        {<<"Encode small balance table">>,
-            fun encode_small_balance_table_test/1},
-        {<<"Encode large balance table">>,
-            fun encode_large_balance_table_test/1},
-        % Signed messages
-        {<<"Signed message to message and back">>,
-            fun signed_message_encode_decode_verify_test/1},
-        {<<"Signed only committed data field">>,
-            fun signed_only_committed_data_field_test/1},
-        {<<"Signed nested message">>,
-            fun signed_nested_message_with_child_test/1},
-        {<<"Committed keys">>,
-            fun committed_keys_test/1},
-        {<<"Committed empty keys">>,
-            fun committed_empty_keys_test/1},
-        {<<"Signed list HTTP response">>,
-            fun signed_list_test/1},
-        {<<"Sign node message">>,
-            fun sign_node_message_test/1},
-        {<<"Complex signed message">>,
-            fun complex_signed_message_test/1},
-        {<<"Nested message with large keys">>,
-            fun nested_message_with_large_keys_test/1},
-        {<<"Nested signed message with typed list">>,
-            fun verify_nested_complex_signed_test/1},
-        % Complex structures
-        {<<"Nested message with large keys and content">>,
-            fun nested_message_with_large_keys_and_content_test/1},
-        {<<"Nested message with large content">>,
-            fun nested_message_with_large_content_test/1},
-        {<<"Deeply nested message with content">>,
-            fun deeply_nested_message_with_content_test/1},
-        {<<"Deeply nested message with only content">>,
-            fun deeply_nested_message_with_only_content/1},
-        {<<"Signed deep serialize and deserialize">>,
-            fun signed_deep_message_test/1},
-        {<<"Signed nested data key">>,
-            fun signed_nested_data_key_test/1},
-        {<<"Signed message with hashpath">>,
-            fun hashpath_sign_verify_test/1},
-        {<<"Message with derived components">>,
-            fun signed_message_with_derived_components_test/1},
-        {<<"Large body committed keys">>,
-            fun large_body_committed_keys_test/1},
-        {<<"Signed with inner signed">>,
-            fun signed_with_inner_signed_message_test/1},
-        {<<"Recursive nested list">>,
-            fun recursive_nested_list_test/1},
-        {<<"Sign links">>,
-            fun sign_links_test/1},
-        {<<"ID of linked message">>,
-            fun id_of_linked_message_test/1},
-        {<<"Sign deep message from lazy cache read">>,
-            fun sign_deep_message_from_lazy_cache_read_test/1},
-        {<<"ID of deep message and link message match">>,
-            fun id_of_deep_message_and_link_message_match_test/1},
-        {<<"Codec round-trip conversion is idempotent">>,
-            fun codec_roundtrip_conversion_is_idempotent_test/1}
-    ]).
+    ?event(debug, suite_test_opts(normal)),
+    hb_test_utils:suite_with_opts(codec_test_suite(test_codecs()), suite_test_opts(normal)).
+    
+suite_bundling_test_() ->
+    hb_test_utils:suite_with_opts(codec_test_suite([<<"httpsig@1.0">>]), suite_test_opts(bundling)).
 
-run(Suite) ->
-    lists:map(
+codec_test_suite(Codecs) ->
+    lists:flatmap(
         fun(CodecName) ->
-            {foreach,
-                fun() ->
-                    CodecOpts = test_opts(CodecName),
-                    StoreOpts = maps:get(store, CodecOpts),
-                    hb_store:reset(StoreOpts)
-                end,
-                fun(_) -> ok end,
-                [
-                    {
-                        << CodecName/binary, ": ", Desc/binary >>,
-                        fun() -> Test(CodecName) end
-                    }
-                ||
-                    {Desc, Test} <- Suite
-                ]
-            }
+            lists:map(fun({Desc, Test}) ->
+                TestName = binary_to_list(CodecName) ++ ": " ++ binary_to_list(Desc),
+                {
+                    Desc,
+                    TestName,
+                    fun(Opts) -> Test(CodecName, Opts) end
+                }
+            end, test_suite())
         end,
-        test_codecs()
+        Codecs
     ).
 
 %%% Codec-specific/misc. tests
@@ -179,7 +206,7 @@ is_idempotent(Func, Msg, Opts) ->
 %% @doc Ensure that converting a message to/from TABM multiple times repeatedly 
 %% does not alter the message's contents.
 tabm_conversion_is_idempotent_test() ->
-    Opts = test_opts(<<"structured@1.0">>),
+    Opts = test_opts(normal),
     From = fun(M) -> hb_message:convert(M, <<"structured@1.0">>, tabm, Opts) end,
     To = fun(M) -> hb_message:convert(M, tabm, <<"structured@1.0">>, Opts) end,
     SimpleMsg = #{ <<"a">> => <<"x">>, <<"b">> => <<"y">>, <<"c">> => <<"z">> },
@@ -220,8 +247,7 @@ tabm_conversion_is_idempotent_test() ->
 %% times results in the same message being returned. This test differs from its
 %% TABM form, as it shuttles (`to-from-to-...`), while the TABM test repeatedly
 %% encodes in a single direction (`to->to->...`).
-codec_roundtrip_conversion_is_idempotent_test(Codec) ->
-    Opts = test_opts(<<"structured@1.0">>),
+codec_roundtrip_conversion_is_idempotent_test(Codec, Opts) ->
     Roundtrip =
         fun(M) ->
             hb_message:convert(
@@ -298,8 +324,7 @@ match_modes_test() ->
     ?assert(hb_message:match(Msg1, Msg3, primary)),
     ?assert(hb_message:match(Msg3, Msg1, primary) =/= true).
 
-basic_message_codec_test(Codec) ->
-    Opts = test_opts(Codec),
+basic_message_codec_test(Codec, Opts) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
@@ -307,16 +332,14 @@ basic_message_codec_test(Codec) ->
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-set_body_codec_test(Codec) ->
-    Opts = test_opts(Codec),
+set_body_codec_test(Codec, Opts) ->
     Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that we can convert a message into a tx record and back.
-single_layer_message_to_encoding_test(Codec) ->
-    Opts = test_opts(Codec),
+single_layer_message_to_encoding_test(Codec, Opts) ->
     Msg = #{
         <<"last_tx">> => << 2:256 >>,
         <<"target">> => << 4:256 >>,
@@ -332,16 +355,14 @@ single_layer_message_to_encoding_test(Codec) ->
     ?event({match_result, MatchRes}),
     ?assert(MatchRes).
 
-signed_only_committed_data_field_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_only_committed_data_field_test(Codec, Opts) ->
     Msg = hb_message:commit(#{ <<"data">> => <<"DATA">> }, Opts, Codec),
     ?event({signed_msg, Msg}),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Msg, Opts),
     ?event({only_committed, OnlyCommitted}),
     ?assert(hb_message:verify(OnlyCommitted)).
 
-signed_nested_data_key_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_nested_data_key_test(Codec, Opts) ->
     Msg = #{
         <<"outer-data">> => <<"outer">>,
         <<"body">> =>
@@ -375,35 +396,31 @@ signed_nested_data_key_test(Codec) ->
 %     ?assertEqual(hb_maps:get(<<"target">>, Msg), TX#tx.target).
 
 %% @doc Test that the message matching function works.
-match_test(Codec) ->
+match_test(Codec, Opts) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2 },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-binary_to_binary_test(Codec) ->
+binary_to_binary_test(Codec, Opts) ->
     % Serialization must be able to turn a raw binary into a TX, then turn
     % that TX back into a binary and have the result match the original.
     Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Bin, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assertEqual(Bin, Decoded).
 
 %% @doc Structured field parsing tests.
-structured_field_atom_parsing_test(Codec) ->
+structured_field_atom_parsing_test(Codec, Opts) ->
     Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-structured_field_decimal_parsing_test(Codec) ->
+structured_field_decimal_parsing_test(Codec, Opts) ->
     Msg = #{ integer_field => 1234567890 },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
@@ -411,14 +428,13 @@ structured_field_decimal_parsing_test(Codec) ->
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
-message_with_large_keys_test(Codec) ->
+message_with_large_keys_test(Codec, Opts) ->
     Msg = #{
         <<"normal_key">> => <<"normal_value">>,
         <<"large_key">> => << 0:((1 + 1024) * 8) >>,
         <<"another_large_key">> => << 0:((1 + 1024) * 8) >>,
         <<"another_normal_key">> => <<"another_normal_value">>
     },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
@@ -427,8 +443,7 @@ message_with_large_keys_test(Codec) ->
 %% be further nested and signed. We then encode and decode the message. This
 %% tests a large portion of the complex type encodings that HyperBEAM uses
 %% together.
-verify_nested_complex_signed_test(Codec) ->
-    Opts = test_opts(Codec),
+verify_nested_complex_signed_test(Codec, Opts) ->
     Msg =
         hb_message:commit(#{
             <<"path">> => <<"schedule">>,
@@ -480,7 +495,7 @@ verify_nested_complex_signed_test(Codec) ->
     ?assert(hb_message:verify(FoundInner, all, Opts)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
-nested_message_with_large_keys_and_content_test(Codec) ->
+nested_message_with_large_keys_and_content_test(Codec, Opts) ->
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -493,26 +508,23 @@ nested_message_with_large_keys_and_content_test(Codec) ->
         <<"another_normal_key">> => <<"another_normal_value">>,
         MainBodyKey => <<"Hey from the data field!">>
     },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-simple_nested_message_test(Codec) ->
+simple_nested_message_test(Codec, Opts) ->
     Msg = #{
         <<"a">> => <<"1">>,
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-signed_nested_message_with_child_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_nested_message_with_child_test(Codec, Opts) ->
     Msg = #{
         <<"outer-a">> => <<"1">>,
         <<"nested">> =>
@@ -524,14 +536,12 @@ signed_nested_message_with_child_test(Codec) ->
         <<"outer-c">> => <<"3">>
     },
     hb_cache:write(Msg, Opts),
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, primary, Opts)).
 
-nested_empty_map_test(Codec) ->
-    Opts = test_opts(Codec),
+nested_empty_map_test(Codec, Opts) ->
     Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
@@ -541,8 +551,7 @@ nested_empty_map_test(Codec) ->
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
-nested_message_with_large_content_test(Codec) ->
-    Opts = test_opts(Codec),
+nested_message_with_large_content_test(Codec, Opts) ->
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -565,8 +574,7 @@ nested_message_with_large_content_test(Codec) ->
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
-deeply_nested_message_with_content_test(Codec) ->
-    Opts = test_opts(Codec),
+deeply_nested_message_with_content_test(Codec, Opts) ->
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -590,7 +598,7 @@ deeply_nested_message_with_content_test(Codec) ->
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-deeply_nested_message_with_only_content(Codec) ->
+deeply_nested_message_with_only_content(Codec, Opts) ->
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -604,35 +612,31 @@ deeply_nested_message_with_only_content(Codec) ->
             }
         }
     },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-nested_structured_fields_test(Codec) ->
-    Opts = test_opts(Codec),
+nested_structured_fields_test(Codec, Opts) ->
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
     Encoded = hb_message:convert(NestedMsg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, NestedMsg}, {output, Decoded}}),
     ?assert(hb_message:match(NestedMsg, Decoded, strict, Opts)).
 
-nested_message_with_large_keys_test(Codec) ->
+nested_message_with_large_keys_test(Codec, Opts) ->
     Msg = #{
         <<"a">> => <<"1">>,
         <<"long_data">> => << 0:((1 + 1024) * 8) >>,
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-signed_message_encode_decode_verify_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_message_encode_decode_verify_test(Codec, Opts) ->
     Msg = #{
         <<"test-data">> => <<"TEST DATA">>,
         <<"test-key">> => <<"TEST VALUE">>
@@ -655,8 +659,7 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?event({match_result, MatchRes}),
     ?assert(MatchRes).
 
-complex_signed_message_test(Codec) ->
-    Opts = test_opts(Codec),
+complex_signed_message_test(Codec, Opts) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -708,7 +711,7 @@ complex_signed_message_test(Codec) ->
 
 deep_multisignature_test() ->
     % Only the `httpsig@1.0' codec supports multisignatures.
-    Opts = test_opts(<<"httpsig@1.0">>),
+    Opts = test_opts(normal),
     Codec = <<"httpsig@1.0">>,
     Wallet1 = ar_wallet:new(),
     Wallet2 = ar_wallet:new(),
@@ -739,8 +742,7 @@ deep_multisignature_test() ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
-deep_typed_message_id_test(Codec) ->
-    Opts = test_opts(Codec),
+deep_typed_message_id_test(Codec, Opts) ->
     Msg = #{
         <<"data">> => <<"TEST DATA">>,
         <<"deep-data">> => #{
@@ -761,8 +763,7 @@ deep_typed_message_id_test(Codec) ->
         DecodedID
     ).
 
-signed_deep_message_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_deep_message_test(Codec, Opts) ->
     Msg = #{
         <<"test_key">> => <<"TEST_VALUE">>,
         <<"body">> => #{
@@ -813,8 +814,7 @@ signed_deep_message_test(Codec) ->
         )
     ).
 
-signed_list_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_list_test(Codec, Opts) ->
     Msg = #{ <<"key-with-list">> => [1.0, 2.0, 3.0] },
     Signed = hb_message:commit(Msg, Opts, Codec),
     ?assert(hb_message:verify(Signed, all, Opts)),
@@ -825,8 +825,7 @@ signed_list_test(Codec) ->
     ?assert(hb_message:verify(Decoded, all, Opts)),
     ?assert(hb_message:match(Signed, Decoded, strict, Opts)).
 
-unsigned_id_test(Codec) ->
-    Opts = test_opts(Codec),
+unsigned_id_test(Codec, Opts) ->
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
@@ -848,15 +847,13 @@ unsigned_id_test(Codec) ->
 %         hb_util:id(SignedMsg, signed)
 %     ).
 
-message_with_simple_embedded_list_test(Codec) ->
-    Opts = test_opts(Codec),
+message_with_simple_embedded_list_test(Codec, Opts) ->
     Msg = #{ <<"list">> => [<<"value-1">>, <<"value-2">>, <<"value-3">>] },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-empty_string_in_nested_tag_test(Codec) ->
-    Opts = test_opts(Codec),
+empty_string_in_nested_tag_test(Codec, Opts) ->
     Msg =
         #{
             <<"dev">> =>
@@ -870,8 +867,7 @@ empty_string_in_nested_tag_test(Codec) ->
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-hashpath_sign_verify_test(Codec) ->
-    Opts = test_opts(Codec),
+hashpath_sign_verify_test(Codec, Opts) ->
     Msg =
         #{
             <<"test_key">> => <<"TEST_VALUE">>,
@@ -914,8 +910,7 @@ hashpath_sign_verify_test(Codec) ->
         )
     ).
 
-signed_message_with_derived_components_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_message_with_derived_components_test(Codec, Opts) ->
     Msg = #{
         <<"path">> => <<"/test">>,
         <<"authority">> => <<"example.com">>,
@@ -951,8 +946,7 @@ signed_message_with_derived_components_test(Codec) ->
         )
     ).
 
-committed_keys_test(Codec) ->
-    Opts = test_opts(Codec),
+committed_keys_test(Codec, Opts) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = hb_message:commit(Msg, Opts, Codec),
     CommittedKeys = hb_message:committed(Signed, all, Opts),
@@ -969,8 +963,7 @@ committed_keys_test(Codec) ->
         )
     ).
 
-committed_empty_keys_test(Codec) ->
-    Opts = test_opts(Codec),
+committed_empty_keys_test(Codec, Opts) ->
     Msg = #{
         <<"very">> => <<>>,
         <<"exciting">> => #{},
@@ -987,7 +980,7 @@ committed_empty_keys_test(Codec) ->
     ?assert(lists:member(<<"non-empty">>, CommittedKeys)).
 
 deeply_nested_committed_keys_test() ->
-    Opts = test_opts(<<"httpsig@1.0">>),
+    Opts = test_opts(normal),
     Msg = #{
         <<"a">> => 1,
         <<"b">> => #{ <<"c">> => #{ <<"d">> => <<0:((1 + 1024) * 1024)>> } },
@@ -1015,8 +1008,7 @@ deeply_nested_committed_keys_test() ->
         )
     ).
 
-signed_with_inner_signed_message_test(Codec) ->
-    Opts = test_opts(Codec),
+signed_with_inner_signed_message_test(Codec, Opts) ->
     Msg =
         hb_message:commit(
             #{
@@ -1091,8 +1083,7 @@ signed_with_inner_signed_message_test(Codec) ->
         ),
     ?assert(hb_message:verify(CommittedInnerOnly, signers, Opts)).
 
-large_body_committed_keys_test(Codec) ->
-    Opts = test_opts(Codec),
+large_body_committed_keys_test(Codec, Opts) ->
     case Codec of
         <<"httpsig@1.0">> ->
             Msg = #{
@@ -1121,8 +1112,7 @@ large_body_committed_keys_test(Codec) ->
             skip
     end.
 
-sign_node_message_test(Codec) ->
-    Opts = test_opts(Codec),
+sign_node_message_test(Codec, Opts) ->
     Msg = hb_message:commit(hb_opts:default_message(), Opts, Codec),
     ?event({committed, Msg}),
     ?assert(hb_message:verify(Msg, all, Opts)),
@@ -1134,8 +1124,7 @@ sign_node_message_test(Codec) ->
     ?assertEqual(true, MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)).
 
-nested_body_list_test(Codec) ->
-    Opts = test_opts(Codec),
+nested_body_list_test(Codec, Opts) ->
     Msg = #{
         <<"body">> =>
             [
@@ -1153,8 +1142,7 @@ nested_body_list_test(Codec) ->
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-recursive_nested_list_test(Codec) ->
-    Opts = test_opts(Codec),
+recursive_nested_list_test(Codec, Opts) ->
     % This test is to ensure that the codec can handle arbitrarily deep nested
     % lists.
     Msg = #{
@@ -1186,10 +1174,9 @@ recursive_nested_list_test(Codec) ->
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
-priv_survives_conversion_test(<<"json@1.0">>) -> skip;
-priv_survives_conversion_test(Codec) ->
-    Opts = test_opts(Codec),
+priv_survives_conversion_test(<<"ans104@1.0">>, _Opts) -> skip;
+priv_survives_conversion_test(<<"json@1.0">>, _Opts) -> skip;
+priv_survives_conversion_test(Codec, Opts) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"priv">> => #{ <<"test_key">> => <<"TEST_VALUE">> }
@@ -1204,8 +1191,7 @@ priv_survives_conversion_test(Codec) ->
         maps:get(<<"priv">>, Decoded)
     ).
 
-encode_balance_table(Size, Codec) ->
-    Opts = test_opts(Codec),
+encode_balance_table(Size, Codec, Opts) ->
     Msg =
         #{
             hb_util:encode(crypto:strong_rand_bytes(32)) =>
@@ -1219,14 +1205,13 @@ encode_balance_table(Size, Codec) ->
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-encode_small_balance_table_test(Codec) ->
-    encode_balance_table(5, Codec).
+encode_small_balance_table_test(Codec, Opts) ->
+    encode_balance_table(5, Codec, Opts).
 
-encode_large_balance_table_test(Codec) ->
-    encode_balance_table(1000, Codec).
+encode_large_balance_table_test(Codec, Opts) ->
+    encode_balance_table(1000, Codec, Opts).
 
-sign_links_test(Codec) ->
-    Opts = test_opts(Codec),
+sign_links_test(Codec, Opts) ->
     % Make a message with definitively non-accessible lazy-loadable links. Sign
     % it, ensuring that we can produce signatures and IDs without having the 
     % data directly in memory.
@@ -1238,8 +1223,7 @@ sign_links_test(Codec) ->
     ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
-id_of_linked_message_test(Codec) ->
-    Opts = test_opts(Codec),
+id_of_linked_message_test(Codec, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> =>
@@ -1255,8 +1239,7 @@ id_of_linked_message_test(Codec) ->
     UnsignedID2 = hb_message:id(DecMsg, Opts),
     ?assertEqual(UnsignedID, UnsignedID2).
 
-sign_deep_message_from_lazy_cache_read_test(Codec) ->
-    Opts = test_opts(Codec),
+sign_deep_message_from_lazy_cache_read_test(Codec, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> => #{
@@ -1280,8 +1263,7 @@ sign_deep_message_from_lazy_cache_read_test(Codec) ->
     ),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
-id_of_deep_message_and_link_message_match_test(Codec) ->
-    Opts = test_opts(Codec),
+id_of_deep_message_and_link_message_match_test(_Codec, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> => #{
@@ -1303,7 +1285,7 @@ id_of_deep_message_and_link_message_match_test(Codec) ->
 %% then read back all of the written commitments by loading the message's 
 %% unsigned ID.
 find_multiple_commitments_test() ->
-    Opts = test_opts(<<"structured@1.0">>),
+    Opts = test_opts(normal),
     Store = hb_opts:get(store, no_store, Opts),
     hb_store:reset(Store),
     Msg = #{
