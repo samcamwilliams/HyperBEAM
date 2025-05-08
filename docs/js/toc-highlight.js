@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
           ".md-nav__link--active",
         );
 
-        console.log("Has Active Children:", hasActiveChildren);
+        // console.log("Has Active Children:", hasActiveChildren);
 
         if (hasActiveChildren && !atTop) {
           // Remove active class from parent's links
@@ -104,5 +104,21 @@ document.addEventListener("DOMContentLoaded", function () {
     if (e.target.closest(".md-nav__link")) {
       setTimeout(fixNavigationHighlighting, 50);
     }
+  });
+
+  // Add click event handling for navigation tabs
+  const tabLinks = document.querySelectorAll('nav.md-tabs .md-tabs__list .md-tabs__item a');
+  tabLinks.forEach(link => {
+    link.addEventListener('click', function(event) {
+      // Basic check if it's an internal link
+      if (link.hostname === window.location.hostname || !link.hostname.length) {
+        console.log('Tab clicked, forcing full reload for:', link.href);
+        console.log('Updating navigation highlighting before navigation');
+        fixNavigationHighlighting();
+        event.preventDefault();
+        event.stopPropagation();
+        window.location.href = link.href;
+      }
+    }, true); // Use capture phase to catch the event before the theme's handler
   });
 });
