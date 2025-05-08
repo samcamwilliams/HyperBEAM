@@ -256,8 +256,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                             % If the compute_slot function returns an error,
                             % we return the error details, along with the current
                             % slot.
+                            ErrMsg =
+                                if is_map(Error) ->
+                                    Error;
+                                true -> #{ <<"error">> => Error }
+                                end,
                             {error,
-                                Error#{
+                                ErrMsg#{
                                     <<"phase">> => <<"compute">>,
                                     <<"attempted-slot">> => NextSlot
                                 }
@@ -729,7 +734,7 @@ get_scheduler_slot_test() ->
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
-        <<"path">> => <<"Slot">>,
+        <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>
     },
     ?assertMatch(
