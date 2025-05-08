@@ -439,11 +439,13 @@ The resolver is composed of a series of discrete phases:
 4: Persistent-resolver lookup.
 5: Device lookup.
 6: Execution.
-7: Cryptographic linking.
-8: Result caching.
-9: Notify waiters.
-10: Fork worker.
-11: Recurse or terminate.
+7: Execution of the `step` hook.
+8: Subresolution.
+9: Cryptographic linking.
+10: Result caching.
+11: Notify waiters.
+12: Fork worker.
+13: Recurse or terminate.
 
 <a name="resolve-3"></a>
 
