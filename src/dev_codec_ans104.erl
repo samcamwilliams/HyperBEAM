@@ -24,7 +24,6 @@
 %%% encoded as fields in the TX record.
 -define(FORCED_TAG_FIELDS,
     [
-        <<"tags">>,
         <<"quantity">>,
         <<"manifest">>,
         <<"data_size">>,
