@@ -888,7 +888,6 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
     ?event({getting_remote_schedule, {node, {string, Node}}, {path, {string, Path}}}),
     case hb_http:get(Node, Path, Opts#{ http_client => httpc, protocol => http2 }) of
         {ok, Res} ->
-            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_util:int(hb_ao:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
                     {ok, NormSched} = 
