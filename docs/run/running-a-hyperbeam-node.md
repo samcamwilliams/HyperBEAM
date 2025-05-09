@@ -61,14 +61,6 @@ Installation methods:
     sudo apt install erlang
     ```
 
-=== "asdf (Recommended)"
-    Tools like `asdf-vm` with the `asdf-erlang` plugin are highly recommended for managing multiple Erlang versions across platforms.
-    ```bash
-    asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git
-    asdf install erlang <version> # e.g., 27.0
-    asdf global erlang <version>
-    ```
-
 === "Source Build"
     Download from [erlang.org](https://www.erlang.org/downloads) and follow the build instructions for your platform.
 
