@@ -1,4 +1,4 @@
-Generated: 2025-05-09T21:38:07Z
+Generated: 2025-05-09T22:05:56Z
 
 --- START OF FILE: docs/build/exposing-process-state.md ---
 # Exposing Process State with the Patch Device
@@ -20058,6 +20058,120 @@ To explore the source code, you can clone the repository from [GitHub](https://g
 ## Navigation
 
 Use the navigation menu to dive into specific parts of the codebase. Each module includes detailed documentation, code comments, and examples to assist in understanding and contributing to the project.
+
+# Source Code Modules
+
+This section contains documentation for all the source code modules in HyperBEAM.
+
+## AR Modules
+- [ar_bundles](ar_bundles.md)
+- [ar_deep_hash](ar_deep_hash.md)
+- [ar_rate_limiter](ar_rate_limiter.md)
+- [ar_timestamp](ar_timestamp.md)
+- [ar_tx](ar_tx.md)
+- [ar_wallet](ar_wallet.md)
+
+## Dev Modules
+- [dev_cache](dev_cache.md)
+- [dev_cacheviz](dev_cacheviz.md)
+- [dev_codec_ans104](dev_codec_ans104.md)
+- [dev_codec_flat](dev_codec_flat.md)
+- [dev_codec_httpsig_conv](dev_codec_httpsig_conv.md)
+- [dev_codec_httpsig](dev_codec_httpsig.md)
+- [dev_codec_json](dev_codec_json.md)
+- [dev_codec_structured](dev_codec_structured.md)
+- [dev_cron](dev_cron.md)
+- [dev_cu](dev_cu.md)
+- [dev_dedup](dev_dedup.md)
+- [dev_delegated_compute](dev_delegated_compute.md)
+- [dev_faff](dev_faff.md)
+- [dev_genesis_wasm](dev_genesis_wasm.md)
+- [dev_green_zone](dev_green_zone.md)
+- [dev_hyperbuddy](dev_hyperbuddy.md)
+- [dev_json_iface](dev_json_iface.md)
+- [dev_local_name](dev_local_name.md)
+- [dev_lookup](dev_lookup.md)
+- [dev_lua_lib](dev_lua_lib.md)
+- [dev_lua_test](dev_lua_test.md)
+- [dev_lua](dev_lua.md)
+- [dev_manifest](dev_manifest.md)
+- [dev_message](dev_message.md)
+- [dev_meta](dev_meta.md)
+- [dev_monitor](dev_monitor.md)
+- [dev_multipass](dev_multipass.md)
+- [dev_name](dev_name.md)
+- [dev_node_process](dev_node_process.md)
+- [dev_p4](dev_p4.md)
+- [dev_patch](dev_patch.md)
+- [dev_poda](dev_poda.md)
+- [dev_process_cache](dev_process_cache.md)
+- [dev_process_worker](dev_process_worker.md)
+- [dev_process](dev_process.md)
+- [dev_push](dev_push.md)
+- [dev_relay](dev_relay.md)
+- [dev_router](dev_router.md)
+- [dev_scheduler_cache](dev_scheduler_cache.md)
+- [dev_scheduler_formats](dev_scheduler_formats.md)
+- [dev_scheduler_registry](dev_scheduler_registry.md)
+- [dev_scheduler_server](dev_scheduler_server.md)
+- [dev_scheduler](dev_scheduler.md)
+- [dev_simple_pay](dev_simple_pay.md)
+- [dev_snp_nif](dev_snp_nif.md)
+- [dev_snp](dev_snp.md)
+- [dev_stack](dev_stack.md)
+- [dev_test](dev_test.md)
+- [dev_wasi](dev_wasi.md)
+- [dev_wasm](dev_wasm.md)
+
+## HB Modules
+- [hb_ao_test_vectors](hb_ao_test_vectors.md)
+- [hb_ao](hb_ao.md)
+- [hb_app](hb_app.md)
+- [hb_beamr_io](hb_beamr_io.md)
+- [hb_beamr](hb_beamr.md)
+- [hb_cache_control](hb_cache_control.md)
+- [hb_cache_render](hb_cache_render.md)
+- [hb_cache](hb_cache.md)
+- [hb_client](hb_client.md)
+- [hb_crypto](hb_crypto.md)
+- [hb_debugger](hb_debugger.md)
+- [hb_escape](hb_escape.md)
+- [hb_event](hb_event.md)
+- [hb_examples](hb_examples.md)
+- [hb_features](hb_features.md)
+- [hb_gateway_client](hb_gateway_client.md)
+- [hb_http_benchmark_tests](hb_http_benchmark_tests.md)
+- [hb_http_client_sup](hb_http_client_sup.md)
+- [hb_http_client](hb_http_client.md)
+- [hb_http_server](hb_http_server.md)
+- [hb_http](hb_http.md)
+- [hb_json](hb_json.md)
+- [hb_logger](hb_logger.md)
+- [hb_message](hb_message.md)
+- [hb_metrics_collector](hb_metrics_collector.md)
+- [hb_name](hb_name.md)
+- [hb_opts](hb_opts.md)
+- [hb_path](hb_path.md)
+- [hb_persistent](hb_persistent.md)
+- [hb_private](hb_private.md)
+- [hb_process_monitor](hb_process_monitor.md)
+- [hb_router](hb_router.md)
+- [hb_singleton](hb_singleton.md)
+- [hb_store_fs](hb_store_fs.md)
+- [hb_store_gateway](hb_store_gateway.md)
+- [hb_store_remote_node](hb_store_remote_node.md)
+- [hb_store_rocksdb](hb_store_rocksdb.md)
+- [hb_store](hb_store.md)
+- [hb_structured_fields](hb_structured_fields.md)
+- [hb_sup](hb_sup.md)
+- [hb_test_utils](hb_test_utils.md)
+- [hb_tracer](hb_tracer.md)
+- [hb_util](hb_util.md)
+- [hb_volume](hb_volume.md)
+- [hb](hb.md)
+
+## Other Modules
+- [rsa_pss](rsa_pss.md)
 
 
 --- END OF FILE: docs/resources/source-code/index.md ---
