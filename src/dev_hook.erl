@@ -27,7 +27,11 @@
 %%% evaluation is halted and the result is returned to the caller. This means
 %%% that in most cases, hooks take the form of chainable pipelines of functions,
 %%% passing the most pertinent data in the `body' key of both the request and
-%%% result.
+%%% result. Hook definitions can also set the `hook/result' key to `ignore', if
+%%% the result of the execution should be discarded and the prior value (the
+%%% input to the hook) should be used instead. The `hook/commit-request' key can
+%%% also be set to `true' if the request should be committed by the node before
+%%% execution of the hook.
 %%% 
 %%% The default HyperBEAM node implements several useful hooks. They include:
 %%% 
@@ -63,7 +67,7 @@ info(_) ->
 %% This function finds all handlers for the hook and evaluates them in sequence.
 %% The result of each handler is used as input to the next handler.
 on(HookName, Req, Opts) ->
-    ?event(hook, {attempting_execution_for_hook, HookName, Req, Opts}),
+    ?event(hook, {attempting_execution_for_hook, HookName}),
     % Get all handlers for this hook from the options
     Handlers = find(HookName, Opts),
     % If no handlers are found, return the original request with ok status
@@ -148,15 +152,46 @@ execute_handler(HookName, Handler, Req, Opts) ->
     try
         % Resolve the handler message, setting the path to the handler name if
         % it is not already set. We ensure to ignore the hashpath such that the
-        % handler does not affect the hashpath of a request's output.
-        ?event(hook, {resolving_handler, HookName, Handler, Req}),
-        hb_ao:resolve(
-            Handler,
+        % handler does not affect the hashpath of a request's output. If the
+        % `hook/commit` key is set to `true`, the handler request will be
+        % committed before execution.
+        BaseReq =
             Req#{
-                <<"path">> => hb_ao:get(<<"path">>, Handler, HookName, Opts)
+                <<"path">> => hb_ao:get(<<"path">>, Handler, HookName, Opts),
+                <<"method">> => hb_ao:get(<<"method">>, Handler, <<"GET">>, Opts)
             },
-            Opts#{ hashpath => ignore }
-        )
+        PreparedReq =
+            case hb_ao:get(<<"hook/commit-request">>, Handler, false, Opts) of
+                true -> hb_message:commit(BaseReq, Opts);
+                false -> BaseReq
+            end,
+        ?event(hook,
+            {resolving_handler, 
+                {name, HookName},
+                {handler, Handler},
+                {req, {explicit, PreparedReq}}
+            }
+        ),
+        % Resolve the prepared request upon the handler.
+        {Status, Res} =
+            hb_ao:resolve(
+                Handler,
+                PreparedReq,
+                Opts#{ hashpath => ignore }
+            ),
+        ?event(hook,
+            {handler_result,
+                {name, HookName},
+                {status, Status},
+                {res, Res}
+            }
+        ),
+        case {Status, hb_ao:get(<<"hook/result">>, Handler, <<"return">>, Opts)} of
+            {ok, <<"ignore">>} -> {Status, Req};
+            {ok, <<"return">>} -> {Status, Res};
+            {ok, <<"error">>} -> {error, Res};
+            _ -> {Status, Res}
+        end
     catch
         Error:Reason:Stacktrace ->
             % If an exception occurs during execution, log it and return an error.
