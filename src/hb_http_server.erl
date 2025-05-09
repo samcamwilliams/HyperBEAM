@@ -126,8 +126,16 @@ new_server(RawNodeMsg) ->
         case dev_hook:on(<<"start">>, HookMsg, RawNodeMsgWithDefaults) of
             {ok, #{ <<"body">> := NodeMsgAfterHook }} -> NodeMsgAfterHook;
             Unexpected ->
-                ?event(http, {failed_to_start_server, {unexpected, Unexpected}}),
-                throw({failed_to_start_server, Unexpected})
+                ?event(http,
+                    {failed_to_start_server,
+                        {unexpected_hook_result, Unexpected}
+                    }
+                ),
+                throw(
+                    {failed_to_start_server,
+                        {unexpected_hook_result, Unexpected}
+                    }
+                )
         end,
     % Put server ID into node message so it's possible to update current server
     hb_http:start(),
