@@ -1,3 +1,4 @@
+%%% @doc A simple scheduler scheme for AO.
 %%% This device expects a message of the form:
 %%%     Process: `#{ id, Scheduler: #{ Authority } }'
 %%% <pre>
