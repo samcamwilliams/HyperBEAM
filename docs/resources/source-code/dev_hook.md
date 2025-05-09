@@ -36,7 +36,11 @@ status of the previous is `ok`. If a non-`ok` status is encountered, the
 evaluation is halted and the result is returned to the caller. This means
 that in most cases, hooks take the form of chainable pipelines of functions,
 passing the most pertinent data in the `body` key of both the request and
-result.
+result. Hook definitions can also set the `hook/result` key to `ignore`, if
+the result of the execution should be discarded and the prior value (the
+input to the hook) should be used instead. The `hook/commit-request` key can
+also be set to `true` if the request should be committed by the node before
+execution of the hook.
 
 The default HyperBEAM node implements several useful hooks. They include:
 
