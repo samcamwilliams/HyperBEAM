@@ -26,59 +26,10 @@ end
 function debit(base, request)
     ao.event({ "client starting debit", { request = request, base = base } })
     local status, res = ao.resolve({
-        path = "(" .. base["ledger-path"] .. ")/schedule",
+        path = "(" .. base["ledger-path"] .. ")/push",
         method = "POST",
         body = request
     })
     ao.event({ "client received schedule response", { status = status, res = res } })
-    status, res = ao.resolve({
-        path = base["ledger-path"] .. "/compute/balance/" .. request["account"],
-        slot = res.slot
-    })
-    ao.event({ "confirmed balance", { status = status, res = res } })
-    return "ok"
-end
-
---- Poll an external ledger for credit events. If new credit noticess have been
---- sent by the external ledger, push them to the local ledger.
-function poll(base, req)
-    local status, local_last_credit = ao.resolve({
-        path = base["ledger-path"] .. "/now/last-credit"
-    })
-    if status ~= "ok" then
-        ao.event(
-            { "error getting local last credit",
-                { status = status, res = local_last_credit } }
-        )
-        return "error", base
-    end
-
-    local status, external_last_credit = ao.resolve({
-        path = base["external-ledger"] .. "/now/last-credit"
-    })
-    if status ~= "ok" then
-        ao.event({ "error getting external last credit",
-            { status = status, res = external_last_credit } })
-        return "error", base
-    end
-
-    ao.event({ "Retreived sync data. Last credit info:",
-        {
-            local_last_credit = local_last_credit,
-            external_last_credit = external_last_credit }
-        }
-    )
-    while local_last_credit < external_last_credit do
-        status, res = ao.resolve({
-            path = base["external-ledger"] .. "/push",
-            slot = local_last_credit + 1
-        })
-        if status ~= "ok" then
-            ao.event({ "error pushing slot", { status = status, res = res } })
-            return "error", base
-        end
-        local_last_credit = local_last_credit + 1
-    end
-
-    return "ok", base
+    return "ok", res
 end
