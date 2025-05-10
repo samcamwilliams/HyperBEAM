@@ -205,12 +205,11 @@ response(State, RawResponse, NodeMsg) ->
                     LedgerReq =
                         hb_message:commit(
                             #{
-                                <<"path">> => <<"debit">>,
+                                <<"path">> => <<"transfer">>,
                                 <<"quantity">> => Price,
-                                <<"account">> =>
+                                <<"recipient">> =>
                                     case hb_message:signers(Request) of
                                         [Signer] -> Signer;
-                                        [] -> <<"unknown">>;
                                         Multiple -> Multiple
                                     end,
                                 <<"request">> => Request
