@@ -1,0 +1,503 @@
+%%% A collection of Eunit tests for the `lua@5.3a` device, and the 
+%%% `hyper-token.lua` script. These tests are designed to validate the
+%%% functionality of both of these components, and to provide examples
+%%% of how to use the `lua@5.3a` device.
+%%% 
+%%% The module is split into four components:
+%%% 1. A simple ledger client library.
+%%% 2. Assertion functions that verify specific invariants about the state
+%%%    of ledgers in a test environment.
+%%% 3. Utility functions for normalizing the state of a test environment.
+%%% 4. Test cases that generate and manipulate ledger networks in test
+%%%    environments.
+-module(dev_lua_test_ledgers).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("include/hb.hrl").
+
+%%% Ledger client library.
+%%% 
+%%% A simple, thin library for generating ledgers and interacting with 
+%%% `hyper-token.lua` processes.
+
+%% @doc Generate a Lua process definition message.
+ledger(File, Opts) ->
+    ledger(File, #{}, Opts).
+ledger(File, Extra, Opts) when is_binary(File) ->
+    ledger([File], Extra, Opts);
+ledger(Files, Extra, Opts) when is_list(Files) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(Opts), Opts),
+    hb_message:commit(Extra#{
+        <<"device">> => <<"process@1.0">>,
+        <<"type">> => <<"Process">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
+        <<"execution-device">> => <<"lua@5.3a">>,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> =>
+                [
+                    #{
+                        <<"content-type">> => <<"application/lua">>,
+                        <<"module">> => File,
+                        <<"body">> => hb_util:ok(file:read_file(File))
+                    }
+                ||
+                    File <- Files
+                ]
+        }},
+        Wallet
+    ).
+
+%% @doc Generate a test sub-ledger process definition message.
+subledger(Root, Opts) ->
+    BareRoot =
+        maps:without(
+            [<<"token">>, <<"balance">>],
+            hb_message:uncommitted(Root)
+        ),
+    hb_message:commit(
+        BareRoot#{
+            <<"token">> => hb_message:id(Root, all)
+        },
+        hb_opts:get(priv_wallet, hb:wallet(Opts), Opts)
+    ).
+
+%% @doc Generate a test transfer message.
+transfer(ProcMsg, Sender, Recipient, Opts) ->
+    transfer(ProcMsg, Sender, Recipient, 1, Opts).
+transfer(ProcMsg, Sender, Recipient, Amount, Opts) ->
+    transfer(ProcMsg, Sender, Recipient, Amount, undefined, Opts).
+transfer(ProcMsg, Sender, Recipient, Amount, Route = [R|_], Opts) when is_map(R) ->
+    NormRoute = [ hb_message:id(L, all) || L <- Route ],
+    transfer(ProcMsg, Sender, Recipient, Amount, NormRoute, Opts);
+transfer(ProcMsg, Sender, Recipient, Amount, Route, Opts) ->
+    ProcID = hb_message:id(ProcMsg, all),
+    MaybeRoute =
+        if Route == undefined -> #{};
+           true -> #{ <<"route">> => Route }
+        end,
+    Xfer =
+        hb_message:commit(#{
+            <<"path">> => <<"push">>,
+            <<"target">> => ProcID,
+            <<"scheduler-device">> => <<"scheduler@1.0">>,
+            <<"execution-device">> => <<"lua@5.3a">>,
+            <<"body">> =>
+                hb_message:commit(MaybeRoute#{
+                        <<"action">> => <<"Transfer">>,
+                        <<"recipient">> => Recipient,
+                        <<"amount">> => Amount
+                    },
+                    Sender
+                )
+            },
+            Sender
+        ),
+    hb_ao:resolve(ProcMsg, Xfer, Opts).
+
+%% @doc Request that a peer register with a without sub-ledger.
+register(ProcMsg, Peer, Opts) when is_map(Peer) ->
+    register(ProcMsg, hb_message:id(Peer, all), Opts);
+register(ProcMsg, PeerID, Opts) ->
+    hb_ao:resolve(
+        ProcMsg,
+        hb_message:commit(
+            #{
+                <<"path">> => <<"push">>,
+                <<"body">> =>
+                    #{
+                        <<"path">> => <<"register">>,
+                        <<"target">> => PeerID,
+                        <<"scheduler-device">> => <<"scheduler@1.0">>,
+                        <<"execution-device">> => <<"lua@5.3a">>
+                    }
+            },
+            Opts
+        ),
+        Opts
+    ).
+
+%% @doc Retreive a single balance from the ledger.
+balance(ProcMsg, User, Opts) when not ?IS_ID(User) ->
+    balance(ProcMsg, hb_util:human_id(ar_wallet:to_address(User)), Opts);
+balance(ProcMsg, ID, Opts) ->
+    {ok, Results} = hb_ao:resolve(ProcMsg, <<"now/balance/", ID/binary>>, Opts),
+    Results.
+
+%% @doc Get the total balance for an ID across all ledgers in a set.
+balance_total(Procs, ID, Opts) ->
+    lists:sum(
+        lists:map(
+            fun(Proc) -> balance(Proc, ID, Opts) end,
+            maps:values(normalize_env(Procs))
+        )
+    ).
+
+%% @doc Get the balances of a ledger.
+balances(ProcMsg, Opts) ->
+    balances(now, ProcMsg, Opts).
+balances(Mode, ProcMsg, Opts) when is_atom(Mode) ->
+    balances(hb_util:bin(Mode), ProcMsg, Opts);
+balances(Mode, ProcMsg, Opts) ->
+    {ok, Results} = hb_ao:resolve(ProcMsg, <<Mode/binary, "/balance">>, Opts),
+    Results.
+
+%% @doc Get the supply of a ledger, either `now` or `initial`.
+supply(ProcMsg, Opts) ->
+    supply(now, ProcMsg, Opts).
+supply(Mode, ProcMsg, Opts) ->
+    lists:sum(maps:values(balances(Mode, ProcMsg, Opts))).
+
+%% @doc Get the local expectation of a ledger's balances with peer ledgers.
+ledgers(ProcMsg, Opts) ->
+    {ok, Results} = hb_ao:resolve(ProcMsg, <<"now/ledgers">>, Opts),
+    Results.
+
+%%% Test ledger network invariants.
+%%% 
+%%% Complex assertions that verify specific invariants about the state of
+%%% ledgers in a test environment. These are used to validate the correctness
+%%% of the `hyper-token.lua` script. Tested invariants are listed below.
+%%% 
+%%% For every timestep `t_n`, the following invariants must hold:
+%%% 1. The root ledger supply at `t_0` must match the current supply.
+%%% 2. For every sub-ledger `l`, each expected balance held in `l/now/ledgers`
+%%%    must equal the balance found at `peer/now/balance/l`.
+%%% 3. The sum of all values in `/now/balance` across all sub-ledgers must
+%%%    equal the root ledger's supply.
+
+%% @doc Execute all invariant checks for a pair of root ledger and sub-ledgers.
+verify_net(RootProc, AllProcs, Opts) ->
+    verify_net_supply(RootProc, AllProcs, Opts),
+    verify_net_peer_balances(AllProcs, Opts).
+
+%% @doc Verify that the initial supply of tokens on the root ledger is the same
+%% as the current supply. This invariant will not hold for sub-ledgers, as they
+%% 'mint' tokens in their local supply when they receive them from other ledgers.
+verify_root_supply(RootProc, Opts) ->
+    ?assertEqual(
+        supply(initial, RootProc, Opts),
+        supply(now, RootProc, Opts)
+    ).
+
+%% @doc Verify that the sum of all spendable balances held by ledgers in a
+%% test network is equal to the initial supply of tokens.
+verify_net_supply(RootProc, AllProcs, Opts) ->
+    RootSupply = supply(initial, RootProc, Opts),
+    NormProcsWithoutRoot = normalize_without_root(RootProc, AllProcs),
+    ?assertEqual(
+        RootSupply,
+        lists:sum(
+            lists:map(
+                fun(Proc) -> supply(Proc, Opts) end,
+                maps:values(NormProcsWithoutRoot)
+            )
+        )
+    ).
+
+%% @doc Verify the consistency of all expected ledger balances with their peer
+%% ledgers and the actual balances held.
+verify_net_peer_balances(AllProcs, Opts) ->
+    NormProcs = normalize_env(AllProcs),
+    maps:map(
+        fun(ValidateProc, _) ->
+            verify_peer_balances(ValidateProc, NormProcs, Opts)
+        end,
+        NormProcs
+    ).
+
+%% @doc Verify that a ledger's expectation of its balances with peer ledgers
+%% is consistent with the actual balances held.
+verify_peer_balances(ValidateProc, AllProcs, Opts) ->
+    Ledgers = ledgers(ValidateProc, Opts),
+    NormProcs = normalize_env(AllProcs),
+    maps:map(
+        fun(PeerID, ExpectedBalance) ->
+            ?assertEqual(
+                ExpectedBalance,
+                balance(ValidateProc,
+                    maps:get(PeerID, NormProcs),
+                    Opts
+                )
+            )
+        end,
+        Ledgers
+    ).
+
+%%% Test utilities.
+
+%% @doc Normalize a set of processes, representing ledgers in a test environment,
+%% to a canonical form: A map of `ID => Proc`.
+normalize_env(Procs) when is_map(Procs) ->
+    normalize_env(maps:values(Procs));
+normalize_env(Procs) when is_list(Procs) ->
+    maps:from_list(
+        lists:map(
+            fun(Proc) ->
+                {hb_message:id(Proc, all), Proc}
+            end,
+            Procs
+        )
+    ).
+
+%% @doc Return the normalized environment without the root ledger.
+normalize_without_root(Root, Procs) ->
+    maps:without([hb_message:id(Root, all)], normalize_env(Procs)).
+
+%%% Test cases.
+
+%% @doc Test the `transfer` function.
+%% 1. Alice has 100 tokens on a root ledger.
+%% 2. Alice sends 1 token to Bob.
+%% 3. Alice has 99 tokens, and Bob has 1 token.
+transfer_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    Proc =
+        ledger(<<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    ?assertEqual(100, supply(Proc, Opts)),
+    transfer(Proc, Alice, Bob, 1, Opts),
+    ?assertEqual(99, balance(Proc, Alice, Opts)),
+    ?assertEqual(1, balance(Proc, Bob, Opts)),
+    ?assertEqual(100, supply(Proc, Opts)).
+
+%% @doc User's must not be able to send tokens they do not own. We test three
+%% cases:
+%% 1. Transferring a token when the sender has no tokens.
+%% 2. Transferring a token when the sender has less tokens than the amount
+%%    being transferred.
+%% 3. Transferring a binary-encoded amount of tokens that exceed the quantity
+%%    of tokens the sender has available.
+transfer_unauthorized_test() ->
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    Proc = ledger(<<"test/hyper-token.lua">>, #{ <<"balance">> => #{ Alice => 100 } }),
+    % 1. Transferring a token when the sender has no tokens.
+    transfer(Proc, Bob, Alice, 1, #{}),
+    ?assertEqual(100, balance(Proc, Alice, #{})),
+    % 2. Transferring a token when the sender has less tokens than the amount
+    %    being transferred.
+    transfer(Proc, Alice, Bob, 101, #{}),
+    ?assertEqual(100, balance(Proc, Alice, #{})),
+    ?assertEqual(0, balance(Proc, Bob, #{})),
+    % 3. Transferring a binary-encoded amount of tokens that exceed the quantity
+    %    of tokens the sender has available.
+    transfer(Proc, Alice, Bob, <<"101">>, #{}),
+    ?assertEqual(100, balance(Proc, Alice, #{})),
+    ?assertEqual(0, balance(Proc, Bob, #{})),
+    % Validate the final supply of tokens.
+    ?assertEqual(100, supply(Proc, #{})).
+
+%% @doc Verify that a user can deposit tokens into a sub-ledger.
+subledger_deposit_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Proc =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedger = subledger(Proc, Opts),
+    % 1. Alice has tokens on the root ledger.
+    ?assertEqual(100, balance(Proc, Alice, Opts)),
+    % 2. Alice deposits tokens into the sub-ledger.
+    transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
+    ?assertEqual(90, balance(Proc, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger, Alice, Opts)),
+    % Verify all invariants.
+    verify_net(Proc, [SubLedger], Opts).
+
+%% @doc Simulate inter-ledger payments between users on a single sub-ledger:
+%% 1. Alice has tokens on the root ledger.
+%% 2. Alice sends tokens to the sub-ledger from the root ledger.
+%% 3. Alice sends tokens to Bob on the sub-ledger.
+%% 4. Bob sends tokens to himself on the root ledger.
+subledger_transfer_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedger = subledger(RootLedger, Opts),
+    % 1. Alice has tokens on the root ledger.
+    ?assertEqual(100, balance(RootLedger, Alice, #{})),
+    % 2. Alice sends tokens to the sub-ledger from the root ledger.
+    transfer(RootLedger, Alice, Alice, 10, [SubLedger], #{}),
+    ?assertEqual(90, balance(RootLedger, Alice, #{})),
+    ?assertEqual(10, balance(SubLedger, Alice, #{})),
+    % 3. Alice sends tokens to Bob on the sub-ledger.
+    transfer(SubLedger, Alice, Bob, 100, #{}),
+    % 4. Bob sends tokens to himself on the root ledger.
+    transfer(RootLedger, Bob, Bob, 100, #{}),
+    % Validate the balances of the root and sub-ledgers.
+    ?assertEqual(0, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger, Alice, Opts)),
+    ?assertEqual(100, balance(RootLedger, Bob, Opts)),
+    ?assertEqual(0, balance(SubLedger, Bob, Opts)),
+    % Validate the final supply of tokens.
+    ?assertEqual(100, supply(RootLedger, Opts)),
+    % Validate all invariants.
+    verify_net(RootLedger, [SubLedger], Opts).
+
+%% @doc Verify that peer ledgers on the same token are able to register mutually
+%% to establish a peer-to-peer connection.
+subledger_registration_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedger1 = subledger(RootLedger, Opts),
+    SubLedger2 = subledger(RootLedger, Opts),
+    % There are no registered peers on either sub-ledger.
+    ?assertEqual(0, map_size(ledgers(SubLedger1, Opts))),
+    ?assertEqual(0, map_size(ledgers(SubLedger2, Opts))),
+    % Alice registers with SubLedger1.
+    register(SubLedger1, SubLedger2, Opts),
+    % SubLedger1 and SubLedger2 are now aware of each other.
+    ?assertEqual(1, map_size(ledgers(SubLedger1, Opts))),
+    ?assertEqual(1, map_size(ledgers(SubLedger2, Opts))),
+    % Alice can send tokens to Bob on SubLedger2.
+    verify_net(RootLedger, [SubLedger1, SubLedger2], Opts).
+
+%% @doc Verify that registered sub-ledgers are able to send tokens to each other
+%% without the need for messages on the root ledger.
+subledger_to_subledger_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedger1 = subledger(RootLedger, Opts),
+    SubLedger2 = subledger(RootLedger, Opts),
+    % 1. Alice has tokens on the root ledger.
+    ?assertEqual(100, balance(RootLedger, Alice, Opts)),
+    % 2. Alice registers with SubLedger1.
+    register(SubLedger1, SubLedger2, Opts),
+    % 3. Alice sends 90 tokens to herself on SubLedger1.
+    transfer(SubLedger1, Alice, Alice, 90, [SubLedger1], Opts),
+    % 4. Alice sends 10 tokens to Bob on SubLedger2.
+    transfer(SubLedger1, Alice, Bob, 10, [SubLedger2], Opts),
+    ?assertEqual(10, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
+    verify_net(RootLedger, [SubLedger1, SubLedger2], Opts),
+    % 5. Bob sends 5 tokens to himself on SubLedger1.
+    transfer(SubLedger2, Bob, Bob, 5, [SubLedger1], Opts),
+    ?assertEqual(10, balance(SubLedger1, Bob, Opts)),
+    ?assertEqual(85, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(5, balance(SubLedger2, Bob, Opts)),
+    verify_net(RootLedger, [SubLedger1, SubLedger2], Opts).
+
+%% @doc Verify that multi-hop transfers are able to route through intermediate
+%% ledgers correctly. A multi-hop transfer is a transfer where another ledger
+%% proxies the transfer to the next hop along a `route' specified by the sender.
+%% 
+%% This test establishes a chain of trust between three sub-ledgers, and then
+%% exercises the multi-hop transfer functionality by sending tokens from Alice
+%% to Bob through each of the sub-ledgers. After, the tokens are transferred
+%% back to Alice on the root ledger.
+multihop_transfer_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedgers = [ subledger(RootLedger, Opts) || _ <- lists:seq(1, 3) ],
+    AllLedgers = [ RootLedger | SubLedgers ],
+    SubLedger1 = lists:nth(1, SubLedgers),
+    SubLedger2 = lists:nth(2, SubLedgers),
+    SubLedger3 = lists:nth(3, SubLedgers),
+    % 1. Alice has tokens on the root ledger.
+    ?assertEqual(100, balance(RootLedger, Alice, Opts)),
+    % 2. Create the chain of trust between the sub-ledgers.
+    register(SubLedger1, SubLedger2, Opts),
+    register(SubLedger2, SubLedger3, Opts),
+    % 3. Alice sends 10 tokens to herself on SubLedger1.
+    transfer(SubLedger1, Alice, Alice, 90, [SubLedger1], Opts),
+    % Verify the state before the multi-hop transfer.
+    ?assertEqual(10, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(90, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(1, map_size(ledgers(SubLedger1, Opts))),
+    ?assertEqual(1, map_size(ledgers(SubLedger2, Opts))),
+    ?assertEqual(1, map_size(ledgers(SubLedger3, Opts))),
+    % 4. Alice sends 10 tokens to Bob on SubLedger3, via SubLedger2.
+    transfer(SubLedger1, Alice, Bob, 10, [SubLedger2, SubLedger3], Opts),
+    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger2, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
+    ?assertEqual(10, balance(SubLedger3, Bob, Opts)),
+    % 5. Bob sends 10 tokens to himself on SubLedger3.
+    transfer(SubLedger3, Bob, Alice, 10, [RootLedger], Opts),
+    % Verify the final state of all ledgers.
+    ?assertEqual(0, balance_total(AllLedgers, Bob, Opts)),
+    ?assertEqual(10, balance_total(AllLedgers, Alice, Opts)),
+    verify_net(RootLedger, SubLedgers, Opts).
+
+%% @doc Verify that a requested route that a ledger is not capable of servicing
+%% terminates gracefully. The _sender_ of the tokens (not the recipient) should
+%% receive the tokens in their balance on the intermediate ledger. This avoids
+%% the recipient having to handle recovery of the tokens for which they did not
+%% choose the route.
+multihop_route_termination_test() ->
+    Opts = #{},
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"test/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
+    SubLedgers = [ subledger(RootLedger, Opts) || _ <- lists:seq(1, 3) ],
+    AllLedgers = [ RootLedger | SubLedgers ],
+    SubLedger1 = lists:nth(1, SubLedgers),
+    SubLedger2 = lists:nth(2, SubLedgers),
+    SubLedger3 = lists:nth(3, SubLedgers),
+    % 1. Alice has tokens on the root ledger. She transfers them to herself on
+    %    SubLedger1.
+    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
+    % 2. Alice registers SubLedger1 with SubLedger2, but not SubLedger2 with
+    %    SubLedger3.
+    register(SubLedger1, SubLedger2, Opts),
+    % 3. Alice requests a multi-hop transfer SL1 -> SL2 -> SL3.
+    transfer(RootLedger, Alice, Bob, 10, SubLedgers, Opts),
+    % 4. Alice's transfer should have terminated at SL2, as SL2 does not have
+    %    a route to SL3.
+    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger2, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
+    ?assertEqual(0, balance(SubLedger3, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger3, Bob, Opts)),
+    verify_net(RootLedger, AllLedgers, Opts),
+    % 5. Alice again attempts to transfer 10 tokens to Bob on SubLedger3, this 
+    %    time routing via RootLedger, starting from the end of the previous
+    %    transfer at SubLedger2.
+    transfer(SubLedger2, Alice, Bob, 10, [RootLedger, SubLedger3], Opts),
+    % 6. The transfer should now have succeeded.
+    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger1, Bob, Opts)),
+    ?assertEqual(0, balance(SubLedger2, Alice, Opts)),
+    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
+    ?assertEqual(0, balance(SubLedger3, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger3, Bob, Opts)),
+    verify_net(RootLedger, AllLedgers, Opts).
