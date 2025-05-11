@@ -20,32 +20,64 @@
 %%% `hyper-token.lua` processes.
 
 %% @doc Generate a Lua process definition message.
-ledger(File, Opts) ->
-    ledger(File, #{}, Opts).
-ledger(File, Extra, Opts) when is_binary(File) ->
-    ledger([File], Extra, Opts);
-ledger(Files, Extra, Opts) when is_list(Files) ->
-    Wallet = hb_opts:get(priv_wallet, hb:wallet(Opts), Opts),
-    hb_message:commit(Extra#{
-        <<"device">> => <<"process@1.0">>,
-        <<"type">> => <<"Process">>,
-        <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"execution-device">> => <<"lua@5.3a">>,
-        <<"script">> => #{
-            <<"content-type">> => <<"application/lua">>,
-            <<"body">> =>
-                [
-                    #{
-                        <<"content-type">> => <<"application/lua">>,
-                        <<"module">> => File,
-                        <<"body">> => hb_util:ok(file:read_file(File))
-                    }
-                ||
-                    File <- Files
-                ]
-        }},
-        Wallet
+ledger(Script, Opts) ->
+    ledger(Script, #{}, Opts).
+ledger(Script, Extra, Opts) ->
+    % Ensure the application has been started.
+    ModExtra =
+        case maps:get(<<"balance">>, Extra, undefined) of
+            undefined -> Extra;
+            RawBalance ->
+                Extra#{
+                    <<"balance">> =>
+                        maps:from_list(
+                            lists:map(
+                                fun({ID, Amount}) when ?IS_ID(ID) ->
+                                    {hb_util:human_id(ID), Amount};
+                                ({Wallet, Amount}) when is_tuple(Wallet) ->
+                                    {
+                                        hb_util:human_id(
+                                            ar_wallet:to_address(Wallet)
+                                        ),
+                                        Amount
+                                    }
+                                end,
+                                maps:to_list(RawBalance)
+                            )
+                        )
+                }
+        end,
+    hb_message:commit(ModExtra#{
+            <<"device">> => <<"process@1.0">>,
+            <<"type">> => <<"Process">>,
+            <<"scheduler-device">> => <<"scheduler@1.0">>,
+            <<"scheduler">> => hb_util:human_id(hb:wallet()),
+            <<"execution-device">> => <<"lua@5.3a">>,
+            <<"script">> => lua_script(Script)
+        },
+        Opts#{ priv_wallet => hb:wallet() }
     ).
+
+%% @doc Generate a Lua `script' key from a file or list of files.
+lua_script(Files) when is_list(Files) ->
+    [
+        #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"module">> => File,
+            <<"body">> =>
+                hb_util:ok(
+                    file:read_file(
+                        if is_binary(File) -> binary_to_list(File);
+                           true -> File
+                        end
+                    )
+                )
+        }
+    ||
+        File <- Files
+    ];
+lua_script(File) when is_binary(File) ->
+    hd(lua_script([File])).
 
 %% @doc Generate a test sub-ledger process definition message.
 subledger(Root, Opts) ->
@@ -62,15 +94,12 @@ subledger(Root, Opts) ->
     ).
 
 %% @doc Generate a test transfer message.
-transfer(ProcMsg, Sender, Recipient, Opts) ->
-    transfer(ProcMsg, Sender, Recipient, 1, Opts).
-transfer(ProcMsg, Sender, Recipient, Amount, Opts) ->
-    transfer(ProcMsg, Sender, Recipient, Amount, undefined, Opts).
-transfer(ProcMsg, Sender, Recipient, Amount, Route = [R|_], Opts) when is_map(R) ->
+transfer(ProcMsg, Sender, Recipient, Quantity, Opts) ->
+    transfer(ProcMsg, Sender, Recipient, Quantity, undefined, Opts).
+transfer(ProcMsg, Sender, Recipient, Quantity, Route = [R|_], Opts) when is_map(R) ->
     NormRoute = [ hb_message:id(L, all) || L <- Route ],
-    transfer(ProcMsg, Sender, Recipient, Amount, NormRoute, Opts);
-transfer(ProcMsg, Sender, Recipient, Amount, Route, Opts) ->
-    ProcID = hb_message:id(ProcMsg, all),
+    transfer(ProcMsg, Sender, Recipient, Quantity, NormRoute, Opts);
+transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
     MaybeRoute =
         if Route == undefined -> #{};
            true -> #{ <<"route">> => Route }
@@ -78,14 +107,14 @@ transfer(ProcMsg, Sender, Recipient, Amount, Route, Opts) ->
     Xfer =
         hb_message:commit(#{
             <<"path">> => <<"push">>,
-            <<"target">> => ProcID,
+            <<"target">> => hb_message:id(ProcMsg, all),
             <<"scheduler-device">> => <<"scheduler@1.0">>,
             <<"execution-device">> => <<"lua@5.3a">>,
             <<"body">> =>
                 hb_message:commit(MaybeRoute#{
                         <<"action">> => <<"Transfer">>,
-                        <<"recipient">> => Recipient,
-                        <<"amount">> => Amount
+                        <<"recipient">> => hb_util:human_id(Recipient),
+                        <<"quantity">> => Quantity
                     },
                     Sender
                 )
@@ -120,8 +149,8 @@ register(ProcMsg, PeerID, Opts) ->
 balance(ProcMsg, User, Opts) when not ?IS_ID(User) ->
     balance(ProcMsg, hb_util:human_id(ar_wallet:to_address(User)), Opts);
 balance(ProcMsg, ID, Opts) ->
-    {ok, Results} = hb_ao:resolve(ProcMsg, <<"now/balance/", ID/binary>>, Opts),
-    Results.
+    ?event(debug, {balance, {proc_msg, ProcMsg}, {id, ID}}),
+    hb_ao:get(<<"now/balance/", ID/binary>>, ProcMsg, 0, Opts).
 
 %% @doc Get the total balance for an ID across all ledgers in a set.
 balance_total(Procs, ID, Opts) ->
@@ -139,7 +168,8 @@ balances(Mode, ProcMsg, Opts) when is_atom(Mode) ->
     balances(hb_util:bin(Mode), ProcMsg, Opts);
 balances(Mode, ProcMsg, Opts) ->
     {ok, Results} = hb_ao:resolve(ProcMsg, <<Mode/binary, "/balance">>, Opts),
-    Results.
+    ?event(debug, {balances, {mode, Mode}, {results, Results}}),
+    hb_private:reset(Results).
 
 %% @doc Get the supply of a ledger, either `now` or `initial`.
 supply(ProcMsg, Opts) ->
@@ -254,7 +284,8 @@ transfer_test() ->
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
     Proc =
-        ledger(<<"test/hyper-token.lua">>,
+        ledger(
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),
@@ -272,24 +303,30 @@ transfer_test() ->
 %% 3. Transferring a binary-encoded amount of tokens that exceed the quantity
 %%    of tokens the sender has available.
 transfer_unauthorized_test() ->
+    Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
-    Proc = ledger(<<"test/hyper-token.lua">>, #{ <<"balance">> => #{ Alice => 100 } }),
+    Proc =
+        ledger(
+            <<"scripts/hyper-token.lua">>,
+            #{ <<"balance">> => #{ Alice => 100 } },
+            Opts
+        ),
     % 1. Transferring a token when the sender has no tokens.
-    transfer(Proc, Bob, Alice, 1, #{}),
-    ?assertEqual(100, balance(Proc, Alice, #{})),
+    Result = transfer(Proc, Bob, Alice, 1, Opts),
+    ?event(debug, {unauthorized_transfer, {result, Result}}),
     % 2. Transferring a token when the sender has less tokens than the amount
     %    being transferred.
-    transfer(Proc, Alice, Bob, 101, #{}),
-    ?assertEqual(100, balance(Proc, Alice, #{})),
-    ?assertEqual(0, balance(Proc, Bob, #{})),
+    transfer(Proc, Alice, Bob, 101, Opts),
+    ?assertEqual(100, balance(Proc, Alice, Opts)),
+    ?assertEqual(0, balance(Proc, Bob, Opts)),
     % 3. Transferring a binary-encoded amount of tokens that exceed the quantity
     %    of tokens the sender has available.
-    transfer(Proc, Alice, Bob, <<"101">>, #{}),
-    ?assertEqual(100, balance(Proc, Alice, #{})),
-    ?assertEqual(0, balance(Proc, Bob, #{})),
+    transfer(Proc, Alice, Bob, <<"101">>, Opts),
+    ?assertEqual(100, balance(Proc, Alice, Opts)),
+    ?assertEqual(0, balance(Proc, Bob, Opts)),
     % Validate the final supply of tokens.
-    ?assertEqual(100, supply(Proc, #{})).
+    ?assertEqual(100, supply(Proc, Opts)).
 
 %% @doc Verify that a user can deposit tokens into a sub-ledger.
 subledger_deposit_test() ->
@@ -297,7 +334,7 @@ subledger_deposit_test() ->
     Alice = ar_wallet:new(),
     Proc =
         ledger(
-            <<"test/hyper-token.lua">>,
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),
@@ -322,7 +359,7 @@ subledger_transfer_test() ->
     Bob = ar_wallet:new(),
     RootLedger =
         ledger(
-            <<"test/hyper-token.lua">>,
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),
@@ -354,7 +391,7 @@ subledger_registration_test() ->
     Alice = ar_wallet:new(),
     RootLedger =
         ledger(
-            <<"test/hyper-token.lua">>,
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),
@@ -379,7 +416,7 @@ subledger_to_subledger_test() ->
     Bob = ar_wallet:new(),
     RootLedger =
         ledger(
-            <<"test/hyper-token.lua">>,
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),
@@ -418,7 +455,7 @@ multihop_transfer_test() ->
     Bob = ar_wallet:new(),
     RootLedger =
         ledger(
-            <<"test/hyper-token.lua">>,
+            <<"scripts/hyper-token.lua">>,
             #{ <<"balance">> => #{ Alice => 100 } },
             Opts
         ),

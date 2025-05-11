@@ -107,13 +107,14 @@ local function is_signed_by(addresses, target, assignment)
 
     -- Get the message body based on the target type.
     local msg
-    if target == "assignment" then msg = assignment.body
-    elseif target == "request" then msg = assignment
+    if target == "assignment" then msg = assignment
+    elseif target == "request" then msg = assignment.body
     end
 
     -- Get the committers from the message and check if any of them match the
     -- given addresses.
-    local committers = ao.get("committers", msg)
+    local committers = ao.get("committers", {"as", "message@1.0", msg})
+    ao.event({ "Committers: ", { element = target, committers = committers } })
     for _, committer in ipairs(committers) do
         for _, address in ipairs(addresses) do
             if committer == address then
@@ -129,7 +130,7 @@ end
 -- process, or by checking the signature against the process's own scheduler
 -- address and those it explicitly trusts.
 local function is_trusted_assignment(base, assignment)
-    if base.assess or base.assess.assignment then
+    if base.assess and base.assess.assignment then
         ao.event({ "Running assessment message against assignment." },
             { assessment = base.assess.assignment, assignment = assignment })
         local status, result = ao.resolve(base.assess.assignment, assignment)
@@ -154,7 +155,7 @@ end
 -- Ensure that message's sent on-behalf of the process are trusted by the
 -- process's specification.
 local function is_trusted_request(base, request)
-    if base.assess or base.assess.request then
+    if base.assess and base.assess.request then
         ao.event({ "Running assessment message against request." },
             { assessment = base.assess.request, request = request })
         local status, result = ao.resolve(base.assess.request, request)
@@ -224,12 +225,12 @@ local function ensure_initialized(base, assignment)
 
     -- Ensure that the `ledgers' map is initialized: present and empty.
     base.ledgers = base.ledgers or {}
-    ao.event({ "Ledgers before initialization: ", { ledgers = base.ledgers } })
+    ao.event({ "Ledgers before initialization: ", base.ledgers })
 
     for _, ledger in ipairs(base.ledgers) do
         base.ledgers[ledger] = 0
     end
-    ao.event({ "Ledgers after initialization: ", { ledgers = base.ledgers } })
+    ao.event({ "Ledgers after initialization: ", base.ledgers })
 
     if not base["token"] then
         ao.event({ "Ledger has no source token. Skipping registration." })
@@ -265,9 +266,22 @@ local function validate_request(incoming_base, assignment)
         }})
         return "error", base, "Ledger initialization failed."
     end
-
     -- First, ensure that the message has not already been processed.
-    status, base = ao.resolve({"as", "dedup@1.0", incoming_base}, "compute")
+    ao.event("Deduplicating message.")
+    status, base =
+        ao.resolve(
+            incoming_base,
+            {"as",
+                "dedup@1.0",
+                {
+                    path = "compute",
+                    ["subject-key"] = "body",
+                    body = assignment.body
+                }
+            }
+        )
+    base.device = "process@1.0"
+    ao.event("Deduplication complete.")
     if status ~= "ok" then
         ao.event({ "Deduplication failure.",
             assignment = assignment,
@@ -282,7 +296,7 @@ local function validate_request(incoming_base, assignment)
     if not is_trusted_assignment(base, assignment) then
         base.result = {
             status = "error",
-            error = "Assignment signature required."
+            error = "Assignment commitments required."
         }
         return "error", base, "Assignment not trusted."
     end
@@ -336,6 +350,8 @@ end
 local function deduct_balance(origin, base, request)
     local source = request.from
     local quantity = request.quantity
+
+    ao.event({ "Deducting balance.", { origin = origin }, { request = request } })
 
     -- Ensure that the `source' and `quantity' fields are present in the request.
     if not source or not quantity then
@@ -536,6 +552,10 @@ function transfer(raw_base, assignment)
 
     if not request.recipient then
         ao.event({ "Transfer request has no recipient. Skipping." })
+        base.result = {
+            status = "error",
+            error = "Transfer request has no recipient."
+        }
         return "ok", base
     end
 
