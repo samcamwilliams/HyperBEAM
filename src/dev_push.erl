@@ -29,15 +29,6 @@ push(Base, Req, Opts) ->
             case schedule_initial_message(Process, Req, Opts) of
                 {ok, Assignment} ->
                     case find_type(hb_ao:get(<<"body">>, Assignment, Opts), Opts) of
-                        <<"Message">> ->
-                            ?event(push,
-                                {pushing_message,
-                                    {base, Process},
-                                    {assignment, Assignment}
-                                },
-                                Opts
-                            ),
-                            push_with_mode(Process, Assignment, Opts);
                         <<"Process">> ->
                             ?event(push,
                                 {initializing_process,
@@ -45,7 +36,16 @@ push(Base, Req, Opts) ->
                                     {assignment, Assignment}},
                                 Opts
                             ),
-                            {ok, Assignment}
+                            {ok, Assignment};
+                        _ ->
+                            ?event(push,
+                                {pushing_message,
+                                    {base, Process},
+                                    {assignment, Assignment}
+                                },
+                                Opts
+                            ),
+                            push_with_mode(Process, Assignment, Opts)
                     end;
                 {error, Res} -> {error, Res}
             end;

@@ -118,7 +118,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         }
     ),
     ProcID = hb_message:id(Msg1, all),
-    Slot = hb_ao:get(<<"at-slot">>, Msg1, Opts),
+    Slot = hb_ao:get(<<"at-slot">>, {as, <<"message@1.0">>, Msg1}, Opts),
     {ok,
         hb_private:set(
             hb_ao:set(
