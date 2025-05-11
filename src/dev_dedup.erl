@@ -24,7 +24,8 @@
 
 info(_M1) ->
     #{
-        handler => fun handle/4
+        default => fun handle/4,
+        exclude => [keys, set, id, commit]
     }.
 
 %% @doc Forward the keys and `set' functions to the message device, handle all
@@ -35,13 +36,16 @@ handle(<<"keys">>, M1, _M2, _Opts) ->
 handle(<<"set">>, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(Key, M1, M2, Opts) ->
+    ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
     % Find the relevant parameters from the messages. We search for the
     % `dedup-key' key in the first message, and use that value as the key to
     % look for in the second message.
     SubjectKey =
-        hb_ao:get(
-            <<"dedup-subject">>,
-            {as, <<"message@1.0">>, M1},
+        hb_ao:get_first(
+            [
+                {{as, <<"message@1.0">>, M1}, <<"dedup-subject">>},
+                {{as, <<"message@1.0">>, M2}, <<"dedup-subject">>}
+            ],
             <<"body">>,
             Opts
         ),
@@ -53,7 +57,13 @@ handle(Key, M1, M2, Opts) ->
         true ->
             % The subject is the value of the subject key, which will have
             % defaulted to the `body' key if not set in the base message.
-            hb_ao:get(SubjectKey, {as, <<"message@1.0">>, M2}, Opts)
+            hb_ao:get_first(
+                [
+                    {{as, <<"message@1.0">>, M1}, SubjectKey},
+                    {{as, <<"message@1.0">>, M2}, SubjectKey}
+                ],
+                Opts
+            )
         end,
     % Is this the first pass, if we are executing in a stack?
     FirstPass = hb_ao:get(<<"pass">>, {as, <<"message@1.0">>, M1}, 1, Opts) == 1,
@@ -72,11 +82,9 @@ handle(Key, M1, M2, Opts) ->
             % check.
             {ok, M1};
         {true, not_found} ->
-            % Return an error, as the subject key is not present.
-            {error, #{
-                <<"status">> => 404,
-                <<"body">> => <<"The subject of deduplication is not present.">>
-            }};
+            % If the subject key is not present, we can skip the deduplication
+            % check.
+            {ok, M1};
         {true, _} ->
             % If this is the first pass, we need to check if the subject has
             % already been seen.
