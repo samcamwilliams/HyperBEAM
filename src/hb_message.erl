@@ -1443,9 +1443,9 @@ encode_balance_table(Size, Codec) ->
             _ <- lists:seq(1, Size)
         },
     Encoded = convert(Msg, Codec, #{}),
-    ?event(debug, {encoded, {explicit, Encoded}}),
+    ?event({encoded, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 encode_small_balance_table_test(Codec) ->

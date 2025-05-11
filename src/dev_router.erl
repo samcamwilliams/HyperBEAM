@@ -265,7 +265,7 @@ apply_routes(Msg, R, Opts) ->
     NodesWithRouteApplied =
         lists:map(
             fun(N) ->
-                ?event(debug, {apply_route, {msg, Msg}, {node, N}}),
+                ?event({apply_route, {msg, Msg}, {node, N}}),
                 case apply_route(Msg, N) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
                     {ok, RMsg} -> maps:merge(N, RMsg);
@@ -274,7 +274,7 @@ apply_routes(Msg, R, Opts) ->
             end,
             hb_util:message_to_ordered_list(Nodes)
         ),
-    ?event(debug, {nodes_after_apply, NodesWithRouteApplied}),
+    ?event({nodes_after_apply, NodesWithRouteApplied}),
     R#{ <<"nodes">> => NodesWithRouteApplied }.
 
 %% @doc Apply a node map's rules for transforming the path of the message.
@@ -364,7 +364,7 @@ choose(N, <<"Random">>, _, Nodes, _Opts) ->
     Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
     [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
 choose(N, <<"By-Weight">>, _, Nodes, Opts) ->
-    ?event(debug, {nodes, Nodes}),
+    ?event({nodes, Nodes}),
     NodesWithWeight =
         [
             { Node, hb_util:float(hb_ao:get(<<"weight">>, Node, Opts)) }

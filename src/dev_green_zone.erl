@@ -361,7 +361,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                                 true ->
                                     try_mount_encrypted_volume(AESKey, NewOpts);
                                 false ->
-                                    ?event(debug, <<"Not mounting encrypted volume.">>)
+                                    ?event(<<"Not mounting encrypted volume.">>)
                             end,
 
                             {ok, #{ 

@@ -688,7 +688,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
                     Codec,
                     Opts
                 ),
-            ?event(debug,
+            ?event(
                 {verifying_encoded_message,
                     {body, {string, Body}},
                     {decoded, Decoded}
@@ -920,7 +920,7 @@ send_encoded_node_message_test(Config, Codec) ->
             },
             #{}
         ),
-    ?event(debug, {res, Res}),
+    ?event({res, Res}),
     ?assertEqual(
         {ok, <<"b">>},
         hb_http:get(

@@ -248,7 +248,7 @@ balance(_, Req, NodeMsg) ->
                 <<"path">> => <<"balance">>,
                 <<"request">> => Req
             },
-            ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
+            ?event({ledger_message, {ledger_msg, LedgerMsg}}),
             case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
                 {ok, Balance} ->
                     {ok, Balance};
