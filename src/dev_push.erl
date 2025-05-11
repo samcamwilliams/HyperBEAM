@@ -274,13 +274,15 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
         },
         Opts
     ),
+    AugmentedMsg = additional_keys(Origin, MsgToPush, Opts),
+    ?event(push, {prepared_msg, {msg, AugmentedMsg}}, Opts),
     SignedReq =
         #{
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
             <<"body">> =>
                 SignedMsg = hb_message:commit(
-                    additional_keys(Origin, MsgToPush, Opts),
+                    AugmentedMsg,
                     Opts,
                     Codec
                 )

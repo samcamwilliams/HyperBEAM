@@ -62,7 +62,7 @@
 
 -- Add a message to the outbox of the given base.
 local function send(base, message)
-    table.insert(base.result.outbox, message)
+    table.insert(base.results.outbox, message)
     return base
 end
 
@@ -123,7 +123,12 @@ local function is_signed_by(addresses, target, assignment)
         end
     end
 
-    return false
+    return false, {
+        ["received-committers"] = committers,
+        ["expected-committers"] = addresses,
+        ["root-message"] = assignment,
+        target = target
+    }
 end
 
 -- Ensure that the assignment is trusted. Either by running the assessment
@@ -134,19 +139,30 @@ local function is_trusted_assignment(base, assignment)
         ao.event({ "Running assessment message against assignment." },
             { assessment = base.assess.assignment, assignment = assignment })
         local status, result = ao.resolve(base.assess.assignment, assignment)
-        if (status ~= "ok") or (result ~= true) then
+        if (status == "ok") and (result == true) then
+            ao.event({ "Assessment of assignment passed." }, {
+                assignment = assignment,
+                status = status,
+                result = result
+            })
+            return true
+        else
             ao.event({ "Assessment of assignment failed.", {
                 assignment = assignment,
                 status = status,
                 result = result
             }})
-            return false
+            return false, {
+                ["assessment-message"] = base.assess.assignment,
+                status = status,
+                result = result
+            }
         end
     end
 
     -- If the assessment message is not present, check the signature against
     -- the process's own scheduler address.
-    ao.event({ "Trusted authorities: ", {
+    ao.event({ "Trusted scheduler(s): ", {
         scheduler = base.scheduler
     }})
     return is_signed_by(base.scheduler, "assignment", assignment)
@@ -154,12 +170,20 @@ end
 
 -- Ensure that message's sent on-behalf of the process are trusted by the
 -- process's specification.
-local function is_trusted_request(base, request)
+local function is_trusted_compute(base, assignment)
+    local request = assignment.body
     if base.assess and base.assess.request then
         ao.event({ "Running assessment message against request." },
             { assessment = base.assess.request, request = request })
         local status, result = ao.resolve(base.assess.request, request)
-        if (status ~= "ok") or (result ~= true) then
+        if (status == "ok") and (result == true) then
+            ao.event({ "Assessment of request passed." }, {
+                request = request,
+                status = status,
+                result = result
+            })
+            return true
+        else
             ao.event({ "Assessment of request failed.", {
                 request = request,
                 status = status,
@@ -174,7 +198,7 @@ local function is_trusted_request(base, request)
     ao.event({ "Trusted authorities: ", {
         authority = base.authority
     }})
-    return is_signed_by(base.authority, "request", request)
+    return is_signed_by(base.authority, "request", assignment)
 end
 
 -- Ensure that a credit-notice from another ledger is admissible. It must either
@@ -214,14 +238,15 @@ end
 -- Ensure that the ledger is initialized.
 local function ensure_initialized(base, assignment)
     -- Ensure that the base has a `result' field before we try to register.
-    base.result = base.result or {}
-    base.result.outbox = {}
-    base.result.status = "OK"
+    base.results = base.results or {}
+    base.results.outbox = {}
+    base.results.status = "OK"
     -- If the ledger is not being initialized, we can skip the rest of the
     -- function.
     if assignment.slot ~= 0 then
         return "ok", base
     end
+    base.balance = base.balance or {}
 
     -- Ensure that the `ledgers' map is initialized: present and empty.
     base.ledgers = base.ledgers or {}
@@ -232,7 +257,7 @@ local function ensure_initialized(base, assignment)
     end
     ao.event({ "Ledgers after initialization: ", base.ledgers })
 
-    if not base["token"] then
+    if not base.token then
         ao.event({ "Ledger has no source token. Skipping registration." })
         return "ok", base
     end
@@ -243,7 +268,7 @@ local function ensure_initialized(base, assignment)
 
     for _, ledger in ipairs(base.ledgers) do
         -- Insert the register result into the base.
-        base.result = send(base, {
+        base.results = send(base, {
             action = "Register",
             target = ledger
         })
@@ -267,7 +292,10 @@ local function validate_request(incoming_base, assignment)
         return "error", base, "Ledger initialization failed."
     end
     -- First, ensure that the message has not already been processed.
-    ao.event("Deduplicating message.")
+    ao.event("Deduplicating message.", {
+        ["history-length"] = #(base.dedup or {})
+    })
+
     status, base =
         ao.resolve(
             incoming_base,
@@ -280,8 +308,9 @@ local function validate_request(incoming_base, assignment)
                 }
             }
         )
+
+    -- Set the device back to `process@1.0`.
     base.device = "process@1.0"
-    ao.event("Deduplication complete.")
     if status ~= "ok" then
         ao.event({ "Deduplication failure.",
             assignment = assignment,
@@ -293,23 +322,27 @@ local function validate_request(incoming_base, assignment)
     end
 
     -- Next, ensure that the assignment is trusted.
-    if not is_trusted_assignment(base, assignment) then
-        base.result = {
+    local trusted, details = is_trusted_assignment(base, assignment)
+    if not trusted then
+        base.results = {
             status = "error",
-            error = "Assignment commitments required."
+            error = "Assignment is not trusted.",
+            details = details
         }
-        return "error", base, "Assignment not trusted."
+        return "error", base, "Assignment is not trusted."
     end
 
     if assignment.body["from-process"] then
         -- If the request is proxied, we need to check that the source
         -- computation is trusted.
-        if not is_trusted_request(base, assignment.body) then
-            base.result = {
+        trusted, details = is_trusted_compute(base, assignment)
+        if not trusted then
+            base.results = {
                 status = "error",
-                error = "Source computation not trusted."
+                error = "Message computation is not trusted.",
+                details = details
             }
-            return "error", base, "Computation not trusted."
+            return "error", base, "Message computation is not trusted."
         end
         assignment.body.from = assignment.body["from-process"]
         return "ok", base, assignment.body
@@ -318,7 +351,7 @@ local function validate_request(incoming_base, assignment)
         -- that signed the request.
         local committers = ao.get("committers", assignment.body)
         if #committers == 0 then
-            base.result = {
+            base.results = {
                 status = "error",
                 error = "No request signers found."
             }
@@ -327,7 +360,7 @@ local function validate_request(incoming_base, assignment)
         
         -- Only accept single-signed requests to avoid ambiguity
         if #committers > 1 then
-            base.result = {
+            base.results = {
                 status = "error",
                 error =
                     "Multiple signers detected, making sender ambiguous. " ..
@@ -335,7 +368,8 @@ local function validate_request(incoming_base, assignment)
                     "requests (those that do not originate from another " ..
                     "computation)."
             }
-            return "error", base, "Multiple signers not supported."
+            return "error", base, "End-user signed messages with multiple " ..
+                "signers are not supported."
         end
         
         assignment.body.from = committers[1]
@@ -351,13 +385,17 @@ local function deduct_balance(origin, base, request)
     local source = request.from
     local quantity = request.quantity
 
-    ao.event({ "Deducting balance.", { origin = origin }, { request = request } })
+    ao.event({ "Attempting to deduct balance.",
+        { origin = origin },
+        { request = request },
+        { balances = base.balance or {} }
+    })
 
     -- Ensure that the `source' and `quantity' fields are present in the request.
     if not source or not quantity then
         ao.event({ "Failure: Fund source or quantity not found in request.",
             { origin = origin }, { request = request } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Fund source or quantity not present."
         }
@@ -368,7 +406,7 @@ local function deduct_balance(origin, base, request)
     quantity = normalize_int(quantity)
     if not quantity then
         ao.event({ "Invalid quantity value: ", { quantity = quantity } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Invalid quantity value.",
             quantity = quantity
@@ -382,7 +420,7 @@ local function deduct_balance(origin, base, request)
     if not source_balance then
         ao.event({ "Failure: Source balance not found.", { origin = origin },
             { request = request } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Source balance not found."
         }
@@ -393,7 +431,7 @@ local function deduct_balance(origin, base, request)
     if type(source_balance) ~= "number" then
         ao.event({ "Failure: Source balance is not a number.", { origin = origin },
             { request = request } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Source balance is not a number.",
             ["balance"] = source_balance
@@ -405,7 +443,7 @@ local function deduct_balance(origin, base, request)
     if quantity < 0 then
         ao.event({ "Failure: Quantity to deduct is negative.", { origin = origin },
             { request = request } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Quantity to deduct is negative."
         }
@@ -416,16 +454,16 @@ local function deduct_balance(origin, base, request)
     if source_balance < quantity then
         ao.event({ "Failure: Insufficient funds.", { origin = origin },
             { request = request } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Insufficient funds."
         }
         return "error", base
     end
 
-    ao.event({ "Debiting funds", { origin = origin }, { request = request } })
+    ao.event({ "Deducting funds:", { origin = origin }, { request = request } })
     base.balance[source] = source_balance - quantity
-    ao.event({ "Debit processed", { balances = base.balance } })
+    ao.event({ "Balances after deduction:", { balances = base.balance } })
     return "ok", base
 end
 
@@ -433,33 +471,52 @@ end
 local function transfer_route_next(base, request)
     ao.event({ "Route request received: ", {
         request = request,
-        ledgers = base.ledgers
+        ledgers = base.ledgers,
+        token = base.token or "[root]"
     }})
-
-    -- Check that we know how to route the request.
-    -- First, check if the parent token is the next hop.
-    local known = false
-    if request.route[1] == base["token"] then
-        known = true
-    end
-
-    -- Next, check if a registered subledger is in the route.
-    for _, ledger in ipairs(base.ledgers) do
-        if request.route[1] == ledger then
-            known = true
-        end
-    end
 
     -- Normalize the quantity value.
     local quantity = normalize_int(request.quantity)
     if not quantity then
         ao.event({ "Invalid quantity value: ", { quantity = request.quantity } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Invalid quantity value.",
             quantity = quantity
         }
         return "ok", base
+    end
+
+    -- Check that we know how to route the request.
+    -- Additionally, we determine the type of request: 
+    -- 1. Whether the sender is another ledger or a user.
+    -- 2. Whether the request is from the root token.
+    -- 3. Whether we are the first hop in the route.
+
+    -- First, check if we are the root token.
+    local known = false
+    local from_ledger = false
+    if not base.token then
+        known = true
+    end
+
+    -- Next, check if the root token (which we trust implicitly) is in the route.
+    if request.route[1] == base.token then
+        known = true
+    end
+    if base.token and (base.token == request.from) then
+        from_ledger = true
+    end
+
+    -- Finally, check if a registered subledger is in the route, and/or if the
+    -- subledger is the sender.
+    for _, ledger in ipairs(base.ledgers) do
+        if request.route[1] == ledger then
+            known = true
+        end
+        if request.from == ledger then
+            from_ledger = true
+        end
     end
 
     -- We know how to route the request, so we attempt to decrement the funds
@@ -488,17 +545,18 @@ local function transfer_route_next(base, request)
             }
         )
         -- We cannot route the request, but we now hold the funds of the source.
-        -- Subsequently, if we are an inter-mediate hop on a multi-hop route,
+        -- Subsequently, if we are an intermediate hop on a multi-hop route,
         -- we credit the source with the funds and note the balance that we now
         -- hold on the source ledger. This processing follows the same logic as
         -- if we had received a normal `Credit-Notice` from the source ledger.
-        if base.ledgers[request.from] then
+        if (not base.token) and base.ledgers[request.from] then
             ao.event({ "Crediting self with funds on source ledger: ", {
                 ledger = request.from,
                 amount = quantity,
                 previous = base.ledgers[request.from] or 0
             }})
-            base.ledgers[request.from] = (base.ledgers[request.from] or 0) + quantity
+            base.ledgers[request.from] =
+                (base.ledgers[request.from] or 0) + quantity
             -- Credit the user's balance with the quantity.
             ao.event({ "Crediting user with funds: ", {
                 ledger = request.recipient,
@@ -517,25 +575,42 @@ local function transfer_route_next(base, request)
     local next_hop = request.route[1]
     table.remove(request.route, 1)
     local route_message = {
-        action = "Transfer",
         target = next_hop,
         recipient = request.recipient,
+        route = request.route,
         quantity = quantity
     }
 
-    -- If there are more hops to route the request to, create a new route
-    -- message. Otherwise, create a normal transfer message.
-    if #request.route >= 1 then
-        route_message.route = request.route
+    -- Set the `sender` field to either the user (if we are the first hop) or
+    -- the existing `sender` field.
+    if from_ledger then
+        route_message.sender = request.sender
+    else
+        route_message.sender = request.from
+    end
+
+    -- If we are the last hop in the second-to-last route (the next route is the
+    -- destination), set the `action` field to `Transfer`. Otherwise, set the
+    -- `action` field to `Route-Termination`.
+    if #request.route == 0 then
+        route_message.action = "Credit-Notice"
+    else
+        route_message.action = "Transfer"
     end
 
     -- Add the route message to the outbox.
     base = send(base, route_message)
 
-    ao.event({ "Route transfer added to outbox: ", {
+    ao.event({ "Routing message added to outbox: ", {
         route_message = route_message,
         base = base
     }})
+
+    -- If we are not the root token, increment the balance of the next hop.
+    if not base.token then
+        base.ledgers[next_hop] = (base.ledgers[next_hop] or 0) + quantity
+    end
+
     return "ok", base
 end
 
@@ -552,15 +627,18 @@ function transfer(raw_base, assignment)
 
     if not request.recipient then
         ao.event({ "Transfer request has no recipient. Skipping." })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Transfer request has no recipient."
         }
         return "ok", base
     end
 
+    ao.event({ "Transfer route: ", { route = request.route or "none" } })
+
     -- If the request specifies a route, handle it in the route_to function.
-    if request.route and #request.route > 1 then
+    if request.route and #request.route >= 1 then
+        ao.event({ "Attempting to route via: ", { route = request.route } })
         return transfer_route_next(base, request)
     end
 
@@ -575,7 +653,7 @@ function transfer(raw_base, assignment)
     local quantity = normalize_int(request.quantity)
     if not quantity then
         ao.event({ "Invalid quantity value: ", { quantity = request.quantity } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Invalid quantity value.",
             quantity = quantity
@@ -593,7 +671,7 @@ function transfer(raw_base, assignment)
         target = request.recipient,
         action = "Credit-Notice",
         quantity = quantity,
-        recipient = request.recipient
+        sender = request.from
     })
 
     base = send(base, {
@@ -624,7 +702,7 @@ _G["credit-notice"] = function (raw_base, assignment)
 
     -- Ensure that the credit notice is from a valid source.
     if not validate_peer_ledger(base, assignment) then
-        base.result = {
+        base.results = {
             status = "error",
             error = "Invalid token deposit. Credit notice from " ..
                 request.from .. " not admissible."
@@ -636,7 +714,7 @@ _G["credit-notice"] = function (raw_base, assignment)
     local quantity = normalize_int(request.quantity)
     if not quantity then
         ao.event({ "Invalid quantity value: ", { quantity = request.quantity } })
-        base.result = {
+        base.results = {
             status = "error",
             error = "Invalid quantity value: " .. request.quantity
         }
@@ -684,7 +762,7 @@ function register(raw_base, assignment)
 
     if base.ledgers[request.from] then
         ao.event({ "Ledger already registered. Ignoring registration request." })
-        base.result = {
+        base.results = {
             message = "Ledger already registered."
         }
         return "ok", base
@@ -692,7 +770,7 @@ function register(raw_base, assignment)
     
     -- Validate the registering ledger
     if not validate_peer_ledger(base, assignment) then
-        base.result = {
+        base.results = {
             status = "error",
             error = "Ledger validation failed for registration"
         }
@@ -737,7 +815,7 @@ end
 --- Index function, called by the `~process@1.0` device for scheduled messages.
 --- We route any `action' to the appropriate function based on the request path.
 function compute(base, assignment)
-    ao.event({ "compute", { assignment = assignment }, 
+    ao.event({ "compute called",
         { balance = base.balance, ledgers = base.ledgers } })
 
     assignment.body.action = string.lower(assignment.body.action)
@@ -752,7 +830,7 @@ function compute(base, assignment)
         return _G["register-remote"](base, assignment)
     else
         -- Handle unknown `action' values.
-        base.result = {
+        base.results = {
             status = "error",
             error = "Unknown action: " .. assignment.body.action
         }

@@ -10,6 +10,13 @@
 %%% 3. Utility functions for normalizing the state of a test environment.
 %%% 4. Test cases that generate and manipulate ledger networks in test
 %%%    environments.
+%%% 
+%%% Many client and utility functions in this module handle the conversion of
+%%% wallet IDs to human-readable addresses when found in transfers, balances,
+%%% and other fields. This is done to make the test cases more readable and
+%%% easier to understand -- be careful if following their patterns in other
+%%% contexts to either mimic a similar pattern, or to ensure you pass addresses
+%%% in these contexts rather that full wallet objects.
 -module(dev_lua_test_ledgers).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
@@ -23,7 +30,9 @@
 ledger(Script, Opts) ->
     ledger(Script, #{}, Opts).
 ledger(Script, Extra, Opts) ->
-    % Ensure the application has been started.
+    % If the `balance' key is set in the `Extra' map, ensure that any wallets
+    % given as keys in the message are converted to human-readable addresses.
+    HostWallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     ModExtra =
         case maps:get(<<"balance">>, Extra, undefined) of
             undefined -> Extra;
@@ -47,16 +56,20 @@ ledger(Script, Extra, Opts) ->
                         )
                 }
         end,
-    hb_message:commit(ModExtra#{
-            <<"device">> => <<"process@1.0">>,
-            <<"type">> => <<"Process">>,
-            <<"scheduler-device">> => <<"scheduler@1.0">>,
-            <<"scheduler">> => hb_util:human_id(hb:wallet()),
-            <<"execution-device">> => <<"lua@5.3a">>,
-            <<"script">> => lua_script(Script)
-        },
-        Opts#{ priv_wallet => hb:wallet() }
-    ).
+    Proc =
+        hb_message:commit(ModExtra#{
+                <<"device">> => <<"process@1.0">>,
+                <<"type">> => <<"Process">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"scheduler">> => hb_util:human_id(HostWallet),
+                <<"execution-device">> => <<"lua@5.3a">>,
+                <<"authority">> => hb_util:human_id(HostWallet),
+                <<"script">> => lua_script(Script)
+            },
+            Opts#{ priv_wallet => HostWallet }
+        ),
+    hb_cache:write(Proc, Opts),
+    Proc.
 
 %% @doc Generate a Lua `script' key from a file or list of files.
 lua_script(Files) when is_list(Files) ->
@@ -86,12 +99,15 @@ subledger(Root, Opts) ->
             [<<"token">>, <<"balance">>],
             hb_message:uncommitted(Root)
         ),
-    hb_message:commit(
-        BareRoot#{
-            <<"token">> => hb_message:id(Root, all)
-        },
-        hb_opts:get(priv_wallet, hb:wallet(Opts), Opts)
-    ).
+    Proc = 
+        hb_message:commit(
+            BareRoot#{
+                <<"token">> => hb_message:id(Root, all)
+            },
+            hb_opts:get(priv_wallet, hb:wallet(), Opts)
+        ),
+    hb_cache:write(Proc, Opts),
+    Proc.
 
 %% @doc Generate a test transfer message.
 transfer(ProcMsg, Sender, Recipient, Quantity, Opts) ->
@@ -121,7 +137,11 @@ transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
             },
             Sender
         ),
-    hb_ao:resolve(ProcMsg, Xfer, Opts).
+    hb_ao:resolve(
+        ProcMsg,
+        Xfer,
+        Opts#{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts) }
+    ).
 
 %% @doc Request that a peer register with a without sub-ledger.
 register(ProcMsg, Peer, Opts) when is_map(Peer) ->
@@ -149,7 +169,6 @@ register(ProcMsg, PeerID, Opts) ->
 balance(ProcMsg, User, Opts) when not ?IS_ID(User) ->
     balance(ProcMsg, hb_util:human_id(ar_wallet:to_address(User)), Opts);
 balance(ProcMsg, ID, Opts) ->
-    ?event(debug, {balance, {proc_msg, ProcMsg}, {id, ID}}),
     hb_ao:get(<<"now/balance/", ID/binary>>, ProcMsg, 0, Opts).
 
 %% @doc Get the total balance for an ID across all ledgers in a set.
@@ -164,12 +183,13 @@ balance_total(Procs, ID, Opts) ->
 %% @doc Get the balances of a ledger.
 balances(ProcMsg, Opts) ->
     balances(now, ProcMsg, Opts).
+balances(initial, ProcMsg, Opts) ->
+    balances(<<"">>, ProcMsg, Opts);
 balances(Mode, ProcMsg, Opts) when is_atom(Mode) ->
     balances(hb_util:bin(Mode), ProcMsg, Opts);
-balances(Mode, ProcMsg, Opts) ->
-    {ok, Results} = hb_ao:resolve(ProcMsg, <<Mode/binary, "/balance">>, Opts),
-    ?event(debug, {balances, {mode, Mode}, {results, Results}}),
-    hb_private:reset(Results).
+balances(Prefix, ProcMsg, Opts) ->
+    Balances = hb_ao:get(<<Prefix/binary, "/balance">>, ProcMsg, #{}, Opts),
+    hb_private:reset(Balances).
 
 %% @doc Get the supply of a ledger, either `now` or `initial`.
 supply(ProcMsg, Opts) ->
@@ -179,8 +199,45 @@ supply(Mode, ProcMsg, Opts) ->
 
 %% @doc Get the local expectation of a ledger's balances with peer ledgers.
 ledgers(ProcMsg, Opts) ->
-    {ok, Results} = hb_ao:resolve(ProcMsg, <<"now/ledgers">>, Opts),
-    Results.
+    hb_private:reset(hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts)).
+
+%% @doc Generate a complete overview of the test environment's balances and 
+%% ledgers.
+map(Procs, Opts) ->
+    NormProcs = normalize_env(Procs),
+    maps:merge_with(
+        fun(Key, Balances, Ledgers) ->
+            MaybeRoot =
+                case maps:get(Key, NormProcs, #{}) of
+                    #{ <<"token">> := _ } -> #{};
+                    _ -> #{ <<"root">> => true }
+                end,
+            MaybeRoot#{
+                <<"balances">> => Balances,
+                <<"ledgers">> => Ledgers
+            }
+        end,
+        balance_map(Procs, Opts),
+        ledger_map(Procs, Opts)
+    ).
+
+%% @doc Generate a map of all ledgers in a test environment.
+balance_map(Procs, Opts) ->
+    maps:from_list(
+        lists:map(
+            fun(Proc) -> {hb_message:id(Proc, all), balances(Proc, Opts)} end,
+            maps:values(normalize_env(Procs))
+        )
+    ).
+
+%% @doc Generate a map of all sub-ledgers in a test environment.
+ledger_map(Procs, Opts) ->
+    maps:from_list(
+        lists:map(
+            fun(Proc) -> {hb_message:id(Proc, all), ledgers(Proc, Opts)} end,
+            maps:values(normalize_env(Procs))
+        )
+    ).
 
 %%% Test ledger network invariants.
 %%% 
@@ -206,22 +263,26 @@ verify_net(RootProc, AllProcs, Opts) ->
 verify_root_supply(RootProc, Opts) ->
     ?assertEqual(
         supply(initial, RootProc, Opts),
-        supply(now, RootProc, Opts)
+        supply(now, RootProc, Opts) +
+            lists:sum(maps:values(ledgers(RootProc, Opts)))
     ).
 
 %% @doc Verify that the sum of all spendable balances held by ledgers in a
 %% test network is equal to the initial supply of tokens.
 verify_net_supply(RootProc, AllProcs, Opts) ->
-    RootSupply = supply(initial, RootProc, Opts),
+    verify_root_supply(RootProc, Opts),
+    StartingRootSupply = supply(initial, RootProc, Opts),
+    CurrentRootSupply = supply(now, RootProc, Opts),
     NormProcsWithoutRoot = normalize_without_root(RootProc, AllProcs),
     ?assertEqual(
-        RootSupply,
-        lists:sum(
-            lists:map(
-                fun(Proc) -> supply(Proc, Opts) end,
-                maps:values(NormProcsWithoutRoot)
+        StartingRootSupply,
+        CurrentRootSupply +
+            lists:sum(
+                lists:map(
+                    fun(Proc) -> supply(Proc, Opts) end,
+                    maps:values(NormProcsWithoutRoot)
+                )
             )
-        )
     ).
 
 %% @doc Verify the consistency of all expected ledger balances with their peer
@@ -342,7 +403,9 @@ subledger_deposit_test() ->
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     % 2. Alice deposits tokens into the sub-ledger.
-    transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
+    Res = transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
+    ?event(debug, {transfer, {result, Res}}),
+    ?event(debug, {env, map([Proc, SubLedger], Opts)}),
     ?assertEqual(90, balance(Proc, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % Verify all invariants.
@@ -365,19 +428,19 @@ subledger_transfer_test() ->
         ),
     SubLedger = subledger(RootLedger, Opts),
     % 1. Alice has tokens on the root ledger.
-    ?assertEqual(100, balance(RootLedger, Alice, #{})),
+    ?assertEqual(100, balance(RootLedger, Alice, Opts)),
     % 2. Alice sends tokens to the sub-ledger from the root ledger.
-    transfer(RootLedger, Alice, Alice, 10, [SubLedger], #{}),
-    ?assertEqual(90, balance(RootLedger, Alice, #{})),
-    ?assertEqual(10, balance(SubLedger, Alice, #{})),
+    transfer(RootLedger, Alice, Alice, 10, [SubLedger], Opts),
+    ?assertEqual(90, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % 3. Alice sends tokens to Bob on the sub-ledger.
-    transfer(SubLedger, Alice, Bob, 100, #{}),
+    transfer(SubLedger, Alice, Bob, 10, Opts),
     % 4. Bob sends tokens to himself on the root ledger.
-    transfer(RootLedger, Bob, Bob, 100, #{}),
+    transfer(RootLedger, Bob, Bob, 10, [RootLedger], Opts),
     % Validate the balances of the root and sub-ledgers.
-    ?assertEqual(0, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(90, balance(RootLedger, Alice, Opts)),
     ?assertEqual(0, balance(SubLedger, Alice, Opts)),
-    ?assertEqual(100, balance(RootLedger, Bob, Opts)),
+    ?assertEqual(10, balance(RootLedger, Bob, Opts)),
     ?assertEqual(0, balance(SubLedger, Bob, Opts)),
     % Validate the final supply of tokens.
     ?assertEqual(100, supply(RootLedger, Opts)),
