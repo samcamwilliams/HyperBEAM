@@ -26,14 +26,15 @@
 %%%   disks as all operations are safeguarded by host operating system permissions
 %%%   enforced upon the HyperBEAM environment.
 -module(dev_volume).
--export([info/1, info/3, mount/3]).
+-export([info/1, info/3, mount/3, public_key/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 %% @doc Exported function for getting device info, controls which functions are
 %% exposed via the device API.
 info(_) -> 
-    #{ exports => [info, mount] }.
+    #{ exports => [info, mount, public_key] }.
 
 %% @doc HTTP info response providing information about this device
 info(_Msg1, _Msg2, _Opts) ->
@@ -55,6 +56,9 @@ info(_Msg1, _Msg2, _Opts) ->
                     <<"volume_mount_point">> => <<"Where to mount the volume">>,
                     <<"volume_store_path">> => <<"The store path on the volume">>
                 }
+            },
+            <<"public_key">> => #{
+                <<"description">> => <<"Get the node's public key for encrypted key exchange">>
             }
         }
     },
@@ -87,14 +91,24 @@ info(_Msg1, _Msg2, _Opts) ->
 %% @returns {error, Binary} on failure with error message.
 -spec mount(term(), term(), map()) -> {ok, binary()} | {error, binary()}.
 mount(_M1, _M2, Opts) ->
-    Key = hb_opts:get(volume_key, not_found, Opts),
+    % Check if an encrypted key was sent in the request
+    EncryptedKey = hb_opts:get(volume_key, not_found, Opts),
+    % Determine if we need to decrypt a key or use one from config
+    ?event(debug_mount, {mount, encrypted_key, EncryptedKey}),
+    Key = case decrypt_volume_key(EncryptedKey, Opts) of
+        {ok, DecryptedKey} ->
+            ?event(debug_mount, {mount, decrypted_key, DecryptedKey}),
+            DecryptedKey;
+        {error, DecryptError} ->
+            ?event(debug_mount, {mount, key_decrypt_error, DecryptError}),
+            not_found
+    end,
     Device = hb_opts:get(volume_device, not_found, Opts),
     Partition = hb_opts:get(volume_partition, not_found, Opts),
     PartitionType = hb_opts:get(volume_partition_type, not_found, Opts),
     VolumeName = hb_opts:get(volume_name, not_found, Opts),
     MountPoint = hb_opts:get(volume_mount_point, not_found, Opts),
     StorePath = hb_opts:get(volume_store_path, not_found, Opts),
-    
     % Check for missing required node options
     case hb_opts:check_required_opts([
         {<<"volume_key">>, Key},
@@ -117,6 +131,83 @@ mount(_M1, _M2, Opts) ->
         {error, ErrorMsg} ->
             ?event(mount, {error, ErrorMsg}),
             {error, ErrorMsg}
+    end.
+
+%% @doc Returns the node's public key for secure key exchange.
+%%
+%% This function retrieves the node's wallet and extracts the public key
+%% for encryption purposes. It allows users to securely exchange encryption keys
+%% by first encrypting their volume key with the node's public key.
+%%
+%% The process ensures that sensitive keys are never transmitted in plaintext.
+%% The encrypted key can then be securely sent to the node, which will decrypt it
+%% using its private key before using it for volume encryption.
+%%
+%% @param _M1 Ignored parameter.
+%% @param _M2 Ignored parameter.
+%% @param Opts A map of configuration options.
+%% @returns {ok, Map} containing the node's public key on success.
+%% @returns {error, Binary} if the node's wallet is not available.
+-spec public_key(term(), term(), map()) -> {ok, map()} | {error, binary()}.
+public_key(_M1, _M2, Opts) ->
+    ?event(volume, {public_key, start}),
+    % Retrieve the node's wallet
+    case hb_opts:get(priv_wallet, undefined, Opts) of
+        undefined ->
+            % Node doesn't have a wallet yet
+            ?event(volume, {public_key, error, <<"no wallet found">>}),
+            {error, <<"Node wallet not available">>};
+        {{_KeyType, _Priv, Pub}, _PubKey} ->
+            % Convert to a standard RSA format (PKCS#1 or X.509)
+            RsaPubKey = #'RSAPublicKey'{
+                publicExponent = 65537,  % Common RSA exponent
+                modulus = crypto:bytes_to_integer(Pub)
+            },
+            % Convert to DER format
+            DerEncoded = public_key:der_encode('RSAPublicKey', RsaPubKey),
+            % Base64 encode for transmission
+            Base64Key = base64:encode(DerEncoded),
+            {ok, #{
+                <<"status">> => 200,
+                <<"public_key">> => Base64Key,
+                <<"message">> => <<"Use this public key to encrypt your volume key">>
+            }}
+    end.
+
+%% @doc Decrypts an encrypted volume key using the node's private key.
+%%
+%% This function takes an encrypted key (typically sent by a client who encrypted
+%% it with the node's public key) and decrypts it using the node's private RSA key.
+%%
+%% @param EncryptedKey The encrypted volume key (Base64 encoded).
+%% @param Opts A map of configuration options.
+%% @returns {ok, DecryptedKey} on successful decryption.
+%% @returns {error, Binary} if decryption fails.
+-spec decrypt_volume_key(binary(), map()) -> {ok, binary()} | {error, binary()}.
+decrypt_volume_key(EncryptedKeyBase64, Opts) ->
+    % Decode the encrypted key
+    try
+        EncryptedKey = base64:decode(EncryptedKeyBase64),
+        ?event(debug_mount, {decrypt_volume_key, encrypted_key, EncryptedKey}),
+        % Retrieve the node's wallet with private key
+        case hb_opts:get(priv_wallet, undefined, Opts) of
+            undefined ->
+                {error, <<"Node wallet not available for decryption">>};
+            {{_KeyType = {rsa, E}, Priv, Pub}, _PubKey} ->
+                % Create RSA private key record for decryption
+                RsaPrivKey = #'RSAPrivateKey'{
+                    publicExponent = E,
+                    modulus = crypto:bytes_to_integer(Pub),
+                    privateExponent = crypto:bytes_to_integer(Priv)
+                },
+                % Decrypt the key
+                DecryptedKey = public_key:decrypt_private(EncryptedKey, RsaPrivKey),
+                {ok, DecryptedKey}
+        end
+    catch
+        _:Error ->
+            ?event(debug_mount, {decrypt_volume_key, error, Error}),
+            {error, <<"Failed to decrypt volume key">>}
     end.
 
 %% @doc Check if the base device exists and if it does, check if the partition exists.
