@@ -21,10 +21,42 @@
 %%% Security considerations:
 %%% - Ensures data at rest is protected through LUKS encryption
 %%% - Provides proper volume sanitization and secure mounting
+%%% - IMPORTANT: This module only applies configuration set in node options and
+%%%   does NOT accept disk operations via HTTP requests. It cannot format arbitrary
+%%%   disks as all operations are safeguarded by host operating system permissions
+%%%   enforced upon the HyperBEAM environment.
 -module(dev_volume).
--export([mount/3]).
+-export([info/1, info/3, mount/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Exported function for getting device info, controls which functions are
+%% exposed via the device API.
+info(_) -> 
+    #{ exports => [info, mount] }.
+
+%% @doc HTTP info response providing information about this device
+info(_Msg1, _Msg2, _Opts) ->
+    InfoBody = #{
+        <<"description">> => <<"Secure Volume Management for HyperBEAM Nodes">>,
+        <<"version">> => <<"1.0">>,
+        <<"api">> => #{
+            <<"info">> => <<"Get device info">>,
+            <<"mount">> => #{
+				<<"description">> => <<"Mount an encrypted volume">>,
+				<<"required_node_opts">> => #{
+					<<"volume_key">> => <<"The encryption key">>,
+					<<"volume_device">> => <<"The base device path">>,
+					<<"volume_partition">> => <<"The partition path">>,
+					<<"volume_partition_type">> => <<"The partition type">>,
+					<<"volume_name">> => <<"The name for the encrypted volume">>,
+					<<"volume_mount_point">> => <<"Where to mount the volume">>,
+					<<"volume_store_path">> => <<"The store path on the volume">>
+				}
+			}
+        }
+    },
+    {ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
 
 %% @doc Handles the complete process of secure encrypted volume mounting.
 %%
@@ -39,12 +71,12 @@
 %%
 %% Config options in Opts map:
 %% - volume_key: (Required) The encryption key
-%% - volume_device: Base device path (default: `/dev/sdc')
-%% - volume_partition: Partition path (default: `/dev/sdc1') 
-%% - volume_partition_type: Filesystem type (default: `ext4')
-%% - volume_name: Name for encrypted volume (default: `hyperbeam_secure')
-%% - volume_mount_point: Where to mount (default: `/root/mnt/hyperbeam_secure')
-%% - volume_store_path: Store path on volume (default: `/root/mnt/hyperbeam_secure/store')
+%% - volume_device: Base device path
+%% - volume_partition: Partition path
+%% - volume_partition_type: Filesystem type
+%% - volume_name: Name for encrypted volume
+%% - volume_mount_point: Where to mount
+%% - volume_store_path: Store path on volume
 %%
 %% @param M1 Base message for context.
 %% @param M2 Request message with operation details.
@@ -59,36 +91,47 @@ mount(_M1, _M2, Opts) ->
 		?event(mount, {error, <<"Volume key not found">>}),
 		{error, <<"Volume key not found">>};
 	  _ -> 
-		Device = hb_opts:get(volume_device, <<"/dev/sdc">>, Opts),
-		Partition = hb_opts:get(volume_partition, <<"/dev/sdc1">>, Opts),
-		PartitionType = hb_opts:get(volume_partition_type, <<"ext4">>, Opts),
-		VolumeName = hb_opts:get(volume_name, <<"hyperbeam_secure">>, Opts),
-		MountPoint = hb_opts:get(
-			volume_mount_point, 
-			<<"/root/mnt/hyperbeam_secure">>, 
-			Opts
+		Device = hb_opts:get(volume_device, not_found, Opts),
+		Partition = hb_opts:get(volume_partition, not_found, Opts),
+		PartitionType = hb_opts:get(volume_partition_type, not_found, Opts),
+		VolumeName = hb_opts:get(volume_name, not_found, Opts),
+		MountPoint = hb_opts:get(volume_mount_point, not_found, Opts),
+		StorePath = hb_opts:get(volume_store_path, not_found, Opts),
+		% Check for missing required node options
+		NodeOpts = lists:filtermap(
+			fun({Name, Value}) ->
+				case Value of
+					not_found -> {true, Name};
+					_ -> false
+				end
+			end,
+			[
+				{<<"volume_device">>, Device},
+				{<<"volume_partition">>, Partition},
+				{<<"volume_partition_type">>, PartitionType},
+				{<<"volume_name">>, VolumeName}, 
+				{<<"volume_mount_point">>, MountPoint},
+				{<<"volume_store_path">>, StorePath}
+			]
 		),
-		StorePath = hb_opts:get(
-			volume_store_path, 
-			<<"/root/mnt/hyperbeam_secure/store">>, 
-			Opts
-		),
-		?event(debug_mount, 
-			{mount, device, Device}
-		),
-		?event(debug_mount, 
-			{mount, partition, Partition}
-		),
-		?event(debug_mount, 
-			{mount, partition_type, PartitionType}
-		),
-		?event(debug_mount, 
-			{mount, mount_point, MountPoint}
-		),	
-		check_base_device(
-			Device, Partition, PartitionType, VolumeName, MountPoint, StorePath, 
-			Key, Opts
-		)
+		case NodeOpts of
+			[] ->
+				?event(debug_mount, {mount, device, Device}),
+				?event(debug_mount, {mount, partition, Partition}),
+				?event(debug_mount, {mount, partition_type, PartitionType}),
+				?event(debug_mount, {mount, mount_point, MountPoint}),	
+				check_base_device(
+					Device, Partition, PartitionType, VolumeName, 
+					MountPoint, StorePath, Key, Opts
+				);
+			_ ->
+				NodeOptsStr = binary:list_to_bin(
+					lists:join(<<", ">>, NodeOpts)
+				),
+				ErrorMsg = <<"Missing required parameters: ", NodeOptsStr/binary>>,
+				?event(mount, {error, ErrorMsg}),
+				{error, ErrorMsg}
+		end
 	end.
 
 %% @doc Check if the base device exists and if it does, check if the partition exists.
