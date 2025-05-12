@@ -123,12 +123,12 @@ transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
     Xfer =
         hb_message:commit(#{
             <<"path">> => <<"push">>,
-            <<"target">> => hb_message:id(ProcMsg, all),
             <<"scheduler-device">> => <<"scheduler@1.0">>,
             <<"execution-device">> => <<"lua@5.3a">>,
             <<"body">> =>
                 hb_message:commit(MaybeRoute#{
                         <<"action">> => <<"Transfer">>,
+                        <<"target">> => hb_message:id(ProcMsg, all),
                         <<"recipient">> => hb_util:human_id(Recipient),
                         <<"quantity">> => Quantity
                     },
@@ -146,7 +146,8 @@ transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
 %% @doc Request that a peer register with a without sub-ledger.
 register(ProcMsg, Peer, Opts) when is_map(Peer) ->
     register(ProcMsg, hb_message:id(Peer, all), Opts);
-register(ProcMsg, PeerID, Opts) ->
+register(ProcMsg, PeerID, RawOpts) ->
+    Opts = #{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), RawOpts) },
     hb_ao:resolve(
         ProcMsg,
         hb_message:commit(
@@ -202,7 +203,8 @@ ledgers(ProcMsg, Opts) ->
     hb_private:reset(hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts)).
 
 %% @doc Generate a complete overview of the test environment's balances and 
-%% ledgers.
+%% ledgers. Optionally, a map of environment names can be provided to make the
+%% output more readable.
 map(Procs, Opts) ->
     NormProcs = normalize_env(Procs),
     maps:merge_with(
@@ -213,31 +215,60 @@ map(Procs, Opts) ->
                     _ -> #{ <<"root">> => true }
                 end,
             MaybeRoot#{
-                <<"balances">> => Balances,
-                <<"ledgers">> => Ledgers
+                balances => Balances,
+                ledgers => Ledgers
             }
         end,
-        balance_map(Procs, Opts),
-        ledger_map(Procs, Opts)
+        maps:map(fun(_, Proc) -> balances(Proc, Opts) end, NormProcs),
+        maps:map(fun(_, Proc) -> ledgers(Proc, Opts) end, NormProcs)
     ).
+map(Procs, EnvNames, Opts) ->
+    apply_names(map(Procs, Opts), EnvNames, Opts).
 
-%% @doc Generate a map of all ledgers in a test environment.
-balance_map(Procs, Opts) ->
+%% @doc Apply a map of environment names to elements in either a map or list.
+%% Expects a map of `ID or ProcMsg or Wallet => Name' as the `EnvNames' argument,
+%% and a potentially deep map or list of elements to apply the names to.
+apply_names(Map, EnvNames, Opts) ->
+    IDs =
+        maps:from_list(
+            lists:filtermap(
+                fun({Key, V}) ->
+                    try {true, {hb_util:human_id(Key), V}}
+                    catch _:_ ->
+                        try {true, {hb_message:id(Key, all), V}}
+                        catch _:_ -> false
+                        end
+                    end
+                end,
+                maps:to_list(EnvNames)
+            )
+        ),
+    do_apply_names(Map, maps:merge(IDs, EnvNames), Opts).
+do_apply_names(Map, EnvNames, Opts) when is_map(Map) ->
     maps:from_list(
         lists:map(
-            fun(Proc) -> {hb_message:id(Proc, all), balances(Proc, Opts)} end,
-            maps:values(normalize_env(Procs))
+            fun({Key, Proc}) ->
+                {
+                    apply_names(Key, EnvNames, Opts),
+                    apply_names(Proc, EnvNames, Opts)
+                }
+            end,
+            maps:to_list(Map)
         )
-    ).
-
-%% @doc Generate a map of all sub-ledgers in a test environment.
-ledger_map(Procs, Opts) ->
-    maps:from_list(
-        lists:map(
-            fun(Proc) -> {hb_message:id(Proc, all), ledgers(Proc, Opts)} end,
-            maps:values(normalize_env(Procs))
-        )
-    ).
+    );
+do_apply_names(List, EnvNames, Opts) when is_list(List) ->
+    lists:map(
+        fun(Proc) ->
+            apply_names(Proc, EnvNames, Opts)
+        end,
+        List
+    );
+do_apply_names(Item, Names, _Opts) when is_map_key(Item, Names) ->
+    maps:get(Item, Names);
+do_apply_names(Item, Names, _Opts) ->
+    try maps:get(hb_util:human_id(Item), Names, Item)
+    catch _:_ -> Item
+    end.
 
 %%% Test ledger network invariants.
 %%% 
@@ -379,6 +410,8 @@ transfer_unauthorized_test() ->
     % 2. Transferring a token when the sender has less tokens than the amount
     %    being transferred.
     transfer(Proc, Alice, Bob, 101, Opts),
+    ?event(debug, {unauthorized_transfer, {result, Result}}),
+    ?event(debug, {env, map([Proc], #{ Alice => alice, Bob => bob }, Opts)}),
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     ?assertEqual(0, balance(Proc, Bob, Opts)),
     % 3. Transferring a binary-encoded amount of tokens that exceed the quantity
@@ -404,8 +437,6 @@ subledger_deposit_test() ->
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     % 2. Alice deposits tokens into the sub-ledger.
     Res = transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
-    ?event(debug, {transfer, {result, Res}}),
-    ?event(debug, {env, map([Proc, SubLedger], Opts)}),
     ?assertEqual(90, balance(Proc, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % Verify all invariants.
@@ -415,7 +446,7 @@ subledger_deposit_test() ->
 %% 1. Alice has tokens on the root ledger.
 %% 2. Alice sends tokens to the sub-ledger from the root ledger.
 %% 3. Alice sends tokens to Bob on the sub-ledger.
-%% 4. Bob sends tokens to himself on the root ledger.
+%% 4. Bob sends tokens to Alice on the root ledger.
 subledger_transfer_test() ->
     Opts = #{},
     Alice = ar_wallet:new(),
@@ -427,23 +458,45 @@ subledger_transfer_test() ->
             Opts
         ),
     SubLedger = subledger(RootLedger, Opts),
+    EnvNames = #{
+        Alice => alice,
+        Bob => bob,
+        RootLedger => root,
+        SubLedger => subledger
+    },
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(RootLedger, Alice, Opts)),
+    ?event(token_log, {map, map([RootLedger], EnvNames, Opts)}),
     % 2. Alice sends tokens to the sub-ledger from the root ledger.
     transfer(RootLedger, Alice, Alice, 10, [SubLedger], Opts),
     ?assertEqual(90, balance(RootLedger, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % 3. Alice sends tokens to Bob on the sub-ledger.
     transfer(SubLedger, Alice, Bob, 10, Opts),
-    % 4. Bob sends tokens to himself on the root ledger.
-    transfer(RootLedger, Bob, Bob, 10, [RootLedger], Opts),
+    ?event(token_log, 
+        {state_after_subledger_user_xfer,
+            {names, map([RootLedger, SubLedger], EnvNames, Opts)},
+            {ids, map([RootLedger, SubLedger], Opts)}
+        }),
+    % 4. Bob sends tokens to Alice on the root ledger.
+    Res = transfer(SubLedger, Bob, Alice, 9, [RootLedger], Opts),
     % Validate the balances of the root and sub-ledgers.
-    ?assertEqual(90, balance(RootLedger, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger, Alice, Opts)),
-    ?assertEqual(10, balance(RootLedger, Bob, Opts)),
-    ?assertEqual(0, balance(SubLedger, Bob, Opts)),
-    % Validate the final supply of tokens.
-    ?assertEqual(100, supply(RootLedger, Opts)),
+    ?event(debug, {transfer, {result, {explicit, Res}}}),
+    Map = map([RootLedger, SubLedger], EnvNames, Opts),
+    ?event(token_log, {map, map([RootLedger, SubLedger], Opts)}),
+    ?assertEqual(
+        #{
+            root => #{
+                balances => #{ alice => 99, bob => 0 },
+                ledgers => #{ subledger => 1 }
+            },
+            subledger => #{
+                balances => #{ alice => 0, bob => 1 },
+                ledgers => #{ root => 1 }
+            }
+        },
+        Map
+    ),
     % Validate all invariants.
     verify_net(RootLedger, [SubLedger], Opts).
 

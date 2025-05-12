@@ -137,7 +137,7 @@ id(Msg, RawCommitters, Opts) ->
             none -> [];
             all -> <<"all">>;
             signed -> signers(Msg);
-            List -> List
+            Other -> Other
         end,
     ?event({getting_id, {msg, Msg}, {committers, Committers}}),
     {ok, ID} =

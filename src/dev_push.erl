@@ -77,6 +77,12 @@ is_async(Process, Req, Opts) ->
 do_push(Process, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Process, #{}, Opts),
+    BaseID =
+        dev_process:process_id(
+            Process,
+            #{ <<"committers">> => <<"none">> },
+            Opts
+        ),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     {Status, Result} = hb_ao:resolve(
         {as, <<"process@1.0">>, Process},
@@ -92,6 +98,17 @@ do_push(Process, Assignment, Opts) ->
         end,
     ?event(push_depth, {depth, IncludeDepth, {assignment, Assignment}}),
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
+    ?event(debug,
+        {push_computed,
+            {status, Status},
+            {request, maps:get(<<"body">>, Assignment, Assignment)},
+            {result,
+                if is_list(Result) ->
+                    hb_ao:normalize_keys(Result);
+                true -> Result
+                end
+            }
+        }),
     case {Status, hb_ao:get(<<"outbox">>, Result, #{}, Opts)} of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push_short, {done, {process, {string, ID}}, {slot, Slot}}),
@@ -108,6 +125,7 @@ do_push(Process, Assignment, Opts) ->
                                     MsgToPush,
                                     #{
                                         <<"process">> => ID,
+                                        <<"base">> => BaseID,
                                         <<"slot">> => Slot,
                                         <<"outbox-key">> => Key,
                                         <<"result-depth">> => IncludeDepth
@@ -345,7 +363,8 @@ additional_keys(Origin, ToSched, Opts) ->
             <<"data-protocol">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"type">> => <<"Message">>,
-            <<"from-process">> => maps:get(<<"process">>, Origin)
+            <<"from-process">> => maps:get(<<"process">>, Origin),
+            <<"from-base">> => maps:get(<<"base">>, Origin)
         },
         Opts#{ hashpath => ignore }
     ).

@@ -141,7 +141,10 @@ process_id(Msg1, Msg2, Opts) ->
         not_found ->
             process_id(ensure_process_key(Msg1, Opts), Msg2, Opts);
         Process ->
-            hb_message:id(Process, all)
+            hb_message:id(
+                Process,
+                hb_ao:get(<<"committers">>, Msg2, <<"all">>, Opts)
+            )
     end.
 
 %% @doc Before computation begins, a boot phase is required. This phase
