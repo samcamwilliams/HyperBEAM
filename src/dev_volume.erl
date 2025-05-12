@@ -86,52 +86,47 @@ info(_Msg1, _Msg2, _Opts) ->
 -spec mount(term(), term(), map()) -> {ok, binary()} | {error, binary()}.
 mount(_M1, _M2, Opts) ->
 	Key = hb_opts:get(volume_key, not_found, Opts),
-	case Key of
-	  not_found ->
-		?event(mount, {error, <<"Volume key not found">>}),
-		{error, <<"Volume key not found">>};
-	  _ -> 
-		Device = hb_opts:get(volume_device, not_found, Opts),
-		Partition = hb_opts:get(volume_partition, not_found, Opts),
-		PartitionType = hb_opts:get(volume_partition_type, not_found, Opts),
-		VolumeName = hb_opts:get(volume_name, not_found, Opts),
-		MountPoint = hb_opts:get(volume_mount_point, not_found, Opts),
-		StorePath = hb_opts:get(volume_store_path, not_found, Opts),
-		% Check for missing required node options
-		NodeOpts = lists:filtermap(
-			fun({Name, Value}) ->
-				case Value of
-					not_found -> {true, Name};
-					_ -> false
-				end
-			end,
-			[
-				{<<"volume_device">>, Device},
-				{<<"volume_partition">>, Partition},
-				{<<"volume_partition_type">>, PartitionType},
-				{<<"volume_name">>, VolumeName}, 
-				{<<"volume_mount_point">>, MountPoint},
-				{<<"volume_store_path">>, StorePath}
-			]
-		),
-		case NodeOpts of
-			[] ->
-				?event(debug_mount, {mount, device, Device}),
-				?event(debug_mount, {mount, partition, Partition}),
-				?event(debug_mount, {mount, partition_type, PartitionType}),
-				?event(debug_mount, {mount, mount_point, MountPoint}),	
-				check_base_device(
-					Device, Partition, PartitionType, VolumeName, 
-					MountPoint, StorePath, Key, Opts
-				);
-			_ ->
-				NodeOptsStr = binary:list_to_bin(
-					lists:join(<<", ">>, NodeOpts)
-				),
-				ErrorMsg = <<"Missing required parameters: ", NodeOptsStr/binary>>,
-				?event(mount, {error, ErrorMsg}),
-				{error, ErrorMsg}
-		end
+	Device = hb_opts:get(volume_device, not_found, Opts),
+	Partition = hb_opts:get(volume_partition, not_found, Opts),
+	PartitionType = hb_opts:get(volume_partition_type, not_found, Opts),
+	VolumeName = hb_opts:get(volume_name, not_found, Opts),
+	MountPoint = hb_opts:get(volume_mount_point, not_found, Opts),
+	StorePath = hb_opts:get(volume_store_path, not_found, Opts),
+	% Check for missing required node options
+	NodeOpts = lists:filtermap(
+		fun({Name, Value}) ->
+			case Value of
+				not_found -> {true, Name};
+				_ -> false
+			end
+		end,
+		[
+			{<<"volume_key">>, Key},
+			{<<"volume_device">>, Device},
+			{<<"volume_partition">>, Partition},
+			{<<"volume_partition_type">>, PartitionType},
+			{<<"volume_name">>, VolumeName}, 
+			{<<"volume_mount_point">>, MountPoint},
+			{<<"volume_store_path">>, StorePath}
+		]
+	),
+	case NodeOpts of
+		[] ->
+			?event(debug_mount, {mount, device, Device}),
+			?event(debug_mount, {mount, partition, Partition}),
+			?event(debug_mount, {mount, partition_type, PartitionType}),
+			?event(debug_mount, {mount, mount_point, MountPoint}),	
+			check_base_device(
+				Device, Partition, PartitionType, VolumeName, 
+				MountPoint, StorePath, Key, Opts
+			);
+		_ ->
+			NodeOptsStr = binary:list_to_bin(
+				lists:join(<<", ">>, NodeOpts)
+			),
+			ErrorMsg = <<"Missing required parameters: ", NodeOptsStr/binary>>,
+			?event(mount, {error, ErrorMsg}),
+			{error, ErrorMsg}
 	end.
 
 %% @doc Check if the base device exists and if it does, check if the partition exists.
