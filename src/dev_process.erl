@@ -581,7 +581,7 @@ test_base_process(Opts) ->
     hb_message:commit(#{
         <<"device">> => <<"process@1.0">>,
         <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"scheduler-location">> => Address,
+        <<"scheduler-location">> => hb_opts:get(scheduler, Address, Opts),
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
     }, Wallet).
@@ -635,8 +635,10 @@ test_aos_process(Opts, Stack) ->
                         <<"snapshot">>,
                         <<"normalize">>
                     ],
-                <<"scheduler">> => Address,
-                <<"authority">> => Address
+                <<"scheduler">> =>
+                    hb_opts:get(scheduler, Address, Opts),
+                <<"authority">> =>
+                    hb_opts:get(authority, Address, Opts)
             }),
         Wallet
     ).

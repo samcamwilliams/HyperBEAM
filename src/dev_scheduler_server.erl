@@ -24,7 +24,13 @@ start(ProcID, Opts) ->
                         ?event({starting_new_schedule, {proc_id, ProcID}}),
                         {-1, <<>>};
                     {Slot, Chain} ->
-                        ?event({continuing_schedule, {proc_id, ProcID}, {current_slot, Slot}}),
+                        ?event(
+                            {continuing_schedule,
+                                {proc_id, ProcID},
+                                {current_slot, Slot},
+                                {hash_chain, Chain}
+                            }
+                        ),
                         {Slot, Chain}
                 end,
             ?event(

@@ -299,29 +299,26 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
         },
         Opts
     ),
-    AugmentedMsg = additional_keys(Origin, MsgToPush, Opts),
+    AugmentedMsg = augment_message(Origin, MsgToPush, Opts),
     ?event(push, {prepared_msg, {msg, AugmentedMsg}}, Opts),
-    SignedReq =
-        #{
-            <<"method">> => <<"POST">>,
-            <<"path">> => <<"schedule">>,
-            <<"body">> =>
-                SignedMsg = hb_message:commit(
-                    AugmentedMsg,
-                    Opts,
-                    Codec
-                )
-        },
-    ?event(
+    % Load the `accept-id`'d wallet into the `Opts` map, if requested.
+    SignedMsg = apply_security(TargetProcess, AugmentedMsg, Opts),
+    ScheduleReq = #{
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => SignedMsg
+    },
+    ?event(push, {schedule_req, {req, ScheduleReq}}, Opts),
+    ?event(debug,
         {push_scheduling_result,
-            {signed_req, SignedReq},
+            {signed_req, SignedMsg},
             {verifies, hb_message:verify(SignedMsg, signers)}
         }
     ),
     {ErlStatus, Res} =
         hb_ao:resolve(
             {as, <<"process@1.0">>, TargetProcess},
-            SignedReq,
+            ScheduleReq,
             Opts#{ cache_control => <<"always">> }
         ),
     ?event(push, {push_sched_result, {status, ErlStatus}, {response, Res}}, Opts),
@@ -362,7 +359,7 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
 
 %% @doc Set the necessary keys in order for the recipient to know where the
 %% message came from.
-additional_keys(Origin, ToSched, Opts) ->
+augment_message(Origin, ToSched, Opts) ->
     ?event(push, {adding_keys, {origin, Origin}, {to, ToSched}}, Opts),
     hb_ao:set(
         ToSched,
@@ -374,6 +371,78 @@ additional_keys(Origin, ToSched, Opts) ->
             <<"from-base">> => maps:get(<<"base">>, Origin)
         },
         Opts#{ hashpath => ignore }
+    ).
+
+%% @doc Apply the recipient's security policy to the message. Observes the 
+%% following parameters in order to calculate the appropriate security policy:
+%% - `policy': A message that generates a security policy message.
+%% - `authority': A single committer, or list of comma separated committers.
+%% - (Default: Signs with default wallet)
+apply_security(TargetProcess, Msg, Opts) ->
+    apply_security(policy, TargetProcess, Msg, Opts).
+apply_security(policy, TargetProcess, Msg, Opts) ->
+    case hb_ao:get(<<"policy">>, TargetProcess, not_found, Opts) of
+        not_found -> apply_security(authority, TargetProcess, Msg, Opts);
+        Policy ->
+            case hb_ao:resolve(Policy, Opts) of
+                {ok, PolicyOpts} ->
+                    case hb_ao:get(<<"accept-committers">>, PolicyOpts, Opts) of
+                        not_found ->
+                            apply_security(authority, TargetProcess, Msg, Opts);
+                        Committers ->
+                            commit_result(Msg, Committers, Opts)
+                    end;
+                {error, Error} ->
+                    ?event(push, {policy_error, {error, Error}}, Opts),
+                    apply_security(authority, TargetProcess, Msg, Opts)
+            end
+    end;
+apply_security(authority, TargetProcess, Msg, Opts) ->
+    case hb_ao:get(<<"authority">>, TargetProcess, Opts) of
+        not_found -> apply_security(default, TargetProcess, Msg, Opts);
+    	Authorities when is_list(Authorities) ->
+            % The `authority` key has already been parsed into a list of
+            % committers. Sign with all local valid keys.
+            commit_result(Msg, Authorities, Opts);
+        Authority ->
+            % Parse the authority string into a list of committers. Sign with
+            % all local valid keys.
+            commit_result(
+                Msg,
+                binary:split(
+                    binary:replace(Authority, <<"\"">>, <<"">>, [global]),
+                    <<",">>,
+                    [global, trim_all]
+                ),
+                Opts
+            )
+    end;
+apply_security(default, TargetProcess, Msg, Opts) ->
+    ?event(push, {default_policy, {target, TargetProcess}}, Opts),
+    hb_message:commit(Msg, Opts).
+
+%% @doc Attempt to sign a result message with the given committers.
+commit_result(Msg, Committers, Opts) ->
+    lists:foldl(
+        fun(Committer, Acc) ->
+            case hb_opts:as(Committer, Opts) of
+                {ok, CommitterOpts} ->
+                    hb_message:commit(Acc, CommitterOpts);
+                {error, not_found} ->
+                    ?event(push,
+                        {policy_warning,
+                            {
+                                unknown_committer,
+                                Committer
+                            }
+                        },
+                        Opts
+                    ),
+                    Acc
+            end
+        end,
+        Msg,
+        Committers
     ).
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
@@ -484,6 +553,92 @@ full_push_test_() ->
         ?assertEqual(
             {ok, <<"Done.">>},
             hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+        )
+    end}.
+
+push_as_identity_test_() ->
+    {timeout, 30, fun() ->
+        dev_process:init(),
+        % Create a new identity for the scheduler.
+        DefaultWallet = hb:wallet(),
+        SchedulingWallet = ar_wallet:new(),
+        SchedulingID = hb_util:human_id(SchedulingWallet),
+        ComputeWallet = ar_wallet:new(),
+        ComputeID = hb_util:human_id(ComputeWallet),
+        Opts = #{
+            priv_wallet => DefaultWallet,
+            cache_control => <<"always">>,
+            store => [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
+                }
+            ],
+            identities => #{
+                SchedulingID => #{
+                    priv_wallet => SchedulingWallet,
+                    store => [
+                        #{
+                            <<"store-module">> => hb_store_fs,
+                            <<"prefix">> => <<"cache-TEST/scheduler">>
+                        }
+                    ]
+                },
+                ComputeID => #{
+                    priv_wallet => ComputeWallet
+                }
+            }
+        },
+        % Create a new test AOS process, which will use the given identities as
+        % its authority and scheduler.
+        Msg1 =
+            dev_process:test_aos_process(
+                Opts#{
+                    authority => ComputeID,
+                    scheduler => SchedulingID
+                }
+            ),
+        ?event(debug, {msg1, Msg1}),
+        % Perform the remainder of the test as with `full_push_test_/0'.
+        hb_cache:write(Msg1, Opts),
+        {ok, SchedInit} =
+            hb_ao:resolve(Msg1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
+        Script = ping_pong_script(2),
+        ?event({script, Script}),
+        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
+        ?event(push, {msg_sched_result, Msg2}),
+        {ok, StartingMsgSlot} =
+            hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+        ?event({starting_msg_slot, StartingMsgSlot}),
+        Msg3 =
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => StartingMsgSlot
+            },
+        {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
+        ?assertEqual(
+            {ok, <<"Done.">>},
+            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+        ),
+        % Validate that the scheduler's wallet was used to sign the message.
+        ?assertEqual(
+            [SchedulingID],
+            hb_ao:get(<<"schedule/assignments/2/committers">>, Msg1, Opts)
+        ),
+        % Validate that the compute wallet was used to sign the message.
+        ?assertEqual(
+            [ComputeID],
+            hb_ao:get(<<"schedule/assignments/2/body/committers">>, Msg1, Opts)
         )
     end}.
 

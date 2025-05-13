@@ -27,7 +27,11 @@ suite_with_opts(Suite, OptsList) ->
                             ok
                         end,
                         [
-                            {ODesc ++ ": " ++ TestDesc, fun() -> Test(Opts) end}
+                            {
+                                hb_util:list(ODesc)
+                                    ++ ": "
+                                    ++ hb_util:list(TestDesc),
+                                fun() -> Test(Opts) end}
                         ||
                             {TestAtom, TestDesc, Test} <- Suite, 
                                 not lists:member(TestAtom, Skip)

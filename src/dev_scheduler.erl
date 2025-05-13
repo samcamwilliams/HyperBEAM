@@ -509,9 +509,9 @@ post_schedule(Msg1, Msg2, Opts) ->
             % message, start a new one if necessary, or return a redirect to the
             % correct remote scheduler.
             case find_server(ProcID, Msg1, ToSched, Opts) of
-                {local, PID} ->
-                    ?event({scheduling_message_locally, {proc_id, ProcID}, {pid, PID}}),
-                    do_post_schedule(ProcID, PID, OnlyCommitted, Opts);
+                {local, PID, SchedulerOpts} ->
+                    ?event({scheduling_locally, {proc_id, ProcID}, {pid, PID}}),
+                    do_post_schedule(ProcID, PID, OnlyCommitted, SchedulerOpts);
                 {redirect, Redirect} ->
                     ?event({process_is_remote, {redirect, Redirect}}),
                     case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -520,7 +520,12 @@ post_schedule(Msg1, Msg2, Opts) ->
                                 {redirect, Redirect},
                                 {msg, OnlyCommitted}
                             }),
-                            post_remote_schedule(ProcID, Redirect, OnlyCommitted, Opts);
+                            post_remote_schedule(
+                                ProcID,
+                                Redirect,
+                                OnlyCommitted,
+                                Opts
+                            );
                         false -> {ok, Redirect}
                     end;
                 {error, Error} ->
@@ -589,7 +594,8 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
             case dev_scheduler_registry:find(ProcID, false, Opts) of
                 PID when is_pid(PID) ->
                     ?event({found_pid_in_local_registry, PID}),
-                    {local, PID};
+                    #{ opts := SchedulerOpts } = dev_scheduler_server:info(PID),
+                    {local, PID, SchedulerOpts};
                 not_found ->
                     ?event({no_pid_in_local_registry, ProcID}),
                     % Find the process from the message.
@@ -611,17 +617,16 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                                 case hb_cache:read(ProcID, Opts) of
                                                     {ok, P} -> P;
                                                     not_found ->
-                                                        throw({process_not_available, ProcID})
+                                                        throw({
+                                                            process_not_available,
+                                                            ProcID
+                                                        })
                                                 end
                                         end
                                 end;
                             P -> P
                         end,
                     ?event({found_process, {process, Proc}, {msg1, Msg1}}),
-                    % Check if we are the scheduler for this process.
-                    Address = hb_util:human_id(ar_wallet:to_address(
-                        hb_opts:get(priv_wallet, hb:wallet(), Opts))),
-                    ?event({local_address, Address}),
                     SchedLoc =
                         hb_ao:get_first(
                             [
@@ -639,13 +644,31 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     case SchedLoc of
                         not_found ->
                             {error, <<"No scheduler information provided.">>};
-                        Address ->
-                            % We are the scheduler. Start the server if it has not already
-                            % been started.
-                            {local, dev_scheduler_registry:find(ProcID, true, Opts)};
-                        _ ->
-                            % We are not the scheduler. Find it and return a redirect.
-                            find_remote_scheduler(ProcID, SchedLoc, Opts)
+                        SchedulerAddr ->
+                            ?event(
+                                {confirming_if_scheduler_is_local,
+                                    {addr, SchedulerAddr}
+                                }
+                            ),
+                            case hb_opts:as(SchedulerAddr, Opts) of
+                                {ok, SchedulerOpts} ->
+                                    % We are the scheduler. Start the server if
+                                    % it has not already been started, with the
+                                    % given options.
+                                    {
+                                        local,
+                                        dev_scheduler_registry:find(
+                                            ProcID,
+                                            true,
+                                            SchedulerOpts
+                                        ),
+                                        SchedulerOpts
+                                    };
+                                {error, not_found} ->
+                                    % We are not the scheduler. Find it and
+                                    % return a redirect.
+                                    find_remote_scheduler(ProcID, SchedLoc, Opts)
+                            end
                     end
             end
     end.
@@ -742,7 +765,7 @@ slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
     ProcID = find_target_id(M1, M2, Opts),
     case find_server(ProcID, M1, Opts) of
-        {local, PID} ->
+        {local, PID, _SchedulerOpts} ->
             ?event({getting_current_slot, {proc_id, ProcID}}),
             {Timestamp, Hash, Height} = ar_timestamp:get(),
             #{ current := CurrentSlot, wallet := Wallet } =
@@ -754,7 +777,7 @@ slot(M1, M2, Opts) ->
                 <<"block-height">> => Height,
                 <<"block-hash">> => Hash,
                 <<"cache-control">> => <<"no-store">>,
-                <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
+                <<"wallet-address">> => hb_util:human_id(Wallet)
             }};
         {redirect, Redirect} ->
             case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -851,8 +874,8 @@ get_schedule(Msg1, Msg2, Opts) ->
     Format = hb_ao:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
-        {local, _PID} ->
-            generate_local_schedule(Format, ProcID, From, To, Opts);
+        {local, _PID, SchedulerOpts} ->
+            generate_local_schedule(Format, ProcID, From, To, SchedulerOpts);
         {redirect, Redirect} ->
             ?event({redirect_received, {redirect, Redirect}}),
             case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -1444,7 +1467,7 @@ register_location_on_boot_test() ->
                         <<"path">> => <<"location">>,
                         <<"method">> => <<"POST">>,
                         <<"accept-codec">> => <<"ans104@1.0">>,
-                        <<"hook">> =>#{
+                        <<"hook">> => #{
                             <<"result">> => <<"ignore">>,
                             <<"commit-request">> => true
                         }
@@ -1924,7 +1947,7 @@ benchmark_suite(Port, Base) ->
                 scheduling_mode => local_confirmation,
                 port => Port
             },
-            desc => "FS store, local conf."
+            desc => <<"FS store, local conf.">>
         },
         #{
             name => fs_aggressive,
@@ -1936,7 +1959,7 @@ benchmark_suite(Port, Base) ->
                 scheduling_mode => aggressive,
                 port => Port + 1
             },
-            desc => "FS store, aggressive conf."
+            desc => <<"FS store, aggressive conf.">>
         },
         #{
             name => rocksdb,
@@ -1948,7 +1971,7 @@ benchmark_suite(Port, Base) ->
                 scheduling_mode => local_confirmation,
                 port => Port + 2
             },
-            desc => "RocksDB store, local conf."
+            desc => <<"RocksDB store, local conf.">>
         },
         #{
             name => rocksdb_aggressive,
@@ -1960,7 +1983,7 @@ benchmark_suite(Port, Base) ->
                 scheduling_mode => aggressive,
                 port => Port + 3
             },
-            desc => "RocksDB store, aggressive conf."
+            desc => <<"RocksDB store, aggressive conf.">>
         },
         #{
             name => rocksdb_extreme_aggressive_h3,
@@ -1978,6 +2001,6 @@ benchmark_suite(Port, Base) ->
                 protocol => http3,
                 workers => 100
             },
-            desc => "100xRocksDB store, aggressive conf, http/3."
+            desc => <<"100xRocksDB store, aggressive conf, http/3.">>
         }
     ].
