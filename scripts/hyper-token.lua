@@ -219,16 +219,6 @@ local function is_trusted_compute(base, assignment)
     return is_signed_by(base.authority, "request", assignment)
 end
 
--- Validate that the request is to a known ledger.
-local function is_to_known_ledger(base, request)
-    local route = (request.route or {})[1]
-    if route == base["token"] then
-        return true
-    end
-
-    return base.ledgers and (base.ledgers[route] ~= nil)
-end
-
 -- Determine if the ledger indicated by `base` is the root ledger.
 local function is_root(base)
     return base.token == nil
@@ -588,7 +578,7 @@ function transfer(base, assignment)
         -- We are the root ledger, or the user is sending tokens directly to
         -- another user. We credit the recipient's balance, or the sub-ledger's
         -- balance if the request has a `route' key.
-        local direct_recipient = (request.route and request.route[1]) or request.recipient
+        local direct_recipient = request.route or request.recipient
         base.balance[direct_recipient] =
             (base.balance[direct_recipient] or 0) + quantity
         base = send(base, {
@@ -607,7 +597,7 @@ function transfer(base, assignment)
         })
     end
 
-    if request.route and request.route[1] == base.token then
+    if request.route == base.token then
         -- The user is returning tokens to the root ledger, so we send a
         -- transfer to the root ledger.
         base = send(base, {
@@ -631,7 +621,7 @@ function transfer(base, assignment)
     -- the recipient.
     base = send(base, {
         action = "Credit-Notice",
-        target = request.route[1],
+        target = request.route,
         recipient = request.recipient,
         quantity = quantity,
         sender = request.from
@@ -738,7 +728,6 @@ end
 -- Register ourselves with a remote ledger, at the request of a user or another
 -- ledger.
 _G["register-remote"] = function (raw_base, assignment)
-    
     -- Validate the request.
     local status, base, request = validate_request(raw_base, assignment)
     if (status ~= "ok") or (type(request) ~= "table") then

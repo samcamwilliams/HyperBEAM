@@ -112,13 +112,16 @@ subledger(Root, Opts) ->
 %% @doc Generate a test transfer message.
 transfer(ProcMsg, Sender, Recipient, Quantity, Opts) ->
     transfer(ProcMsg, Sender, Recipient, Quantity, undefined, Opts).
-transfer(ProcMsg, Sender, Recipient, Quantity, Route = [R|_], Opts) when is_map(R) ->
-    NormRoute = [ hb_message:id(L, all) || L <- Route ],
-    transfer(ProcMsg, Sender, Recipient, Quantity, NormRoute, Opts);
 transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
     MaybeRoute =
         if Route == undefined -> #{};
-           true -> #{ <<"route">> => Route }
+           true ->
+                #{
+                    <<"route">> =>
+                        if is_map(Route) -> hb_message:id(Route, all);
+                        true -> Route
+                        end
+                }
         end,
     Xfer =
         hb_message:commit(#{
@@ -479,7 +482,7 @@ subledger_deposit() ->
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     % 2. Alice deposits tokens into the sub-ledger.
-    Res = transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
+    transfer(Proc, Alice, Alice, 10, SubLedger, Opts),
     ?event(debug, {after_deposit, {result, map([Proc, SubLedger], Opts)} }),
     ?assertEqual(90, balance(Proc, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
@@ -513,7 +516,7 @@ subledger_transfer() ->
     ?assertEqual(100, balance(RootLedger, Alice, Opts)),
     ?event(token_log, {map, map([RootLedger], EnvNames, Opts)}),
     % 2. Alice sends tokens to the sub-ledger from the root ledger.
-    transfer(RootLedger, Alice, Alice, 10, [SubLedger], Opts),
+    transfer(RootLedger, Alice, Alice, 10, SubLedger, Opts),
     ?assertEqual(90, balance(RootLedger, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % 3. Alice sends tokens to Bob on the sub-ledger.
@@ -524,7 +527,7 @@ subledger_transfer() ->
             {ids, map([RootLedger, SubLedger], Opts)}
         }),
     % 4. Bob sends tokens to Alice on the root ledger.
-    Res = transfer(SubLedger, Bob, Bob, 7, [RootLedger], Opts),
+    transfer(SubLedger, Bob, Bob, 7, RootLedger, Opts),
     % Validate the balances of the root and sub-ledgers.
     Map = map([RootLedger, SubLedger], EnvNames, Opts),
     ?event(token_log, {map, map([RootLedger, SubLedger], Opts)}),
@@ -608,16 +611,16 @@ subledger_to_subledger_test() ->
     % 2. Alice registers with SubLedger1.
     register(SubLedger1, SubLedger2, Opts),
     % 3. Alice sends 90 tokens to herself on SubLedger1.
-    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
+    transfer(RootLedger, Alice, Alice, 90, SubLedger1, Opts),
     % 4. Alice sends 10 tokens to Bob on SubLedger2.
-    transfer(SubLedger1, Alice, Bob, 10, [SubLedger2], Opts),
+    transfer(SubLedger1, Alice, Bob, 10, SubLedger2, Opts),
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
     verify_net(RootLedger, [SubLedger1, SubLedger2], Opts),
     % 5. Bob sends 5 tokens to himself on SubLedger1.
-    transfer(SubLedger2, Bob, Bob, 5, [SubLedger1], Opts),
-    transfer(SubLedger2, Bob, Alice, 4, [SubLedger1], Opts),
+    transfer(SubLedger2, Bob, Bob, 5, SubLedger1, Opts),
+    transfer(SubLedger2, Bob, Alice, 4, SubLedger1, Opts),
     ?event(debug, {map, map([RootLedger, SubLedger1, SubLedger2], Names, Opts)}),
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(5, balance(SubLedger1, Bob, Opts)),
@@ -656,17 +659,17 @@ unregistered_peer_transfer_test() ->
     },
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(RootLedger, Alice, Opts)),
-    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
+    transfer(RootLedger, Alice, Alice, 90, SubLedger1, Opts),
     % Verify the state before the multi-hop transfer.
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(90, balance(SubLedger1, Alice, Opts)),
     % 4. Alice sends 10 tokens to Bob on SubLedger3, via SubLedger2.
-    transfer(RootLedger, Alice, Bob, 10, [SubLedger2], Opts),
+    transfer(RootLedger, Alice, Bob, 10, SubLedger2, Opts),
     ?assertEqual(0, balance(RootLedger, Alice, Opts)),
     ?assertEqual(90, balance(SubLedger1, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
     % 5. Bob sends 10 tokens to himself on SubLedger3.
-    transfer(SubLedger1, Alice, Bob, 50, [SubLedger3], Opts),
+    transfer(SubLedger1, Alice, Bob, 50, SubLedger3, Opts),
     % Verify the final state of all ledgers.
     ?event(debug,
         {map,
