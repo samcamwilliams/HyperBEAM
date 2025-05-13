@@ -123,8 +123,6 @@ transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
     Xfer =
         hb_message:commit(#{
             <<"path">> => <<"push">>,
-            <<"scheduler-device">> => <<"scheduler@1.0">>,
-            <<"execution-device">> => <<"lua@5.3a">>,
             <<"body">> =>
                 hb_message:commit(MaybeRoute#{
                         <<"action">> => <<"Transfer">>,
@@ -148,21 +146,25 @@ register(ProcMsg, Peer, Opts) when is_map(Peer) ->
     register(ProcMsg, hb_message:id(Peer, all), Opts);
 register(ProcMsg, PeerID, RawOpts) ->
     Opts = #{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), RawOpts) },
-    hb_ao:resolve(
-        ProcMsg,
+    Reg =
         hb_message:commit(
             #{
                 <<"path">> => <<"push">>,
                 <<"body">> =>
-                    #{
-                        <<"path">> => <<"register">>,
-                        <<"target">> => PeerID,
-                        <<"scheduler-device">> => <<"scheduler@1.0">>,
-                        <<"execution-device">> => <<"lua@5.3a">>
-                    }
+                    hb_message:commit(
+                        #{
+                            <<"action">> => <<"register-remote">>,
+                            <<"target">> => hb_message:id(ProcMsg, all),
+                            <<"peer">> => PeerID
+                        },
+                        Opts
+                    )
             },
             Opts
         ),
+    hb_ao:resolve(
+        ProcMsg,
+        Reg,
         Opts
     ).
 
@@ -198,9 +200,31 @@ supply(ProcMsg, Opts) ->
 supply(Mode, ProcMsg, Opts) ->
     lists:sum(maps:values(balances(Mode, ProcMsg, Opts))).
 
+%% @doc Calculate the supply of tokens in all sub-ledgers, from the balances of
+%% the root ledger.
+subledger_supply(RootProc, AllProcs, Opts) ->
+    supply(now, RootProc, Opts) - user_supply(RootProc, AllProcs, Opts).
+
+%% @doc Calculate the supply of tokens held by users on a ledger, excluding
+%% those held in sub-ledgers.
+user_supply(Proc, AllProcs, Opts) ->
+    NormProcs = normalize_without_root(Proc, AllProcs),
+    SubledgerIDs = maps:keys(NormProcs),
+    lists:sum(
+        maps:values(
+            maps:without(
+                SubledgerIDs,
+                balances(now, Proc, Opts)
+            )
+        )
+    ).
+
 %% @doc Get the local expectation of a ledger's balances with peer ledgers.
 ledgers(ProcMsg, Opts) ->
-    hb_private:reset(hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts)).
+    case hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts) of
+        Msg when is_map(Msg) -> hb_private:reset(Msg);
+        [] -> #{}
+    end.
 
 %% @doc Generate a complete overview of the test environment's balances and 
 %% ledgers. Optionally, a map of environment names can be provided to make the
@@ -212,7 +236,7 @@ map(Procs, Opts) ->
             MaybeRoot =
                 case maps:get(Key, NormProcs, #{}) of
                     #{ <<"token">> := _ } -> #{};
-                    _ -> #{ <<"root">> => true }
+                    _ -> #{ root => true }
                 end,
             MaybeRoot#{
                 balances => Balances,
@@ -303,17 +327,14 @@ verify_root_supply(RootProc, Opts) ->
 verify_net_supply(RootProc, AllProcs, Opts) ->
     verify_root_supply(RootProc, Opts),
     StartingRootSupply = supply(initial, RootProc, Opts),
-    CurrentRootSupply = supply(now, RootProc, Opts),
     NormProcsWithoutRoot = normalize_without_root(RootProc, AllProcs),
+    SubledgerIDs = maps:keys(NormProcsWithoutRoot),
+    RootUserSupply = user_supply(RootProc, NormProcsWithoutRoot, Opts),
+    SubledgerSupply = subledger_supply(RootProc, AllProcs, Opts),
+    ?event(debug, {verify_net_supply, {root, RootUserSupply}, {subledger, SubledgerSupply}}),
     ?assertEqual(
         StartingRootSupply,
-        CurrentRootSupply +
-            lists:sum(
-                lists:map(
-                    fun(Proc) -> supply(Proc, Opts) end,
-                    maps:values(NormProcsWithoutRoot)
-                )
-            )
+        RootUserSupply + SubledgerSupply
     ).
 
 %% @doc Verify the consistency of all expected ledger balances with their peer
@@ -362,8 +383,8 @@ normalize_env(Procs) when is_list(Procs) ->
     ).
 
 %% @doc Return the normalized environment without the root ledger.
-normalize_without_root(Root, Procs) ->
-    maps:without([hb_message:id(Root, all)], normalize_env(Procs)).
+normalize_without_root(RootProc, Procs) ->
+    maps:without([hb_message:id(RootProc, all)], normalize_env(Procs)).
 
 %%% Test cases.
 
@@ -371,7 +392,8 @@ normalize_without_root(Root, Procs) ->
 %% 1. Alice has 100 tokens on a root ledger.
 %% 2. Alice sends 1 token to Bob.
 %% 3. Alice has 99 tokens, and Bob has 1 token.
-transfer_test() ->
+transfer_test_() -> {timeout, 30, fun transfer/0}.
+transfer() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
@@ -394,7 +416,8 @@ transfer_test() ->
 %%    being transferred.
 %% 3. Transferring a binary-encoded amount of tokens that exceed the quantity
 %%    of tokens the sender has available.
-transfer_unauthorized_test() ->
+transfer_unauthorized_test_() -> {timeout, 30, fun transfer_unauthorized/0}.
+transfer_unauthorized() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
@@ -423,7 +446,8 @@ transfer_unauthorized_test() ->
     ?assertEqual(100, supply(Proc, Opts)).
 
 %% @doc Verify that a user can deposit tokens into a sub-ledger.
-subledger_deposit_test() ->
+subledger_deposit_test_() -> {timeout, 30, fun subledger_deposit/0}.
+subledger_deposit() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Proc =
@@ -437,6 +461,7 @@ subledger_deposit_test() ->
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     % 2. Alice deposits tokens into the sub-ledger.
     Res = transfer(Proc, Alice, Alice, 10, [SubLedger], Opts),
+    ?event(debug, {after_deposit, {result, map([Proc, SubLedger], Opts)} }),
     ?assertEqual(90, balance(Proc, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % Verify all invariants.
@@ -447,7 +472,8 @@ subledger_deposit_test() ->
 %% 2. Alice sends tokens to the sub-ledger from the root ledger.
 %% 3. Alice sends tokens to Bob on the sub-ledger.
 %% 4. Bob sends tokens to Alice on the root ledger.
-subledger_transfer_test() ->
+subledger_transfer_test_() -> {timeout, 10, fun subledger_transfer/0}.
+subledger_transfer() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
@@ -472,27 +498,27 @@ subledger_transfer_test() ->
     ?assertEqual(90, balance(RootLedger, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger, Alice, Opts)),
     % 3. Alice sends tokens to Bob on the sub-ledger.
-    transfer(SubLedger, Alice, Bob, 10, Opts),
+    transfer(SubLedger, Alice, Bob, 8, Opts),
     ?event(token_log, 
         {state_after_subledger_user_xfer,
             {names, map([RootLedger, SubLedger], EnvNames, Opts)},
             {ids, map([RootLedger, SubLedger], Opts)}
         }),
     % 4. Bob sends tokens to Alice on the root ledger.
-    Res = transfer(SubLedger, Bob, Alice, 9, [RootLedger], Opts),
+    Res = transfer(SubLedger, Bob, Bob, 7, [RootLedger], Opts),
     % Validate the balances of the root and sub-ledgers.
-    ?event(debug, {transfer, {result, {explicit, Res}}}),
     Map = map([RootLedger, SubLedger], EnvNames, Opts),
     ?event(token_log, {map, map([RootLedger, SubLedger], Opts)}),
     ?assertEqual(
         #{
             root => #{
-                balances => #{ alice => 99, bob => 0 },
-                ledgers => #{ subledger => 1 }
+                balances => #{ alice => 90, bob => 7, subledger => 3 },
+                ledgers => #{},
+                root => true
             },
             subledger => #{
-                balances => #{ alice => 0, bob => 1 },
-                ledgers => #{ root => 1 }
+                balances => #{ alice => 2, bob => 1 },
+                ledgers => #{}
             }
         },
         Map
@@ -513,11 +539,24 @@ subledger_registration_test() ->
         ),
     SubLedger1 = subledger(RootLedger, Opts),
     SubLedger2 = subledger(RootLedger, Opts),
+    Names = #{
+        SubLedger1 => subledger1,
+        SubLedger2 => subledger2
+    },
+    ?event(debug,
+        {subledger,
+            {sl1, hb_message:id(SubLedger1, none)},
+            {sl2, hb_message:id(SubLedger2, none)}
+        }
+    ),
     % There are no registered peers on either sub-ledger.
     ?assertEqual(0, map_size(ledgers(SubLedger1, Opts))),
     ?assertEqual(0, map_size(ledgers(SubLedger2, Opts))),
     % Alice registers with SubLedger1.
     register(SubLedger1, SubLedger2, Opts),
+    ?event(debug, {map, map([SubLedger1, SubLedger2], Names, Opts)}),
+    ?event(debug, {sl1_ledgers, ledgers(SubLedger1, Opts)}),
+    ?event(debug, {sl2_ledgers, ledgers(SubLedger2, Opts)}),
     % SubLedger1 and SubLedger2 are now aware of each other.
     ?assertEqual(1, map_size(ledgers(SubLedger1, Opts))),
     ?assertEqual(1, map_size(ledgers(SubLedger2, Opts))),
@@ -538,23 +577,32 @@ subledger_to_subledger_test() ->
         ),
     SubLedger1 = subledger(RootLedger, Opts),
     SubLedger2 = subledger(RootLedger, Opts),
+    Names = #{
+        Alice => alice,
+        Bob => bob,
+        RootLedger => root,
+        SubLedger1 => subledger1,
+        SubLedger2 => subledger2
+    },
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(RootLedger, Alice, Opts)),
     % 2. Alice registers with SubLedger1.
     register(SubLedger1, SubLedger2, Opts),
     % 3. Alice sends 90 tokens to herself on SubLedger1.
-    transfer(SubLedger1, Alice, Alice, 90, [SubLedger1], Opts),
+    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
     % 4. Alice sends 10 tokens to Bob on SubLedger2.
     transfer(SubLedger1, Alice, Bob, 10, [SubLedger2], Opts),
+    ?event(debug, {map, map([RootLedger, SubLedger1, SubLedger2], Names, Opts)}),
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
     verify_net(RootLedger, [SubLedger1, SubLedger2], Opts),
     % 5. Bob sends 5 tokens to himself on SubLedger1.
     transfer(SubLedger2, Bob, Bob, 5, [SubLedger1], Opts),
-    ?assertEqual(10, balance(SubLedger1, Bob, Opts)),
-    ?assertEqual(85, balance(RootLedger, Alice, Opts)),
-    ?assertEqual(5, balance(SubLedger2, Bob, Opts)),
+    transfer(SubLedger2, Bob, Alice, 4, [SubLedger1], Opts),
+    ?assertEqual(5, balance(SubLedger1, Bob, Opts)),
+    ?assertEqual(89, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(1, balance(SubLedger2, Bob, Opts)),
     verify_net(RootLedger, [SubLedger1, SubLedger2], Opts).
 
 %% @doc Verify that multi-hop transfers are able to route through intermediate

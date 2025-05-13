@@ -143,7 +143,7 @@ process_id(Msg1, Msg2, Opts) ->
         Process ->
             hb_message:id(
                 Process,
-                hb_ao:get(<<"committers">>, Msg2, <<"all">>, Opts)
+                hb_util:atom(maps:get(<<"commitments">>, Msg2, <<"all">>))
             )
     end.
 

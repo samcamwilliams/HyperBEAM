@@ -68,7 +68,7 @@ end
 
 -- Add a log message to the results of the given base.
 local function log_result(base, status, message)
-    ao.event("token_log", {"Result: ", {
+    ao.event("token_log", {"Token action log: ", {
         status = status,
         message = message
     }})
@@ -221,12 +221,21 @@ end
 
 -- Determine if a request is from a known ledger. Makes no assessment of whether
 -- a request is otherwise trustworthy.
-local function is_known_ledger(base, request)
+local function is_from_known_ledger(base, request)
     if request.from == base["token"] then
         return true
     end
 
     return base.ledgers and (base.ledgers[request.from] ~= nil)
+end
+
+-- Validate that the request is to a known ledger.
+local function is_to_known_ledger(base, request)
+    if request.recipient == base["token"] then
+        return true
+    end
+
+    return base.ledgers and (base.ledgers[request.recipient] ~= nil)
 end
 
 -- Determine if the ledger indicated by `base` is the root ledger.
@@ -242,7 +251,7 @@ local function validate_new_peer_ledger(base, request)
 
     -- Check if the request is from the root ledger.
     if is_root(base) or request.from == base["token"] then
-        ao.event({ "Deposit is from parent token. Accepting." }, {
+        ao.event({ "Peer is parent token. Accepting." }, {
             request = request
         })
         return true
@@ -251,8 +260,13 @@ local function validate_new_peer_ledger(base, request)
     -- Calculate the expected from our own `process/id&commitments=none`.
     -- This ensures that the process we are receiving the `credit-notice` from
     -- has the same structure as our own process.
-    local expected = ao.get("process/id&commitments=none", base)
-
+    ao.event({ "Getting process/id&committers=none", { base = base } })
+    local status, expected = ao.resolve(
+        {"as", "message@1.0", base},
+        "process",
+        { path = "id", commitments = "none" }
+    )
+    ao.event({ "Expected from-base: ", { status = status, expected = expected } })
     -- Check if the `from-base' field is present in the assignment.
     if not request["from-base"] then
         ao.event({ "from-base field not found in message: ", {
@@ -264,8 +278,8 @@ local function validate_new_peer_ledger(base, request)
     -- Check if the `from-base' field matches the expected ID.
     local base_matches = request["from-base"] == expected
     ao.event({ "Peer registration messages match: ", {
-        base_matches = base_matches,
-        expected = expected,
+        matches = base_matches,
+        expected_id = expected,
         request = request
     }})
     return base_matches
@@ -481,7 +495,7 @@ local function debit_balance(origin, base, request)
     end
 
     ao.event({ "Deducting funds:", { origin = origin , request = request } })
-    if is_known_ledger(base, request) then
+    if is_from_known_ledger(base, request) then
         base.ledgers[source] = source_balance - request.quantity
     else
         base.balance[source] = source_balance - request.quantity
@@ -553,7 +567,7 @@ function transfer_user_to_ledger(raw_base, request)
 
     -- Check that we trust the ledger we are sending to, or that we are the root
     -- ledger.
-    if is_root(base) or is_known_ledger(base, request) or (next_hop == base.token) then
+    if is_root(base) or is_from_known_ledger(base, request) or (next_hop == base.token) then
         -- Increment the balance of the ledger we are sending to.
         base.balance[next_hop] =
             (base.balance[next_hop] or 0) + request.quantity
@@ -589,7 +603,7 @@ function transfer_ledger_to_user(base, request)
     })
 
     -- Ensure that the credit notice is from a valid source.
-    if not is_known_ledger(base, request) then
+    if not is_from_known_ledger(base, request) then
         return log_result(base, "error", {
             message = "Invalid interledger token deposit. Credit notice from " ..
                 request.from .. " not admissible."
@@ -658,7 +672,7 @@ local function transfer_ledger_to_ledger(base, request)
     table.remove(request.route, 1)
 
     local known = is_root(base)
-        or is_known_ledger(base, request)
+        or is_from_known_ledger(base, request)
         or next_hop == base.token
 
     -- If we don't know how to route the request, return an error.
@@ -734,21 +748,27 @@ end
 
 -- Semantics:
 -- Balance == owed to X. Credit == Owed to subject by X.
--- User on root -> User on sub-ledger:
--- Root = Dec User balance, Inc Sub-ledger balance
 
--- Sub-ledger = Inc User balance, Inc Root credit
+-- User on root -> User on sub-ledger:
+-- Xfer in: Root = Dec User balance, Inc Sub-ledger balance
+-- C-N in: Sub-ledger = Inc User balance
+
 -- User on sub-ledgerA -> User on sub-ledgerB:
--- Sub-ledgerA = Dec User balance, Inc Sub-ledgerB balance
--- Sub-ledgerB = Inc User balance, Inc Sub-ledgerA credit
+-- Xfer in: Sub-ledgerA = Dec User balance
+-- C-N in: Sub-ledgerB = Inc User balance
 
 -- User on sub-ledgerB -> User on sub-ledgerA:
--- Sub-ledgerB = Dec user balance, Dec sub-ledger A credit
--- Sub-ledgerA = Inc user balance, Dec sub-ledger B balance
+-- Xfer in: Sub-ledgerB = Dec user balance
+-- C-N in: Sub-ledgerA = Inc user balance
+
+-- User on A->B->C:
+-- Xfer in: A = Dec User balance
+-- C-N in: B = 
+-- C-N in: C = Inc User balance
 
 -- User on sub-ledger -> User on root:
--- Sub-ledger = Dec User balance, Dec Root credit
--- Root = Dec sub-ledger balance, Inc User balance
+-- Xfer in: Sub-ledger = Dec User balance
+-- C-N in: Root = Inc User balance, Dec Sub-ledger balance
 
 function transfer(base, assignment)
     ao.event({ "Transfer request received", { assignment = assignment } })
@@ -775,23 +795,131 @@ function transfer(base, assignment)
         })
     end
 
-    -- The globally applicable requirements upon the transfer request are met.
-    -- We can now process the transfer.
-    if not request.route then
-        -- Case 1: We are processing a standard transfer.
-        return transfer_user_to_user(base, request)
-    elseif not is_known_ledger(base, request) then
-        -- Case 2: We are processing the first step of an interledger transfer.
-        return transfer_user_to_ledger(base, request)
-    elseif #request.route == 0 then
-        -- Case 3: We are processing the final step of a multi-hop transfer.
-        return transfer_ledger_to_user(base, request)
-    elseif #request.route >= 1 then
-        -- Case 4: We are processing a multi-hop transfer.
-        return transfer_ledger_to_ledger(base, request)
+    if is_root(base) or not request.route then
+        -- We are the root ledger, or the user is sending tokens directly to
+        -- another user.
+        local direct_recipient = (request.route and request.route[1]) or request.recipient
+        base.balance[request.from] = (base.balance[request.from] or 0) - quantity
+        base.balance[direct_recipient] =
+            (base.balance[direct_recipient] or 0) + quantity
+        base = send(base, {
+            action = "Credit-Notice",
+            target = direct_recipient,
+            recipient = request.recipient,
+            quantity = quantity,
+            sender = request.from
+        })
+        return log_result(base, "ok", {
+            message = "Direct or root transfer processed successfully.",
+            from_user = request.from,
+            to = direct_recipient,
+            explicit_recipient = request.recipient,
+            quantity = quantity
+        })
     end
+
+    if request.route and request.route[1] == base.token then
+        -- The user is returning tokens to the root ledger, so we decrement the
+        -- user's balance with us and send a transfer to the root ledger.
+        base.balance[request.from] = base.balance[request.from] - quantity
+        base = send(base, {
+            action = "Transfer",
+            target = base.token,
+            recipient = request.recipient,
+            quantity = request.quantity
+        })
+        return log_result(base, "ok", {
+            message = "Ledger-root transfer processed successfully.",
+            from_user = request.from,
+            to_ledger = base.token,
+            to_user = request.recipient,
+            quantity = request.quantity
+        })
+    end
+
+    if is_to_known_ledger(base, request) then
+        -- The target is another ledger, so we decrement the sender's balance.
+        -- The peer ledger will increment the balance of the recipient.
+        base.balance[request.from] = base.balance[request.from] - quantity
+        base = send(base, {
+            action = "Credit-Notice",
+            target = request.route,
+            recipient = request.recipient,
+            quantity = quantity,
+            sender = request.from
+        })
+        return log_result(base, "ok", {
+            message = "Ledger-ledger transfer processed successfully.",
+            from_user = request.from,
+            to_ledger = request.route,
+            to_user = request.recipient,
+            quantity = quantity
+        })
+    end
+
+    return log_result(base, "error", {
+        message = "Unprocessable transfer request.",
+        from_user = request.from,
+        to_user = request.recipient,
+        route = request.route or "none",
+        quantity = quantity
+    })
 end
 
+-- Process credit notices from other ledgers.
+_G["credit-notice"] = function (base, assignment)
+    ao.event({ "Credit-Notice received", { assignment = assignment } })
+
+    -- Verify the security of the request.
+    local status, request
+    status, base, request = validate_request(base, assignment)
+    if status ~= "ok" or not request then
+        return "ok", base
+    end
+
+    if is_root(base) then
+        -- The root ledger will not process credit notices.
+        return log_result(base, "error", {
+            message = "Credit-Notice to root ledger ignored."
+        })
+    end
+
+    -- Ensure that the recipient is known.
+    if not request.recipient then
+        return log_result(base, "error", {
+            message = "Credit-Notice request has no recipient."
+        })
+    end
+
+    -- Normalize the quantity value.
+    local quantity = normalize_int(request.quantity)
+    if not quantity then
+        return log_result(base, "error", {
+            message = "Invalid quantity value.",
+            quantity = request.quantity
+        })
+    end
+
+    -- Ensure that the sender is a known ledger peer.
+    if not is_from_known_ledger(base, request) then
+        return log_result(base, "error", {
+            message = "Credit-Notice not from a known peer ledger."
+        })
+    end
+
+    -- Credit the recipient's balance.
+    base.balance[request.recipient] =
+        (base.balance[request.recipient] or 0) + quantity
+    
+    return "ok", log_result(base, "ok", {
+        message = "Credit-Notice processed successfully.",
+        from_ledger = request.from,
+        to_ledger = request.sender,
+        to_user = request.recipient,
+        quantity = quantity,
+        balance = base.balance[request.recipient]
+    })
+end
 
 -- Process registration requests from other ledgers.
 function register(raw_base, assignment)
@@ -814,7 +942,7 @@ function register(raw_base, assignment)
     if not validate_new_peer_ledger(base, assignment.body) then
         base.results = {
             status = "error",
-            error = "Ledger validation failed for registration"
+            error = "Ledger validation failed for registration."
         }
         return "ok", base
     end
@@ -834,7 +962,6 @@ end
 -- Register ourselves with a remote ledger, at the request of a user or another
 -- ledger.
 _G["register-remote"] = function (raw_base, assignment)
-    ao.event({ "Register-Remote request received", { assignment = assignment } })
     
     -- Validate the request.
     local status, base, request = validate_request(raw_base, assignment)
@@ -842,13 +969,18 @@ _G["register-remote"] = function (raw_base, assignment)
         return "ok", base
     end
 
+    base = log_result(base, "ok", {
+        message = "Register-Remote request received.",
+        peer = request.peer
+    })
+
     -- Send a registration request to the remote ledger. Our request is simply
     -- a `Register' message, as the recipient will be assessing our unsigned
     -- process ID in order to validate that we are an appropriate peer. This is
     -- added by our `push-device`, so no further action is required on our part.
     base = send(base, {
         target = request.peer,
-        action = "Register"
+        action = "register"
     })
 
     return "ok", base
