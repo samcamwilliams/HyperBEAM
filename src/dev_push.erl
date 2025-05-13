@@ -83,7 +83,13 @@ do_push(Process, Assignment, Opts) ->
             #{ <<"commitments">> => <<"none">> },
             Opts
         ),
-    ?event(debug, {push_computing_outbox, {process_id, ID}, {base_id, BaseID}, {slot, Slot}}),
+    ?event(debug,
+        {push_computing_outbox,
+            {process_id, ID},
+            {base_id, BaseID},
+            {slot, Slot}
+        }
+    ),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     {Status, Result} = hb_ao:resolve(
         {as, <<"process@1.0">>, Process},

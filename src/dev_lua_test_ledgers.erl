@@ -145,7 +145,10 @@ transfer(ProcMsg, Sender, Recipient, Quantity, Route, Opts) ->
 register(ProcMsg, Peer, Opts) when is_map(Peer) ->
     register(ProcMsg, hb_message:id(Peer, all), Opts);
 register(ProcMsg, PeerID, RawOpts) ->
-    Opts = #{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), RawOpts) },
+    Opts =
+        RawOpts#{
+            priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), RawOpts)
+        },
     Reg =
         hb_message:commit(
             #{
@@ -386,6 +389,21 @@ normalize_env(Procs) when is_list(Procs) ->
 normalize_without_root(RootProc, Procs) ->
     maps:without([hb_message:id(RootProc, all)], normalize_env(Procs)).
 
+%% @doc Create a node message for the test that avoids looking up unknown 
+%% recipients via remote stores. This improves test performance.
+test_opts() ->
+    hb:init(),
+    Opts = #{
+        store => Store = [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST">>
+            }
+        ]
+    },
+    hb_store:reset(Store),
+    Opts.
+
 %%% Test cases.
 
 %% @doc Test the `transfer` function.
@@ -394,7 +412,7 @@ normalize_without_root(RootProc, Procs) ->
 %% 3. Alice has 99 tokens, and Bob has 1 token.
 transfer_test_() -> {timeout, 30, fun transfer/0}.
 transfer() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
     Proc =
@@ -418,7 +436,7 @@ transfer() ->
 %%    of tokens the sender has available.
 transfer_unauthorized_test_() -> {timeout, 30, fun transfer_unauthorized/0}.
 transfer_unauthorized() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
     Proc =
@@ -434,6 +452,7 @@ transfer_unauthorized() ->
     %    being transferred.
     transfer(Proc, Alice, Bob, 101, Opts),
     ?event(debug, {unauthorized_transfer, {result, Result}}),
+    receive after 1000 -> ok end,
     ?event(debug, {env, map([Proc], #{ Alice => alice, Bob => bob }, Opts)}),
     ?assertEqual(100, balance(Proc, Alice, Opts)),
     ?assertEqual(0, balance(Proc, Bob, Opts)),
@@ -448,7 +467,7 @@ transfer_unauthorized() ->
 %% @doc Verify that a user can deposit tokens into a sub-ledger.
 subledger_deposit_test_() -> {timeout, 30, fun subledger_deposit/0}.
 subledger_deposit() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     Proc =
         ledger(
@@ -474,7 +493,7 @@ subledger_deposit() ->
 %% 4. Bob sends tokens to Alice on the root ledger.
 subledger_transfer_test_() -> {timeout, 10, fun subledger_transfer/0}.
 subledger_transfer() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
     RootLedger =
@@ -529,7 +548,7 @@ subledger_transfer() ->
 %% @doc Verify that peer ledgers on the same token are able to register mutually
 %% to establish a peer-to-peer connection.
 subledger_registration_test() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     RootLedger =
         ledger(
@@ -566,7 +585,7 @@ subledger_registration_test() ->
 %% @doc Verify that registered sub-ledgers are able to send tokens to each other
 %% without the need for messages on the root ledger.
 subledger_to_subledger_test() ->
-    Opts = #{},
+    Opts = test_opts(),
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
     RootLedger =
@@ -592,7 +611,6 @@ subledger_to_subledger_test() ->
     transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
     % 4. Alice sends 10 tokens to Bob on SubLedger2.
     transfer(SubLedger1, Alice, Bob, 10, [SubLedger2], Opts),
-    ?event(debug, {map, map([RootLedger, SubLedger1, SubLedger2], Names, Opts)}),
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
     ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
@@ -600,20 +618,21 @@ subledger_to_subledger_test() ->
     % 5. Bob sends 5 tokens to himself on SubLedger1.
     transfer(SubLedger2, Bob, Bob, 5, [SubLedger1], Opts),
     transfer(SubLedger2, Bob, Alice, 4, [SubLedger1], Opts),
+    ?event(debug, {map, map([RootLedger, SubLedger1, SubLedger2], Names, Opts)}),
+    ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(5, balance(SubLedger1, Bob, Opts)),
-    ?assertEqual(89, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(84, balance(SubLedger1, Alice, Opts)),
     ?assertEqual(1, balance(SubLedger2, Bob, Opts)),
     verify_net(RootLedger, [SubLedger1, SubLedger2], Opts).
 
-%% @doc Verify that multi-hop transfers are able to route through intermediate
-%% ledgers correctly. A multi-hop transfer is a transfer where another ledger
-%% proxies the transfer to the next hop along a `route' specified by the sender.
-%% 
-%% This test establishes a chain of trust between three sub-ledgers, and then
-%% exercises the multi-hop transfer functionality by sending tokens from Alice
-%% to Bob through each of the sub-ledgers. After, the tokens are transferred
-%% back to Alice on the root ledger.
-multihop_transfer_test() ->
+%% @doc Verify that a ledger can send tokens to a peer ledger that is not
+%% registered with it yet. Each peer ledger must have precisely the same process
+%% base message, granting transitive security properties: If a peer trusts its
+%% own compute and assignment mechanism, then it can trust messages from exact
+%% duplicates of itself. In order for this to be safe, the peer ledger network's
+%% base process message must implement sufficicient rollback protections and 
+%% compute correctness guarantees.
+unregistered_peer_transfer_test() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
@@ -624,81 +643,42 @@ multihop_transfer_test() ->
             Opts
         ),
     SubLedgers = [ subledger(RootLedger, Opts) || _ <- lists:seq(1, 3) ],
-    AllLedgers = [ RootLedger | SubLedgers ],
     SubLedger1 = lists:nth(1, SubLedgers),
     SubLedger2 = lists:nth(2, SubLedgers),
     SubLedger3 = lists:nth(3, SubLedgers),
+    Names = #{
+        Alice => alice,
+        Bob => bob,
+        RootLedger => root,
+        SubLedger1 => subledger1,
+        SubLedger2 => subledger2,
+        SubLedger3 => subledger3
+    },
     % 1. Alice has tokens on the root ledger.
     ?assertEqual(100, balance(RootLedger, Alice, Opts)),
-    % 2. Create the chain of trust between the sub-ledgers.
-    register(SubLedger1, SubLedger2, Opts),
-    register(SubLedger2, SubLedger3, Opts),
-    % 3. Alice sends 10 tokens to herself on SubLedger1.
-    transfer(SubLedger1, Alice, Alice, 90, [SubLedger1], Opts),
+    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
     % Verify the state before the multi-hop transfer.
     ?assertEqual(10, balance(RootLedger, Alice, Opts)),
     ?assertEqual(90, balance(SubLedger1, Alice, Opts)),
-    ?assertEqual(1, map_size(ledgers(SubLedger1, Opts))),
-    ?assertEqual(1, map_size(ledgers(SubLedger2, Opts))),
-    ?assertEqual(1, map_size(ledgers(SubLedger3, Opts))),
     % 4. Alice sends 10 tokens to Bob on SubLedger3, via SubLedger2.
-    transfer(SubLedger1, Alice, Bob, 10, [SubLedger2, SubLedger3], Opts),
-    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger2, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
-    ?assertEqual(10, balance(SubLedger3, Bob, Opts)),
+    transfer(RootLedger, Alice, Bob, 10, [SubLedger2], Opts),
+    ?assertEqual(0, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(90, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
     % 5. Bob sends 10 tokens to himself on SubLedger3.
-    transfer(SubLedger3, Bob, Alice, 10, [RootLedger], Opts),
+    transfer(SubLedger1, Alice, Bob, 50, [SubLedger3], Opts),
     % Verify the final state of all ledgers.
-    ?assertEqual(0, balance_total(AllLedgers, Bob, Opts)),
-    ?assertEqual(10, balance_total(AllLedgers, Alice, Opts)),
+    ?event(debug,
+        {map,
+            map(
+                [RootLedger, SubLedger1, SubLedger2, SubLedger3],
+                Names,
+                Opts
+            )
+        }
+    ),
+    ?assertEqual(0, balance(RootLedger, Alice, Opts)),
+    ?assertEqual(40, balance(SubLedger1, Alice, Opts)),
+    ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
+    ?assertEqual(50, balance(SubLedger3, Bob, Opts)),
     verify_net(RootLedger, SubLedgers, Opts).
-
-%% @doc Verify that a requested route that a ledger is not capable of servicing
-%% terminates gracefully. The _sender_ of the tokens (not the recipient) should
-%% receive the tokens in their balance on the intermediate ledger. This avoids
-%% the recipient having to handle recovery of the tokens for which they did not
-%% choose the route.
-multihop_route_termination_test() ->
-    Opts = #{},
-    Alice = ar_wallet:new(),
-    Bob = ar_wallet:new(),
-    RootLedger =
-        ledger(
-            <<"test/hyper-token.lua">>,
-            #{ <<"balance">> => #{ Alice => 100 } },
-            Opts
-        ),
-    SubLedgers = [ subledger(RootLedger, Opts) || _ <- lists:seq(1, 3) ],
-    AllLedgers = [ RootLedger | SubLedgers ],
-    SubLedger1 = lists:nth(1, SubLedgers),
-    SubLedger2 = lists:nth(2, SubLedgers),
-    SubLedger3 = lists:nth(3, SubLedgers),
-    % 1. Alice has tokens on the root ledger. She transfers them to herself on
-    %    SubLedger1.
-    transfer(RootLedger, Alice, Alice, 90, [SubLedger1], Opts),
-    % 2. Alice registers SubLedger1 with SubLedger2, but not SubLedger2 with
-    %    SubLedger3.
-    register(SubLedger1, SubLedger2, Opts),
-    % 3. Alice requests a multi-hop transfer SL1 -> SL2 -> SL3.
-    transfer(RootLedger, Alice, Bob, 10, SubLedgers, Opts),
-    % 4. Alice's transfer should have terminated at SL2, as SL2 does not have
-    %    a route to SL3.
-    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
-    ?assertEqual(10, balance(SubLedger2, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
-    ?assertEqual(0, balance(SubLedger3, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger3, Bob, Opts)),
-    verify_net(RootLedger, AllLedgers, Opts),
-    % 5. Alice again attempts to transfer 10 tokens to Bob on SubLedger3, this 
-    %    time routing via RootLedger, starting from the end of the previous
-    %    transfer at SubLedger2.
-    transfer(SubLedger2, Alice, Bob, 10, [RootLedger, SubLedger3], Opts),
-    % 6. The transfer should now have succeeded.
-    ?assertEqual(80, balance(SubLedger1, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger1, Bob, Opts)),
-    ?assertEqual(0, balance(SubLedger2, Alice, Opts)),
-    ?assertEqual(0, balance(SubLedger2, Bob, Opts)),
-    ?assertEqual(0, balance(SubLedger3, Alice, Opts)),
-    ?assertEqual(10, balance(SubLedger3, Bob, Opts)),
-    verify_net(RootLedger, AllLedgers, Opts).

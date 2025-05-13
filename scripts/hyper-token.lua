@@ -219,23 +219,14 @@ local function is_trusted_compute(base, assignment)
     return is_signed_by(base.authority, "request", assignment)
 end
 
--- Determine if a request is from a known ledger. Makes no assessment of whether
--- a request is otherwise trustworthy.
-local function is_from_known_ledger(base, request)
-    if request.from == base["token"] then
-        return true
-    end
-
-    return base.ledgers and (base.ledgers[request.from] ~= nil)
-end
-
 -- Validate that the request is to a known ledger.
 local function is_to_known_ledger(base, request)
-    if request.recipient == base["token"] then
+    local route = (request.route or {})[1]
+    if route == base["token"] then
         return true
     end
 
-    return base.ledgers and (base.ledgers[request.recipient] ~= nil)
+    return base.ledgers and (base.ledgers[route] ~= nil)
 end
 
 -- Determine if the ledger indicated by `base` is the root ledger.
@@ -283,6 +274,46 @@ local function validate_new_peer_ledger(base, request)
         request = request
     }})
     return base_matches
+end
+
+-- Register a new peer ledger, if the `from-base' field matches our own.
+local function register_peer(base, request)
+    -- Validate the registering ledger
+    if not validate_new_peer_ledger(base, request) then
+        base.results = {
+            status = "error",
+            error = "Ledger registration failed."
+        }
+        return "error", base
+    end
+    
+    -- Add to known ledgers
+    base.ledgers[request.from] = base.ledgers[request.from] or 0
+
+    return "ok", base
+end
+
+-- Determine if a request is from a known ledger. Makes no assessment of whether
+-- a request is otherwise trustworthy.
+local function is_from_trusted_ledger(base, request)
+    -- We always trust the root ledger.
+    if request.from == base["token"] then
+        return true, base
+    end
+
+    -- We trust any ledger that is already registered in the `ledgers' map.
+    if base.ledgers and (base.ledgers[request.from] ~= nil) then
+        return true, base
+    end
+
+    -- Validate whether the request is from a new peer ledger.
+    local status
+    status, base = register_peer(base, request)
+    if status ~= "ok" then
+        return false, base
+    end
+
+    return true, base
 end
 
 -- Ensure that the ledger is initialized.
@@ -421,20 +452,18 @@ end
 -- an origin, which can be used to identify the reason for the debit in logging.
 -- Returns error if the source balance is not viable, or `ok` and the updated
 -- base state if the debit is successful. Does not credit any funds.
-local function debit_balance(origin, base, request)
+local function debit_balance(base, request)
     local source = request.from
 
-    ao.event({ "Attempting to deduct balance.",
-        { origin = origin },
-        { request = request },
-        { balances = base.balance or {} }
-    })
+    ao.event({ "Attempting to deduct balance.", {
+        request = request,
+        balances = base.balance or {}
+    }})
 
     -- Ensure that the `source' and `quantity' fields are present in the request.
     if not source or not request.quantity then
         return "error", log_result(base, "error", {
             message = "Fund source or quantity not found in request.",
-            origin = origin
         })
     end
 
@@ -452,25 +481,20 @@ local function debit_balance(origin, base, request)
 
     -- Ensure that the source has the required funds.
     -- Check 1: The source balance is present in the ledger.
-    local source_balance
-    -- if is_known_ledger(base, request) then
-    --     source_balance = base.ledgers[source]
-    -- else
-        source_balance = base.balance[source]
-    -- end
+    local source_balance = base.balance[source]
 
     if not source_balance then
-        return log_result(base, "error", {
+        return "error", log_result(base, "error", {
             message = "Source balance not found.",
             from = source,
             quantity = request.quantity,
-            ["is-root"] = base.token == nil
+            ["is-root"] = is_root(base)
         })
     end
 
     -- Check 2: The source balance is a valid number.
     if type(source_balance) ~= "number" then
-        return log_result(base, "error", {
+        return "error", log_result(base, "error", {
             message = "Source balance is not a number.",
             balance = source_balance
         })
@@ -478,7 +502,7 @@ local function debit_balance(origin, base, request)
 
     -- Check 3: Ensure that the quantity to deduct is a non-negative number.
     if request.quantity < 0 then
-        return log_result(base, "error", {
+        return "error", log_result(base, "error", {
             message = "Quantity to deduct is negative.",
             quantity = request.quantity
         })
@@ -486,7 +510,7 @@ local function debit_balance(origin, base, request)
 
     -- Check 4: Ensure that the source has enough funds.
     if source_balance < request.quantity then
-        return log_result(base, "error", {
+        return "error", log_result(base, "error", {
             message = "Insufficient funds.",
             from = source,
             quantity = request.quantity,
@@ -494,259 +518,18 @@ local function debit_balance(origin, base, request)
         })
     end
 
-    ao.event({ "Deducting funds:", { origin = origin , request = request } })
-    if is_from_known_ledger(base, request) then
-        base.ledgers[source] = source_balance - request.quantity
-    else
-        base.balance[source] = source_balance - request.quantity
-    end
+    ao.event({ "Deducting funds:", { request = request } })
+    base.balance[source] = source_balance - request.quantity
     ao.event({ "Balances after deduction:",
         { balances = base.balance, ledgers = base.ledgers } }
     )
     return "ok", base
 end
 
--- Perform a standard user-to-user transfer.
-local function transfer_user_to_user(raw_base, request)
-    -- We are processing a standard transfer. Debit the source account, then
-    -- credit the destination account.
-    local status, base = debit_balance("transfer", raw_base, request)
-    if status ~= "ok" then
-        return log_result(raw_base, "error", {
-            message = "Transfer request failed.",
-            details = base
-        })
-    end
-
-    -- Credit the destination account.
-    base.balance[request.recipient] =
-        (base.balance[request.recipient] or 0) + request.quantity
-
-    -- Notify the parties that the funds have been transferred.
-    base = send(base, {
-        target = request.recipient,
-        action = "Credit-Notice",
-        quantity = request.quantity,
-        sender = request.from
-    })
-
-    base = send(base, {
-        target = request.from,
-        action = "Debit-Notice",
-        quantity = request.quantity,
-        recipient = request.recipient
-    })
-
-    return log_result(base, "ok", {
-        message = "Standard token transfer request processed successfully.",
-        route = request.route,
-        from_user = request.from,
-        to_user = request.recipient,
-        quantity = request.quantity
-    })
-end
-
--- Perform the first step of a multi-hop transfer.
-function transfer_user_to_ledger(raw_base, request)
-    -- Debit the source account.
-    local status, base = debit_balance("transfer", raw_base, request)
-    if status ~= "ok" then
-        return log_result(raw_base, "error", {
-            message = "User-to-ledger transfer request failed.",
-            details = base
-        })
-    end
-
-    if #request.route < 1 then
-        return log_result(base, "error", {
-            message = "No route provided."
-        })
-    end
-    local next_hop = request.route[1]
-    table.remove(request.route, 1)
-
-    -- Check that we trust the ledger we are sending to, or that we are the root
-    -- ledger.
-    if is_root(base) or is_from_known_ledger(base, request) or (next_hop == base.token) then
-        -- Increment the balance of the ledger we are sending to.
-        base.balance[next_hop] =
-            (base.balance[next_hop] or 0) + request.quantity
-        base = send(base, {
-            action = "Transfer",
-            target = next_hop,
-            recipient = request.recipient,
-            quantity = request.quantity,
-            sender = request.from,
-            route = request.route
-        })
-        return log_result(base, "ok", {
-            message = "Ledger sent tokens to peer ledger successfully.",
-            route = request.route,
-            from_user = request.from,
-            to_ledger = next_hop,
-            quantity = request.quantity
-        })
-    else
-        return log_result(base, "error", {
-            message = "Cannot route to untrusted ledger.",
-            route = request.route
-        })
-    end
-end
-
--- Process end-of-chain interledger transfers.
-function transfer_ledger_to_user(base, request)
-    ao.event({ "Transfer with empty route key received. "..
-        "We are the destination ledger of an interledger transfer.",
-        { request = request },
-        { balances = base.balance }
-    })
-
-    -- Ensure that the credit notice is from a valid source.
-    if not is_from_known_ledger(base, request) then
-        return log_result(base, "error", {
-            message = "Invalid interledger token deposit. Credit notice from " ..
-                request.from .. " not admissible."
-        })
-    end
-
-    -- Deduct the quantity from the sending ledger's balance, unless it is the
-    -- root ledger. The root ledger is the only ledger that can send funds to
-    -- its sub-ledgers without a balance on that ledger.
-    local status
-    if request.from ~= base.token then
-        status, base = debit_balance("deposit", base, request)
-        if status ~= "ok" then
-            return log_result(base, "error", {
-                message =
-                    "Terminal transfer in route failed; cannot debit balance.",
-                details = base
-            })
-        end
-    end
-
-    -- Credit our own balance with the sending ledger to record the deposit.
-    ao.event({ "Recording interledger deposit: ", {
-        ledger = request.from,
-        amount = request.quantity,
-        previous = base.balance[request.from] or 0
-    }})
-
-    -- Credit the user's balance on this ledger with the quantity.
-    base.balance[request.recipient] =
-        (base.balance[request.recipient] or 0) + request.quantity
-
-    -- Notify the parties that the funds have been transferred.
-    base = send(base, {
-        target = request.recipient,
-        action = "Credit-Notice",
-        quantity = request.quantity,
-        sender = request.from
-    })
-    base = send(base, {
-        target = request.from,
-        action = "Debit-Notice",
-        quantity = request.quantity,
-        recipient = request.recipient
-    })
-    return log_result(base, "ok", {
-        message = "Ledger-to-user transfer processed successfully.",
-        route = request.route,
-        from_ledger = request.from,
-        to_user = request.recipient,
-        quantity = request.quantity
-    })
-end
-
--- Perform a 'hop' in a multi-hop transfer, for which we are not the destination
--- ledger.
-local function transfer_ledger_to_ledger(base, request)
-    ao.event({ "Ledger-to-ledger transfer request received: ", {
-        request = request,
-        ledgers = base.ledgers,
-        token = base.token or "[root]"
-    }})
-
-    -- Determine if we know how to route the request.
-    local next_hop = request.route[1]
-    table.remove(request.route, 1)
-
-    local known = is_root(base)
-        or is_from_known_ledger(base, request)
-        or next_hop == base.token
-
-    -- If we don't know how to route the request, return an error.
-    if not known then
-        ao.event({ "Cannot route next hop: ", {
-            route = request.route,
-            ledgers = base.ledgers,
-        }})
-        base = send(
-            base,
-            {
-                target = request.recipient,
-                action = "Route-Termination",
-                error = "Next hop in route not found.",
-                route = request.route,
-                ledgers = base.ledgers,
-            }
-        )
-        -- We cannot route the request, but we now hold the funds of the source.
-        -- This is treated as we would a ledger-to-user transfer.
-        return transfer_ledger_to_user(base, request)
-    end
-
-    -- We know how to route the request, so we attempt to decrement the funds
-    -- from the source token.
-    local status
-    status, base = debit_balance("transfer-route", base, request)
-    if status ~= "ok" then
-        ao.event({ "Balance deduction failed for route: ",
-            { request = request, details = base } })
-        return "ok", base
-    end
-
-    -- Now that we know we can route the request and that the source has been
-    -- debited, route the request to the next hop.
-    base = send(base, {
-        action = "Transfer",
-        target = next_hop,
-        sender = request.sender,
-        recipient = request.recipient,
-        route = request.route,
-        quantity = request.quantity
-    })
-
-    base.ledgers[next_hop] = (base.ledgers[next_hop] or 0) + request.quantity
-
-    return "ok", base
-end
-
 -- Transfer the specified amount from the given account to the given account,
 -- optionally routing to a different sub-ledger if necessary.
 -- There are four differing types of transfer requests. They have the following
--- characteristics. `IF' indicates how the case is determined, and `=>' indicates
--- the actions taken.
--- 1. A standard transfer from one user to another.
---    IF: There is no `route` field.
---    => Debit the source account
---    => Credit the destination account
--- 2. Start an interledger transfer from a user to another ledger.
---    IF: The requester is not a known ledger.
---    => Debit the source account
---    => Credit the sending ledger's balance
---    => Route to the sub-ledger (forwarding `sender', `route', and `quantity')
--- 3. End an interledger transfer from a ledger to a user.
---    IF: There is a length-1 `route` field.
---    => Debit the sending ledger's balance
---    => Credit the destination account
--- 4. Continue an interledger transfer from a ledger to another ledger.
---    IF: The length of the `route` field is greater than 1.
---    => Debit the sending ledger's balance
---    => Route to the next hop in the route
---    => Decrement our balance with the sending ledger
-
--- Semantics:
+-- semantics:
 -- Balance == owed to X. Credit == Owed to subject by X.
 
 -- User on root -> User on sub-ledger:
@@ -769,7 +552,6 @@ end
 -- User on sub-ledger -> User on root:
 -- Xfer in: Sub-ledger = Dec User balance
 -- C-N in: Root = Inc User balance, Dec Sub-ledger balance
-
 function transfer(base, assignment)
     ao.event({ "Transfer request received", { assignment = assignment } })
     -- Verify the security of the request.
@@ -795,11 +577,18 @@ function transfer(base, assignment)
         })
     end
 
+    -- Ensure that the source has the required funds. If they do, debit them.
+    local debit_status
+    debit_status, base = debit_balance(base, request)
+    if debit_status ~= "ok" or base == nil then
+        return "ok", base
+    end
+
     if is_root(base) or not request.route then
         -- We are the root ledger, or the user is sending tokens directly to
-        -- another user.
+        -- another user. We credit the recipient's balance, or the sub-ledger's
+        -- balance if the request has a `route' key.
         local direct_recipient = (request.route and request.route[1]) or request.recipient
-        base.balance[request.from] = (base.balance[request.from] or 0) - quantity
         base.balance[direct_recipient] =
             (base.balance[direct_recipient] or 0) + quantity
         base = send(base, {
@@ -819,9 +608,8 @@ function transfer(base, assignment)
     end
 
     if request.route and request.route[1] == base.token then
-        -- The user is returning tokens to the root ledger, so we decrement the
-        -- user's balance with us and send a transfer to the root ledger.
-        base.balance[request.from] = base.balance[request.from] - quantity
+        -- The user is returning tokens to the root ledger, so we send a
+        -- transfer to the root ledger.
         base = send(base, {
             action = "Transfer",
             target = base.token,
@@ -837,31 +625,23 @@ function transfer(base, assignment)
         })
     end
 
-    if is_to_known_ledger(base, request) then
-        -- The target is another ledger, so we decrement the sender's balance.
-        -- The peer ledger will increment the balance of the recipient.
-        base.balance[request.from] = base.balance[request.from] - quantity
-        base = send(base, {
-            action = "Credit-Notice",
-            target = request.route,
-            recipient = request.recipient,
-            quantity = quantity,
-            sender = request.from
-        })
-        return log_result(base, "ok", {
-            message = "Ledger-ledger transfer processed successfully.",
-            from_user = request.from,
-            to_ledger = request.route,
-            to_user = request.recipient,
-            quantity = quantity
-        })
-    end
+    -- We are not the root ledger, and the request has a `route` key.
+    -- Subsequently, the target must be another ledger so we dispatch a
+    -- credit-notice to the peer ledger. The peer will increment the balance of
+    -- the recipient.
+    base = send(base, {
+        action = "Credit-Notice",
+        target = request.route[1],
+        recipient = request.recipient,
+        quantity = quantity,
+        sender = request.from
+    })
 
-    return log_result(base, "error", {
-        message = "Unprocessable transfer request.",
+    return log_result(base, "ok", {
+        message = "Ledger-ledger transfer processed successfully.",
         from_user = request.from,
+        to_ledger = request.route,
         to_user = request.recipient,
-        route = request.route or "none",
         quantity = quantity
     })
 end
@@ -900,10 +680,12 @@ _G["credit-notice"] = function (base, assignment)
         })
     end
 
-    -- Ensure that the sender is a known ledger peer.
-    if not is_from_known_ledger(base, request) then
+    -- Ensure that the sender is a trusted ledger peer.
+    local trusted
+    trusted, base = is_from_trusted_ledger(base, request)
+    if not trusted then
         return log_result(base, "error", {
-            message = "Credit-Notice not from a known peer ledger."
+            message = "Credit-Notice not from a trusted peer ledger."
         })
     end
 
@@ -937,18 +719,12 @@ function register(raw_base, assignment)
         }
         return "ok", base
     end
-    
+
     -- Validate the registering ledger
-    if not validate_new_peer_ledger(base, assignment.body) then
-        base.results = {
-            status = "error",
-            error = "Ledger validation failed for registration."
-        }
-        return "ok", base
+    status, base = register_peer(base, request)
+    if status ~= "ok" then
+        return status, base
     end
-    
-    -- Add to known ledgers
-    base.ledgers[request.from] = base.ledgers[request.from] or 0
     
     -- Send a reciprocal registration request to the remote ledger.
     base = send(base, {
