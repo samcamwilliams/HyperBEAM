@@ -6,7 +6,7 @@
 %%% This device acts as both a pricing device and a ledger device, by p4's
 %%% definition.
 -module(dev_simple_pay).
--export([estimate/3, debit/3, balance/3, topup/3]).
+-export([estimate/3, transfer/3, balance/3, topup/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -32,8 +32,8 @@ estimate(_, EstimateReq, NodeMsg) ->
 %% @doc Preprocess a request by checking the ledger and charging the user. We 
 %% can charge the user at this stage because we know statically what the price
 %% will be
-debit(_, RawReq, NodeMsg) ->
-    ?event(payment, {debit, RawReq}),
+transfer(_, RawReq, NodeMsg) ->
+    ?event(payment, {transfer, RawReq}),
     Req = hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
     case hb_message:signers(Req) of
         [] ->
