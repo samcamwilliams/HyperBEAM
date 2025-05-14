@@ -463,7 +463,15 @@ identities(Default, Opts) ->
     DefaultWallet = ?MODULE:get(priv_wallet, Default, Opts),
     case maps:find(DefaultID = hb_util:human_id(DefaultWallet), Identities) of
         {ok, _} -> Identities;
-        error -> Identities#{ DefaultID => #{}, <<"default">> => #{} }
+        error ->
+            Identities#{
+                DefaultID => #{
+                    priv_wallet => DefaultWallet
+                },
+                <<"default">> => #{
+                    priv_wallet => DefaultWallet
+                }
+            }
     end.
 
 %%% Tests

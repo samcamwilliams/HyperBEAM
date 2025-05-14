@@ -63,7 +63,7 @@ ledger(Script, Extra, Opts) ->
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
                 <<"scheduler">> =>
                     case hb_ao:get(<<"scheduler">>, Extra, Opts) of
-                        not_found -> [hb_util:human_id(HostWallet)];
+                        not_found -> hb_util:human_id(HostWallet);
                         Scheduler -> Scheduler
                     end,
                 <<"execution-device">> => <<"lua@5.3a">>,

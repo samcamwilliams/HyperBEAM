@@ -117,10 +117,10 @@ end
 
 -- Ensure that the message is signed by one of the specified addresses. The
 -- message type is either `assignment' or `request'.
-local function is_signed_by(addresses, target, assignment)
+local function is_signed_by(expected, target, assignment)
     -- Normalize the addresses to a table if only one address string is provided.
-    if type(addresses) == "string" then
-        addresses = { addresses }
+    if type(expected) == "string" then
+        expected = { expected }
     end
 
     -- Get the message body based on the target type.
@@ -132,18 +132,25 @@ local function is_signed_by(addresses, target, assignment)
     -- Get the committers from the message and check if any of them match the
     -- given addresses.
     local committers = ao.get("committers", {"as", "message@1.0", msg})
+    local present = 0
     ao.event({ "Committers: ", { element = target, committers = committers } })
     for _, committer in ipairs(committers) do
-        for _, address in ipairs(addresses) do
-            if committer == address then
-                return true
+        for _, expected_address in ipairs(expected) do
+            if committer == expected_address then
+                present = present + 1
             end
         end
     end
 
+    -- If we have the expected number of committers, return true.
+    if present == #expected then
+        return true
+    end
+
+    -- Otherwise, return false and the missing committers.
     return false, {
         ["received-committers"] = committers,
-        ["expected-committers"] = addresses,
+        ["expected-committers"] = expected,
         ["root-message"] = assignment,
         target = target
     }
