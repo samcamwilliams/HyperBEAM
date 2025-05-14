@@ -348,11 +348,20 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
         }
     ),
     {ErlStatus, Res} =
-        hb_ao:resolve(
-            {as, <<"process@1.0">>, TargetProcess},
-            ScheduleReq,
-            Opts#{ cache_control => <<"always">> }
-        ),
+        case hb_message:committers(SignedMsg, Opts) of
+            [] ->
+                {error,
+                    <<
+                        "Application of security policy failed: ",
+                        "No identities matching authority were found.">>
+                };
+            _Committers ->
+                hb_ao:resolve(
+                    {as, <<"process@1.0">>, TargetProcess},
+                    ScheduleReq,
+                    Opts#{ cache_control => <<"always">> }
+                )
+        end,
     ?event(push, {push_sched_result, {status, ErlStatus}, {response, Res}}, Opts),
     case {ErlStatus, hb_ao:get(<<"status">>, Res, 200, Opts)} of
         {ok, 200} ->
@@ -442,6 +451,7 @@ apply_security(authority, TargetProcess, Msg, Opts) ->
         Authority ->
             % Parse the authority string into a list of committers. Sign with
             % all local valid keys.
+            ?event(push, {found_authority, {authority, Authority}}, Opts),
             commit_result(
                 Msg,
                 binary:split(
@@ -457,6 +467,11 @@ apply_security(default, TargetProcess, Msg, Opts) ->
     hb_message:commit(Msg, Opts).
 
 %% @doc Attempt to sign a result message with the given committers.
+commit_result(Msg, [], Opts) ->
+    case hb_opts:get(push_always_sign, true, Opts) of
+        true -> hb_message:commit(Msg, Opts);
+        false -> Msg
+    end;
 commit_result(Msg, Committers, Opts) ->
     lists:foldl(
         fun(Committer, Acc) ->
