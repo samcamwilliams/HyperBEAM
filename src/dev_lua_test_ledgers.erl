@@ -57,19 +57,19 @@ ledger(Script, Extra, Opts) ->
                 }
         end,
     Proc =
-        hb_message:commit(ModExtra#{
-                <<"device">> => <<"process@1.0">>,
-                <<"type">> => <<"Process">>,
-                <<"scheduler-device">> => <<"scheduler@1.0">>,
-                <<"scheduler">> =>
-                    case hb_ao:get(<<"scheduler">>, Extra, Opts) of
-                        not_found -> hb_util:human_id(HostWallet);
-                        Scheduler -> Scheduler
-                    end,
-                <<"execution-device">> => <<"lua@5.3a">>,
-                <<"authority">> => hb_util:human_id(HostWallet),
-                <<"script">> => lua_script(Script)
-            },
+        hb_message:commit(
+            maps:merge(
+                #{
+                    <<"device">> => <<"process@1.0">>,
+                    <<"type">> => <<"Process">>,
+                    <<"scheduler-device">> => <<"scheduler@1.0">>,
+                    <<"scheduler">> => hb_util:human_id(HostWallet),
+                    <<"execution-device">> => <<"lua@5.3a">>,
+                    <<"authority">> => hb_util:human_id(HostWallet),
+                    <<"script">> => lua_script(Script)
+                },
+                ModExtra
+            ),
             Opts#{ priv_wallet => HostWallet }
         ),
     hb_cache:write(Proc, Opts),
@@ -691,7 +691,20 @@ unregistered_peer_transfer_test() ->
     verify_net(RootLedger, SubLedgers, Opts).
 
 %% @doc Verify that sub-ledgers can request and enforce multiple scheduler
-%% commitments.
+%% commitments. `hyper-token' always validates that peer `base' processes
+%% (the uncommitted process ID without its `scheduler' and `authority' fields)
+%% match. It allows us to specify additional constraints on the `scheduler' and
+%% `authority' fields while matching against the local ledger's base process
+%% message. This test validates the correctness of these constraints.
+%% 
+%% The grammar supported by `hyper-token.lua' allows for the following, where 
+%% `X = scheduler | authority`:
+%% - `X`: A list of `X`s that must (by default) be present in the
+%%   peer ledger's `X' field.
+%% - `X-match`: A count of the number of `X`s that must be present in the
+%%   peer ledger's `X' field.
+%% - `X-required`: A list of `X`s that always must be present in the
+%%   peer ledger's `X' field.
 multischeduler_test() ->
     BaseOpts = test_opts(),
     NodeWallet = ar_wallet:new(),
@@ -699,7 +712,9 @@ multischeduler_test() ->
     Opts = BaseOpts#{
         priv_wallet => NodeWallet,
         identities => #{
-            <<"extra-scheduler">> => #{ priv_wallet => Scheduler2 }
+            <<"extra-scheduler">> => #{
+                priv_wallet => Scheduler2
+            }
         }
     },
     Alice = ar_wallet:new(),
@@ -714,6 +729,10 @@ multischeduler_test() ->
                         [
                             hb_util:human_id(NodeWallet),
                             hb_util:human_id(Scheduler2)
+                        ],
+                    <<"scheduler-required">> =>
+                        [
+                            hb_util:human_id(NodeWallet)
                         ]
                 },
             Opts
@@ -723,15 +742,29 @@ multischeduler_test() ->
     ?assertEqual(100, balance(RootLedger, Bob, Opts)),
     % Create a new process with with the same schedulers, but do not provide
     % the extra scheduler in the `identities' map.
-    OptsWithoutSched2 = maps:remove(identities, Opts),
+    OptsWithoutHostWallet = maps:remove(priv_wallet, Opts),
     RootLedger2 =
         ledger(
             <<"scripts/hyper-token.lua">>,
             ProcExtra,
-            OptsWithoutSched2
+            OptsWithoutHostWallet
         ),
     % Alice has tokens on the root ledger. She tries to move them to Bob.
-    transfer(RootLedger2, Alice, Bob, 100, OptsWithoutSched2),
+    transfer(RootLedger2, Alice, Bob, 100, OptsWithoutHostWallet),
     % The transfer should fail because only one signature will be provided on 
     % the assignment.
-    ?assertEqual(0, balance(RootLedger2, Bob, OptsWithoutSched2)).
+    ?assertEqual(0, balance(RootLedger2, Bob, OptsWithoutHostWallet)),
+    % The transfer should succeed if:
+    % - Set the `authority-required' field to contain the host wallet, while
+    % - Setting the `authority-match' field to 1.
+    OptsWithoutExtraScheduler = #{ priv_wallet => NodeWallet },
+    RootLedger3 =
+        ledger(
+            <<"scripts/hyper-token.lua">>,
+            ProcExtra#{
+                <<"scheduler-match">> => 1
+            },
+            OptsWithoutExtraScheduler
+        ),
+    transfer(RootLedger3, Alice, Bob, 100, OptsWithoutExtraScheduler),
+    ?assertEqual(100, balance(RootLedger3, Bob, OptsWithoutExtraScheduler)).

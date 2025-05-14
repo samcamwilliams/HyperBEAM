@@ -77,12 +77,7 @@ is_async(Process, Req, Opts) ->
 do_push(Process, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Process, #{}, Opts),
-    BaseID =
-        dev_process:process_id(
-            Process,
-            #{ <<"commitments">> => <<"none">> },
-            Opts
-        ),
+    BaseID = calculate_base_id(Process, Opts),
     ?event(debug,
         {push_computing_outbox,
             {process_id, ID},
@@ -132,10 +127,22 @@ do_push(Process, Assignment, Opts) ->
                                     MsgToPush,
                                     #{
                                         <<"process">> => ID,
-                                        <<"base">> => BaseID,
                                         <<"slot">> => Slot,
                                         <<"outbox-key">> => Key,
-                                        <<"result-depth">> => IncludeDepth
+                                        <<"result-depth">> => IncludeDepth,
+                                        <<"from-base">> => BaseID,
+                                        <<"from-scheduler">> =>
+                                            hb_ao:get(
+                                                <<"scheduler">>,
+                                                PushBase,
+                                                Opts
+                                            ),
+                                        <<"from-authority">> =>
+                                            hb_ao:get(
+                                                <<"authority">>,
+                                                PushBase,
+                                                Opts
+                                            )
                                     },
                                     Opts
                                 );
@@ -282,6 +289,24 @@ split_target(RawTarget) ->
         _ -> {RawTarget, <<>>}
     end.
 
+%% @doc Calculate the base ID for a process. The base ID is not just the 
+%% uncommitted process ID. It also excludes the `authority' and `scheduler'
+%% keys.
+calculate_base_id(GivenProcess, Opts) ->
+    Process =
+        case hb_ao:get(<<"process">>, GivenProcess, Opts) of
+            not_found -> GivenProcess;
+            Proc -> Proc
+        end,
+    BaseProcess = maps:without([<<"authority">>, <<"scheduler">>], Process),
+    {ok, BaseID} = hb_ao:resolve(
+        BaseProcess,
+        #{ <<"path">> => <<"id">>, <<"commitments">> => <<"none">> },
+        Opts
+    ),
+    ?event({push_generated_base, {id, BaseID}, {base, BaseProcess}}),
+    BaseID.
+
 %% @doc Add the necessary keys to the message to be scheduled, then schedule it.
 %% If the remote scheduler does not support the given codec, it will be
 %% downgraded and re-signed.
@@ -368,7 +393,9 @@ augment_message(Origin, ToSched, Opts) ->
             <<"variant">> => <<"ao.N.1">>,
             <<"type">> => <<"Message">>,
             <<"from-process">> => maps:get(<<"process">>, Origin),
-            <<"from-base">> => maps:get(<<"base">>, Origin)
+            <<"from-base">> => maps:get(<<"from-base">>, Origin),
+            <<"from-scheduler">> => maps:get(<<"from-scheduler">>, Origin),
+            <<"from-authority">> => maps:get(<<"from-authority">>, Origin)
         },
         Opts#{ hashpath => ignore }
     ).

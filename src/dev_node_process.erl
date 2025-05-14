@@ -125,7 +125,7 @@ generate_test_opts(Defs) ->
                     <<"store-module">> => hb_store_fs,
                     <<"prefix">> =>
                         <<
-                            "cache-TEST-",
+                            "cache-TEST/",
                             (integer_to_binary(os:system_time(millisecond)))/binary
                         >>
                 }

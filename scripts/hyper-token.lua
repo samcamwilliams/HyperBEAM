@@ -113,104 +113,77 @@ local function normalize_int(value)
     return num
 end
 
---- Security verification functions:
+-- Count the number of elements in `a' that are also in `b'.
+local function count_common(a, b)
+    -- Normalize both arguments to tables.
+    if type(a) ~= "table" then a = { a } end
+    if type(b) ~= "table" then b = { b } end
 
--- Ensure that the message is signed by one of the specified addresses. The
--- message type is either `assignment' or `request'.
-local function is_signed_by(expected, target, assignment)
-    -- Normalize the addresses to a table if only one address string is provided.
-    if type(expected) == "string" then
-        expected = { expected }
-    end
-
-    -- Get the message body based on the target type.
-    local msg
-    if target == "assignment" then msg = assignment
-    elseif target == "request" then msg = assignment.body
-    end
-
-    -- Get the committers from the message and check if any of them match the
-    -- given addresses.
-    local committers = ao.get("committers", {"as", "message@1.0", msg})
-    local present = 0
-    ao.event({ "Committers: ", { element = target, committers = committers } })
-    for _, committer in ipairs(committers) do
-        for _, expected_address in ipairs(expected) do
-            if committer == expected_address then
-                present = present + 1
+    local count = 0
+    for _, v in ipairs(a) do
+        for _, w in ipairs(b) do
+            if v == w then
+                count = count + 1
             end
         end
     end
 
-    -- If we have the expected number of committers, return true.
-    if present == #expected then
-        return true
-    end
-
-    -- Otherwise, return false and the missing committers.
-    return false, {
-        ["received-committers"] = committers,
-        ["expected-committers"] = expected,
-        ["root-message"] = assignment,
-        target = target
-    }
+    return count
 end
 
--- Ensure that the assignment is trusted. Either by running the assessment
--- process, or by checking the signature against the process's own scheduler
--- address and those it explicitly trusts.
-local function is_trusted_assignment(base, assignment)
-    if base.assess and base.assess.assignment then
-        ao.event({ "Running assessment message against assignment." },
-            { assessment = base.assess.assignment, assignment = assignment })
-        local status, result = ao.resolve(base.assess.assignment, assignment)
-        if (status == "ok") and (result == true) then
-            ao.event({ "Assessment of assignment passed." }, {
-                assignment = assignment,
-                status = status,
-                result = result
-            })
-            return true
-        else
-            ao.event({ "Assessment of assignment failed.", {
-                assignment = assignment,
-                status = status,
-                result = result
-            }})
-            return false, {
-                ["assessment-message"] = base.assess.assignment,
-                status = status,
-                result = result
-            }
-        end
+-- Normalize an argument to a table if it is not already a table.
+local function normalize_table(value)
+    if type(value) ~= "table" then
+        value = { value }
     end
-
-    -- If the assessment message is not present, check the signature against
-    -- the process's own scheduler address.
-    ao.event({ "Trusted scheduler(s): ", {
-        scheduler = base.scheduler
-    }})
-    return is_signed_by(base.scheduler, "assignment", assignment)
+    return value
 end
 
--- Ensure that message's sent on-behalf of the process are trusted by the
--- process's specification.
-local function is_trusted_compute(base, assignment)
-    local request = assignment.body
-    if base.assess and base.assess.request then
+--- Security verification functions:
+
+-- Enforce that a given list satisfies `hyper-token's grammar constraints.
+-- This function is used to check that the `authority' and `scheduler' fields
+-- satisfy the constraints specified by the `authority[-*]' and `scheduler[-*]'
+-- fields. The supported grammar constraints are:
+-- - `X`: A list of `X`s that are admissible to match in the subject.
+-- - `X-match`: A count of the number of `X`s that must be present in the subject.
+--              Default: Length of `X`.
+-- - `X-required`: A list of `X`s that must be present in the subject.
+--                Default: `{}`.
+local function satisfies_list_constraints(subject, all, required, match)
+    -- Normalize the fields to tables, aside from the match count.
+    subject = normalize_table(subject)
+    all = normalize_table(all)
+    required = normalize_table(required or {})
+    -- Normalize the match count.
+    match = match or #all
+
+    -- Check that the subject satisfies the grammar's constraints.
+    -- 1. The subject must have at least `match' elements in common with `all'.
+    -- 2. The subject must contain all elements in `required'.
+    local count = count_common(subject, all)
+    local required_count = count_common(required, subject)
+    return (count >= match) and (required_count == #required)
+end
+
+-- Ensure that a message satisfies the grammar's constraints, or the assessment
+-- message returns true, if present.
+local function satisfies_constraints(message, assess, all, required, match)
+    -- If the assessment message is present, run it against the message.
+    if assess then
         ao.event({ "Running assessment message against request." },
-            { assessment = base.assess.request, request = request })
-        local status, result = ao.resolve(base.assess.request, request)
+            { assessment = assess, message = message })
+        local status, result = ao.resolve(assess, message)
         if (status == "ok") and (result == true) then
             ao.event({ "Assessment of request passed." }, {
-                request = request,
+                message = message,
                 status = status,
                 result = result
             })
             return true
         else
             ao.event({ "Assessment of request failed.", {
-                request = request,
+                message = message,
                 status = status,
                 result = result
             }})
@@ -218,12 +191,50 @@ local function is_trusted_compute(base, assignment)
         end
     end
 
-    -- If the assessment message is not present, check the signature against
-    -- the process's authority list.
-    ao.event({ "Trusted authorities: ", {
-        authority = base.authority
+    -- If the assessment message is not present, check the signatures against
+    -- the requirements list and specifiers.
+    local satisfies_auth = satisfies_list_constraints(
+        ao.get("committers", message),
+        all,
+        required,
+        match
+    )
+
+    ao.event({ "Constraint satisfaction results", {
+        result = satisfies_auth,
+        message = message,
+        all_admissible = all,
+        required = required,
+        required_count = match
     }})
-    return is_signed_by(base.authority, "request", assignment)
+
+    return satisfies_auth
+end
+
+-- Ensure that the `authority' field satisfies the `authority[-*]' constraints
+-- (as supported by `satisfies_constraints') or that the assessment message
+-- returns true.
+local function is_trusted_compute(base, assignment)
+    return satisfies_constraints(
+        (assignment.body.assess or {})["request"],
+        request,
+        assignment.body.authority,
+        assignment.body["authority-required"],
+        assignment.body["authority-match"]
+    )
+end
+
+-- Ensure that the assignment is trusted. Either by running the assessment
+-- process, or by checking the signature against the process's own scheduler
+-- address and those it explicitly trusts.
+local function is_trusted_assignment(base, assignment)
+    return satisfies_constraints(
+        assignment,
+        (base.assess or {})["assignment"],
+        base.scheduler,
+        base["scheduler-required"],
+        base["scheduler-match"]
+    )
 end
 
 -- Determine if the ledger indicated by `base` is the root ledger.
@@ -238,26 +249,33 @@ local function validate_new_peer_ledger(base, request)
     ao.event({ "Validating peer ledger: ", { request = request } })
 
     -- Check if the request is from the root ledger.
-    if is_root(base) or request.from == base["token"] then
+    if is_root(base) or (base.token == request.from) then
         ao.event({ "Peer is parent token. Accepting." }, {
             request = request
         })
         return true
     end
 
-    -- Calculate the expected from our own `process/id&commitments=none`.
+    -- Calculate the expected base ID from the process's own `process` message,
+    -- modified to remove the `authority' and `scheduler' fields.
     -- This ensures that the process we are receiving the `credit-notice` from
     -- has the same structure as our own process.
-    ao.event({ "Getting process/id&committers=none", { base = base } })
-    local status, expected = ao.resolve(
-        {"as", "message@1.0", base},
-        "process",
-        { path = "id", commitments = "none" }
-    )
-    ao.event({ "Expected from-base: ", { status = status, expected = expected } })
+    ao.event({ "Calculating expected `base` from self", { base = base } })
+    local status, proc, expected
+    status, proc = ao.resolve({"as", "message@1.0", base}, "process")
+    -- Reset the `authority' and `scheduler' fields to nil, to ensure that the
+    -- `base` message matches the structure created by `~push@1.0`.
+    proc.authority = nil
+    proc.scheduler = nil
+    status, expected =
+        ao.resolve(
+            proc,
+            { path = "id", commitments = "none" }
+        )
+    ao.event({ "Expected `from-base`", { status = status, expected = expected } })
     -- Check if the `from-base' field is present in the assignment.
     if not request["from-base"] then
-        ao.event({ "from-base field not found in message: ", {
+        ao.event({ "`from-base` field not found in message", {
             request = request
         }})
         return false
@@ -265,12 +283,51 @@ local function validate_new_peer_ledger(base, request)
 
     -- Check if the `from-base' field matches the expected ID.
     local base_matches = request["from-base"] == expected
-    ao.event({ "Peer registration messages match: ", {
-        matches = base_matches,
-        expected_id = expected,
-        request = request
-    }})
-    return base_matches
+
+    if not base_matches then
+        ao.event("debug_base", { "Peer registration messages do not match", {
+            expected_base = expected,
+            received_base = request["from-base"],
+            process = proc,
+            request = request
+        }})
+        return false
+    end
+
+    -- Check that the `from-authority' and `from-scheduler' fields match the
+    -- expected values, to the degree specified by the `authority-match' and
+    -- `scheduler-match' fields. Additionally, the `authority-required' and
+    -- `scheduler-required' fields may be present in the base, the members of
+    -- which must be present in the `from-authority' and `from-scheduler' fields
+    -- respectively.
+    local authority_matches = satisfies_list_constraints(
+        request["from-authority"],
+        base.authority,
+        base["authority-required"],
+        base["authority-match"]
+    )
+    local scheduler_matches = satisfies_list_constraints(
+        request["from-scheduler"],
+        base.scheduler,
+        base["scheduler-required"],
+        base["scheduler-match"]
+    )
+    if (not authority_matches) or (not scheduler_matches) then
+        ao.event("debug_base", { "Peer security parameters do not match", {
+            expected_authority = base.authority,
+            received_authority = request["from-authority"],
+            expected_scheduler = base.scheduler,
+            received_scheduler = request["from-scheduler"],
+            scheduler_matches = scheduler_matches,
+            authority_matches = authority_matches,
+            request = request
+        }})
+        return false
+    end
+
+    ao.event("Peer registration messages matches. Accepting.")
+
+    return true
 end
 
 -- Register a new peer ledger, if the `from-base' field matches our own.
