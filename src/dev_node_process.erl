@@ -116,7 +116,7 @@ augment_definition(BaseDef, Opts) ->
 serialize_list(SchedList) ->
     hb_structured_fields:list(
         [
-            {item, {string, Addr}}
+            {item, {string, Addr}, []}
             ||
             Addr <- SchedList
         ]
