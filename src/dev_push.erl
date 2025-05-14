@@ -598,7 +598,7 @@ push_as_identity_test_() ->
             dev_process:test_aos_process(
                 Opts#{
                     authority => ComputeID,
-                    scheduler => SchedulingID
+                    scheduler => [SchedulingID, ComputeID]
                 }
             ),
         ?event(debug, {msg1, Msg1}),
@@ -631,10 +631,14 @@ push_as_identity_test_() ->
             hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
         ),
         % Validate that the scheduler's wallet was used to sign the message.
-        ?assertEqual(
-            [SchedulingID],
-            hb_ao:get(<<"schedule/assignments/2/committers">>, Msg1, Opts)
-        ),
+        Committers =
+            hb_ao:get(
+                <<"schedule/assignments/2/committers">>,
+                Msg1,
+                Opts
+            ),
+        ?assert(lists:member(SchedulingID, Committers)),
+        ?assert(lists:member(ComputeID, Committers)),
         % Validate that the compute wallet was used to sign the message.
         ?assertEqual(
             [ComputeID],

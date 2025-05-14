@@ -509,9 +509,9 @@ post_schedule(Msg1, Msg2, Opts) ->
             % message, start a new one if necessary, or return a redirect to the
             % correct remote scheduler.
             case find_server(ProcID, Msg1, ToSched, Opts) of
-                {local, PID, SchedulerOpts} ->
+                {local, PID} ->
                     ?event({scheduling_locally, {proc_id, ProcID}, {pid, PID}}),
-                    do_post_schedule(ProcID, PID, OnlyCommitted, SchedulerOpts);
+                    do_post_schedule(ProcID, PID, OnlyCommitted, Opts);
                 {redirect, Redirect} ->
                     ?event({process_is_remote, {redirect, Redirect}}),
                     case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -562,7 +562,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
                 #{
                     <<"status">> => 400,
                     <<"body">> => <<"Message is not valid.">>,
-                    <<"reason">> => <<"Given message does not correctly validate.">>
+                    <<"reason">> => <<"Given message is invalid.">>
                 }
             };
         {true, <<"Process">>} ->
@@ -594,38 +594,10 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
             case dev_scheduler_registry:find(ProcID, false, Opts) of
                 PID when is_pid(PID) ->
                     ?event({found_pid_in_local_registry, PID}),
-                    #{ opts := SchedulerOpts } = dev_scheduler_server:info(PID),
-                    {local, PID, SchedulerOpts};
+                    {local, PID};
                 not_found ->
                     ?event({no_pid_in_local_registry, ProcID}),
-                    % Find the process from the message.
-                    Proc =
-                        case hb_ao:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
-                            not_found ->
-                                case (ToSched =/= undefined) andalso (hb_message:id(ToSched, all) == ProcID) of
-                                    true -> ToSched;
-                                    false ->
-                                        ?event(
-                                            {reading_cache,
-                                                {proc_id, ProcID},
-                                                {store, hb_opts:get(store, Opts)}
-                                            }
-                                        ),
-                                        case hb_message:id(Msg1, all) of
-                                            ProcID -> Msg1;
-                                            _ ->
-                                                case hb_cache:read(ProcID, Opts) of
-                                                    {ok, P} -> P;
-                                                    not_found ->
-                                                        throw({
-                                                            process_not_available,
-                                                            ProcID
-                                                        })
-                                                end
-                                        end
-                                end;
-                            P -> P
-                        end,
+                    Proc = find_process_message(ProcID, Msg1, ToSched, Opts),
                     ?event({found_process, {process, Proc}, {msg1, Msg1}}),
                     SchedLoc =
                         hb_ao:get_first(
@@ -650,27 +622,78 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                     {addr, SchedulerAddr}
                                 }
                             ),
-                            case hb_opts:as(SchedulerAddr, Opts) of
-                                {ok, SchedulerOpts} ->
+                            case is_local_scheduler(ProcID, Proc, SchedLoc, Opts) of
+                                {ok, PID} ->
                                     % We are the scheduler. Start the server if
                                     % it has not already been started, with the
                                     % given options.
-                                    {
-                                        local,
-                                        dev_scheduler_registry:find(
-                                            ProcID,
-                                            true,
-                                            SchedulerOpts
-                                        ),
-                                        SchedulerOpts
-                                    };
-                                {error, not_found} ->
+                                    {local, PID};
+                                false ->
                                     % We are not the scheduler. Find it and
                                     % return a redirect.
                                     find_remote_scheduler(ProcID, SchedLoc, Opts)
                             end
                     end
             end
+    end.
+
+%% @doc Find the process message for a given process ID and base message.
+find_process_message(ProcID, Msg1, ToSched, Opts) ->
+    % Find the process from the message.
+    MaybeProcessMsg =
+        hb_ao:get(
+            <<"process">>,
+            Msg1,
+            not_found,
+            Opts#{ hashpath => ignore }
+        ),
+    case MaybeProcessMsg of
+        not_found ->
+            ToSchedIsProc =
+                (ToSched =/= undefined)
+                andalso (hb_message:id(ToSched, all) == ProcID),
+            case ToSchedIsProc of
+                true -> ToSched;
+                false ->
+                    ?event(
+                        {reading_cache,
+                            {proc_id, ProcID},
+                            {store, hb_opts:get(store, Opts)}
+                        }
+                    ),
+                    case hb_message:id(Msg1, all) of
+                        ProcID -> Msg1;
+                        _ ->
+                            case hb_cache:read(ProcID, Opts) of
+                                {ok, P} -> P;
+                                not_found ->
+                                    throw({
+                                        process_not_available,
+                                        ProcID
+                                    })
+                            end
+                    end
+            end;
+        P -> P
+    end.
+
+%% @doc Determine if a scheduler is local. If so, return the PID and options.
+%% We start the local server if we _can_ be the scheduler and it does not already
+%% exist.
+is_local_scheduler(_, _, [], _Opts) -> false;
+is_local_scheduler(ProcID, ProcMsg, [Scheduler | Rest], Opts) ->
+    case is_local_scheduler(ProcID, ProcMsg, Scheduler, Opts) of
+        {ok, PID} -> {ok, PID};
+        false -> is_local_scheduler(ProcID, ProcMsg, Rest, Opts)
+    end;
+is_local_scheduler(ProcID, ProcMsg, Scheduler, Opts) ->
+    case hb_opts:as(Scheduler, Opts) of
+        {ok, _} ->
+            {
+                ok,
+                dev_scheduler_registry:find(ProcID, ProcMsg, Opts)
+            };
+        {error, _} -> false
     end.
 
 %% @doc If a hint is present in the string, return it. Else, return not_found.
@@ -727,7 +750,17 @@ without_hint(Target) ->
         _ -> throw({invalid_operation_target, Target})
     end.
 
-%% @doc Use the SchedulerLocation to the remote path and return a redirect.
+%% @doc Use the SchedulerLocation to find the remote path and return a redirect.
+%% If there are multiple locations, try each one in turn until we find the first
+%% that matches.
+find_remote_scheduler(_ProcID, [], _Opts) -> {error, not_found};
+find_remote_scheduler(ProcID, [Scheduler | Rest], Opts) ->
+    case find_remote_scheduler(ProcID, Rest, Opts) of
+        {error, not_found} ->
+            find_remote_scheduler(ProcID, Scheduler, Opts);
+        {ok, Redirect} ->
+            {ok, Redirect}
+    end;
 find_remote_scheduler(ProcID, Scheduler, Opts) ->
     % Parse the scheduler location to see if it has a hint. If there is a hint,
     % we will use it to construct a redirect message.
@@ -765,10 +798,10 @@ slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
     ProcID = find_target_id(M1, M2, Opts),
     case find_server(ProcID, M1, Opts) of
-        {local, PID, _SchedulerOpts} ->
+        {local, PID} ->
             ?event({getting_current_slot, {proc_id, ProcID}}),
             {Timestamp, Hash, Height} = ar_timestamp:get(),
-            #{ current := CurrentSlot, wallet := Wallet } =
+            #{ current := CurrentSlot, wallets := Wallets } =
                 dev_scheduler_server:info(PID),
             {ok, #{
                 <<"process">> => ProcID,
@@ -777,7 +810,7 @@ slot(M1, M2, Opts) ->
                 <<"block-height">> => Height,
                 <<"block-hash">> => Hash,
                 <<"cache-control">> => <<"no-store">>,
-                <<"wallet-address">> => hb_util:human_id(Wallet)
+                <<"addresses">> => lists:map(fun hb_util:human_id/1, Wallets)
             }};
         {redirect, Redirect} ->
             case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -872,10 +905,17 @@ get_schedule(Msg1, Msg2, Opts) ->
             ToRes -> hb_util:int(ToRes)
         end,
     Format = hb_ao:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
-    ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
+    ?event(
+        {parsed_get_schedule,
+            {process, ProcID},
+            {from, From},
+            {to, To},
+            {format, Format}
+        }
+    ),
     case find_server(ProcID, Msg1, Opts) of
-        {local, _PID, SchedulerOpts} ->
-            generate_local_schedule(Format, ProcID, From, To, SchedulerOpts);
+        {local, _PID} ->
+            generate_local_schedule(Format, ProcID, From, To, Opts);
         {redirect, Redirect} ->
             ?event({redirect_received, {redirect, Redirect}}),
             case hb_opts:get(scheduler_follow_redirects, true, Opts) of
@@ -884,21 +924,14 @@ get_schedule(Msg1, Msg2, Opts) ->
                         {ok, Res} ->
                             case uri_string:percent_decode(Format) of
                                 <<"application/aos-2">> ->
-                                    {ok, Formatted} = dev_scheduler_formats:assignments_to_aos2(
+                                    dev_scheduler_formats:assignments_to_aos2(
                                         ProcID,
                                         hb_ao:get(
                                             <<"assignments">>, Res, [], Opts),
                                         hb_util:atom(hb_ao:get(
                                             <<"continues">>, Res, false, Opts)),
                                         Opts
-                                    ),
-                                    ?event({formatted_assignments,
-                                        {body,
-                                            {string, hb_ao:get(<<"body">>, Formatted, Opts)}
-                                        },
-                                        {full, Formatted}}
-                                    ),
-                                    {ok, Formatted};
+                                    );
                                 _ ->
                                     {ok, Res}
                             end;
@@ -1245,7 +1278,8 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                     % to read and return it.
                     ID = maps:get(<<"id">>, JSONRes),
                     ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
-                    case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, LegacyOpts) of
+                    LegacyPath = << ID/binary, "?process-id=", ProcID/binary>>,
+                    case hb_http:get(Node, LegacyPath, LegacyOpts) of
                         {ok, AssignmentRes} ->
                             ?event({received_full_assignment, AssignmentRes}),
                             AssignmentJSON =
@@ -1261,7 +1295,12 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                         {error, PostErr} -> {error, PostErr}
                     end;
                 {error, Resp = #{ <<"status">> := 404 }} ->
-                    ?event({legacy_scheduler_not_found, {url, {string, P}}, {resp, Resp}}),
+                    ?event(
+                        {legacy_scheduler_not_found,
+                            {url, {string, P}},
+                            {resp, Resp}
+                        }
+                    ),
                     {error, Resp};
                 {error, PostRes} ->
                     ?event({remote_schedule_proxy_error, {error, PostRes}}),

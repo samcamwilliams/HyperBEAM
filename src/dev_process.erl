@@ -823,6 +823,7 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
+        process_async_cache => false,
         store => #{
             <<"store-module">> => hb_store_fs,
             <<"prefix">> => <<"cache-mainnet">>
@@ -1002,7 +1003,7 @@ do_test_restore() ->
     % 1. Set variables in Lua.
     % 2. Return the variable.
     % Execute the first computation, then the second as a disconnected process.
-    Opts = #{ process_cache_frequency => 1 },
+    Opts = #{ process_cache_frequency => 1, process_async_cache => false },
     init(),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
@@ -1039,15 +1040,22 @@ now_results_test_() ->
 prior_results_accessible_test_() ->
 	{timeout, 30, fun() ->
 		init(),
+        Opts = #{
+            process_async_cache => false
+        },
 		Msg1 = test_aos_process(),
 		schedule_aos_call(Msg1, <<"return 1+1">>),
 		schedule_aos_call(Msg1, <<"return 2+2">>),
-		?assertEqual({ok, <<"4">>}, hb_ao:resolve(Msg1, <<"now/results/data">>, #{})),
-		?assertMatch({ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
+		?assertEqual(
+            {ok, <<"4">>},
+            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+        ),
+		?assertMatch(
+            {ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
 			hb_ao:resolve(
 				Msg1,
 				#{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-				#{}
+				Opts
 			)
 		)
 	end}.

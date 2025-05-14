@@ -61,7 +61,11 @@ ledger(Script, Extra, Opts) ->
                 <<"device">> => <<"process@1.0">>,
                 <<"type">> => <<"Process">>,
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
-                <<"scheduler">> => hb_util:human_id(HostWallet),
+                <<"scheduler">> =>
+                    case hb_ao:get(<<"scheduler">>, Extra, Opts) of
+                        not_found -> [hb_util:human_id(HostWallet)];
+                        Scheduler -> Scheduler
+                    end,
                 <<"execution-device">> => <<"lua@5.3a">>,
                 <<"authority">> => hb_util:human_id(HostWallet),
                 <<"script">> => lua_script(Script)
@@ -685,3 +689,49 @@ unregistered_peer_transfer_test() ->
     ?assertEqual(10, balance(SubLedger2, Bob, Opts)),
     ?assertEqual(50, balance(SubLedger3, Bob, Opts)),
     verify_net(RootLedger, SubLedgers, Opts).
+
+%% @doc Verify that sub-ledgers can request and enforce multiple scheduler
+%% commitments.
+multischeduler_test() ->
+    BaseOpts = test_opts(),
+    NodeWallet = ar_wallet:new(),
+    Scheduler2 = ar_wallet:new(),
+    Opts = BaseOpts#{
+        priv_wallet => NodeWallet,
+        identities => #{
+            <<"extra-scheduler">> => #{ priv_wallet => Scheduler2 }
+        }
+    },
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    RootLedger =
+        ledger(
+            <<"scripts/hyper-token.lua">>,
+            ProcExtra = 
+                #{
+                    <<"balance">> => #{ Alice => 100 },
+                    <<"scheduler">> =>
+                        [
+                            hb_util:human_id(NodeWallet),
+                            hb_util:human_id(Scheduler2)
+                        ]
+                },
+            Opts
+        ),
+    % Alice has tokens on the root ledger. She moves them to Bob.
+    transfer(RootLedger, Alice, Bob, 100, Opts),
+    ?assertEqual(100, balance(RootLedger, Bob, Opts)),
+    % Create a new process with with the same schedulers, but do not provide
+    % the extra scheduler in the `identities' map.
+    OptsWithoutSched2 = maps:remove(identities, Opts),
+    RootLedger2 =
+        ledger(
+            <<"scripts/hyper-token.lua">>,
+            ProcExtra,
+            OptsWithoutSched2
+        ),
+    % Alice has tokens on the root ledger. She tries to move them to Bob.
+    transfer(RootLedger2, Alice, Bob, 100, OptsWithoutSched2),
+    % The transfer should fail because only one signature will be provided on 
+    % the assignment.
+    ?assertEqual(0, balance(RootLedger2, Bob, OptsWithoutSched2)).
