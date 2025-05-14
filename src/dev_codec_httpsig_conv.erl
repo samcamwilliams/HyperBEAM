@@ -213,7 +213,10 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                     0 ->
                         % There are no headers besides the content disposition header
                         % So simply use the the raw body binary as the part
-                        RawBody;
+                        case RawBody of
+                            <<"__EMPTY_MAP__">> -> #{};
+                            _ -> RawBody
+                        end;
                     _ ->
                         case RawBody of
                             <<>> -> RestHeaders;
@@ -527,8 +530,12 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
                 end,
             case Value of
                 _ when is_map(Value) ->
-                    NewTop = group_maps(Value, FlatK, CurTop, Opts),
-                    {CurMap, NewTop};
+                    case hb_maps:size(Value, Opts) of
+                        0 -> {CurMap, hb_maps:put(FlatK, <<"__EMPTY_MAP__">>, CurTop, Opts)};
+                        _ ->
+                            NewTop = group_maps(Value, FlatK, CurTop, Opts),
+                            {CurMap, NewTop}
+                    end;
                 _ ->
                     ?event({group_maps, {norm_key, NormKey}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
