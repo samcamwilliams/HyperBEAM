@@ -348,7 +348,7 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
         }
     ),
     {ErlStatus, Res} =
-        case hb_message:committers(SignedMsg, Opts) of
+        case hb_message:signers(SignedMsg) of
             [] ->
                 {error,
                     <<
