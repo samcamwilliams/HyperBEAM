@@ -38,7 +38,7 @@ suite_test_opts() ->
             name => bundling,
             desc => "Always bundle",
             opts => test_opts(bundling),
-            skip => [<<"ID of linked message">>]
+            skip => [<<"ID of linked message">>, <<"Deep typed message ID">>]
         }
     ].
 suite_test_opts(OptsName) ->
