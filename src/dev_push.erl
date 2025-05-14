@@ -77,6 +77,12 @@ is_async(Process, Req, Opts) ->
 do_push(Process, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Process, #{}, Opts),
+    UncommittedID =
+        dev_process:process_id(
+            Process,
+            #{ <<"commitments">> => <<"none">> },
+            Opts
+        ),
     BaseID = calculate_base_id(Process, Opts),
     ?event(debug,
         {push_computing_outbox,
@@ -131,6 +137,7 @@ do_push(Process, Assignment, Opts) ->
                                         <<"outbox-key">> => Key,
                                         <<"result-depth">> => IncludeDepth,
                                         <<"from-base">> => BaseID,
+                                        <<"from-uncommitted">> => UncommittedID,
                                         <<"from-scheduler">> =>
                                             hb_ao:get(
                                                 <<"scheduler">>,
@@ -393,6 +400,7 @@ augment_message(Origin, ToSched, Opts) ->
             <<"variant">> => <<"ao.N.1">>,
             <<"type">> => <<"Message">>,
             <<"from-process">> => maps:get(<<"process">>, Origin),
+            <<"from-uncommitted">> => maps:get(<<"from-uncommitted">>, Origin),
             <<"from-base">> => maps:get(<<"from-base">>, Origin),
             <<"from-scheduler">> => maps:get(<<"from-scheduler">>, Origin),
             <<"from-authority">> => maps:get(<<"from-authority">>, Origin)

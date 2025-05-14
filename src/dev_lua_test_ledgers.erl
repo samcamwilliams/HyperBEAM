@@ -98,6 +98,8 @@ lua_script(File) when is_binary(File) ->
 
 %% @doc Generate a test sub-ledger process definition message.
 subledger(Root, Opts) ->
+    subledger(Root, Opts, #{}).
+subledger(Root, Extra, Opts) ->
     BareRoot =
         maps:without(
             [<<"token">>, <<"balance">>],
@@ -105,9 +107,12 @@ subledger(Root, Opts) ->
         ),
     Proc = 
         hb_message:commit(
-            BareRoot#{
-                <<"token">> => hb_message:id(Root, all)
-            },
+            maps:merge(
+                BareRoot#{
+                    <<"token">> => hb_message:id(Root, all)
+                },
+                Extra
+            ),
             hb_opts:get(priv_wallet, hb:wallet(), Opts)
         ),
     hb_cache:write(Proc, Opts),
@@ -705,10 +710,12 @@ unregistered_peer_transfer_test() ->
 %%   peer ledger's `X' field.
 %% - `X-required`: A list of `X`s that always must be present in the
 %%   peer ledger's `X' field.
-multischeduler_test() ->
+multischeduler_test_() -> {timeout, 30, fun multischeduler/0}.
+multischeduler() ->
     BaseOpts = test_opts(),
     NodeWallet = ar_wallet:new(),
     Scheduler2 = ar_wallet:new(),
+    Scheduler3 = ar_wallet:new(),
     Opts = BaseOpts#{
         priv_wallet => NodeWallet,
         identities => #{
@@ -767,4 +774,103 @@ multischeduler_test() ->
             OptsWithoutExtraScheduler
         ),
     transfer(RootLedger3, Alice, Bob, 100, OptsWithoutExtraScheduler),
-    ?assertEqual(100, balance(RootLedger3, Bob, OptsWithoutExtraScheduler)).
+    ?assertEqual(100, balance(RootLedger3, Bob, OptsWithoutExtraScheduler)),
+    % Ensure that another subledger can be registered to this process with the
+    % the necessary scheduler shared, but an additional scheduler not shared.
+    % Further, we ensure that the `scheduler-required' field is satisfied by
+    % creating a subledger that has two different schedulers, excluding the
+    % host wallet.
+    OptsWithSchedulers = OptsWithoutExtraScheduler#{
+        identities => #{
+            <<"scheduler-1">> => #{
+                priv_wallet => Scheduler3
+            },
+            <<"scheduler-2">> => #{
+                priv_wallet => Scheduler2
+            },
+            <<"scheduler-3">> => #{
+                priv_wallet => Scheduler3
+            }
+        }
+    },
+    % Create 3 subledgers with the same process, but different schedulers. Two
+    % that are valid (containing the `scheduler-required' field), and one that
+    % is invalid (does not contain the scheduler from `scheduler-required').
+    Subledger1 =
+        subledger(
+            RootLedger3,
+            #{
+                <<"scheduler">> =>
+                    [
+                        hb_util:human_id(NodeWallet),
+                        hb_util:human_id(Scheduler2)
+                    ],
+                <<"scheduler-required">> =>
+                    [
+                        hb_util:human_id(NodeWallet)
+                    ]
+            },
+            OptsWithSchedulers
+        ),
+    Subledger2 =
+        subledger(
+            RootLedger3,
+            #{
+                <<"scheduler">> =>
+                    [
+                        hb_util:human_id(NodeWallet),
+                        hb_util:human_id(Scheduler3)
+                    ],
+                <<"scheduler-required">> =>
+                    [hb_util:human_id(NodeWallet)]
+            },
+            OptsWithSchedulers
+        ),
+    Subledger3 =
+        subledger(
+            RootLedger3,
+            #{
+                <<"scheduler-required">> => [hb_util:human_id(NodeWallet)],
+                <<"scheduler">> =>
+                    [
+                        hb_util:human_id(Scheduler2),
+                        hb_util:human_id(Scheduler3)
+                    ]
+            },
+            OptsWithSchedulers
+        ),
+    % Create a map of names for the ledgers for use in logging.
+    Names = #{
+        Alice => alice,
+        Bob => bob,
+        RootLedger3 => root,
+        Subledger1 => subledger1,
+        Subledger2 => subledger2,
+        Subledger3 => subledger3
+    },
+    % Bob has tokens on the root ledger. He moves them to Alice on Subledger1.
+    transfer(RootLedger3, Bob, Alice, 100, Subledger1, OptsWithSchedulers),
+    transfer(Subledger1, Alice, Bob, 100, Subledger2, OptsWithSchedulers),
+    % Validate the balance has been transferred to Alice on Subledger2.
+    ?assertEqual(100, balance(Subledger2, Bob, OptsWithSchedulers)),
+    % Alice cannot move tokens to Bob on Subledger3, because the
+    % `scheduler-required' field is not satisfied by the subledger.
+    ?event(debug_base,
+        {map,
+            map(
+                [RootLedger3, Subledger1, Subledger2, Subledger3],
+                Names,
+                OptsWithSchedulers
+            )
+        }
+    ),
+    transfer(Subledger2, Bob, Alice, 50, Subledger3, OptsWithSchedulers),
+    % Validate the balance has not been transferred to Bob on Subledger3.
+    ?assertEqual(0, balance(Subledger3, Alice, OptsWithSchedulers)),
+    transfer(Subledger2, Bob, Alice, 50, Subledger1, OptsWithSchedulers),
+    % Validate that the remaining balance has been transferred to Alice on
+    % Subledger1.
+    ?assertEqual(50, balance(Subledger1, Alice, OptsWithSchedulers)),
+    transfer(Subledger1, Alice, Bob, 50, RootLedger3, OptsWithSchedulers),
+    % Validate that the balance has been transferred to Bob on the root ledger.
+    ?assertEqual(50, balance(RootLedger3, Bob, OptsWithSchedulers)).
