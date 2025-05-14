@@ -114,7 +114,7 @@ local function normalize_int(value)
 end
 
 -- Count the number of elements in `a' that are also in `b'.
-local function count_common(a, b)
+function count_common(a, b)
     -- Normalize both arguments to tables.
     if type(a) ~= "table" then a = { a } end
     if type(b) ~= "table" then b = { b } end
@@ -216,11 +216,11 @@ end
 -- returns true.
 local function is_trusted_compute(base, assignment)
     return satisfies_constraints(
-        (assignment.body.assess or {})["request"],
-        request,
-        assignment.body.authority,
-        assignment.body["authority-required"],
-        assignment.body["authority-match"]
+        assignment.body,
+        (base.assess or {})["authority"],
+        base.authority,
+        base["authority-required"],
+        base["authority-match"]
     )
 end
 
@@ -230,7 +230,7 @@ end
 local function is_trusted_assignment(base, assignment)
     return satisfies_constraints(
         assignment,
-        (base.assess or {})["assignment"],
+        (base.assess or {})["scheduler"],
         base.scheduler,
         base["scheduler-required"],
         base["scheduler-match"]
@@ -415,7 +415,7 @@ end
 -- Verify that an assignment has not been processed and that the request is
 -- valid. If it is, update the `from' field to the address that signed the
 -- request.
-local function validate_request(incoming_base, assignment)
+function validate_request(incoming_base, assignment)
     -- Ensure that the ledger is initialized.
     local status, base = ensure_initialized(incoming_base, assignment)
     if status ~= "ok" then

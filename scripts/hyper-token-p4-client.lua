@@ -22,14 +22,20 @@ function balance(base, request)
     return "ok", res
 end
 
--- Debit the user's balance in the current ledger state.
-function transfer(base, request)
-    ao.event({ "client starting transfer", { request = request, base = base } })
+-- Charge the user's balance in the current ledger state.
+function charge(base, request)
+    ao.event("debug_charge", {
+        "client starting charge",
+        { request = request, base = base }
+    })
     local status, res = ao.resolve({
         path = "(" .. base["ledger-path"] .. ")/push",
         method = "POST",
         body = request
     })
-    ao.event({ "client received transfer response", { status = status, res = res } })
+    ao.event("debug_charge", {
+        "client received charge response",
+        { status = status, res = res }
+    })
     return "ok", res
 end

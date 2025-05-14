@@ -1,25 +1,33 @@
 --- An extension to the `hyper-token.lua` script, for execution with the
 --- `lua@5.3a` device. This script adds the ability for an `admin' account to
---- debit a user's account. This is useful for allowing a node operator to
+--- charge a user's account. This is useful for allowing a node operator to
 --- collect fees from users, if they are running in a trusted execution
 --- environment.
 --- 
 --- This script must be added as after the `hyper-token.lua` script in the
 --- `process-definition`s `script` field.
 
--- Process an `admin' debit request:
+-- Process an `admin' charge request:
 -- 1. Verify the sender's identity.
 -- 2. Ensure that the quantity and account are present in the request.
 -- 3. Debit the source account.
 -- 4. Increment the balance of the recipient account.
-function debit(base, assignment)
+function charge(base, assignment)
+    ao.event("debug_charge", { "Charge received: ", { assignment = assignment } })
+    local admin = base.admin
     local status, res, request = validate_request(base, assignment)
     if status ~= "ok" then
         return status, res
     end
 
-    if not is_signed_by(base.admin, "request", assignment) then
-        return "error", base, "Unauthorized."
+    -- Verify that the request is signed by the admin.
+    local committers = ao.get("committers", {"as", "message@1.0", assignment.body})
+    ao.event("debug_charge", { "Validating request: ", {
+        committers = committers,
+        admin = admin
+    } })
+    if count_common(committers, admin) ~= 1 then
+        return "error", base
     end
 
     -- Ensure that the quantity and account are present in the request.
@@ -48,5 +56,6 @@ function debit(base, assignment)
     base.balance[request.recipient] =
         (base.balance[request.recipient] or 0) + request.quantity
 
+    ao.event("debug_charge", { "Charge processed: ", { balances = base.balance } })
     return "ok", base
 end

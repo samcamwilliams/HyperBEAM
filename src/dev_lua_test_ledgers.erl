@@ -98,7 +98,7 @@ lua_script(File) when is_binary(File) ->
 
 %% @doc Generate a test sub-ledger process definition message.
 subledger(Root, Opts) ->
-    subledger(Root, Opts, #{}).
+    subledger(Root, #{}, Opts).
 subledger(Root, Extra, Opts) ->
     BareRoot =
         maps:without(

@@ -25,13 +25,13 @@
 %%% A ledger device should implement the following keys:
 %%% <pre>
 %%%             `POST /credit?message=PaymentMessage&request=RequestMessage'
-%%%             `POST /debit?amount=PriceMessage&request=RequestMessage'
+%%%             `POST /charge?amount=PriceMessage&request=RequestMessage'
 %%%             `GET /balance?request=RequestMessage'
 %%% </pre>
 %%%
 %%% The `type' key is optional and defaults to `pre'. If `type' is set to `post',
-%%% the debit must be applied to the ledger, whereas the `pre' type is used to
-%%% check whether the debit would succeed before execution.
+%%% the charge must be applied to the ledger, whereas the `pre' type is used to
+%%% check whether the charge would succeed before execution.
 -module(dev_p4).
 -export([request/3, response/3, balance/3]).
 -include("include/hb.hrl").
@@ -199,24 +199,33 @@ response(State, RawResponse, NodeMsg) ->
             case PricingRes of
                 {ok, Price} ->
                     % We have successfully determined the cost of the request,
-                    % so we proceed to debit the user's account. We sign the
+                    % so we proceed to charge the user's account. We sign the
                     % request with the node's private key, as it is the node
-                    % that is performing the debit, not the user.
+                    % that is performing the charge, not the user.
                     LedgerReq =
                         hb_message:commit(
                             #{
-                                <<"path">> => <<"transfer">>,
+                                <<"path">> => <<"charge">>,
                                 <<"quantity">> => Price,
-                                <<"recipient">> =>
+                                <<"account">> =>
                                     case hb_message:signers(Request) of
                                         [Signer] -> Signer;
                                         Multiple -> Multiple
                                     end,
+                                <<"recipient">> =>
+                                    hb_util:human_id(
+                                        hb_opts:get(operator, <<0:256>>, NodeMsg)
+                                    ),
                                 <<"request">> => Request
                             },
                             hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg)
                         ),
-                    ?event({p4_ledger_request, LedgerReq}),
+                    ?event(payment,
+                        {post_charge,
+                            {msg, LedgerMsg},
+                            {req, LedgerReq}
+                        }
+                    ),
                     case hb_ao:resolve(LedgerMsg, LedgerReq, NodeMsg) of
                         {ok, _} ->
                             ?event(payment, {p4_post_ledger_response, {ok, Price}}),
@@ -224,7 +233,7 @@ response(State, RawResponse, NodeMsg) ->
                             {ok, #{ <<"body">> => Response }};
                         {error, Error} ->
                             ?event(payment, {p4_post_ledger_response, {error, Error}}),
-                            % The debit failed, so we return the error from the
+                            % The charge failed, so we return the error from the
                             % ledger device.
                             {error, Error}
                     end;
@@ -373,16 +382,31 @@ non_chargable_route_test() ->
     ?assertMatch({error, _}, Res3).
 
 %% @doc Ensure that Lua scripts can be used as pricing and ledger devices. Our
-%% scripts come in two parts:
-%% - A `process' script which is executed as a persistent `local-process' on the
-%%   node, and which maintains the state of the ledger.
-%% - A `client' script, which is executed as a `p4@1.0' device, marshalling
-%%   requests to the `process' script.
-lua_pricing_test() ->
+%% scripts come in two components:
+%% 1. A `process' script which is executed as a persistent `local-process' on the
+%%   node, and which maintains the state of the ledger. This process runs 
+%%   `hyper-token.lua' as its base, then adds the logic of `hyper-token-p4.lua'
+%%   to it. This secondary script implements the `charge' function that `p4@1.0'
+%%   will call to charge a user's account.
+%% 2. A `client' script, which is executed as a `p4@1.0' ledger device, which
+%%   uses `~push@1.0' to send requests to the ledger `process'.
+hyper_token_ledger_test_() ->
+    {timeout, 60, fun hyper_token_ledger/0}.
+hyper_token_ledger() ->
+    % Create the wallets necessary and read the files containing the scripts.
     HostWallet = ar_wallet:new(),
-    ClientWallet = ar_wallet:new(),
-    {ok, ProcessScript} = file:read_file("scripts/p4-payment-process.lua"),
-    {ok, ClientScript} = file:read_file("scripts/p4-payment-client.lua"),
+    HostAddress = hb_util:human_id(HostWallet),
+    OperatorWallet = ar_wallet:new(),
+    OperatorAddress = hb_util:human_id(OperatorWallet),
+    AliceWallet = ar_wallet:new(),
+    AliceAddress = hb_util:human_id(AliceWallet),
+    BobWallet = ar_wallet:new(),
+    BobAddress = hb_util:human_id(BobWallet),
+    {ok, TokenScript} = file:read_file("scripts/hyper-token.lua"),
+    {ok, ProcessScript} = file:read_file("scripts/hyper-token-p4.lua"),
+    {ok, ClientScript} = file:read_file("scripts/hyper-token-p4-client.lua"),
+    % Create the processor device, contains component (1): The script that 
+    % pushes requests to the ledger `process'.
     Processor =
         #{
             <<"device">> => <<"p4@1.0">>,
@@ -390,11 +414,17 @@ lua_pricing_test() ->
             <<"pricing-device">> => <<"simple-pay@1.0">>,
             <<"script">> => #{
                 <<"content-type">> => <<"text/x-lua">>,
-                <<"module">> => <<"scripts/p4-payment-client.lua">>,
+                <<"module">> => <<"scripts/hyper-token-p4-client.lua">>,
                 <<"body">> => ClientScript
             },
             <<"ledger-path">> => <<"/ledger~node-process@1.0">>
         },
+    % Start the node with the processor and the `local-process' ledger 
+    % (component 2) running the `hyper-token.lua' and `hyper-token-p4.lua'
+    % scripts. `hyper-token.lua' implements the core token ledger, while
+    % `hyper-token-p4.lua' implements the `charge' function that `p4@1.0' will
+    % call to charge a user's account upon charges. We initialize the ledger
+    % with 100 tokens for Alice.
     Node =
         hb_http_server:start_node(
             #{
@@ -410,31 +440,41 @@ lua_pricing_test() ->
                     <<"request">> => Processor,
                     <<"response">> => Processor
                 },
-                operator => ar_wallet:to_address(HostWallet),
+                operator => OperatorAddress,
                 node_processes => #{
                     <<"ledger">> => #{
                         <<"device">> => <<"process@1.0">>,
                         <<"execution-device">> => <<"lua@5.3a">>,
                         <<"scheduler-device">> => <<"scheduler@1.0">>,
-                        <<"script">> => #{
-                            <<"content-type">> => <<"text/x-lua">>,
-                            <<"module">> => <<"scripts/p4-payment-process.lua">>,
-                            <<"body">> => ProcessScript
-                        },
-                        <<"operator">> =>
-                            hb_util:human_id(ar_wallet:to_address(HostWallet))
+                        <<"script">> => [
+                            #{
+                                <<"content-type">> => <<"text/x-lua">>,
+                                <<"module">> => <<"scripts/hyper-token.lua">>,
+                                <<"body">> => TokenScript
+                            },
+                            #{
+                                <<"content-type">> => <<"text/x-lua">>,
+                                <<"module">> => <<"scripts/hyper-token-p4.lua">>,
+                                <<"body">> => ProcessScript
+                            }
+                        ],
+                        <<"balance">> => #{ AliceAddress => 100 },
+                        <<"admin">> => HostAddress
                     }
                 }
             }
         ),
+    % To start, we attempt a request from Bob, which should fail because he
+    % has no tokens.
     Req = #{
         <<"path">> => <<"/greeting">>,
         <<"greeting">> => <<"Hello, world!">>
     },
-    SignedReq = hb_message:commit(Req, ClientWallet),
+    SignedReq = hb_message:commit(Req, BobWallet),
     Res = hb_http:get(Node, SignedReq, #{}),
     ?event({expected_failure, Res}),
     ?assertMatch({error, _}, Res),
+    % We then move 50 tokens from Alice to Bob.
     {ok, TopupRes} =
         hb_http:post(
             Node,
@@ -444,32 +484,32 @@ lua_pricing_test() ->
                     <<"body">> =>
                         hb_message:commit(
                             #{
-                                <<"path">> => <<"credit-notice">>,
-                                <<"quantity">> => 100,
-                                <<"recipient">> =>
-                                    hb_util:human_id(
-                                        ar_wallet:to_address(ClientWallet)
-                                    )
+                                <<"path">> => <<"transfer">>,
+                                <<"quantity">> => 50,
+                                <<"recipient">> => BobAddress
                             },
-                            HostWallet
+                            AliceWallet
                         )
                 },
                 HostWallet
             ),
             #{}
         ),
+    % We now attempt Bob's request again, which should succeed.
     ?event({topup_res, TopupRes}),
     ResAfterTopup = hb_http:get(Node, SignedReq, #{}),
     ?event({res_after_topup, ResAfterTopup}),
     ?assertMatch({ok, <<"Hello, world!">>}, ResAfterTopup),
-    {ok, Balance} =
+    % We now check the balance of Bob. It should have been charged 2 tokens from
+    % the 50 Alice sent him.
+    {ok, Balances} =
         hb_http:get(
             Node,
-            <<
-                "/ledger~node-process@1.0/now/balance/",
-                    (hb_util:human_id(ar_wallet:to_address(ClientWallet)))/binary
-            >>,
+            <<"/ledger~node-process@1.0/now/balance">>,
             #{}
         ),
-    ?event({balance, Balance}),
-    ?assertMatch(#{ <<"body">> := <<"98">> }, Balance).
+    ?event(debug_charge, {balances, Balances}),
+    ?assertMatch(48, hb_ao:get(BobAddress, Balances, #{})),
+    % Finally, we check the balance of the operator. It should be 2 tokens,
+    % the amount that was charged from Alice.
+    ?assertMatch(2, hb_ao:get(OperatorAddress, Balances, #{})).

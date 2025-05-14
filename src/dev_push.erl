@@ -301,7 +301,7 @@ split_target(RawTarget) ->
 %% keys.
 calculate_base_id(GivenProcess, Opts) ->
     Process =
-        case hb_ao:get(<<"process">>, GivenProcess, Opts) of
+        case hb_ao:get(<<"process">>, GivenProcess, Opts#{ hashpath => ignore }) of
             not_found -> GivenProcess;
             Proc -> Proc
         end,
