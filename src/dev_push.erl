@@ -467,18 +467,20 @@ apply_security(default, TargetProcess, Msg, Opts) ->
     hb_message:commit(Msg, Opts).
 
 %% @doc Attempt to sign a result message with the given committers.
-commit_result(Msg, [], Opts) ->
-    case hb_opts:get(push_always_sign, true, Opts) of
-        true -> hb_message:commit(Msg, Opts);
-        false -> Msg
-    end;
+% commit_result(Msg, [], Opts) ->
+%     case hb_opts:get(push_always_sign, true, Opts) of
+%         true -> hb_message:commit(Msg, Opts);
+%         false -> Msg
+%     end;
 commit_result(Msg, Committers, Opts) ->
-    lists:foldl(
+    Signers = lists:foldl(
         fun(Committer, Acc) ->
             case hb_opts:as(Committer, Opts) of
                 {ok, CommitterOpts} ->
+                    ?event(debug_commit, {signing}),
                     hb_message:commit(Acc, CommitterOpts);
                 {error, not_found} ->
+                    ?event(debug_commit, {signing_not_found}),
                     ?event(push,
                         {policy_warning,
                             {
@@ -493,7 +495,16 @@ commit_result(Msg, Committers, Opts) ->
         end,
         Msg,
         Committers
-    ).
+    ),
+    ?event(debug_commit, {explicit_signers, {explicit, Signers}}),
+    case hb_message:signers(Signers) of
+        [] ->
+            ?event(debug_commit, {no_signers}),
+            hb_message:commit(Msg, Opts);
+        FoundSigners ->
+            ?event(debug_commit, {explicit_found_signers, {explicit, FoundSigners}}),
+            Signers
+    end.
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
 schedule_initial_message(Base, Req, Opts) ->
