@@ -616,13 +616,19 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     case SchedLoc of
                         not_found ->
                             {error, <<"No scheduler information provided.">>};
-                        SchedulerAddr ->
+                        _ ->
                             ?event(
                                 {confirming_if_scheduler_is_local,
-                                    {addr, SchedulerAddr}
+                                    {addr, SchedLoc}
                                 }
                             ),
-                            case is_local_scheduler(ProcID, Proc, SchedLoc, Opts) of
+                            ParsedSchedLoc =
+                                binary:split(
+                                    binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
+                                    <<",">>,
+                                    [global, trim_all]
+                                ),
+                            case is_local_scheduler(ProcID, Proc, ParsedSchedLoc, Opts) of
                                 {ok, PID} ->
                                     % We are the scheduler. Start the server if
                                     % it has not already been started, with the

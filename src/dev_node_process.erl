@@ -46,7 +46,12 @@ spawn_register(Name, Opts) ->
             % We have found the base process definition. Augment it with the 
             % node's address as necessary, then commit to the result.
             ?event(node_process, {registering, {name, Name}, {base_def, BaseDef}}),
-            Signed = hb_message:commit(augment_definition(BaseDef, Opts), Opts),
+            Signed =
+                hb_message:commit(
+                    augment_definition(BaseDef, Opts),
+                    Opts,
+                    hb_opts:get(node_process_spawn_codec, <<"httpsig@1.0">>, Opts)
+                ),
             ID = hb_message:id(Signed, signed, Opts),
             ?event(node_process, {spawned, {name, Name}, {process, Signed}}),
             % `POST' to the schedule device for the process to start its sequence.
@@ -92,10 +97,29 @@ augment_definition(BaseDef, Opts) ->
             )
         ),
     hb_ao:set(
-        BaseDef,
         #{
-            <<"scheduler">> => Address
-        }
+            <<"scheduler">> =>
+                serialize_list(
+                    (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
+                        ++ [Address]
+                ),
+            <<"authority">> =>
+                serialize_list(
+                    (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
+                        ++ [Address]
+                )
+        },
+        BaseDef
+    ).
+
+%% @doc Serialize the given scheduler list to a string.
+serialize_list(SchedList) ->
+    hb_structured_fields:list(
+        [
+            {item, {string, Addr}}
+            ||
+            Addr <- SchedList
+        ]
     ).
 
 %%% Tests

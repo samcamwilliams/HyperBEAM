@@ -133,6 +133,7 @@ end
 
 -- Normalize an argument to a table if it is not already a table.
 local function normalize_table(value)
+    -- TODO: Parse `"value1","value2",...` strings as tables.
     if type(value) ~= "table" then
         value = { value }
     end
