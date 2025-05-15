@@ -622,12 +622,17 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                     {addr, SchedLoc}
                                 }
                             ),
-                            ParsedSchedLoc =
-                                binary:split(
-                                    binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
-                                    <<",">>,
-                                    [global, trim_all]
-                                ),
+                            case is_list(SchedLoc) of
+                                false ->
+                                    ParsedSchedLoc =
+                                        binary:split(
+                                            binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
+                                            <<",">>,
+                                            [global, trim_all]
+                                        );
+                                true ->
+                                    ParsedSchedLoc = SchedLoc
+                            end,
                             case is_local_scheduler(ProcID, Proc, ParsedSchedLoc, Opts) of
                                 {ok, PID} ->
                                     % We are the scheduler. Start the server if

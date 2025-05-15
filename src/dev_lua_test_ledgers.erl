@@ -66,7 +66,7 @@ ledger(Script, Extra, Opts) ->
                     <<"scheduler">> => hb_util:human_id(HostWallet),
                     <<"execution-device">> => <<"lua@5.3a">>,
                     <<"authority">> => hb_util:human_id(HostWallet),
-                    <<"script">> => lua_script(Script)
+                    <<"module">> => lua_script(Script)
                 },
                 ModExtra
             ),
