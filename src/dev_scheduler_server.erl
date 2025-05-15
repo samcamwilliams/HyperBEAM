@@ -79,6 +79,7 @@ commitment_wallets(ProcMsg, Opts) ->
                 {ProcMsg, <<"scheduler">>},
                 {ProcMsg, <<"scheduler-location">>}
             ],
+            [],
             Opts
         ),
     lists:filtermap(
