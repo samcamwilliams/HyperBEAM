@@ -339,10 +339,15 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     {KeyType, Priv, Pub} = binary_to_term(DecryptedBin),
     % Print the keypair
     ?event(green_zone, {become, keypair, Pub}),
-    % 8. Update the local wallet with the target node's keypair, thereby
-    %    cloning its identity.
+    % 8. Add the target node's keypair to the local node's identities.
+    Identities = hb_opts:get(priv_ids, undefined, Opts),
+    UpdatedIdentities = Identities#{
+        <<"GreenZoneID">> => #{
+            priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
+        }
+    },
     ok = hb_http_server:set_opts(Opts#{
-        priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
+        identities => UpdatedIdentities
     }),
     % Print the updated wallet address
     Wallet = hb_opts:get(priv_wallet, undefined, Opts),
