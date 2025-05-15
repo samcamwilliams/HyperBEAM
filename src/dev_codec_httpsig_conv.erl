@@ -213,39 +213,56 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                             false -> no_part_name_found
                         end
                 end,
-            RestHeaders = hb_maps:without([
-				<<"content-disposition">>, 
-				<<"content-type">>, 
-				<<"inline-body-key">>, 
-				<<"content-digest">>
-			], Headers, Opts),
+            RestHeaders =
+                hb_maps:without(
+                    [
+                        <<"content-disposition">>, 
+                        <<"content-type">>, 
+                        <<"inline-body-key">>, 
+                        <<"content-digest">>
+                    ],
+                    Headers,
+                    Opts
+                ),
             PartNameSplit = binary:split(PartName, <<"/">>, [global]),
             NestedPartName = lists:last(PartNameSplit),
             ParsedPart =
                 case hb_maps:size(Commitments, Opts) of
                     0 ->
-                        case hb_maps:size(RestHeaders, Opts) of
-                            0 ->
-                                % There are no headers besides the content disposition header
-                                % So simply use the the raw body binary as the part
-                                case RawBody of
-                                    <<"__EMPTY_MAP__">> -> #{};
-                                    _ -> RawBody
-                                end;
-                            _ ->
-                                case RawBody of
-                                    <<>> -> RestHeaders;
-                                    _ ->
-                                        {_, RawBodyKey} = inline_key(Headers),
-                                        RestHeaders#{ RawBodyKey => RawBody }
-                                end
+                        WithoutTypes = maps:without([<<"ao-types">>], RestHeaders),
+                        Types =
+                            hb_maps:get(
+                                <<"ao-types">>,
+                                RestHeaders,
+                                <<>>,
+                                Opts
+                            ),
+                        case {hb_maps:size(WithoutTypes, Opts), Types, RawBody} of
+                            {0, <<"empty-message">>, <<>>} ->
+                                % The message is empty, so we return an empty
+                                % map.
+                                #{};
+                            {_, _, <<>>} ->
+                                % There is no body to the message, so we return
+                                % just the headers.
+                                RestHeaders;
+                            {0, _, _} ->
+                                % There are no headers besides content-disposition,
+                                % so we return the body as is.
+                                RawBody;
+                            {_, _, _} ->
+                                % There are other headers, so we need to parse
+                                % the body as a TABM.
+                                {_, RawBodyKey} = inline_key(Headers),
+                                RestHeaders#{ RawBodyKey => RawBody }
                         end;
                     _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
             BodyKey = hd(binary:split(PartName, <<"/">>)),
             TABMNext = TABM#{
                 PartName => ParsedPart,
-                <<"body-keys">> => hb_maps:get(<<"body-keys">>, TABM, [], Opts) ++ [BodyKey]
+                <<"body-keys">> =>
+                    hb_maps:get(<<"body-keys">>, TABM, [], Opts) ++ [BodyKey]
             },
             from_body_parts(TABMNext, InlinedKey, Rest, Opts)
     end.
@@ -570,7 +587,16 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
             case Value of
                 _ when is_map(Value) ->
                     case hb_maps:size(Value, Opts) of
-                        0 -> {CurMap, hb_maps:put(FlatK, <<"__EMPTY_MAP__">>, CurTop, Opts)};
+                        0 ->
+                            {
+                                CurMap,
+                                hb_maps:put(
+                                    FlatK,
+                                    #{ <<"ao-types">> => <<"empty-message">> },
+                                    CurTop,
+                                    Opts
+                                )
+                            };
                         _ ->
                             NewTop = group_maps(Value, FlatK, CurTop, Opts),
                             {CurMap, NewTop}
