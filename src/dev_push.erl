@@ -913,17 +913,23 @@ nested_push_prompts_encoding_change_test() ->
     },
     LocalProc = dev_process:test_aos_process(Opts),
     hb_cache:write(LocalProc, Opts),
-    {ok, ToPush} = dev_process:schedule_aos_call(
+    dev_process:schedule_aos_call(
         LocalProc,
         message_to_legacynet_scheduler_script(),
         Opts
     ),
-    Msg = hb_message:commit(#{
-        <<"path">> => <<"push">>,
-        <<"method">> => <<"POST">>,
-        <<"target">> => hb_message:id(ToPush, all),
-        <<"action">> => <<"Ping-Legacynet">>
-    }, Opts),
+    Msg =
+        hb_message:commit(
+            #{
+                <<"path">> => <<"push">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> => #{
+                    <<"target">> => hb_message:id(LocalProc, all),
+                    <<"action">> => <<"Ping-Legacynet">>
+                }
+            },
+            Opts
+        ),
     ?event(push, {msg1, Msg}),
     Res = hb_ao:resolve(LocalProc, Msg, Opts),
     ?event(push, {res, Res}),
