@@ -22,6 +22,8 @@
 %%% CU-flow functions:
 -export([slot/3, status/3, next/3]).
 -export([start/0, checkpoint/1]).
+%%% Utility functions:
+-export([parse_schedulers/1, normalize_schedulers/1]).
 %%% Test helper exports:
 -export([test_process/0]).
 -include("include/hb.hrl").
@@ -57,6 +59,28 @@ info() ->
         excludes => [set, keys],
         default => fun router/4
     }.
+
+%% @doc General utility functions that are available to other modules.
+parse_schedulers(SchedLoc) when is_list(SchedLoc) -> SchedLoc;
+parse_schedulers(SchedLoc) when is_binary(SchedLoc) ->
+    binary:split(
+        binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
+        <<",">>,
+        [global, trim_all]
+    ).
+
+%% @doc Serialize the given scheduler list to a string.
+normalize_schedulers(SchedList) when is_list(SchedList) -> SchedList;
+normalize_schedulers(SchedList) when is_binary(SchedList) ->
+    iolist_to_binary(
+        hb_structured_fields:list(
+            [
+                {item, {string, Addr}, []}
+            ||
+                Addr <- SchedList
+            ]
+        )
+    ).
 
 %% @doc The default handler for the scheduler device.
 router(_, Msg1, Msg2, Opts) ->
@@ -622,18 +646,8 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                     {addr, SchedLoc}
                                 }
                             ),
-                            case is_list(SchedLoc) of
-                                false ->
-                                    ParsedSchedLoc =
-                                        binary:split(
-                                            binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
-                                            <<",">>,
-                                            [global, trim_all]
-                                        );
-                                true ->
-                                    ParsedSchedLoc = SchedLoc
-                            end,
-                            case is_local_scheduler(ProcID, Proc, ParsedSchedLoc, Opts) of
+                            ParsedLoc = parse_schedulers(SchedLoc),
+                            case is_local_scheduler(ProcID, Proc, ParsedLoc, Opts) of
                                 {ok, PID} ->
                                     % We are the scheduler. Start the server if
                                     % it has not already been started, with the
@@ -642,7 +656,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                 false ->
                                     % We are not the scheduler. Find it and
                                     % return a redirect.
-                                    find_remote_scheduler(ProcID, SchedLoc, Opts)
+                                    find_remote_scheduler(ProcID, ParsedLoc, Opts)
                             end
                     end
             end

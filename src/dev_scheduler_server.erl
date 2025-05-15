@@ -88,9 +88,7 @@ commitment_wallets(ProcMsg, Opts) ->
                 _ -> false
             end
         end,
-        if is_list(SchedulerVal) -> SchedulerVal;
-        true -> [SchedulerVal]
-        end
+        dev_scheduler:parse_schedulers(SchedulerVal)
     ).
 
 %% @doc Call the appropriate scheduling server to assign a message.

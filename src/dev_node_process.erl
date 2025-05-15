@@ -97,37 +97,21 @@ augment_definition(BaseDef, Opts) ->
                 hb_opts:get(priv_wallet, no_viable_wallet, Opts)
             )
         ),
+    % Normalize the scheduler and authority lists to binary strings.
     hb_ao:set(
-      BaseDef,
-      #{
-        <<"scheduler">> => Address
-       }
-     ).
-    % This is for subledger-subledger interactions
-    % hb_ao:set(
-    %     #{
-    %         <<"scheduler">> =>
-    %             serialize_list(
-    %                 (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
-    %                     ++ [Address]
-    %             ),
-    %         <<"authority">> =>
-    %             serialize_list(
-    %                 (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
-    %                     ++ [Address]
-    %             )
-    %     },
-    %     BaseDef
-    % ).
-
-%% @doc Serialize the given scheduler list to a string.
-serialize_list(SchedList) ->
-    hb_structured_fields:list(
-        [
-            {item, {string, Addr}, []}
-            ||
-            Addr <- SchedList
-        ]
+        #{
+            <<"scheduler">> =>
+                dev_scheduler:normalize_schedulers(
+                    (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
+                        ++ [Address]
+                ),
+            <<"authority">> =>
+                dev_scheduler:normalize_schedulers(
+                    (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
+                        ++ [Address]
+                )
+        },
+        BaseDef
     ).
 
 %%% Tests

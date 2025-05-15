@@ -874,3 +874,42 @@ multischeduler() ->
     transfer(Subledger1, Alice, Bob, 50, RootLedger3, OptsWithSchedulers),
     % Validate that the balance has been transferred to Bob on the root ledger.
     ?assertEqual(50, balance(RootLedger3, Bob, OptsWithSchedulers)).
+
+%% @doc Ensure that the `hyper-token.lua' script can parse comma-separated
+%% IDs in the `scheduler' field of a message.
+comma_separated_scheduler_list_test() ->
+    NodeWallet = hb:wallet(),
+    Scheduler2 = ar_wallet:new(),
+    Alice = ar_wallet:new(),
+    Bob = ar_wallet:new(),
+    Opts = (test_opts())#{ priv_wallet => NodeWallet, identities => #{
+        <<"extra-scheduler">> => #{
+            priv_wallet => Scheduler2
+        }
+    } },
+    Ledger =
+        ledger(
+            <<"scripts/hyper-token.lua">>,
+            ProcExtra = 
+                #{
+                    <<"balance">> => #{ Alice => 100 },
+                    <<"scheduler">> =>
+                        iolist_to_binary(
+                            [
+                                <<"\"">>,
+                                hb_util:human_id(NodeWallet),
+                                <<"\",\"">>,
+                                hb_util:human_id(Scheduler2),
+                                <<"\"">>
+                            ]
+                        ),
+                    <<"scheduler-required">> =>
+                        [
+                            hb_util:human_id(NodeWallet)
+                        ]
+                },
+            Opts
+        ),
+    % Alice has tokens on the root ledger. She moves them to Bob.
+    transfer(Ledger, Alice, Bob, 100, Opts),
+    ?assertEqual(100, balance(Ledger, Bob, Opts)).
