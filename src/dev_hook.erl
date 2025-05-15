@@ -160,10 +160,14 @@ execute_handler(HookName, Handler, Req, Opts) ->
                 <<"path">> => hb_ao:get(<<"path">>, Handler, HookName, Opts),
                 <<"method">> => hb_ao:get(<<"method">>, Handler, <<"GET">>, Opts)
             },
+        CommitReqBin = 
+            hb_util:bin(
+                hb_ao:get(<<"hook/commit-request">>, Handler, <<"false">>, Opts)
+            ),
         PreparedReq =
-            case hb_ao:get(<<"hook/commit-request">>, Handler, false, Opts) of
-                true -> hb_message:commit(BaseReq, Opts);
-                false -> BaseReq
+            case CommitReqBin of
+                <<"true">> -> hb_message:commit(BaseReq, Opts);
+                <<"false">> -> BaseReq
             end,
         ?event(hook,
             {resolving_handler, 
