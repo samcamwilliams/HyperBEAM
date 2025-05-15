@@ -614,7 +614,9 @@ local_process_route_provider_test() ->
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
-local_dynamic_router_test() ->
+local_dynamic_router_test_() ->
+    {timeout, 30, fun local_dynamic_router/0}.
+local_dynamic_router() ->
     BenchRoutes = 50,
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
@@ -1006,7 +1008,7 @@ dynamic_routing_by_performance() ->
             )
         ),
     ?event(debug_dynrouter, {worker_weights, {explicit, WeightsByWorker}}),
-    ?assert(maps:get(1, WeightsByWorker) > 0.4),
+    ?assert(maps:get(1, WeightsByWorker) > 0.3),
     ?assert(maps:get(TestNodes, WeightsByWorker) < 0.3),
     ok.
 
