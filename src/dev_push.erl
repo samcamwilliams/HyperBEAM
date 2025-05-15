@@ -499,7 +499,7 @@ commit_result(Msg, Committers, Opts) ->
     ?event(debug_commit, {explicit_signers, {explicit, Signers}}),
     case hb_message:signers(Signers) of
         [] ->
-            ?event(debug_commit, {no_signers}),
+            ?event(debug_commit, signing_with_default_identity),
             hb_message:commit(Msg, Opts);
         FoundSigners ->
             ?event(debug_commit, {explicit_found_signers, {explicit, FoundSigners}}),
@@ -891,6 +891,44 @@ push_prompts_encoding_change_test() ->
         ),
     ?assertMatch({error, #{ <<"status">> := 422 }}, Res).
 
+%% @doc Test that a message that generates another message which resides on an
+%% ANS-104 scheduler leads to `~push@1.0` re-signing the message correctly.
+nested_push_prompts_encoding_change_test() ->
+    dev_process:init(),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store =>
+            [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                % Include a gateway store so that we can get the legacynet 
+                % process when needed.
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
+                }
+            ]
+    },
+    LocalProc = dev_process:test_aos_process(Opts),
+    hb_cache:write(LocalProc, Opts),
+    {ok, ToPush} = dev_process:schedule_aos_call(
+        LocalProc,
+        message_to_legacynet_scheduler_script(),
+        Opts
+    ),
+    Msg = hb_message:commit(#{
+        <<"path">> => <<"push">>,
+        <<"method">> => <<"POST">>,
+        <<"target">> => hb_message:id(ToPush, all),
+        <<"action">> => <<"Ping-Legacynet">>
+    }, Opts),
+    ?event(push, {msg1, Msg}),
+    Res = hb_ao:resolve(LocalProc, Msg, Opts),
+    ?event(push, {res, Res}),
+    ?assertMatch({ok, #{ <<"status">> := 200 }}, Res).
+
 %%% Test helpers
 
 ping_pong_script(Limit) ->
@@ -919,6 +957,25 @@ reply_script() ->
                print("Replying to...")
                print(m.From)
                Send({ Target = m.From, Action = "Reply", Message = "Pong!" })
+               print("Done.")
+           end
+        )
+        """
+    >>.
+
+message_to_legacynet_scheduler_script() ->
+    <<
+        """
+        Handlers.add("Ping",
+           { Action = "Ping-Legacynet" },
+           function(m)
+               print("Pinging...")
+               print(m.From)
+               Send({
+                    Target = "QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0",
+                    Action = "Ping",
+                    Message = "Please ignore!"
+                })
                print("Done.")
            end
         )
