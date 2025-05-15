@@ -340,7 +340,7 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     % Print the keypair
     ?event(green_zone, {become, keypair, Pub}),
     % 8. Add the target node's keypair to the local node's identities.
-    Identities = hb_opts:get(priv_ids, undefined, Opts),
+    Identities = hb_opts:get(identities, #{}, Opts),
     UpdatedIdentities = Identities#{
         <<"GreenZoneID">> => #{
             priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
@@ -610,7 +610,7 @@ calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
 %% @returns {error, Binary} on failure with error message
 -spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
-validate_join(_M1, Req, Opts) ->
+validate_join(M1, Req, Opts) ->
     case validate_peer_opts(Req, Opts) of
         true -> do_nothing;
         false -> throw(invalid_join_request)
@@ -628,8 +628,8 @@ validate_join(_M1, Req, Opts) ->
     end,
     ?event(green_zone, {join, public_key, ok}),
     % Verify the commitment report provided in the join request.
-    case dev_snp:verify(Req, #{<<"target">> => <<"self">>}, Opts) of
-        {ok, true} ->
+    case dev_snp:verify(M1, Req, Opts) of
+        {ok, <<"true">>} ->
             % Commitment verified.
             ?event(green_zone, {join, commitment, verified}),
             % Retrieve the shared AES key used for encryption.
@@ -650,7 +650,7 @@ validate_join(_M1, Req, Opts) ->
                 <<"zone-key">>     => base64:encode(EncryptedPayload),
                 <<"public-key">>   => WalletPubKey
             }};
-        {ok, false} ->
+        {ok, <<"false">>} ->
             % Commitment failed.
             ?event(green_zone, {join, commitment, failed}),
             {error, <<"Received invalid commitment report.">>};
@@ -702,7 +702,7 @@ validate_peer_opts(Req, Opts) ->
     ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
     % Debug: Check length of node_history
     case NodeHistory of
-        List when length(List) =< 1 ->
+        List when length(List) =< 2 ->
             ?event(green_zone, 
                 {validate_peer_opts, history_check, correct_length}
             ),
