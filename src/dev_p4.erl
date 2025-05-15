@@ -412,9 +412,9 @@ hyper_token_ledger() ->
             <<"device">> => <<"p4@1.0">>,
             <<"ledger-device">> => <<"lua@5.3a">>,
             <<"pricing-device">> => <<"simple-pay@1.0">>,
-            <<"script">> => #{
+            <<"module">> => #{
                 <<"content-type">> => <<"text/x-lua">>,
-                <<"module">> => <<"scripts/hyper-token-p4-client.lua">>,
+                <<"name">> => <<"scripts/hyper-token-p4-client.lua">>,
                 <<"body">> => ClientScript
             },
             <<"ledger-path">> => <<"/ledger~node-process@1.0">>
@@ -446,20 +446,22 @@ hyper_token_ledger() ->
                         <<"device">> => <<"process@1.0">>,
                         <<"execution-device">> => <<"lua@5.3a">>,
                         <<"scheduler-device">> => <<"scheduler@1.0">>,
-                        <<"script">> => [
+                        <<"module">> => [
                             #{
                                 <<"content-type">> => <<"text/x-lua">>,
-                                <<"module">> => <<"scripts/hyper-token.lua">>,
+                                <<"name">> => <<"scripts/hyper-token.lua">>,
                                 <<"body">> => TokenScript
                             },
                             #{
                                 <<"content-type">> => <<"text/x-lua">>,
-                                <<"module">> => <<"scripts/hyper-token-p4.lua">>,
+                                <<"name">> => <<"scripts/hyper-token-p4.lua">>,
                                 <<"body">> => ProcessScript
                             }
                         ],
                         <<"balance">> => #{ AliceAddress => 100 },
                         <<"admin">> => HostAddress
+                        % <<"operator">> =>
+                        %     hb_util:human_id(ar_wallet:to_address(HostWallet))
                     }
                 }
             }
