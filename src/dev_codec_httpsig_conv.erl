@@ -79,16 +79,17 @@ from(HTTP, _Req, Opts) ->
     ?event({message_with_commitments, MsgWithSigs}),
     Res =
         hb_maps:without(
-            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>] ++
+            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>, <<"content-type">>, <<"body-keys">>] ++
                 case hb_message:is_signed_key(<<"inline-body-key">>, MsgWithSigs, Opts) of
                     true -> [];
                     false -> [<<"inline-body-key">>]
                 end,
             MsgWithSigs,
-			Opts
+            Opts
         ),
     ?event({message_without_commitments, Res, Removed}),
     {ok, Res}.
+
 
 from_body(TABM, _InlinedKey, _ContentType, <<>>, _Opts) -> TABM;
 from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
@@ -184,6 +185,11 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
             end,
             RawHeaders
         )),
+        Commitments =
+                dev_codec_httpsig_siginfo:siginfo_to_commitments(
+                    Headers,
+                    Opts
+                ),
     % The Content-Disposition is from the parent message,
     % so we separate off from the rest of the headers
     case hb_maps:get(<<"content-disposition">>, Headers, undefined, Opts) of
@@ -207,23 +213,56 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                             false -> no_part_name_found
                         end
                 end,
-            RestHeaders = hb_maps:without([<<"content-disposition">>], Headers, Opts),
+            RestHeaders =
+                hb_maps:without(
+                    [
+                        <<"content-disposition">>, 
+                        <<"content-type">>, 
+                        <<"inline-body-key">>, 
+                        <<"content-digest">>
+                    ],
+                    Headers,
+                    Opts
+                ),
+            PartNameSplit = binary:split(PartName, <<"/">>, [global]),
+            NestedPartName = lists:last(PartNameSplit),
             ParsedPart =
-                case hb_maps:size(RestHeaders, Opts) of
+                case hb_maps:size(Commitments, Opts) of
                     0 ->
-                        % There are no headers besides the content disposition header
-                        % So simply use the the raw body binary as the part
-                        RawBody;
-                    _ ->
-                        case RawBody of
-                            <<>> -> RestHeaders;
-                            _ -> RestHeaders#{ <<"body">> => RawBody }
-                        end
+                        WithoutTypes = maps:without([<<"ao-types">>], RestHeaders),
+                        Types =
+                            hb_maps:get(
+                                <<"ao-types">>,
+                                RestHeaders,
+                                <<>>,
+                                Opts
+                            ),
+                        case {hb_maps:size(WithoutTypes, Opts), Types, RawBody} of
+                            {0, <<"empty-message">>, <<>>} ->
+                                % The message is empty, so we return an empty
+                                % map.
+                                #{};
+                            {_, _, <<>>} ->
+                                % There is no body to the message, so we return
+                                % just the headers.
+                                RestHeaders;
+                            {0, _, _} ->
+                                % There are no headers besides content-disposition,
+                                % so we return the body as is.
+                                RawBody;
+                            {_, _, _} ->
+                                % There are other headers, so we need to parse
+                                % the body as a TABM.
+                                {_, RawBodyKey} = inline_key(Headers),
+                                RestHeaders#{ RawBodyKey => RawBody }
+                        end;
+                    _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
             BodyKey = hd(binary:split(PartName, <<"/">>)),
             TABMNext = TABM#{
                 PartName => ParsedPart,
-                <<"body-keys">> => hb_maps:get(<<"body-keys">>, TABM, [], Opts) ++ [BodyKey]
+                <<"body-keys">> =>
+                    hb_maps:get(<<"body-keys">>, TABM, [], Opts) ++ [BodyKey]
             },
             from_body_parts(TABMNext, InlinedKey, Rest, Opts)
     end.
@@ -287,6 +326,17 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
             % Return the encoded HTTPSig message without modification.
             {ok, EncOriginal}
     end;
+to(TABM, Req = #{<<"bundle">> := true}, FormatOpts, Opts) ->
+    to(TABM, Req, FormatOpts, Opts#{always_bundle => true});
+to(TABM, Req, FormatOpts, Opts = #{always_bundle := true}) ->
+    OptsWithoutBundle = hb_maps:without([always_bundle], Opts),
+    DecodedLinks = hb_message:convert(TABM, <<"structured@1.0">>, OptsWithoutBundle),
+    EnsureLoaded = hb_cache:ensure_all_loaded(DecodedLinks, Opts),
+    TABM2 = hb_message:convert(EnsureLoaded, tabm, OptsWithoutBundle#{linkify_mode => false}),
+    to(TABM2,
+        Req,
+        FormatOpts,
+        OptsWithoutBundle#{linkify_mode => false});
 to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
@@ -312,13 +362,28 @@ to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
         ),
     % Finally, add the signatures to the encoded HTTP message with the
     % commitments from the original message.
+    CommitmentsMap = case maps:get(<<"commitments">>, TABM, undefined) of
+        undefined ->
+            case maps:get(<<"signature">>, TABM, undefined) of
+                undefined -> #{};
+                Signature ->
+                    #{
+                        Signature => #{
+                                <<"signature">> => Signature,
+                                <<"committed">> => maps:get(<<"committed">>, TABM, #{}),
+                                <<"keyid">> => maps:get(<<"keyid">>, TABM, <<>>),
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => maps:get(<<"type">>, TABM, <<>>)
+                        }
+                    }
+            end;
+        Commitments ->
+            Commitments
+    end,
     {ok,
         maps:merge(
             Intermediate,
-            dev_codec_httpsig_siginfo:commitments_to_siginfo(
-                maps:get(<<"commitments">>, TABM, #{}),
-                Opts
-            )
+            dev_codec_httpsig_siginfo:commitments_to_siginfo(CommitmentsMap, Opts)
         )
     }.
 
@@ -388,15 +453,20 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
                                 <<Key/binary, "/body">>,
                                 M,
                                 <<"body">>,
-								Opts
+                                Opts
                             );
                            (Key, Value) ->
-                            encode_body_part(Key, Value, InlineKey, Opts)
+                            ValueWithCommitted = case maps:get(<<Key/binary, "/committed">>, GroupedBodyMap, undefined) of
+                                undefined -> Value;
+                                Committed ->
+                                    maps:put(<<"committed">>, Committed, Value)
+                            end,
+                            encode_body_part(Key, ValueWithCommitted, InlineKey, Opts)
                         end,
                         GroupedBodyMap,
                         Opts
                     ),
-					Opts
+                    Opts
                 ),
                 Boundary = boundary_from_parts(PartList),
                 % Transform body into a binary, delimiting each part with the
@@ -516,8 +586,21 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
                 end,
             case Value of
                 _ when is_map(Value) ->
-                    NewTop = group_maps(Value, FlatK, CurTop, Opts),
-                    {CurMap, NewTop};
+                    case hb_maps:size(Value, Opts) of
+                        0 ->
+                            {
+                                CurMap,
+                                hb_maps:put(
+                                    FlatK,
+                                    #{ <<"ao-types">> => <<"empty-message">> },
+                                    CurTop,
+                                    Opts
+                                )
+                            };
+                        _ ->
+                            NewTop = group_maps(Value, FlatK, CurTop, Opts),
+                            {CurMap, NewTop}
+                    end;
                 _ ->
                     ?event({group_maps, {norm_key, NormKey}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
@@ -536,7 +619,7 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
         end,
         {#{}, Top},
         Map,
-		Opts
+        Opts
     ),
     case hb_maps:size(Flattened, Opts) of
         0 -> NewTop;
@@ -571,7 +654,7 @@ boundary_from_parts(PartList) ->
 
 %% @doc Encode a multipart body part to a flat binary.
 encode_body_part(PartName, BodyPart, InlineKey) -> 
-	encode_body_part(PartName, BodyPart, InlineKey, #{}).
+    encode_body_part(PartName, BodyPart, InlineKey, #{}).
 
 encode_body_part(PartName, BodyPart, InlineKey, Opts) ->
     % We'll need to prepend a Content-Disposition header
@@ -595,9 +678,9 @@ encode_body_part(PartName, BodyPart, InlineKey, Opts) ->
                 <<"content-disposition">>,
                 Disposition,
                 BPMap,
-				Opts
+                Opts
             ),
-            encode_http_msg(WithDisposition, #{});
+            encode_http_msg(WithDisposition, Opts);
         BPBin when is_binary(BPBin) ->
             % A properly encoded inlined body part MUST have a CRLF between
             % it and the header block, so we MUST use two CRLF:
@@ -617,7 +700,7 @@ encode_body_part(PartName, BodyPart, InlineKey, Opts) ->
 %% In order to preserve the field name of the inlined
 %% part, an additional field may need to be added
 inline_key(Msg) ->
-	inline_key(Msg, #{}).
+    inline_key(Msg, #{}).
 
 inline_key(Msg, Opts) ->
     % The message can named a key whose value will be placed
@@ -788,16 +871,16 @@ group_maps_flat_compatible_test() ->
 encode_message_with_links_test() ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
-        <<"untyped">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
-        <<"typed">> =>
-            {link,
-                hb_util:human_id(crypto:strong_rand_bytes(32)),
-                #{ <<"type">> => <<"integer">> }
-            }
+        <<"typed-key">> => 4
     },
-    Encoded = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-    ?event(debug_links, {encoded, Encoded}),
-    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-    ?event({decoded, Decoded}),
-    ?assertEqual(Msg, Decoded).
+    {ok, Path} = hb_cache:write(Msg, #{}),
+    {ok, Read} = hb_cache:read(Path, #{}),
+    % Ensure that the message now has a lazy link
+    ?assertMatch({link, _, _}, maps:get(<<"typed-key">>, Read, #{})),
+    % Encode and decode the message as `httpsig@1.0`
+    Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
+    ?event(debug_links, {encoded, Enc}),
+    Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
+    % Ensure that the result is the same as the original message
+    ?event({decoded, Dec}),
+    ?assert(hb_message:match(Msg, Dec, strict, #{})).

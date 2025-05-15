@@ -114,6 +114,8 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, Opts) ->
         not_found ->
             throw({necessary_message_not_found_b, Link})
     end;
+ensure_loaded({link, ID, LinkOpts}, Opts) ->
+	ensure_loaded({link, ID, LinkOpts#{ <<"lazy">> => true}}, Opts);
 ensure_loaded(Msg, _Opts) when not ?IS_LINK(Msg) ->
     Msg.
 
@@ -630,7 +632,7 @@ test_deeply_nested_complex_message(Opts) ->
     Wallet = ar_wallet:new(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     %% Create nested data
-    Level3SignedSubmessage = test_signed([1,2,3], Wallet),
+    Level3SignedSubmessage = test_signed([1,2,3], Opts#{priv_wallet => Wallet}),
     Outer =
         hb_message:commit(
             #{
@@ -647,11 +649,11 @@ test_deeply_nested_complex_message(Opts) ->
                             <<"g">> => [<<"h">>, <<"i">>],
                             <<"j">> => 1337
                         },
-                        Opts
+                        Opts#{ priv_wallet => Wallet }
                     ),
                 <<"a">> => <<"b">>
             },
-            Opts
+            Opts#{ priv_wallet => Wallet }
         ),
     UID = hb_message:id(Outer, none, Opts),
     ?event({string, <<"================================================">>}),
@@ -661,26 +663,18 @@ test_deeply_nested_complex_message(Opts) ->
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
-    {ok, DeepMsg} =
-        read(
-            [
-                OuterID = hb_util:human_id(UID),
-                <<"level1">>,
-                <<"level2">>,
-                <<"level3">>
-            ],
-            Opts
-        ),
-    ?event({deep_message, {explicit, DeepMsg}}),
-    %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_ao:get(<<"other-test-key">>, DeepMsg)),
-    ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
-    ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg, strict, Opts)),
+	OuterID = hb_util:human_id(UID),
     {ok, OuterMsg} = read(OuterID, Opts),
-    ?assert(hb_message:match(Outer, OuterMsg)),
+	EnsuredLoadedOuter = hb_cache:ensure_all_loaded(OuterMsg, Opts),
+    ?event({deep_message, {explicit, EnsuredLoadedOuter}}),
+    %% Assert that the retrieved item matches the original deep value
+    ?assertEqual([1,2,3], hb_ao:get(<<"level1/level2/level3/other-test-key">>, EnsuredLoadedOuter)),
+    ?event({deep_message_match, {read, EnsuredLoadedOuter}, {write, Level3SignedSubmessage}}),
     ?event({reading_committed_outer, {id, CommittedID}, {expect, Outer}}),
     {ok, CommittedMsg} = read(hb_util:human_id(CommittedID), Opts),
-    ?assert(hb_message:match(Outer, CommittedMsg, strict, Opts)).
+	EnsuredLoadedCommitted = hb_cache:ensure_all_loaded(CommittedMsg, Opts),
+	?assertEqual([1,2,3], hb_ao:get(<<"level1/level2/level3/other-test-key">>, EnsuredLoadedCommitted)).
+
 
 test_message_with_list(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
