@@ -46,6 +46,7 @@ spawn_register(Name, Opts) ->
             % We have found the base process definition. Augment it with the 
             % node's address as necessary, then commit to the result.
             ?event(node_process, {registering, {name, Name}, {base_def, BaseDef}}),
+            % Signed = hb_message:commit(augment_definition(BaseDef, Opts), Opts),
             Signed =
                 hb_message:commit(
                     augment_definition(BaseDef, Opts),
@@ -97,20 +98,27 @@ augment_definition(BaseDef, Opts) ->
             )
         ),
     hb_ao:set(
-        #{
-            <<"scheduler">> =>
-                serialize_list(
-                    (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
-                        ++ [Address]
-                ),
-            <<"authority">> =>
-                serialize_list(
-                    (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
-                        ++ [Address]
-                )
-        },
-        BaseDef
-    ).
+      BaseDef,
+      #{
+        <<"scheduler">> => Address
+       }
+     ).
+    % This is for subledger-subledger interactions
+    % hb_ao:set(
+    %     #{
+    %         <<"scheduler">> =>
+    %             serialize_list(
+    %                 (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
+    %                     ++ [Address]
+    %             ),
+    %         <<"authority">> =>
+    %             serialize_list(
+    %                 (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
+    %                     ++ [Address]
+    %             )
+    %     },
+    %     BaseDef
+    % ).
 
 %% @doc Serialize the given scheduler list to a string.
 serialize_list(SchedList) ->
