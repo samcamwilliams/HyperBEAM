@@ -133,11 +133,40 @@ end
 
 -- Normalize an argument to a table if it is not already a table.
 local function normalize_table(value)
-    -- TODO: Parse `"value1","value2",...` strings as tables.
-    if type(value) ~= "table" then
-        value = { value }
+    -- If value is already a table, return it. If it is not a string, return
+    -- a table containing only the value.
+    if type(value) == "table" then
+        return value
+    elseif type(value) ~= "string" then
+        return { value }
     end
-    return value
+
+    -- If value is a string, remove quotes and split by comma.
+    local t = {}
+    local pos = 1
+    local len = #value
+    while pos <= len do
+        -- find next comma
+        local comma_start, comma_end = value:find(",", pos, true)
+        local chunk
+        if comma_start then
+            chunk = value:sub(pos, comma_start - 1)
+            pos = comma_end + 1
+        else
+            chunk = value:sub(pos)
+            pos = len + 1
+        end
+
+        -- trim whitespace and quotes
+        chunk = chunk:gsub("[\"']", "")
+        local trimmed = chunk:match("^%s*(.-)%s*$")
+        -- convert to number if possible
+        local num = tonumber(trimmed)
+        table.insert(t, num or trimmed)
+    end
+
+    ao.event({ "Normalized table", { table = t } })
+    return t
 end
 
 --- Security verification functions:
