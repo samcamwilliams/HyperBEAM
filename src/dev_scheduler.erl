@@ -397,8 +397,14 @@ get_location(_Msg1, Req, Opts) ->
 post_location(Msg1, RawReq, Opts) ->
     % Ensure that the request is signed by the operator.
     Req =
-        case hb_ao:get(<<"target">>, RawReq, not_found, Opts) of
+        case hb_ao:get_first(
+            [{Msg1, <<"target">>}, {RawReq, <<"target">>}],
+            not_found,
+            Opts
+        ) of
             not_found -> RawReq;
+            <<"self">> -> Msg1;
+            <<"request">> -> RawReq;
             Target -> hb_ao:get(Target, RawReq, not_found, Opts)
         end,
     {ok, OnlyCommitted} = hb_message:with_only_committed(Req),
@@ -1580,7 +1586,9 @@ register_location_on_boot_test() ->
                         <<"device">> => <<"scheduler@1.0">>,
                         <<"path">> => <<"location">>,
                         <<"method">> => <<"POST">>,
+                        <<"target">> => <<"self">>,
                         <<"accept-codec">> => <<"ans104@1.0">>,
+                        <<"url">> => <<"https://hyperbeam-test-ignore.com">>,
                         <<"hook">> => #{
                             <<"result">> => <<"ignore">>,
                             <<"commit-request">> => true
@@ -1593,17 +1601,20 @@ register_location_on_boot_test() ->
     {ok, CurrentLocation} =
         hb_http:get(
             RegisteringNode,
-            <<"/~scheduler@1.0/location">>,
             #{
                 <<"method">> => <<"GET">>,
+                <<"path">> => <<"/~scheduler@1.0/location">>,
                 <<"address">> =>
                     hb_util:human_id(ar_wallet:to_address(RegisteringNodeWallet))
-            }
+            },
+            #{}
         ),
     ?event({current_location, CurrentLocation}),
     ?assertMatch(
-        #{ <<"url">> := Location, <<"nonce">> := 0 }
-            when is_binary(Location),
+        #{
+            <<"url">> := <<"https://hyperbeam-test-ignore.com">>,
+            <<"nonce">> := 0
+        },
         hb_ao:get(<<"body">>, CurrentLocation, #{})
     ).
 

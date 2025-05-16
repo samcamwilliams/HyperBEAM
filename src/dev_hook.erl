@@ -164,10 +164,17 @@ execute_handler(HookName, Handler, Req, Opts) ->
             hb_util:bin(
                 hb_ao:get(<<"hook/commit-request">>, Handler, <<"false">>, Opts)
             ),
-        PreparedReq =
+        {PreparedBase, PreparedReq} =
             case CommitReqBin of
-                <<"true">> -> hb_message:commit(BaseReq, Opts);
-                <<"false">> -> BaseReq
+                <<"true">> ->
+                    {
+                        case hb_message:signers(Handler) of
+                            [] -> hb_message:commit(Handler, Opts);
+                            _ -> Handler
+                        end,
+                        hb_message:commit(BaseReq, Opts)
+                    };
+                <<"false">> -> {BaseReq, BaseReq}
             end,
         ?event(hook,
             {resolving_handler, 
@@ -179,7 +186,7 @@ execute_handler(HookName, Handler, Req, Opts) ->
         % Resolve the prepared request upon the handler.
         {Status, Res} =
             hb_ao:resolve(
-                Handler,
+                PreparedBase,
                 PreparedReq,
                 Opts#{ hashpath => ignore }
             ),
