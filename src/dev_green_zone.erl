@@ -88,14 +88,14 @@ info(_Msg1, _Msg2, _Opts) ->
 -spec default_zone_required_opts(Opts :: map()) -> map().
 default_zone_required_opts(Opts) ->
     #{
-        trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
-        load_remote_devices => hb_opts:get(load_remote_devices, false, Opts),
-        preload_devices => hb_opts:get(preload_devices, [], Opts),
-        % store => hb_opts:get(store, [], Opts),
-        routes => hb_opts:get(routes, [], Opts),
-        on => hb_opts:get(on, undefined, Opts),
-        scheduling_mode => disabled,
-        initialized => permanent
+        % trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
+        % load_remote_devices => hb_opts:get(load_remote_devices, false, Opts),
+        % preload_devices => hb_opts:get(preload_devices, [], Opts),
+        % % store => hb_opts:get(store, [], Opts),
+        % routes => hb_opts:get(routes, [], Opts),
+        % on => hb_opts:get(on, undefined, Opts),
+        % scheduling_mode => disabled,
+        % initialized => permanent
     }.
 
 
@@ -190,7 +190,7 @@ init(_M1, _M2, Opts) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-    case hb_opts:validate_node_history(Opts, 0, 1) of
+    case hb_opts:validate_node_history(Opts, 0, 4) of
         {ok, _N} ->
             PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
             PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
@@ -340,10 +340,11 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     % Print the keypair
     ?event(green_zone, {become, keypair, Pub}),
     % 8. Add the target node's keypair to the local node's identities.
+    GreenZoneWallet = {{KeyType, Priv, Pub}, {KeyType, Pub}},
     Identities = hb_opts:get(identities, #{}, Opts),
     UpdatedIdentities = Identities#{
-        <<"GreenZoneID">> => #{
-            priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
+        <<"green-zone">> => #{
+            priv_wallet => GreenZoneWallet
         }
     },
     ok = hb_http_server:set_opts(Opts#{
@@ -621,12 +622,15 @@ validate_join(M1, Req, Opts) ->
     NodeAddr = hb_ao:get(<<"address">>, Req, Opts),
     ?event(green_zone, {join, extract, {node_addr, NodeAddr}}),
     % Retrieve and decode the joining node's public key.
+    ?event(green_zone, {m1, {explicit, M1}}),
+    ?event(green_zone, {req, {explicit, Req}}),
     EncodedPubKey = hb_ao:get(<<"public-key">>, Req, Opts),
+    ?event(green_zone, {encoded_pub_key, {explicit, EncodedPubKey}}),
     RequesterPubKey = case EncodedPubKey of
         not_found -> not_found;
         Encoded -> binary_to_term(base64:decode(Encoded))
     end,
-    ?event(green_zone, {join, public_key, ok}),
+    ?event(green_zone, {public_key, {explicit, RequesterPubKey}}),
     % Verify the commitment report provided in the join request.
     case dev_snp:verify(M1, Req, Opts) of
         {ok, <<"true">>} ->
@@ -634,6 +638,7 @@ validate_join(M1, Req, Opts) ->
             ?event(green_zone, {join, commitment, verified}),
             % Retrieve the shared AES key used for encryption.
             GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
+            ?event(green_zone, {green_zone_aes, {explicit, GreenZoneAES}}),
             % Retrieve the local node's wallet to extract its public key.
             {WalletPubKey, _} = hb_opts:get(priv_wallet, undefined, Opts),
             % Add the joining node's details to the trusted nodes list.

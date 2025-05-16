@@ -113,14 +113,27 @@ filter_node_msg(Other) ->
 
 %% @doc Add dynamic keys to the node message.
 add_dynamic_keys(NodeMsg) ->
-    case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
-        no_viable_wallet ->
-            NodeMsg;
-        Wallet ->
-            %% Create a new map with address and merge it (overwriting existing)
-            Address = hb_util:id(ar_wallet:to_address(Wallet)),
-            NodeMsg#{ address => Address, <<"address">> => Address }
-    end.
+    UpdatedNodeMsg = 
+        case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+            no_viable_wallet ->
+                NodeMsg;
+            Wallet ->
+                %% Create a new map with address and merge it (overwriting existing)
+                Address = hb_util:id(ar_wallet:to_address(Wallet)),
+                NodeMsg#{ address => Address, <<"address">> => Address }
+        end,
+    add_identity_addresses(UpdatedNodeMsg).
+
+add_identity_addresses(NodeMsg) ->
+    Identities = hb_opts:get(identities, #{}, NodeMsg),
+    NewIdentities = maps:map(fun(_, Identity) ->
+        Identity#{
+            <<"address">> => hb_util:human_id(
+                hb_opts:get(priv_wallet, hb:wallet(), Identity)
+            )
+        }
+    end, Identities),
+    NodeMsg#{ <<"identities">> => NewIdentities }.
 
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
