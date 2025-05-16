@@ -306,7 +306,22 @@ message_to_status(Item) when is_map(Item) ->
     case dev_message:get(<<"status">>, Item) of
         {ok, RawStatus} when is_integer(RawStatus) -> RawStatus;
         {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus);
-        {ok, RawStatus} -> binary_to_integer(RawStatus);
+        {ok, RawStatus} ->
+            % If we can convert the status to an integer, do so.
+            try binary_to_integer(RawStatus)
+            catch
+                error:badarg ->
+                    % We can't convert the status to an integer, but we may be
+                    % able to convert it to an existing atom status code.
+                    try
+                        status_code(binary_to_existing_atom(RawStatus, latin1))
+                    catch
+                        error:badarg ->
+                            % We can't convert the status to an integer or atom,
+                            % so we return the default status code.
+                            default
+                    end
+            end;
         _ -> default
     end;
 message_to_status(Item) when is_atom(Item) ->
