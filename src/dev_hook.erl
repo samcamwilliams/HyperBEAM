@@ -174,7 +174,7 @@ execute_handler(HookName, Handler, Req, Opts) ->
                         end,
                         hb_message:commit(BaseReq, Opts)
                     };
-                <<"false">> -> {BaseReq, BaseReq}
+                <<"false">> -> {Handler, BaseReq}
             end,
         ?event(hook,
             {resolving_handler, 

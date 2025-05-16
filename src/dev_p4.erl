@@ -432,8 +432,7 @@ hyper_token_ledger() ->
                 p4_non_chargable_routes =>
                     [
                         #{
-                            <<"template">> =>
-                                <<"/*~node-process@1.0/*">>
+                            <<"template">> => <<"/*~node-process@1.0/*">>
                         }
                     ],
                 on => #{
