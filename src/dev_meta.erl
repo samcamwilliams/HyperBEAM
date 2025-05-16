@@ -358,10 +358,13 @@ maybe_sign(Res, NodeMsg) ->
 
 %% @doc Test that we can get the node message.
 config_test() ->
-    Node = hb_http_server:start_node(#{ test_config_item => <<"test">> }),
-    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?event({res, Res}),
-    ?assertEqual(<<"test">>, hb_ao:get(<<"test_config_item">>, Res, #{})).
+	StoreOpts = #{
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-TEST">>
+	},
+    Node = hb_http_server:start_node(Opts = #{ test_config_item => <<"test">>, store => StoreOpts }),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
+    ?assertEqual(<<"test">>, hb_ao:get(<<"test_config_item">>, Res, Opts)).
 
 %% @doc Test that we can't get the node message if the requested key is private.
 priv_inaccessible_test() ->
@@ -379,7 +382,11 @@ priv_inaccessible_test() ->
 %% @doc Test that we can't set the node message if the request is not signed by
 %% the owner of the node.
 unauthorized_set_node_msg_fails_test() ->
-    Node = hb_http_server:start_node(#{ priv_wallet => ar_wallet:new() }),
+	StoreOpts = #{
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-TEST">>
+	},
+    Node = hb_http_server:start_node(Opts = #{ store => StoreOpts, priv_wallet => ar_wallet:new() }),
     {error, _} =
         hb_http:post(
             Node,
@@ -388,22 +395,27 @@ unauthorized_set_node_msg_fails_test() ->
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"evil_config_item">> => <<"BAD">>
                 },
-                ar_wallet:new()
+                Opts#{ priv_wallet => ar_wallet:new() }
             ),
             #{}
         ),
-    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assertEqual(not_found, hb_ao:get(<<"evil_config_item">>, Res, #{})),
-    ?assertEqual(0, length(hb_ao:get(<<"node_history">>, Res, [], #{}))).
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
+    ?assertEqual(not_found, hb_ao:get(<<"evil_config_item">>, Res, Opts)),
+    ?assertEqual(0, length(hb_ao:get(<<"node_history">>, Res, [], Opts))).
 
 %% @doc Test that we can set the node message if the request is signed by the
 %% owner of the node.
 authorized_set_node_msg_succeeds_test() ->
+	StoreOpts = #{
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-TEST">>
+	},
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
-        #{
+        Opts = #{
             operator => hb_util:human_id(ar_wallet:to_address(Owner)),
-            test_config_item => <<"test">>
+            test_config_item => <<"test">>,
+			store => StoreOpts
         }
     ),
     {ok, SetRes} =
@@ -414,15 +426,15 @@ authorized_set_node_msg_succeeds_test() ->
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
                 },
-                Owner
+                Opts#{ priv_wallet => Owner }
             ),
-            #{}
+            Opts
         ),
     ?event({res, SetRes}),
-    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
     ?event({res, Res}),
-    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, #{})),
-    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, Opts)),
+    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res, [], Opts))).
 
 %% @doc Test that an uninitialized node will not run computation.
 uninitialized_node_test() ->
@@ -433,12 +445,17 @@ uninitialized_node_test() ->
 
 %% @doc Test that a permanent node message cannot be changed.
 permanent_node_message_test() ->
+	StoreOpts = #{
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-TEST">>
+	},
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
-        #{
+        Opts = #{
             operator => unclaimed,
             initialized => false,
-            test_config_item => <<"test">>
+            test_config_item => <<"test">>,
+			store => StoreOpts
         }
     ),
     {ok, SetRes1} =
@@ -450,14 +467,14 @@ permanent_node_message_test() ->
                     <<"test_config_item">> => <<"test2">>,
                     initialized => <<"permanent">>
                 },
-                Owner
+                Opts#{ priv_wallet => Owner }
             ),
-            #{}
+            Opts
         ),
     ?event({set_res, SetRes1}),
-    {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
+    {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, Opts),
     ?event({get_res, Res}),
-    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, Opts)),
     {error, SetRes2} =
         hb_http:post(
             Node,
@@ -466,24 +483,29 @@ permanent_node_message_test() ->
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"bad_value">>
                 },
-                Owner
+                Opts#{ priv_wallet => Owner }
             ),
-            #{}
+            Opts
         ),
     ?event({set_res, SetRes2}),
-    {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
+    {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, Opts),
     ?event({get_res, Res2}),
-    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, #{})),
-    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res2, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, Opts)),
+    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res2, [], Opts))).
 
 %% @doc Test that we can claim the node correctly and set the node message after.
 claim_node_test() ->
+	StoreOpts = #{
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-TEST">>
+	},
     Owner = ar_wallet:new(),
     Address = ar_wallet:to_address(Owner),
     Node = hb_http_server:start_node(
-        #{
+        Opts = #{
             operator => unclaimed,
-            test_config_item => <<"test">>
+            test_config_item => <<"test">>,
+			store => StoreOpts
         }
     ),
     {ok, SetRes} =
@@ -494,14 +516,14 @@ claim_node_test() ->
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"operator">> => hb_util:human_id(Address)
                 },
-                Owner
+                Opts#{ priv_wallet => Owner}
             ),
-            #{}
+            Opts
         ),
     ?event({res, SetRes}),
-    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
     ?event({res, Res}),
-    ?assertEqual(hb_util:human_id(Address), hb_ao:get(<<"operator">>, Res, #{})),
+    ?assertEqual(hb_util:human_id(Address), hb_ao:get(<<"operator">>, Res, Opts)),
     {ok, SetRes2} =
         hb_http:post(
             Node,
@@ -510,15 +532,15 @@ claim_node_test() ->
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
                 },
-                Owner
+                Opts#{ priv_wallet => Owner }
             ),
-            #{}
+            Opts
         ),
     ?event({res, SetRes2}),
-    {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+    {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
     ?event({res, Res2}),
-    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, #{})),
-    ?assertEqual(2, length(hb_ao:get(<<"node_history">>, Res2, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, Opts)),
+    ?assertEqual(2, length(hb_ao:get(<<"node_history">>, Res2, [], Opts))).
 
 %% Test that we can use a preprocessor upon a request.
 % preprocessor_test() ->
