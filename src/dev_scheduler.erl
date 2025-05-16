@@ -1304,15 +1304,19 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
             ),
             {ok, ar_bundles:serialize(Item)}
         catch
-            _:_ ->
+            Class:Reason ->
                 {error,
                     #{
                         <<"status">> => 422,
                         <<"body">> =>
                             <<
-                                "Failed to post schedule on ", Node/binary,
-                                " for ", ProcID/binary, ". Try different encoding?"
-                            >>
+                                "Failed to encode message for legacy scheduler on ",
+                                Node/binary,
+                                ". Try different encoding?"
+                            >>,
+                        <<"class">> => Class,
+                        <<"reason">> =>
+                            iolist_to_binary(io_lib:format("~p", [Reason]))
                     }
                 }
         end,
