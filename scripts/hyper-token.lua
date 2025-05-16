@@ -863,11 +863,11 @@ function compute(base, assignment)
         return _G["register-remote"](base, assignment)
     else
         -- Handle unknown `action' values.
+        _, base = ensure_initialized(base, assignment)
         base.results = {
-            status = "error",
-            error = "Unknown action: " .. assignment.body.action
+            status = "ok"
         }
-        ao.event({ "Unknown action", { action = assignment.body.action } })
+        ao.event({ "Process initialized.", { slot = assignment.slot } })
         return "ok", base
     end
 end
