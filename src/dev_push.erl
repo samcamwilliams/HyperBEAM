@@ -165,13 +165,14 @@ do_push(Process, Assignment, Opts) ->
                        (Key, Msg) ->
                             #{
                                 <<"response">> => <<"error">>,
-                                <<"status">> => 422,
+                                <<"status">> => 404,
                                 <<"outbox-index">> => Key,
-                                <<"reason">> => <<"No target process found.">>,
+                                <<"reason">> =>
+                                    <<"Target process not available.">>,
                                 <<"message">> => Msg
                             }
                     end,
-                    hb_ao:normalize_keys(Outbox)
+                    hb_ao:normalize_keys(hb_private:reset(Outbox))
                 ),
             {ok, maps:merge(Downstream, AdditionalRes#{
                 <<"slot">> => Slot,
@@ -334,7 +335,7 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
     AugmentedMsg = augment_message(Origin, MsgToPush, Opts),
     ?event(push, {prepared_msg, {msg, AugmentedMsg}}, Opts),
     % Load the `accept-id`'d wallet into the `Opts` map, if requested.
-    SignedMsg = apply_security(TargetProcess, AugmentedMsg, Opts),
+    SignedMsg = apply_security(AugmentedMsg, TargetProcess, Codec, Opts),
     ScheduleReq = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
@@ -353,7 +354,8 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
                 {error,
                     <<
                         "Application of security policy failed: ",
-                        "No identities matching authority were found.">>
+                        "No identities matching authority were found."
+                    >>
                 };
             _Committers ->
                 hb_ao:resolve(
@@ -402,19 +404,21 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
 %% message came from.
 augment_message(Origin, ToSched, Opts) ->
     ?event(push, {adding_keys, {origin, Origin}, {to, ToSched}}, Opts),
-    hb_ao:set(
-        ToSched,
-        #{
-            <<"data-protocol">> => <<"ao">>,
-            <<"variant">> => <<"ao.N.1">>,
-            <<"type">> => <<"Message">>,
-            <<"from-process">> => maps:get(<<"process">>, Origin),
-            <<"from-uncommitted">> => maps:get(<<"from-uncommitted">>, Origin),
-            <<"from-base">> => maps:get(<<"from-base">>, Origin),
-            <<"from-scheduler">> => maps:get(<<"from-scheduler">>, Origin),
-            <<"from-authority">> => maps:get(<<"from-authority">>, Origin)
-        },
-        Opts#{ hashpath => ignore }
+    hb_message:uncommitted(
+        hb_ao:set(
+            ToSched,
+            #{
+                <<"data-protocol">> => <<"ao">>,
+                <<"variant">> => <<"ao.N.1">>,
+                <<"type">> => <<"Message">>,
+                <<"from-process">> => maps:get(<<"process">>, Origin),
+                <<"from-uncommitted">> => maps:get(<<"from-uncommitted">>, Origin),
+                <<"from-base">> => maps:get(<<"from-base">>, Origin),
+                <<"from-scheduler">> => maps:get(<<"from-scheduler">>, Origin),
+                <<"from-authority">> => maps:get(<<"from-authority">>, Origin)
+            },
+            Opts#{ hashpath => ignore }
+        )
     ).
 
 %% @doc Apply the recipient's security policy to the message. Observes the 
@@ -422,32 +426,38 @@ augment_message(Origin, ToSched, Opts) ->
 %% - `policy': A message that generates a security policy message.
 %% - `authority': A single committer, or list of comma separated committers.
 %% - (Default: Signs with default wallet)
-apply_security(TargetProcess, Msg, Opts) ->
-    apply_security(policy, TargetProcess, Msg, Opts).
-apply_security(policy, TargetProcess, Msg, Opts) ->
+apply_security(Msg, TargetProcess, Codec, Opts) ->
+    apply_security(policy, Msg, TargetProcess, Codec, Opts).
+apply_security(policy, Msg, TargetProcess, Codec, Opts) ->
     case hb_ao:get(<<"policy">>, TargetProcess, not_found, Opts) of
-        not_found -> apply_security(authority, TargetProcess, Msg, Opts);
+        not_found -> apply_security(authority, Msg, TargetProcess, Codec, Opts);
         Policy ->
             case hb_ao:resolve(Policy, Opts) of
                 {ok, PolicyOpts} ->
                     case hb_ao:get(<<"accept-committers">>, PolicyOpts, Opts) of
                         not_found ->
-                            apply_security(authority, TargetProcess, Msg, Opts);
+                            apply_security(
+                                authority,
+                                Msg,
+                                TargetProcess,
+                                Codec,
+                                Opts
+                            );
                         Committers ->
-                            commit_result(Msg, Committers, Opts)
+                            commit_result(Msg, Committers, Codec, Opts)
                     end;
                 {error, Error} ->
                     ?event(push, {policy_error, {error, Error}}, Opts),
-                    apply_security(authority, TargetProcess, Msg, Opts)
+                    apply_security(authority, Msg, TargetProcess, Codec, Opts)
             end
     end;
-apply_security(authority, TargetProcess, Msg, Opts) ->
+apply_security(authority, Msg, TargetProcess, Codec, Opts) ->
     case hb_ao:get(<<"authority">>, TargetProcess, Opts) of
-        not_found -> apply_security(default, TargetProcess, Msg, Opts);
+        not_found -> apply_security(default, Msg, TargetProcess, Codec, Opts);
     	Authorities when is_list(Authorities) ->
             % The `authority` key has already been parsed into a list of
             % committers. Sign with all local valid keys.
-            commit_result(Msg, Authorities, Opts);
+            commit_result(Msg, Authorities, Codec, Opts);
         Authority ->
             % Parse the authority string into a list of committers. Sign with
             % all local valid keys.
@@ -459,21 +469,27 @@ apply_security(authority, TargetProcess, Msg, Opts) ->
                     <<",">>,
                     [global, trim_all]
                 ),
+                Codec,
                 Opts
             )
     end;
-apply_security(default, TargetProcess, Msg, Opts) ->
+apply_security(default, Msg, TargetProcess, Codec, Opts) ->
     ?event(push, {default_policy, {target, TargetProcess}}, Opts),
-    hb_message:commit(Msg, Opts).
+    commit_result(
+        Msg,
+        [hb_util:human_id(hb_opts:get(priv_wallet, no_viable_wallet, Opts))],
+        Codec,
+        Opts
+    ).
 
-%% @doc Attempt to sign a result message with the given committers.
-% commit_result(Msg, [], Opts) ->
-%     case hb_opts:get(push_always_sign, true, Opts) of
-%         true -> hb_message:commit(Msg, Opts);
-%         false -> Msg
-%     end;
-commit_result(Msg, Committers, Opts) ->
-    Signers = lists:foldl(
+% @doc Attempt to sign a result message with the given committers.
+commit_result(Msg, [], Codec, Opts) ->
+    case hb_opts:get(push_always_sign, true, Opts) of
+        true -> hb_message:commit(hb_message:uncommitted(Msg), Opts, Codec);
+        false -> Msg
+    end;
+commit_result(Msg, Committers, Codec, Opts) ->
+    Signed = lists:foldl(
         fun(Committer, Acc) ->
             case hb_opts:as(Committer, Opts) of
                 {ok, CommitterOpts} ->
@@ -493,17 +509,17 @@ commit_result(Msg, Committers, Opts) ->
                     Acc
             end
         end,
-        Msg,
+        hb_message:uncommitted(Msg),
         Committers
     ),
-    ?event(debug_commit, {explicit_signers, {explicit, Signers}}),
-    case hb_message:signers(Signers) of
+    ?event(debug_commit, {explicit_signers, {explicit, hb_message:signers(Signed)}}),
+    case hb_message:signers(Signed) of
         [] ->
-            ?event(debug_commit, {no_signers}),
-            hb_message:commit(Msg, Opts);
+            ?event(debug_commit, signing_with_default_identity),
+            commit_result(Msg, [], Codec, Opts);
         FoundSigners ->
             ?event(debug_commit, {explicit_found_signers, {explicit, FoundSigners}}),
-            Signers
+            Signed
     end.
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
@@ -891,6 +907,77 @@ push_prompts_encoding_change_test() ->
         ),
     ?assertMatch({error, #{ <<"status">> := 422 }}, Res).
 
+-ifdef(ENABLE_GENESIS_WASM).
+%% @doc Test that a message that generates another message which resides on an
+%% ANS-104 scheduler leads to `~push@1.0` re-signing the message correctly.
+%% Requires `ENABLE_GENESIS_WASM' to be enabled.
+nested_push_prompts_encoding_change_test_() ->
+    {timeout, 30, fun nested_push_prompts_encoding_change/0}.
+nested_push_prompts_encoding_change() ->
+    dev_process:init(),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-mainnet">>
+            },
+            #{
+                <<"store-module">> => hb_store_gateway,
+                <<"store">> => #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-mainnet">>
+                }
+            }
+        ]
+    },
+    ?event(push_debug, {opts, Opts}),
+    Msg1 = dev_process:test_aos_process(Opts),
+    hb_cache:write(Msg1, Opts),
+    {ok, SchedInit} =
+        hb_ao:resolve(Msg1, #{
+            <<"method">> => <<"POST">>,
+            <<"path">> => <<"schedule">>,
+            <<"body">> => Msg1
+        },
+        Opts
+    ),
+    ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
+    Script = message_to_legacynet_scheduler_script(),
+    ?event({script, Script}),
+    {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
+    ?event(push, {msg_sched_result, Msg2}),
+    {ok, StartingMsgSlot} =
+        hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+    ?event({starting_msg_slot, StartingMsgSlot}),
+    Msg3 =
+        #{
+            <<"path">> => <<"push">>,
+            <<"slot">> => StartingMsgSlot
+        },
+    {ok, Res} = hb_ao:resolve(Msg1, Msg3, Opts),
+    ?event(push, {res, Res}),
+    Msg = hb_message:commit(#{
+        <<"path">> => <<"push">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => #{
+            <<"target">> => hb_message:id(Msg1, all, Opts),
+            <<"action">> => <<"Ping">>
+        }
+    }, Opts),
+    ?event(push, {msg1, Msg}),
+    Res2 =
+        hb_ao:resolve_many(
+            [
+                hb_message:id(Msg1, all, Opts),
+                {as, <<"process@1.0">>, <<>>},
+                Msg
+            ],
+            Opts
+        ),
+    ?assertMatch({ok, #{ <<"1">> := #{ <<"resulted-in">> := _ }}}, Res2).
+-endif.
 %%% Test helpers
 
 ping_pong_script(Limit) ->
@@ -919,6 +1006,24 @@ reply_script() ->
                print("Replying to...")
                print(m.From)
                Send({ Target = m.From, Action = "Reply", Message = "Pong!" })
+               print("Done.")
+           end
+        )
+        """
+    >>.
+
+message_to_legacynet_scheduler_script() ->
+    <<
+        """
+        Handlers.add("Ping",
+           { Action = "Ping" },
+           function(m)
+               print("Pinging...")
+               print(m.From)
+               Send({
+                    Target = "QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0",
+                    Action = "Ping"
+                })
                print("Done.")
            end
         )

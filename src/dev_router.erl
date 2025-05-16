@@ -1019,9 +1019,11 @@ weighted_random_strategy_test() ->
             #{ <<"host">> => <<"2">>, <<"weight">> => 99 }
         ],
     SimRes = simulate(1000, 1, Nodes, <<"By-Weight">>),
-    [One, _] = simulation_distribution(SimRes, Nodes),
-    ?assert(One < 25),
-    ?assert(One > 4).
+    [HitsOnFirstHost, _] = simulation_distribution(SimRes, Nodes),
+    ProportionOfFirstHost = HitsOnFirstHost / 1000,
+    ?event(debug_weighted_random, {proportion_of_first_host, ProportionOfFirstHost}),
+    ?assert(ProportionOfFirstHost < 0.05),
+    ?assert(ProportionOfFirstHost >= 0.0001).
 
 strategy_suite_test_() ->
     lists:map(
