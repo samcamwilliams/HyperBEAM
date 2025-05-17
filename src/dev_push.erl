@@ -493,10 +493,10 @@ commit_result(Msg, Committers, Codec, Opts) ->
         fun(Committer, Acc) ->
             case hb_opts:as(Committer, Opts) of
                 {ok, CommitterOpts} ->
-                    ?event(debug_commit, {signing}),
+                    ?event(debug_commit, {signing_with_identity, Committer}),
                     hb_message:commit(Acc, CommitterOpts);
                 {error, not_found} ->
-                    ?event(debug_commit, {signing_not_found}),
+                    ?event(debug_commit, desired_signer_not_available_on_node),
                     ?event(push,
                         {policy_warning,
                             {
