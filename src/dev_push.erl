@@ -74,16 +74,16 @@ is_async(Process, Req, Opts) ->
     ).
 
 %% @doc Push a message or slot number, including its downstream results.
-do_push(Process, Assignment, Opts) ->
+do_push(PrimaryProcess, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
-    ID = dev_process:process_id(Process, #{}, Opts),
+    ID = dev_process:process_id(PrimaryProcess, #{}, Opts),
     UncommittedID =
         dev_process:process_id(
-            Process,
+            PrimaryProcess,
             #{ <<"commitments">> => <<"none">> },
             Opts
         ),
-    BaseID = calculate_base_id(Process, Opts),
+    BaseID = calculate_base_id(PrimaryProcess, Opts),
     ?event(debug,
         {push_computing_outbox,
             {process_id, ID},
@@ -93,7 +93,7 @@ do_push(Process, Assignment, Opts) ->
     ),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     {Status, Result} = hb_ao:resolve(
-        {as, <<"process@1.0">>, Process},
+        {as, <<"process@1.0">>, PrimaryProcess},
         #{ <<"path">> => <<"compute/results">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
@@ -127,9 +127,9 @@ do_push(Process, Assignment, Opts) ->
                 maps:map(
                     fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
                         case hb_cache:read(Target, Opts) of
-                            {ok, PushBase} ->
+                            {ok, DownstreamProcess} ->
                                 push_result_message(
-                                    PushBase,
+                                    DownstreamProcess,
                                     MsgToPush,
                                     #{
                                         <<"process">> => ID,
@@ -141,13 +141,13 @@ do_push(Process, Assignment, Opts) ->
                                         <<"from-scheduler">> =>
                                             hb_ao:get(
                                                 <<"scheduler">>,
-                                                PushBase,
+                                                PrimaryProcess,
                                                 Opts
                                             ),
                                         <<"from-authority">> =>
                                             hb_ao:get(
                                                 <<"authority">>,
-                                                PushBase,
+                                                PrimaryProcess,
                                                 Opts
                                             )
                                     },
