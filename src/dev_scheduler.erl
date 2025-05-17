@@ -1289,7 +1289,28 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
             },
             hb_http:post(Node, PostMsg, RemoteOpts);
         <<"ao.TN.1">> ->
-            post_legacy_schedule(ProcID, OnlyCommitted, Node, RemoteOpts)
+            % Ensure that the message is signed with ANS-104.
+            WithANS104Comms =
+                hb_message:with_commitments(
+                    #{ <<"commitment-device">> => <<"ans104@1.0">> },
+                    OnlyCommitted,
+                    Opts
+                ),
+            case hb_message:signers(WithANS104Comms) of
+                [] ->
+                    {error, #{
+                        <<"status">> => 422,
+                        <<"body">> =>
+                            <<
+                                "Process resides on legacy scheduler. ",
+                                "Message must be signed with ANS-104."
+                            >>
+                    }};
+                _ ->
+                    % The message is signed with ANS-104, so we can post it to
+                    % the legacy scheduler.
+                    post_legacy_schedule(ProcID, WithANS104Comms, Node, RemoteOpts)
+            end
     end.
 
 post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->

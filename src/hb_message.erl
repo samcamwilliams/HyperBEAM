@@ -59,7 +59,7 @@
 -export([committed/1, committed/2, committed/3]).
 -export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
--export([with_commitments/2, without_commitments/2]).
+-export([with_commitments/2, with_commitments/3, without_commitments/2]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
