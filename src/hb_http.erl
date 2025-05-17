@@ -553,7 +553,7 @@ encode_reply(TABMReq, Message, Opts) ->
                 ),
             {
                 ok,
-                maps:without([<<"body">>], EncMessage),
+                maps:without([<<"body">>, <<"body-keys">>], EncMessage),
                 maps:get(<<"body">>, EncMessage, <<>>)
             };
         <<"ans104@1.0">> ->

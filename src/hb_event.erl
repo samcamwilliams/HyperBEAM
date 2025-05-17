@@ -29,7 +29,7 @@ log(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
     end;
 log(Topic, X, Mod, Func, Line, Opts) ->
     % Check if the debug_print option has the topic in it if set.
-    case Printable = hb_opts:get(debug_print, false, Opts) of
+    case hb_opts:get(debug_print, false, Opts) of
         EventList when is_list(EventList) ->
             case lists:member(Mod, EventList)
                 orelse lists:member(hb_util:bin(Topic), EventList)
