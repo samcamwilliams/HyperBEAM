@@ -136,6 +136,7 @@ local function normalize_table(value)
     -- If value is already a table, return it. If it is not a string, return
     -- a table containing only the value.
     if type(value) == "table" then
+        ao.event({ "Table already normalized", { table = value } })
         return value
     elseif type(value) ~= "string" then
         return { value }
@@ -179,7 +180,7 @@ end
 -- - `X-match`: A count of the number of `X`s that must be present in the subject.
 --              Default: Length of `X`.
 -- - `X-required`: A list of `X`s that must be present in the subject.
---                Default: `{}`.
+--                 Default: `{}`.
 local function satisfies_list_constraints(subject, all, required, match)
     -- Normalize the fields to tables, aside from the match count.
     subject = normalize_table(subject)
@@ -187,12 +188,29 @@ local function satisfies_list_constraints(subject, all, required, match)
     required = normalize_table(required or {})
     -- Normalize the match count.
     match = match or #all
+    match = normalize_int(match)
+
+    ao.event({ "Satisfies list constraints", {
+        subject = subject,
+        all = all,
+        match = match
+    }})
 
     -- Check that the subject satisfies the grammar's constraints.
     -- 1. The subject must have at least `match' elements in common with `all'.
     -- 2. The subject must contain all elements in `required'.
     local count = count_common(subject, all)
     local required_count = count_common(required, subject)
+
+    ao.event({ "Counts", {
+        subject = subject,
+        all = all,
+        required = required,
+        match = match,
+        count = count,
+        required_count = required_count
+    }})
+
     return (count >= match) and (required_count == #required)
 end
 
