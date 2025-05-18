@@ -192,6 +192,7 @@ deploy_scripts(Dir) ->
         Msg =
             hb_message:commit(
                 #{
+                    <<"data-protocol">> => <<"ao">>,
                     <<"content-type">> => <<"application/lua">>,
                     <<"name">> => File,
                     <<"body">> => Script

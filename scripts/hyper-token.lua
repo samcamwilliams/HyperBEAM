@@ -716,14 +716,14 @@ function transfer(base, assignment)
             action = "Transfer",
             target = base.token,
             recipient = request.recipient,
-            quantity = request.quantity
+            quantity = string.format('%d', math.floor(request.quantity))
         })
         return log_result(base, "ok", {
             message = "Ledger-root transfer processed successfully.",
             from_user = request.from,
             to_ledger = base.token,
             to_user = request.recipient,
-            quantity = request.quantity
+            quantity = string.format('%d', math.floor(request.quantity))
         })
     end
 
