@@ -23,7 +23,7 @@
 -export([slot/3, status/3, next/3]).
 -export([start/0, checkpoint/1]).
 %%% Utility functions:
--export([parse_schedulers/1, normalize_schedulers/1]).
+-export([parse_schedulers/1]).
 %%% Test helper exports:
 -export([test_process/0]).
 -include("include/hb.hrl").
@@ -67,19 +67,6 @@ parse_schedulers(SchedLoc) when is_binary(SchedLoc) ->
         binary:replace(SchedLoc, <<"\"">>, <<"">>, [global]),
         <<",">>,
         [global, trim_all]
-    ).
-
-%% @doc Serialize the given scheduler list to a string.
-normalize_schedulers(SchedList) when is_list(SchedList) -> SchedList;
-normalize_schedulers(SchedList) when is_binary(SchedList) ->
-    iolist_to_binary(
-        hb_structured_fields:list(
-            [
-                {item, {string, Addr}, []}
-            ||
-                Addr <- SchedList
-            ]
-        )
     ).
 
 %% @doc The default handler for the scheduler device.

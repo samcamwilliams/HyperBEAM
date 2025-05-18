@@ -4,7 +4,7 @@
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
--export([upload/2]).
+-export([upload/2, upload/3]).
 %% Tests
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").

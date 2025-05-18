@@ -5,7 +5,8 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/2, number/1, list_to_numbered_map/1]).
+-export([deep_merge/2, number/1]).
+-export([list_to_numbered_map/1, addresses_to_binary/1, binary_to_addresses/1]).
 -export([is_ordered_list/1, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
@@ -747,9 +748,57 @@ weighted_random(List) ->
     Shuffled = shuffle(Normalized),
     pick_weighted(Shuffled, rand:uniform()).
 
+%% @doc Pick a random element from a list, weighted by the values in the list.
 pick_weighted([], _) ->
     error(empty_list);
 pick_weighted([{Item, Weight}|_Rest], Remaining) when Remaining < Weight ->
     Item;
 pick_weighted([{_Item, Weight}|Rest], Remaining) ->
     pick_weighted(Rest, Remaining - Weight).
+
+%% @doc Serialize the given list of addresses to a binary, using the structured
+%% fields format.
+addresses_to_binary(List) when is_list(List) ->
+    try
+        iolist_to_binary(
+            hb_structured_fields:list(
+                [
+                    {item, {string, hb_util:human_id(Addr)}, []}
+                ||
+                    Addr <- List
+                ]
+            )
+        )
+    catch
+        _:_ ->
+            error({cannot_parse_list, List})
+    end.
+
+%% @doc Parse a list from a binary. First attempts to parse the binary as a
+%% structured-fields list, and if that fails, it attempts to parse the list as
+%% a comma-separated value, stripping quotes and whitespace.
+binary_to_addresses(List) when is_list(List) ->
+    % If the argument is already a list, return it.
+    binary_to_addresses(List);
+binary_to_addresses(List) when is_binary(List) ->
+    try 
+        Res = lists:map(
+            fun({item, {string, Item}, []}) ->
+                Item
+            end,
+            hb_structured_fields:parse_list(List)
+        ),
+        Res
+    catch
+        _:_ ->
+        try
+            binary:split(
+                binary:replace(List, <<"\"">>, <<"">>, [global]),
+                <<",">>,
+                [global, trim_all]
+            )
+        catch
+            _:_ ->
+                error({cannot_parse_list, List})
+        end
+    end.

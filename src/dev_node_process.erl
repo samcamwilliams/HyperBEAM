@@ -97,19 +97,21 @@ augment_definition(BaseDef, Opts) ->
                 hb_opts:get(priv_wallet, no_viable_wallet, Opts)
             )
         ),
+    SchedulersFromBase =
+        hb_util:binary_to_addresses(
+            hb_ao:get(<<"scheduler">>, BaseDef, <<>>, Opts)
+        ),
+    AuthoritiesFromBase =
+        hb_util:binary_to_addresses(
+            hb_ao:get(<<"authority">>, BaseDef, <<>>, Opts)
+        ),
+    Schedulers = (SchedulersFromBase -- [Address]) ++ [Address],
+    Authorities = (AuthoritiesFromBase -- [Address]) ++ [Address],
     % Normalize the scheduler and authority lists to binary strings.
     hb_ao:set(
         #{
-            <<"scheduler">> =>
-                dev_scheduler:normalize_schedulers(
-                    (hb_ao:get(<<"scheduler">>, BaseDef, [], Opts) -- [Address])
-                        ++ [Address]
-                ),
-            <<"authority">> =>
-                dev_scheduler:normalize_schedulers(
-                    (hb_ao:get(<<"authority">>, BaseDef, [], Opts) -- [Address])
-                        ++ [Address]
-                )
+            <<"scheduler">> => Schedulers,
+            <<"authority">> => Authorities
         },
         BaseDef
     ).

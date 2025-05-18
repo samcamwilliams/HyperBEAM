@@ -464,11 +464,7 @@ apply_security(authority, Msg, TargetProcess, Codec, Opts) ->
             ?event(push, {found_authority, {authority, Authority}}, Opts),
             commit_result(
                 Msg,
-                binary:split(
-                    binary:replace(Authority, <<"\"">>, <<"">>, [global]),
-                    <<",">>,
-                    [global, trim_all]
-                ),
+                hb_util:binary_to_addresses(Authority),
                 Codec,
                 Opts
             )
@@ -494,7 +490,7 @@ commit_result(Msg, Committers, Codec, Opts) ->
             case hb_opts:as(Committer, Opts) of
                 {ok, CommitterOpts} ->
                     ?event(debug_commit, {signing_with_identity, Committer}),
-                    hb_message:commit(Acc, CommitterOpts);
+                    hb_message:commit(Acc, CommitterOpts, Codec);
                 {error, not_found} ->
                     ?event(debug_commit, desired_signer_not_available_on_node),
                     ?event(push,
@@ -512,13 +508,14 @@ commit_result(Msg, Committers, Codec, Opts) ->
         hb_message:uncommitted(Msg),
         Committers
     ),
-    ?event(debug_commit, {explicit_signers, {explicit, hb_message:signers(Signed)}}),
+    ?event(debug_commit,
+        {signed_message_as, {explicit, hb_message:signers(Signed)}}
+    ),
     case hb_message:signers(Signed) of
         [] ->
             ?event(debug_commit, signing_with_default_identity),
             commit_result(Msg, [], Codec, Opts);
-        FoundSigners ->
-            ?event(debug_commit, {explicit_found_signers, {explicit, FoundSigners}}),
+        _FoundSigners ->
             Signed
     end.
 
