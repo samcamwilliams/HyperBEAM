@@ -29,7 +29,8 @@ from(Map) when is_map(Map) ->
 inject_at_path([Key], Value, Map) ->
     case maps:get(Key, Map, not_found) of
         not_found ->
-            Map#{ Key => Value };
+            % Added a trim to remove trailing spaces on config.flat.
+            Map#{ Key => string:trim(Value, trailing) };
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
             % If both are maps, merge them
             Map#{ Key => maps:merge(ExistingMap, Value) };
@@ -170,3 +171,8 @@ deep_nesting_test() ->
 empty_map_test() ->
     ?assertEqual(#{}, dev_codec_flat:from(#{})),
     ?assertEqual(#{}, dev_codec_flat:to(#{})).
+
+trim_values_test() ->
+    Flat = #{<<"address">> => <<"foo ">>},
+    Result = dev_codec_flat:from(Flat),
+    ?assertEqual(<<"foo">>, hb_ao:get(<<"address">>, Result, #{})).
