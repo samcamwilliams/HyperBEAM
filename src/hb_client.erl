@@ -86,8 +86,18 @@ arweave_timestamp() ->
 %%% Bundling and data access API
 
 %% @doc Upload a data item to the bundler node.
+%% Note: Uploads once per commitment device. Callers should filter the 
+%% commitments to only include the ones they are interested in, if this is not
+%% the desired behavior.
 upload(Msg, Opts) ->
-    upload(Msg, Opts, hb_ao:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts)).
+    UploadResults = 
+        lists:map(
+            fun(Device) ->
+                upload(Msg, Opts, Device)
+            end,
+            hb_message:commitment_devices(Msg, Opts)
+        ),
+    {ok, UploadResults}.
 upload(Msg, Opts, <<"httpsig@1.0">>) ->
     case hb_opts:get(bundler_httpsig, not_found, Opts) of
         not_found ->

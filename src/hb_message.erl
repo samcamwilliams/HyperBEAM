@@ -58,6 +58,7 @@
 -export([verify/1, verify/2, commit/2, commit/3, signers/1, type/1, minimize/1]).
 -export([committed/1, committed/2, committed/3]).
 -export([commitment/2, commitment/3]).
+-export([commitment_devices/2]).
 -export([with_only_committed/1, with_only_committed/2]).
 -export([with_commitments/2, with_commitments/3, without_commitments/2]).
 -export([match/2, match/3, find_target/3]).
@@ -604,6 +605,17 @@ commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
 commitment(_Spec, _Msg, _Opts) ->
     % The message has no commitments, so the spec can never match.
     not_found.
+
+%% @doc Return the devices for which there are commitments on a message.
+commitment_devices(#{ <<"commitments">> := Commitments }, Opts) ->
+    lists:map(
+        fun(CommMsg) ->
+            hb_ao:get(<<"commitment-device">>, CommMsg, Opts)
+        end,
+        maps:values(Commitments)
+    );
+commitment_devices(_Msg, _Opts) ->
+    [].
 
 %% @doc Implements a standard pattern in which the target for an operation is
 %% found by looking for a `target' key in the request. If the target is `self',

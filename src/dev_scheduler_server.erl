@@ -17,7 +17,7 @@ start(ProcID, Proc, Opts) ->
                 ok -> ok;
                 error ->
                     throw(
-                        {another_scheduler_already_registered,
+                        {another_scheduler_is_already_registered,
                             {proc_id, ProcID}
                         }
                     )
