@@ -346,8 +346,15 @@ load(Path) ->
         _ -> {error, not_found}
     end.
 load_bin(Bin) ->
-    try dev_codec_flat:deserialize(Bin) of
-        {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
+    % Trim trailing whitespace from each line in the file.
+    Ls =
+        lists:map(
+            fun(Line) -> string:trim(Line, trailing) end,
+            binary:split(Bin, <<"\n">>, [global])
+        ),
+    try dev_codec_flat:deserialize(iolist_to_binary(lists:join(<<"\n">>, Ls))) of
+        {ok, Map} ->
+            {ok, mimic_default_types(Map, new_atoms)}
     catch
         error:B -> {error, B}
     end.
