@@ -223,7 +223,7 @@ push_result_message(TargetProcess, MsgToPush, Origin, Opts) ->
                     RecvdID = hb_message:id(TargetBase, all),
                     ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
                     % Push the message downstream. We decrease the result-depth.
-                    Resurse =
+                    Recurse =
                         hb_ao:resolve(
                             {as, <<"process@1.0">>, TargetAsProcess},
                             #{
@@ -239,7 +239,7 @@ push_result_message(TargetProcess, MsgToPush, Origin, Opts) ->
                             },
                             Opts#{ cache_control => <<"always">> }
                         ),
-                    case Resurse of
+                    case Recurse of
                         {ok, Downstream} ->
                             #{
                                 <<"id">> => PushedMsgID,
