@@ -837,7 +837,8 @@ try_mount_encrypted_volume(AESKey, Opts) ->
     ?event(green_zone, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
-        volume_key => AESKey
+        volume_key => AESKey,
+        volume_skip_decryption => <<"true">>
     },
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
