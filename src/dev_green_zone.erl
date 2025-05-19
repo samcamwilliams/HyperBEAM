@@ -144,7 +144,9 @@ init(_M1, _M2, Opts) ->
                 case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
                     undefined ->
                         ?event(green_zone, {init, aes_key, generated}),
-                        crypto:strong_rand_bytes(32);
+                        AES = crypto:strong_rand_bytes(32),
+                        try_mount_encrypted_volume(AES, Opts),
+                        AES;
                     ExistingAES ->
                         ?event(green_zone, {init, aes_key, found}),
                         ExistingAES
