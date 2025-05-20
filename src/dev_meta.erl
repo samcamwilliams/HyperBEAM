@@ -81,10 +81,6 @@ handle_initialize([], _NodeMsg) ->
 %% as-is, aside all keys that are private (according to `hb_private').
 info(_, Request, NodeMsg) ->
     case hb_ao:get(<<"method">>, Request, NodeMsg) of
-        <<"GET">> ->
-            ?event({get_config_req, Request, NodeMsg}),
-            DynamicKeys = add_dynamic_keys(NodeMsg),	
-            embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 permanent ->
@@ -97,7 +93,10 @@ info(_, Request, NodeMsg) ->
                 _ ->
                     update_node_message(Request, NodeMsg)
             end;
-        _ -> embed_status({error, <<"Unsupported Meta/info method.">>})
+        _ ->
+            ?event({get_config_req, Request, NodeMsg}),
+            DynamicKeys = add_dynamic_keys(NodeMsg),	
+            embed_status({ok, filter_node_msg(DynamicKeys)})
     end.
 
 %% @doc Remove items from the node message that are not encodable into a

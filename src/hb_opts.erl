@@ -50,6 +50,7 @@ default_message() ->
         %% Preloaded devices for the node to use. These names override
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
+            #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
