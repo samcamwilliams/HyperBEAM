@@ -144,7 +144,9 @@ init(_M1, _M2, Opts) ->
                 case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
                     undefined ->
                         ?event(green_zone, {init, aes_key, generated}),
-                        crypto:strong_rand_bytes(32);
+                        AES = crypto:strong_rand_bytes(32),
+                        try_mount_encrypted_volume(AES, Opts),
+                        AES;
                     ExistingAES ->
                         ?event(green_zone, {init, aes_key, found}),
                         ExistingAES
@@ -837,7 +839,8 @@ try_mount_encrypted_volume(AESKey, Opts) ->
     ?event(green_zone, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
-        volume_key => AESKey
+        volume_key => AESKey,
+        volume_skip_decryption => <<"true">>
     },
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
