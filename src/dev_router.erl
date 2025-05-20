@@ -324,7 +324,7 @@ apply_route(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
     {ok, <<Path/binary, Suffix/binary>>};
 apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
     % Apply the regex to the path and replace the first occurrence.
-    case re:replace(Path, Match, With, [global]) of
+    case re:replace(Path, Match, With, [global, {return, binary}]) of
         NewPath when is_binary(NewPath) ->
             {ok, NewPath};
         _ -> {error, invalid_replace_args}
@@ -522,7 +522,7 @@ preprocess(Msg1, Msg2, Opts) ->
                     true -> #{ <<"commit-request">> => true };
                     false -> #{}
                 end,
-            {ok,
+            ReqBody = 
                 #{
                     <<"body">> =>
                         [
@@ -538,8 +538,9 @@ preprocess(Msg1, Msg2, Opts) ->
                                     )
                             }
                         ]
-                }
-            }
+                },
+            ?event(debug_preprocess, {req_body, ReqBody}),
+            {ok, ReqBody}
     end.
 
 %%% Tests

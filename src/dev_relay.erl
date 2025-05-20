@@ -63,20 +63,30 @@ call(M1, RawM2, Opts) ->
             ],
             Opts
         ),
+    Commit =
+        hb_ao:get_first(
+            [
+                {BaseTarget, <<"commit-request">>},
+                {RawM2, <<"relay-commit-request">>},
+                {M1, <<"relay-commit-request">>},
+                {RawM2, <<"commit-request">>},
+                {M1, <<"commit-request">>}
+            ],
+            Opts
+        ),
     TargetMod1 = BaseTarget#{
         <<"method">> => RelayMethod,
         <<"body">> => RelayBody,
         <<"path">> => RelayPath
     },
     TargetMod2 =
-        case hb_ao:get(<<"commit-request">>, BaseTarget, false, Opts) of
+        case Commit of
             true ->
                 case hb_opts:get(relay_allow_commit_request, false, Opts) of
                     true ->
                         hb_message:convert(
                             hb_message:commit(TargetMod1, Opts),
                             <<"httpsig@1.0">>,
-                            <<"stuctured@1.0">>,
                             Opts
                         );
                     false ->
@@ -185,7 +195,8 @@ commit_request_test() ->
     Node =
         hb_http_server:start_node(#{
             port => Port,
-            priv_wallet => ar_wallet:new(),
+            priv_wallet => Wallet,
+            relay_allow_commit_request => true,
             routes =>
                 [
                     #{
@@ -193,15 +204,14 @@ commit_request_test() ->
                         <<"strategy">> => <<"Nearest">>,
                         <<"nodes">> => [
                             #{
-                                <<"path">> =>
+                                <<"wallet">> => hb_util:human_id(Wallet),
+                                <<"match">> => <<"/test-commitments">>,
+                                <<"with">> => 
                                     <<
                                         "http://localhost:",
-                                            (hb_util:bin(Port))/binary,
+                                        (hb_util:bin(Port))/binary,
                                         "/commitments"
-                                    >>,
-                                <<"wallet">> => hb_util:human_id(Wallet),
-                                <<"match">> => <<"test-commitments">>,
-                                <<"with">> => <<"commitments">>
+                                    >>
                             }
                         ]
                     }
@@ -222,4 +232,5 @@ commit_request_test() ->
             #{}
         ),
     ?event({res, Res}),
+    ?event({node_wallet, hb_util:human_id(Wallet)}),
     ?assert(hb_message:committed(Res)).
