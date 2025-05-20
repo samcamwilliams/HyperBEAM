@@ -27,7 +27,7 @@
 %% - `target': The target message to relay. Defaults to the original message.
 %% - `relay-path': The path to relay the message to. Defaults to the original path.
 %% - `method': The method to use for the request. Defaults to the original method.
-%% - `requires-sign': Whether the request requires signing before dispatching.
+%% - `commit-request': Whether the request should be committed before dispatching.
 %% Defaults to `false'.
 call(M1, RawM2, Opts) ->
     {ok, BaseTarget} = hb_message:find_target(M1, RawM2, Opts),
@@ -69,8 +69,19 @@ call(M1, RawM2, Opts) ->
         <<"path">> => RelayPath
     },
     TargetMod2 =
-        case hb_ao:get(<<"requires-sign">>, BaseTarget, false, Opts) of
-            true -> hb_message:commit(TargetMod1, Opts);
+        case hb_ao:get(<<"commit-request">>, BaseTarget, false, Opts) of
+            true ->
+                case hb_opts:get(relay_allow_commit_request, false, Opts) of
+                    true ->
+                        hb_message:convert(
+                            hb_message:commit(TargetMod1, Opts),
+                            <<"httpsig@1.0">>,
+                            <<"stuctured@1.0">>,
+                            Opts
+                        );
+                    false ->
+                        throw(relay_commit_request_not_allowed)
+                end;
             false -> TargetMod1
         end,
     Client =
@@ -167,3 +178,48 @@ request_hook_reroute_to_nearest_test() ->
         Peers
     ),
     ?assert(HasValidSigner).
+
+commit_request_test() ->
+    Port = 10000 + rand:uniform(10000),
+    Wallet = ar_wallet:new(),
+    Node =
+        hb_http_server:start_node(#{
+            port => Port,
+            priv_wallet => ar_wallet:new(),
+            routes =>
+                [
+                    #{
+                        <<"template">> => <<"/test-commitments">>,
+                        <<"strategy">> => <<"Nearest">>,
+                        <<"nodes">> => [
+                            #{
+                                <<"path">> =>
+                                    <<
+                                        "http://localhost:",
+                                            (hb_util:bin(Port))/binary,
+                                        "/commitments"
+                                    >>,
+                                <<"wallet">> => hb_util:human_id(Wallet),
+                                <<"match">> => <<"test-commitments">>,
+                                <<"with">> => <<"commitments">>
+                            }
+                        ]
+                    }
+                ],
+            on => #{
+                <<"request">> =>
+                    #{
+                        <<"device">> => <<"router@1.0">>,
+                        <<"path">> => <<"preprocess">>,
+                        <<"commit-request">> => true
+                    }
+                }
+        }),
+    {ok, Res} =
+        hb_http:get(
+            Node,
+            <<"/test-commitments">>,
+            #{}
+        ),
+    ?event({res, Res}),
+    ?assert(hb_message:committed(Res)).

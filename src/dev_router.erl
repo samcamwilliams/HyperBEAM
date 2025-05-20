@@ -476,7 +476,7 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
     Num.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-preprocess(_Msg1, Msg2, Opts) ->
+preprocess(Msg1, Msg2, Opts) ->
     Req = hb_ao:get(<<"request">>, Msg2, Opts),
     ?event(debug_preprocess, {called_preprocess,Req}),
     TemplateRoutes = load_routes(Opts),
@@ -506,11 +506,27 @@ preprocess(_Msg1, Msg2, Opts) ->
             end;
         _ -> 
             ?event(debug_preprocess, {matched_route, Match}),
+            CommitRequest =
+                hb_util:atom(
+                    hb_ao:get_first(
+                        [
+                            {Match, <<"commit-request">>},
+                            {Msg1, <<"commit-request">>}
+                        ],
+                        false,
+                        Opts
+                    )
+                ),
+            MaybeCommit =
+                case CommitRequest of
+                    true -> #{ <<"commit-request">> => true };
+                    false -> #{}
+                end,
             {ok,
                 #{
                     <<"body">> =>
                         [
-                            #{ <<"device">> => <<"relay@1.0">> },
+                            MaybeCommit#{ <<"device">> => <<"relay@1.0">> },
                             #{
                                 <<"path">> => <<"call">>,
                                 <<"target">> => <<"body">>,
