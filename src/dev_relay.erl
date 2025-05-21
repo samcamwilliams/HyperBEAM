@@ -38,7 +38,8 @@ call(M1, RawM2, Opts) ->
             [
                 {M1, <<"path">>},
                 {{as, <<"message@1.0">>, BaseTarget}, <<"path">>},
-                {RawM2, <<"path">>}
+                {RawM2, <<"relay-path">>},
+                {M1, <<"relay-path">>}
             ],
             Opts
         ),
@@ -57,22 +58,22 @@ call(M1, RawM2, Opts) ->
                 {M1, <<"method">>},
                 {{as, <<"message@1.0">>, BaseTarget}, <<"method">>},
                 {RawM2, <<"relay-method">>},
+                {M1, <<"relay-method">>},
                 {RawM2, <<"method">>}
             ],
             Opts
         ),
-    % RelayBody =
-    %     hb_ao:get_first(
-    %         [
-    %             {{as, <<"message@1.0">>, BaseTarget}, <<"body">>},
-    %             {RawM2, <<"relay-body">>},
-    %             {M1, <<"relay-body">>},
-    %             {RawM2, <<"body">>},
-    %             {M1, <<"body">>}
-    %         ],
-    %         <<"i like turtles">>,
-    %         Opts
-    %     ),
+    RelayBody =
+        hb_ao:get_first(
+            [
+                {M1, <<"body">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"body">>},
+                {RawM2, <<"relay-body">>},
+                {M1, <<"relay-body">>},
+                {RawM2, <<"body">>}
+            ],
+            Opts
+        ),
     Commit =
         hb_ao:get_first(
             [
@@ -85,30 +86,29 @@ call(M1, RawM2, Opts) ->
             false,
             Opts
         ),
-    % TargetMod1 =
-    %     if RelayBody == not_found -> BaseTarget;
-    %     true -> BaseTarget#{<<"body">> => RelayBody}
-    %     end,
-    TargetMod1 = BaseTarget,
-    TargetMod2 =
+    TargetMod1 =
+        if RelayBody == not_found -> BaseTarget;
+        true -> BaseTarget#{<<"body">> => RelayBody}
+        end,
+    TargetMod2 = TargetMod1#{
+        <<"method">> => RelayMethod,
+        <<"path">> => RelayPath
+    },
+    TargetMod3 =
         case Commit of
             true ->
                 case hb_opts:get(relay_allow_commit_request, false, Opts) of
                     true ->
-                        ?event(debug_relay, {recommitting, TargetMod1}),
-                        Committed = hb_message:commit(TargetMod1, Opts),
+                        ?event(debug_relay, {recommitting, TargetMod2}),
+                        Committed = hb_message:commit(TargetMod2, Opts),
                         ?event({relay_call, {committed, Committed}}),
                         true = hb_message:verify(Committed, all),
                         Committed;
                     false ->
                         throw(relay_commit_request_not_allowed)
                 end;
-            false -> TargetMod1
+            false -> TargetMod2
         end,
-    TargetMod3 = TargetMod2#{
-        <<"method">> => RelayMethod,
-        <<"path">> => RelayPath
-    },
     ?event(debug_relay, {relay_call, {without_http_params, TargetMod2}}),
     ?event(debug_relay, {relay_call, {with_http_params, TargetMod3}}),
     true = hb_message:verify(TargetMod3),
@@ -229,7 +229,13 @@ request_hook_reroute_to_nearest_test() ->
 commit_request_test() ->
     Port = 10000 + rand:uniform(10000),
     Wallet = ar_wallet:new(),
-    Executor = hb_http_server:start_node(#{ port => Port, force_signed_requests => false }),
+    Executor =
+        hb_http_server:start_node(
+            #{
+                port => Port,
+                force_signed_requests => true
+            }
+        ),
     Node =
         hb_http_server:start_node(#{
             priv_wallet => Wallet,

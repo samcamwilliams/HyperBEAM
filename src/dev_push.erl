@@ -867,7 +867,9 @@ push_with_redirect_hint_test_disabled() ->
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
-push_prompts_encoding_change_test() ->
+push_prompts_encoding_change_test_() ->
+    {timeout, 30, fun push_prompts_encoding_change/0}.
+push_prompts_encoding_change() ->
     dev_process:init(),
     Opts = #{
         priv_wallet => hb:wallet(),

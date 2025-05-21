@@ -261,7 +261,7 @@ uncommitted(Msg) ->
 %% addresses.
 signers(Msg) ->
     lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
-        hb_ao:get(<<"committers">>, {as, <<"message@1.0">>, Msg}, #{})).
+        hb_util:ok(dev_message:committers(Msg))).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
