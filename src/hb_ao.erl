@@ -126,12 +126,12 @@
 %%     11: Recurse or terminate.
 
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
-    resolve_many(hb_singleton:from(SingletonMsg), Opts).
+    resolve_many(hb_singleton:from(SingletonMsg, Opts), Opts).
 
 resolve(Msg1, Path, Opts) when not is_map(Path) ->
     resolve(Msg1, #{ <<"path">> => Path }, Opts);
 resolve(Msg1, Msg2, Opts) ->
-    PathParts = hb_path:from_message(request, Msg2),
+    PathParts = hb_path:from_message(request, Msg2, Opts),
     ?event(ao_core, {stage, 1, prepare_multimessage_resolution, {path_parts, PathParts}}),
     MessagesToExec = [ Msg2#{ <<"path">> => Path } || Path <- PathParts ],
     ?event(ao_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
@@ -611,7 +611,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     % If there is no path but there are elements to the request, we set these on
     % the base message. If there is a path, we do not modify the base message 
     % and instead apply the request message directly.
-    case hb_path:from_message(request, Req) of
+    case hb_path:from_message(request, Req, Opts) of
         undefined ->
             Msg1c =
                 case map_size(hb_maps:without([<<"path">>], Req, Opts)) of
@@ -862,7 +862,7 @@ set(Msg1, Key, Value, Opts) ->
     % For an individual key, we run deep_set with the key as the path.
     % This handles both the case that the key is a path as well as the case
     % that it is a single key.
-    Path = hb_path:term_to_path_parts(Key),
+    Path = hb_path:term_to_path_parts(Key, Opts),
     % ?event(
     %     {setting_individual_key,
     %         {msg1, Msg1},

@@ -84,7 +84,7 @@ list(Opts, Path) ->
 %%
 %% will resolve "a/b/c" to "Correct data".
 resolve(Opts, RawPath) ->
-    Res = resolve(Opts, "", hb_path:term_to_path_parts(hb_store:join(RawPath))),
+    Res = resolve(Opts, "", hb_path:term_to_path_parts(hb_store:join(RawPath), Opts)),
     ?event({resolved, RawPath, Res}),
     Res.
 resolve(_, CurrPath, []) ->

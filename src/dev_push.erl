@@ -151,7 +151,7 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     ),
                     {ok, TargetBase} = hb_cache:read(TargetID, Opts),
                     TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
-                    RecvdID = hb_message:id(TargetBase, all),
+                    RecvdID = hb_message:id(TargetBase, all, Opts),
                     ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
                     Resurse = hb_ao:resolve(
                         {as, <<"process@1.0">>, TargetAsProcess},
@@ -383,7 +383,7 @@ full_push_test_() ->
         ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
+        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script, Opts),
         ?event({msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),

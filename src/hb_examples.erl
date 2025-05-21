@@ -77,7 +77,13 @@ paid_wasm_test() ->
         },
     HostNode =
         hb_http_server:start_node(
-            #{
+            Opts = #{
+				store => [
+					#{
+						<<"store-module">> => hb_store_fs,
+						<<"prefix">> => <<"cache-TEST">>
+					}
+				],
                 simple_pay_ledger => #{ ClientAddress => 100 },
                 simple_pay_price => 10,
                 operator => ar_wallet:to_address(HostWallet),
@@ -95,21 +101,21 @@ paid_wasm_test() ->
                 <<"body">> => WASMFile,
                 <<"parameters+list">> => <<"3.0">>
             },
-            ClientWallet
+            Opts#{ priv_wallet => ClientWallet }
         ),
-    {ok, Res} = hb_http:post(HostNode, ClientMessage1, #{}),
+    {ok, Res} = hb_http:post(HostNode, ClientMessage1, Opts),
     % Check that the message is signed by the host node.
-    ?assert(length(hb_message:signers(Res, #{})) > 0),
-    ?assert(hb_message:verify(Res, all, #{})),
+    ?assert(length(hb_message:signers(Res, Opts)) > 0),
+    ?assert(hb_message:verify(Res, all, Opts)),
     % Now we have the results, we can verify them.
-    ?assertMatch(6.0, hb_ao:get(<<"output/1">>, Res, #{})),
+    ?assertMatch(6.0, hb_ao:get(<<"output/1">>, Res, Opts)),
     % Check that the client's balance has been deducted.
     ClientMessage2 =
         hb_message:commit(
             #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
             ClientWallet
         ),
-    {ok, Res2} = hb_http:get(HostNode, ClientMessage2, #{}),
+    {ok, Res2} = hb_http:get(HostNode, ClientMessage2, Opts),
     ?assertMatch(40, Res2).
 
 create_schedule_aos2_test_disabled() ->

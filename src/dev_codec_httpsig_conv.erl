@@ -736,7 +736,7 @@ encode_http_msg(Msg, Opts) ->
     HeaderList =
         lists:foldl(
             fun ({HeaderName, RawHeaderVal}, Acc) ->
-                HVal = hb_cache:ensure_loaded(RawHeaderVal),
+                HVal = hb_cache:ensure_loaded(RawHeaderVal, Opts),
                 ?event({encoding_http_header, {header, HeaderName}, {value, HVal}}),
                 [<<HeaderName/binary, ": ", HVal/binary>> | Acc]
             end,

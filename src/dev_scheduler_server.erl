@@ -91,7 +91,7 @@ assign(State, Message, ReplyPID) ->
 %% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
 	Opts = maps:get(opts, State),
-    HashChain = next_hashchain(hb_maps:get(hash_chain, State, undefined, Opts), Message),
+    HashChain = next_hashchain(hb_maps:get(hash_chain, State, undefined, Opts), Message, Opts),
     NextSlot = hb_maps:get(current, State, undefined, Opts) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
     % process.
@@ -100,7 +100,7 @@ do_assign(State, Message, ReplyPID) ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:commit(#{
                 <<"path">> =>
-                    case hb_path:from_message(request, Message) of
+                    case hb_path:from_message(request, Message, Opts) of
                         undefined -> <<"compute">>;
                         Path -> Path
                     end,
@@ -116,7 +116,7 @@ do_assign(State, Message, ReplyPID) ->
                 <<"timestamp">> => erlang:system_time(millisecond),
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
-            }, maps:get(wallet, State)),
+            }, Opts#{priv_wallet => maps:get(wallet, State)}),
             AssignmentID = hb_message:id(Assignment, all, Opts),
             ?event(scheduling,
                 {assigned,
@@ -173,9 +173,9 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, Opts) ->
 
 %% @doc Create the next element in a chain of hashes that links this and prior
 %% assignments.
-next_hashchain(HashChain, Message) ->
+next_hashchain(HashChain, Message, Opts) ->
     ?event({creating_next_hashchain, {hash_chain, HashChain}, {message, Message}}),
-    ID = hb_message:id(Message, all),
+    ID = hb_message:id(Message, all, Opts),
     crypto:hash(
         sha256,
         << HashChain/binary, ID/binary >>

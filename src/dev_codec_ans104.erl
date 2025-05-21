@@ -216,10 +216,12 @@ do_from(RawTX, Req, Opts) ->
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"committer">> => Address,
                     <<"committed">> =>
-                        hb_util:unique(
-                            ?BASE_COMMITTED_TAGS
-                                ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
-                        ),
+						hb_ao:normalize_keys(
+							hb_util:unique(
+								?BASE_COMMITTED_TAGS
+									++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
+							)
+						),
                     <<"keyid">> => hb_util:encode(TX#tx.owner),
                     <<"signature">> => hb_util:encode(TX#tx.signature),
                     <<"type">> => <<"rsa-pss-sha256">>

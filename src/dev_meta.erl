@@ -49,7 +49,7 @@ is_operator(Request, NodeMsg) ->
 %% other messages are routed to the `handle_resolve/2' function.
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
-    NormRequest = hb_singleton:from(RawRequest),
+    NormRequest = hb_singleton:from(RawRequest, NodeMsg),
     ?event(http, {request, hb_ao:normalize_keys(NormRequest, NodeMsg)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->

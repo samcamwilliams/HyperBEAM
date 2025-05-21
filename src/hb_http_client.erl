@@ -198,7 +198,7 @@ maybe_invoke_monitor(Details, Opts) ->
                 },
             % Use the singleton parse to generate the message sequence to 
             % execute.
-            ReqMsgs = hb_singleton:from(Req),
+            ReqMsgs = hb_singleton:from(Req, Opts),
             Res = hb_ao:resolve_many(ReqMsgs, Opts),
             ?event(http_monitor, {resolved_monitor, Res})
     end.

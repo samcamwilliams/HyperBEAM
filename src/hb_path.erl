@@ -36,7 +36,7 @@
 -export([pop_request/2]).
 -export([priv_remaining/2, priv_store_remaining/2, priv_store_remaining/3]).
 -export([verify_hashpath/2]).
--export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
+-export([term_to_path_parts/1, term_to_path_parts/2, from_message/3]).
 -export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -136,7 +136,7 @@ hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
     Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2, Opts),
-    ReqPath = from_message(request, Msg2),
+    ReqPath = from_message(request, Msg2, Opts),
     case {map_size(Msg2WithoutMeta), ReqPath} of
         {0, _} when ReqPath =/= undefined ->
             hashpath(Msg1, to_binary(hd(ReqPath)), HashpathAlg, Opts);
@@ -149,10 +149,10 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
                 ),
             hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
     end;
-hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, _Opts) ->
+hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, Opts) ->
     ?event({hashpath, {msg1hp, {explicit, Msg1Hashpath}}, {msg2id, {explicit, HumanMsg2ID}}}),
     HP = 
-        case term_to_path_parts(Msg1Hashpath) of
+        case term_to_path_parts(Msg1Hashpath, Opts) of
             [_] ->
                 << Msg1Hashpath/binary, "/", HumanMsg2ID/binary >>;
             [Prev1, Prev2] ->
@@ -190,13 +190,13 @@ hashpath_alg(Msg, Opts) ->
 push_request(Msg, Path) ->
     push_request(Msg, Path, #{}).
 push_request(Msg, Path, Opts) ->
-    hb_maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg, Opts).
+    hb_maps:put(<<"path">>, term_to_path_parts(Path, Opts) ++ from_message(request, Msg, Opts), Msg, Opts).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
 pop_request(Msg, Opts) when is_map(Msg) ->
     %?event({popping_request, {msg, Msg}, {opts, Opts}}),
-    case pop_request(from_message(request, Msg), Opts) of
+    case pop_request(from_message(request, Msg, Opts), Opts) of
         undefined -> undefined;
         {undefined, _} -> undefined;
         {Head, []} -> {Head, undefined};
@@ -214,13 +214,13 @@ pop_request([Head|Rest], _Opts) ->
 queue_request(Msg, Path) ->
     queue_request(Msg, Path, #{}).
 queue_request(Msg, Path, Opts) ->
-    hb_maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg, Opts).
+    hb_maps:put(<<"path">>, from_message(request, Msg, Opts) ++ term_to_path_parts(Path), Msg, Opts).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
 verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
     CorrectHashpath = hashpath(Msg1, Msg2, Opts),
-    FromMsg3 = from_message(hashpath, Msg3),
+    FromMsg3 = from_message(hashpath, Msg3, Opts),
     CorrectHashpath == FromMsg3 andalso
         case Rest of
             [] -> true;
@@ -233,20 +233,20 @@ verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
 %% viable hashpath and path in its Erlang map at all times, unless the message
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
-from_message(Type, Link) when ?IS_LINK(Link) ->
-    from_message(Type, hb_cache:ensure_loaded(Link));
-from_message(hashpath, Msg) -> hashpath(Msg, #{});
-from_message(request, #{ path := Path }) -> term_to_path_parts(Path);
-from_message(request, #{ <<"path">> := Path }) -> term_to_path_parts(Path);
-from_message(request, #{ <<"Path">> := Path }) -> term_to_path_parts(Path);
-from_message(request, _) -> undefined.
+from_message(Type, Link, Opts) when ?IS_LINK(Link) ->
+    from_message(Type, hb_cache:ensure_loaded(Link, Opts), Opts);
+from_message(hashpath, Msg, Opts) -> hashpath(Msg, Opts);
+from_message(request, #{ path := Path }, Opts) -> term_to_path_parts(Path, Opts);
+from_message(request, #{ <<"path">> := Path }, Opts) -> term_to_path_parts(Path, Opts);
+from_message(request, #{ <<"Path">> := Path }, Opts) -> term_to_path_parts(Path, Opts);
+from_message(request, _, _Opts) -> undefined.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path_parts(Path) ->
     term_to_path_parts(Path, #{ error_strategy => throw }).
 term_to_path_parts(Link, Opts) when ?IS_LINK(Link) ->
-    term_to_path_parts(hb_cache:ensure_loaded(Link), Opts);
+    term_to_path_parts(hb_cache:ensure_loaded(Link, Opts), Opts);
 term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(<<>>, _Opts) -> undefined;
 term_to_path_parts(<<"/">>, _Opts) -> [];

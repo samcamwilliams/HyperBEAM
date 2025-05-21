@@ -128,7 +128,7 @@ return(Result, ExecState, Opts) ->
 %% (using `hb_ao:resolve_many/2') variants.
 resolve([SingletonMsg], ExecState, ExecOpts) ->
     ?event({ao_core_resolver, {msg, SingletonMsg}}),
-    ParsedMsgs = hb_singleton:from(SingletonMsg),
+    ParsedMsgs = hb_singleton:from(SingletonMsg, ExecOpts),
     ?event({parsed_msgs_to_resolve, ParsedMsgs}),
     resolve({many, ParsedMsgs}, ExecState, ExecOpts);
 resolve([Base, Path], ExecState, ExecOpts) when is_binary(Path) ->

@@ -26,7 +26,7 @@ write(ProcID, Slot, Msg, Opts) ->
     MsgIDPath =
         path(
             ProcID,
-            ID = hb_util:human_id(hb_ao:get(id, Msg)),
+            ID = hb_util:human_id(hb_ao:get(id, Msg, Opts)),
             Opts
         ),
     ?event({linking_id, {proc_id, ProcID}, {slot, Slot}, {id, ID}, {path, MsgIDPath}}),

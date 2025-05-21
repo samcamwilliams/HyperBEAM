@@ -57,8 +57,8 @@ compute(M1, M2, Opts) ->
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
 prep_call(RawM1, RawM2, Opts) ->
-    M1 = hb_cache:ensure_all_loaded(RawM1),
-    M2 = hb_cache:ensure_all_loaded(RawM2),
+    M1 = hb_cache:ensure_all_loaded(RawM1, Opts),
+    M2 = hb_cache:ensure_all_loaded(RawM2, Opts),
     ?event({prep_call, M1, M2, Opts}),
     Process = hb_ao:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
     Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
@@ -88,11 +88,11 @@ denormalize_message(Message, Opts) ->
                 Message#{
                     <<"owner">> => hb_util:human_id(PrimarySigner),
                     <<"signature">> =>
-                        hb_ao:get(<<"signature">>, Commitment, <<>>, #{})
+                        hb_ao:get(<<"signature">>, Commitment, <<>>, Opts)
                 }
         end,
     NormOwnerMsg#{
-        <<"id">> => hb_message:id(Message, all)
+        <<"id">> => hb_message:id(Message, all, Opts)
     }.
 
 message_to_json_struct(RawMsg, Opts) ->
@@ -107,7 +107,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
     MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
-    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
+    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
 	Owner =
         case hb_message:signers(RawMsg, Opts) of
             [] -> <<>>;
@@ -121,7 +121,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
                                 {as, <<"message@1.0">>, RawMsg},
                                 #{}
                             ),
-                        case hb_ao:get(<<"owner">>, Commitment, #{}) of
+                        case hb_ao:get(<<"owner">>, Commitment, Opts) of
                             not_found ->
                                 % The signature is likely a HTTPsig, so we need 
                                 % to extract the owner from the signature.
@@ -133,17 +133,17 @@ message_to_json_struct(RawMsg, Features, Opts) ->
                         end
                 end
         end,
-    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
-    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
+    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
+    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
     % Set "From" if From-Process is Tag or set with "Owner" address
     From =
         hb_ao:get(
             <<"from-process">>,
             {as, <<"message@1.0">>, MsgWithoutCommitments},
             hb_util:encode(Owner),
-            #{}
+            Opts
         ),
-    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
+    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
     #{
         <<"Id">> => safe_to_id(ID),
         % NOTE: In Arweave TXs, these are called "last_tx"
@@ -166,7 +166,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
 %% construction of the JSON-Struct message.
 prepare_tags(Msg, Opts) ->
     % Prepare an ANS-104 message for JSON-Struct construction.
-    case hb_message:commitment(#{ <<"commitment-device">> => <<"ans104@1.0">> }, Msg, #{}) of
+    case hb_message:commitment(#{ <<"commitment-device">> => <<"ans104@1.0">> }, Msg, Opts) of
         {ok, _, Commitment} ->
             case hb_maps:find(<<"original-tags">>, Commitment, Opts) of
                 {ok, OriginalTags} ->

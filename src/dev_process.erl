@@ -117,7 +117,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
             hashpath => ignore
         }
     ),
-    ProcID = hb_message:id(Msg1, all),
+    ProcID = hb_message:id(Msg1, all, Opts),
     Slot = hb_ao:get(<<"at-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
@@ -141,7 +141,7 @@ process_id(Msg1, Msg2, Opts) ->
         not_found ->
             process_id(ensure_process_key(Msg1, Opts), Msg2, Opts);
         Process ->
-            hb_message:id(Process, all)
+            hb_message:id(Process, all, Opts)
     end.
 
 %% @doc Before computation begins, a boot phase is required. This phase
@@ -273,7 +273,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
     NextSlot = hb_util:int(hb_ao:get(<<"slot">>, RawInputMsg, Opts)),
     % If the input message does not have a path, set it to `compute'.
     InputMsg =
-        case hb_path:from_message(request, RawInputMsg) of
+        case hb_path:from_message(request, RawInputMsg, Opts) of
             undefined -> RawInputMsg#{ <<"path">> => <<"compute">> };
             _ -> RawInputMsg
         end,
@@ -532,7 +532,7 @@ ensure_process_key(Msg1, Opts) ->
                 case hb_message:signers(Msg1, Opts) of
                     [] ->
                         ?event({process_key_not_found_no_signers, {msg1, Msg1}}),
-                        case hb_cache:read(hb_message:id(Msg1, all), Opts) of
+                        case hb_cache:read(hb_message:id(Msg1, all, Opts), Opts) of
                             {ok, Proc} -> Proc;
                             not_found ->
                                 % Fallback to the original message if we cannot
@@ -596,7 +596,7 @@ test_wasm_process(WASMImage, Opts) ->
             },
 			Opts
         ),
-        Wallet
+        Opts#{ priv_wallet => Wallet}
     ).
 
 %% @doc Generate a process message with a random number, and the 
@@ -635,7 +635,7 @@ test_aos_process(Opts, Stack) ->
             },
 			Opts
         ),
-        Wallet
+        Opts#{ priv_wallet => Wallet}
     ).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
@@ -651,11 +651,11 @@ dev_test_process() ->
         Wallet
     ).
 
-schedule_test_message(Msg1, Text) ->
-    schedule_test_message(Msg1, Text, #{}).
-schedule_test_message(Msg1, Text, MsgBase) ->
+schedule_test_message(Msg1, Text, Opts) ->
+    schedule_test_message(Msg1, Text, #{}, Opts).
+schedule_test_message(Msg1, Text, MsgBase, Opts) ->
     Wallet = hb:wallet(),
-    UncommittedBase = hb_message:uncommitted(MsgBase, #{}),
+    UncommittedBase = hb_message:uncommitted(MsgBase, Opts),
     Msg2 =
         hb_message:commit(#{
                 <<"path">> => <<"schedule">>,
@@ -666,12 +666,12 @@ schedule_test_message(Msg1, Text, MsgBase) ->
                             <<"type">> => <<"Message">>,
                             <<"test-label">> => Text
                         },
-                        Wallet
+                        Opts#{ priv_wallet => Wallet}
                     )
             },
-            Wallet
+			Opts#{ priv_wallet => Wallet}
         ),
-    {ok, _} = hb_ao:resolve(Msg1, Msg2, #{}).
+    {ok, _} = hb_ao:resolve(Msg1, Msg2, Opts).
 
 schedule_aos_call(Msg1, Code) ->
     schedule_aos_call(Msg1, Code, #{}).
@@ -685,9 +685,9 @@ schedule_aos_call(Msg1, Code, Opts) ->
                 <<"data">> => Code,
                 <<"target">> => ProcID
             },
-            Wallet
+            Opts#{priv_wallet => Wallet}
         ),
-    schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
+    schedule_test_message(Msg1, <<"TEST MSG">>, Msg2, Opts).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
     schedule_wasm_call(Msg1, FuncName, Params, #{}).
@@ -703,36 +703,38 @@ schedule_wasm_call(Msg1, FuncName, Params, Opts) ->
                     <<"function">> => FuncName,
                     <<"parameters">> => Params
                 },
-                Wallet
+                Opts#{ priv_wallet => Wallet}
             )
-    }, Wallet),
+    }, Opts#{ priv_wallet => Wallet}),
     ?assertMatch({ok, _}, hb_ao:resolve(Msg1, Msg2, Opts)).
 
-schedule_on_process_test() ->
-    init(),
-    Msg1 = test_aos_process(),
-    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
-    ?event(messages_scheduled),
-    {ok, SchedulerRes} =
-        hb_ao:resolve(Msg1, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{}),
-    ?assertMatch(
-        <<"TEST TEXT 1">>,
-        hb_ao:get(<<"assignments/0/body/Test-Label">>, SchedulerRes)
-    ),
-    ?assertMatch(
-        <<"TEST TEXT 2">>,
-        hb_ao:get(<<"assignments/1/body/Test-Label">>, SchedulerRes)
-    ).
+schedule_on_process_test_() ->
+	{timeout, 30, fun()->
+		init(),
+		Msg1 = test_aos_process(),
+		schedule_test_message(Msg1, <<"TEST TEXT 1">>, #{}),
+		schedule_test_message(Msg1, <<"TEST TEXT 2">>, #{}),
+		?event(messages_scheduled),
+		{ok, SchedulerRes} =
+			hb_ao:resolve(Msg1, #{
+				<<"method">> => <<"GET">>,
+				<<"path">> => <<"schedule">>
+			}, #{}),
+		?assertMatch(
+			<<"TEST TEXT 1">>,
+			hb_ao:get(<<"assignments/0/body/Test-Label">>, SchedulerRes)
+		),
+		?assertMatch(
+			<<"TEST TEXT 2">>,
+			hb_ao:get(<<"assignments/1/body/Test-Label">>, SchedulerRes)
+		)
+	end}.
 
 get_scheduler_slot_test() ->
     init(),
     Msg1 = test_base_process(),
-    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>, #{}),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>, #{}),
     Msg2 = #{
         <<"path">> => <<"Slot">>,
         <<"method">> => <<"GET">>
@@ -745,7 +747,7 @@ get_scheduler_slot_test() ->
 recursive_path_resolution_test() ->
     init(),
     Msg1 = test_base_process(),
-    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>, #{}),
     CurrentSlot =
         hb_ao:resolve(
             Msg1,
@@ -762,8 +764,8 @@ recursive_path_resolution_test() ->
 test_device_compute_test() ->
     init(),
     Msg1 = dev_test_process(),
-    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>, #{}),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>, #{}),
     ?assertMatch(
         {ok, <<"TEST TEXT 2">>},
         hb_ao:resolve(
