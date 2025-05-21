@@ -30,43 +30,53 @@
 %% - `commit-request': Whether the request should be committed before dispatching.
 %% Defaults to `false'.
 call(M1, RawM2, Opts) ->
+    ?event({relay_call, {m1, M1}, {raw_m2, RawM2}}),
     {ok, BaseTarget} = hb_message:find_target(M1, RawM2, Opts),
+    ?event({relay_call, {message_to_relay, BaseTarget}}),
     RelayPath =
         hb_ao:get_first(
             [
-                {BaseTarget, <<"path">>},
-                {RawM2, <<"relay-path">>},
-                {M1, <<"relay-path">>},
-                {M1, <<"path">>}
+                {M1, <<"path">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"path">>},
+                {RawM2, <<"path">>}
+            ],
+            Opts
+        ),
+    RelayPeer =
+        hb_ao:get_first(
+            [
+                {M1, <<"peer">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"peer">>},
+                {RawM2, <<"peer">>}
             ],
             Opts
         ),
     RelayMethod =
         hb_ao:get_first(
             [
-                {BaseTarget, <<"method">>},
+                {M1, <<"method">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"method">>},
                 {RawM2, <<"relay-method">>},
-                {M1, <<"relay-method">>},
-                {RawM2, <<"method">>},
-                {M1, <<"method">>}
+                {RawM2, <<"method">>}
             ],
             Opts
         ),
-    RelayBody =
-        hb_ao:get_first(
-            [
-                {BaseTarget, <<"body">>},
-                {RawM2, <<"relay-body">>},
-                {M1, <<"relay-body">>},
-                {RawM2, <<"body">>},
-                {M1, <<"body">>}
-            ],
-            Opts
-        ),
+    % RelayBody =
+    %     hb_ao:get_first(
+    %         [
+    %             {{as, <<"message@1.0">>, BaseTarget}, <<"body">>},
+    %             {RawM2, <<"relay-body">>},
+    %             {M1, <<"relay-body">>},
+    %             {RawM2, <<"body">>},
+    %             {M1, <<"body">>}
+    %         ],
+    %         <<"i like turtles">>,
+    %         Opts
+    %     ),
     Commit =
         hb_ao:get_first(
             [
-                {BaseTarget, <<"commit-request">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"commit-request">>},
                 {RawM2, <<"relay-commit-request">>},
                 {M1, <<"relay-commit-request">>},
                 {RawM2, <<"commit-request">>},
@@ -75,34 +85,52 @@ call(M1, RawM2, Opts) ->
             false,
             Opts
         ),
-    TargetMod1 = BaseTarget#{
-        <<"method">> => RelayMethod,
-        <<"body">> => RelayBody,
-        <<"path">> => RelayPath
-    },
+    % TargetMod1 =
+    %     if RelayBody == not_found -> BaseTarget;
+    %     true -> BaseTarget#{<<"body">> => RelayBody}
+    %     end,
+    TargetMod1 = BaseTarget,
     TargetMod2 =
         case Commit of
             true ->
                 case hb_opts:get(relay_allow_commit_request, false, Opts) of
                     true ->
-                        hb_message:convert(
-                            hb_message:commit(TargetMod1, Opts),
-                            <<"httpsig@1.0">>,
-                            Opts
-                        );
+                        TargetWithoutPathMethod =
+                            maps:without([<<"method">>, <<"path">>], TargetMod1),
+                        Committed = hb_message:commit(TargetWithoutPathMethod, Opts),
+                        ?event({relay_call, {committed, Committed}}),
+                        true = hb_message:verify(Committed, all),
+                        Committed;
                     false ->
                         throw(relay_commit_request_not_allowed)
                 end;
             false -> TargetMod1
         end,
+    TargetMod3 = TargetMod2#{
+        <<"method">> => RelayMethod,
+        <<"path">> => RelayPath
+    },
+    ?event({relay_call, {target_with_http_params, TargetMod2}}),
     Client =
         case hb_ao:get(<<"http-client">>, BaseTarget, Opts) of
             not_found -> hb_opts:get(relay_http_client, Opts);
             RequestedClient -> RequestedClient
         end,
-    ?event({relaying_message, TargetMod2}),
-    % Let `hb_http:request/2' handle finding the peer and dispatching the request.
-    hb_http:request(TargetMod2, Opts#{ http_client => Client }).
+    ?event({relaying_message, TargetMod3}),
+    % Let `hb_http:request/2' handle finding the peer and dispatching the
+    % request, unless the peer is explicitly given.
+    case RelayPeer of
+        not_found ->
+            hb_http:request(TargetMod3, Opts#{ http_client => Client });
+        _ ->
+            hb_http:request(
+                RelayMethod,
+                RelayPeer,
+                RelayPath,
+                TargetMod3,
+                Opts#{ http_client => Client }
+            )
+    end.
 
 %% @doc Execute a request in the same way as `call/3', but asynchronously. Always
 %% returns `<<"OK">>'.
@@ -147,8 +175,8 @@ call_get_test() ->
 %% @doc Test that the `preprocess/3' function re-routes a request to remote
 %% peers, according to the node's routing table.
 request_hook_reroute_to_nearest_test() ->
-    Peer1 = <<"https://tee-2.forward.computer">>,
-    Peer2 = <<"https://tee-3.forward.computer">>,
+    Peer1 = <<"https://tee-3.forward.computer">>,
+    Peer2 = <<"https://tee-2.forward.computer">>,
     HTTPSOpts = #{ http_client => httpc },
     {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
     {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
@@ -190,29 +218,32 @@ request_hook_reroute_to_nearest_test() ->
     ),
     ?assert(HasValidSigner).
 
+%% @doc Test that a `relay@1.0/call' correctly commits requests as specified.
+%% We validate this by configuring two nodes: One that will execute a given
+%% request from a user, but only if the request is committed. The other node
+%% re-routes all requests to the first node, using `call`'s `commit-request'
+%% key to sign the request during proxying. The initial request is not signed,
+%% such that the first node would otherwise reject the request outright.
 commit_request_test() ->
     Port = 10000 + rand:uniform(10000),
     Wallet = ar_wallet:new(),
+    Executor = hb_http_server:start_node(#{
+        port => Port,
+        force_signed_requests => false
+    }),
     Node =
         hb_http_server:start_node(#{
-            port => Port,
             priv_wallet => Wallet,
             relay_allow_commit_request => true,
             routes =>
                 [
                     #{
-                        <<"template">> => <<"/test-commitments">>,
+                        <<"template">> => <<"/aest">>,
                         <<"strategy">> => <<"Nearest">>,
                         <<"nodes">> => [
                             #{
                                 <<"wallet">> => hb_util:human_id(Wallet),
-                                <<"match">> => <<"/test-commitments">>,
-                                <<"with">> => 
-                                    <<
-                                        "http://localhost:",
-                                        (hb_util:bin(Port))/binary,
-                                        "/commitments"
-                                    >>
+                                <<"prefix">> => Executor
                             }
                         ]
                     }
@@ -229,9 +260,8 @@ commit_request_test() ->
     {ok, Res} =
         hb_http:get(
             Node,
-            <<"/test-commitments">>,
+            <<"aest?aest=value">>,
             #{}
         ),
     ?event({res, Res}),
-    ?event({node_wallet, hb_util:human_id(Wallet)}),
-    ?assert(hb_message:committed(Res)).
+    ?assertEqual(<<"value">>, Res).
