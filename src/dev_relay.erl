@@ -95,9 +95,8 @@ call(M1, RawM2, Opts) ->
             true ->
                 case hb_opts:get(relay_allow_commit_request, false, Opts) of
                     true ->
-                        TargetWithoutPathMethod =
-                            maps:without([<<"method">>, <<"path">>], TargetMod1),
-                        Committed = hb_message:commit(TargetWithoutPathMethod, Opts),
+                        ?event(debug_relay, {recommitting, TargetMod1}),
+                        Committed = hb_message:commit(TargetMod1, Opts),
                         ?event({relay_call, {committed, Committed}}),
                         true = hb_message:verify(Committed, all),
                         Committed;
@@ -110,19 +109,22 @@ call(M1, RawM2, Opts) ->
         <<"method">> => RelayMethod,
         <<"path">> => RelayPath
     },
-    ?event({relay_call, {target_with_http_params, TargetMod2}}),
+    ?event(debug_relay, {relay_call, {without_http_params, TargetMod2}}),
+    ?event(debug_relay, {relay_call, {with_http_params, TargetMod3}}),
+    true = hb_message:verify(TargetMod3),
+    ?event(debug_relay, {relay_call, {verified, true}}),
     Client =
         case hb_ao:get(<<"http-client">>, BaseTarget, Opts) of
             not_found -> hb_opts:get(relay_http_client, Opts);
             RequestedClient -> RequestedClient
         end,
-    ?event({relaying_message, TargetMod3}),
     % Let `hb_http:request/2' handle finding the peer and dispatching the
     % request, unless the peer is explicitly given.
     case RelayPeer of
         not_found ->
             hb_http:request(TargetMod3, Opts#{ http_client => Client });
         _ ->
+            ?event(debug_relay, {relaying_to_peer, RelayPeer}),
             hb_http:request(
                 RelayMethod,
                 RelayPeer,
@@ -227,10 +229,7 @@ request_hook_reroute_to_nearest_test() ->
 commit_request_test() ->
     Port = 10000 + rand:uniform(10000),
     Wallet = ar_wallet:new(),
-    Executor = hb_http_server:start_node(#{
-        port => Port,
-        force_signed_requests => false
-    }),
+    Executor = hb_http_server:start_node(#{ port => Port, force_signed_requests => false }),
     Node =
         hb_http_server:start_node(#{
             priv_wallet => Wallet,
@@ -238,7 +237,7 @@ commit_request_test() ->
             routes =>
                 [
                     #{
-                        <<"template">> => <<"/aest">>,
+                        <<"template">> => <<"/test-key">>,
                         <<"strategy">> => <<"Nearest">>,
                         <<"nodes">> => [
                             #{
@@ -260,7 +259,10 @@ commit_request_test() ->
     {ok, Res} =
         hb_http:get(
             Node,
-            <<"aest?aest=value">>,
+            #{
+                <<"path">> => <<"test-key">>,
+                <<"test-key">> => <<"value">>
+            },
             #{}
         ),
     ?event({res, Res}),

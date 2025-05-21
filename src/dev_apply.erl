@@ -23,7 +23,7 @@
 %% resolved with the `apply/4' function.
 info(_) ->
     #{
-        excludes => [keys, set],
+        excludes => [<<"keys">>, <<"set">>],
         default => fun default/4
     }.
 
@@ -212,6 +212,37 @@ reverse_resolve_pair_test() ->
                 "/~meta@1.0/build",
                 "/node~apply@1.0&node=TEST&base=request:&request=base:"
             >>,
+            #{}
+        )
+    ).
+
+apply_over_http_test() ->
+    Node = hb_http_server:start_node(),
+    Signed = hb_message:commit(
+        #{
+            <<"device">> => <<"apply@1.0">>,
+            <<"user-request">> =>
+                #{
+                    <<"path">> => <<"/test-key">>,
+                    <<"test-key">> => <<"DATA">>
+                }
+        },
+       hb:wallet()
+    ),
+    ?assertEqual(
+        {ok, <<"DATA">>},
+        hb_ao:resolve(
+            Signed#{ <<"path">> => <<"/user-request">> },
+            #{}
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"DATA">>},
+        hb_http:request(
+            <<"GET">>,
+            Node,
+            <<"/user-request">>,
+            Signed,
             #{}
         )
     ).

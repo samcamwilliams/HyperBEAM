@@ -528,6 +528,8 @@ set(Message1, NewValuesMsg, Opts) ->
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for AO-Core to know the key to evaluate in requests.
+set_path(Message1, #{ <<"value">> := unset }, _Opts) ->
+    {ok, maps:without([<<"path">>], Message1)};
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
 

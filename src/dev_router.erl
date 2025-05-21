@@ -252,7 +252,7 @@ route(_, Msg, Opts) ->
 find_target_path(Msg, Opts) ->
     case hb_ao:get(<<"route-path">>, Msg, not_found, Opts) of
         not_found ->
-            ?event({find_target_path, {msg, Msg}, {opts, Opts}, not_found}),
+            ?event({find_target_path, {msg, Msg}, not_found}),
             hb_ao:get(<<"path">>, Msg, no_path, Opts);
         RoutePath -> RoutePath
     end.
@@ -334,7 +334,7 @@ apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With
 %% path to be specified by either the explicit `path' (for internal use by this
 %% module), or `route-path' for use by external devices and users.
 match(Base, Req, Opts) ->
-    ?event(debug_preprocess, {routeReq, Req}),
+    ?event({matching_routes, {req, Req}}),
     ?event(debug_preprocess,
         {routes,
             hb_ao:get(<<"routes">>, {as, <<"message@1.0">>, Base}, [], Opts)}
@@ -477,14 +477,14 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
 preprocess(Msg1, Msg2, Opts) ->
-    Req = hb_ao:get(<<"request">>, Msg2, Opts),
+    Req = hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore }),
     ?event(debug_preprocess, {called_preprocess,Req}),
     TemplateRoutes = load_routes(Opts),
     ?event(debug_preprocess, {template_routes, TemplateRoutes}),
-    {_, Match} = match(#{ <<"routes">> => TemplateRoutes }, Req, Opts),
-    ?event(debug_preprocess, {match, Match}),
-    case Match of
-        no_matching_route -> 
+    Res = hb_http:message_to_request(Req, Opts),
+    ?event(debug_preprocess, {match, Res}),
+    case Res of
+        {error, _} -> 
             ?event(debug_preprocess, preprocessor_did_not_match),
             case hb_opts:get(router_preprocess_default, <<"local">>, Opts) of
                 <<"local">> ->
@@ -504,13 +504,12 @@ preprocess(Msg1, Msg2, Opts) ->
                             }]
                     }}
             end;
-        _ -> 
-            ?event(debug_preprocess, {matched_route, Match}),
+        {ok, Method, Node, Path, _MsgWithoutMeta, _ReqOpts} ->
+            ?event(debug_preprocess, {matched_route, {explicit, Res}}),
             CommitRequest =
                 hb_util:atom(
                     hb_ao:get_first(
                         [
-                            {Match, <<"commit-request">>},
                             {Msg1, <<"commit-request">>}
                         ],
                         false,
@@ -522,25 +521,34 @@ preprocess(Msg1, Msg2, Opts) ->
                     true -> #{ <<"commit-request">> => true };
                     false -> #{}
                 end,
-            ReqBody = 
+            % Construct a request to `relay@1.0/call' which will proxy a request
+            % to `apply@1.0/body' with the original request body as the argument.
+            % This allows us to potentially sign the request before sending it,
+            % letting the recipient node charge/verify us as necessary, without
+            % explicitly signing the user's request itself.
+            {
+                ok,
                 #{
                     <<"body">> =>
                         [
-                            MaybeCommit#{ <<"device">> => <<"relay@1.0">> },
+                            MaybeCommit#{
+                                <<"device">> => <<"relay@1.0">>,
+                                <<"method">> => <<"POST">>,
+                                <<"peer">> => Node
+                            },
                             #{
                                 <<"path">> => <<"call">>,
-                                <<"target">> => <<"body">>,
-                                <<"body">> =>
-                                    hb_ao:get(
-                                        <<"request">>,
-                                        Msg2,
-                                        Opts#{ hashpath => ignore }
-                                    )
+                                <<"target">> => <<"proxy-message">>,
+                                <<"proxy-message">> =>
+                                    #{
+                                        <<"device">> => <<"apply@1.0">>,
+                                        <<"path">> => <<"user-request">>,
+                                        <<"user-request">> => Req
+                                    }
                             }
                         ]
-                },
-            ?event(debug_preprocess, {req_body, ReqBody}),
-            {ok, ReqBody}
+                }
+            }
     end.
 
 %%% Tests
@@ -1271,8 +1279,8 @@ add_route_test() ->
     ?assertMatch(<<"new">>, Recvd).
 
 relay_nearest_test() ->
-    Peer1 = <<"https://compute-1.forward.computer">>,
-    Peer2 = <<"https://compute-2.forward.computer">>,
+    Peer1 = <<"https://tee-2.forward.computer">>,
+    Peer2 = <<"https://tee-3.forward.computer">>,
     HTTPSOpts = #{ http_client => httpc },
     {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
     {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
