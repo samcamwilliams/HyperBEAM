@@ -6,7 +6,7 @@
 -module(hb_http).
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
--export([reply/4, accept_to_codec/2]).
+-export([message_to_request/2, reply/4, accept_to_codec/2]).
 -export([req_to_tabm_singleton/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -777,6 +777,7 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
 remove_unsigned_fields(Msg, _Opts) ->
+    ?event(debug, {remove_unsigned_fields, {msg, Msg}}),
     case hb_message:signers(Msg) of
         [] -> {ok, Msg};
         _ -> hb_message:with_only_committed(Msg)

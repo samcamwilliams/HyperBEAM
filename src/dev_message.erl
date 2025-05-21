@@ -330,7 +330,10 @@ commitment_ids_from_request(Base, Req, Opts) ->
             X2 when is_list(X2) -> X2;
             Descriptor2 -> hb_ao:normalize_key(Descriptor2)
         end,
-    ?event({commitment_ids_from_request, {req_commitments, ReqCommitments}, {req_committers, ReqCommitters}}),
+    ?event({commitment_ids_from_request,
+        {req_commitments, ReqCommitments},
+        {req_committers, ReqCommitters}
+    }),
     % Get the commitments to verify.
     FromCommitmentIDs =
         case ReqCommitments of

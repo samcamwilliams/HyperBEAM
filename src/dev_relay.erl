@@ -72,6 +72,7 @@ call(M1, RawM2, Opts) ->
                 {RawM2, <<"commit-request">>},
                 {M1, <<"commit-request">>}
             ],
+            false,
             Opts
         ),
     TargetMod1 = BaseTarget#{
@@ -146,8 +147,8 @@ call_get_test() ->
 %% @doc Test that the `preprocess/3' function re-routes a request to remote
 %% peers, according to the node's routing table.
 request_hook_reroute_to_nearest_test() ->
-    Peer1 = <<"https://compute-1.forward.computer">>,
-    Peer2 = <<"https://compute-2.forward.computer">>,
+    Peer1 = <<"https://tee-2.forward.computer">>,
+    Peer2 = <<"https://tee-3.forward.computer">>,
     HTTPSOpts = #{ http_client => httpc },
     {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
     {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
