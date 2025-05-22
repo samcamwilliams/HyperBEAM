@@ -282,7 +282,10 @@ match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
 
 %% @doc Check if a message matches a message template or path regex.
 template_matches(ToMatch, Template, _Opts) when is_map(Template) ->
-    hb_message:match(Template, ToMatch, primary);
+    case hb_message:match(Template, ToMatch, primary) of
+        {value_mismatch, _Key, _Val1, _Val2} -> false;
+        Match -> Match
+    end;
 template_matches(ToMatch, Regex, Opts) when is_binary(Regex) ->
     MsgPath = find_target_path(ToMatch, Opts),
     hb_path:regex_matches(MsgPath, Regex).
