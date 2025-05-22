@@ -76,10 +76,6 @@ request(State, Raw, NodeMsg) ->
             },
             ?event({p4_pricing_request, {devmsg, PricingMsg}, {req, PricingReq}}),
             case hb_ao:resolve(PricingMsg, PricingReq, NodeMsg) of
-                {error, Error} ->
-                    % The device is unable to estimate the cost of the request,
-                    % so we don't proceed.
-                    {error, {error_calculating_price, Error}};
                 {ok, <<"infinity">>} ->
                     % The device states that under no circumstances should we
                     % proceed with the request.
@@ -137,7 +133,7 @@ request(State, Raw, NodeMsg) ->
                                 }
                             ),
                             {error, #{
-                                <<"status">> => 429,
+                                <<"status">> => 402,
                                 <<"body">> => <<"Insufficient funds">>,
                                 <<"price">> => Price,
                                 <<"balance">> => Balance
@@ -156,7 +152,18 @@ request(State, Raw, NodeMsg) ->
                                 <<"status">> => 500,
                                 <<"body">> => <<"Error checking ledger balance.">>
                             }}
-                    end
+                    end;
+                {ErrType, Err} ->
+                    % The device is unable to estimate the cost of the request,
+                    % so we don't proceed.
+                    ?event({p4_pricing_error, {type, ErrType}}),
+                    {error,
+                        #{
+                            <<"type">> => ErrType,
+                            <<"body">> =>
+                                <<"Could not estimate price of request.">>
+                        }
+                    }
             end
     end.
 
@@ -213,9 +220,17 @@ response(State, RawResponse, NodeMsg) ->
                                         Multiple -> Multiple
                                     end,
                                 <<"recipient">> =>
-                                    hb_util:human_id(
-                                        hb_opts:get(operator, <<0:256>>, NodeMsg)
-                                    ),
+                                    case hb_opts:get(p4_recipient, undefined, NodeMsg) of
+                                        Addr when ?IS_ID(Addr) ->
+                                            hb_util:human_id(Addr);
+                                        _ ->
+                                            case hb_opts:get(operator, undefined, NodeMsg) of
+                                                undefined ->
+                                                    <<"unknown">>;
+                                                Operator->
+                                                    hb_util:human_id(Operator)
+                                            end
+                                    end,
                                 <<"request">> => Request
                             },
                             hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg)

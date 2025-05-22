@@ -66,7 +66,7 @@ charge(_, RawReq, NodeMsg) ->
                         }
                     ),
                     {error, #{
-                        <<"status">> => 429,
+                        <<"status">> => 402,
                         <<"body">> => <<"Insufficient funds. "
                             "User balance before charge: ",
                                 (hb_util:bin(UserBalance))/binary,
@@ -152,14 +152,19 @@ topup(_, Req, NodeMsg) ->
 
 %% @doc Check if the request is from the operator.
 is_operator(Req, NodeMsg) ->
+    is_operator(Req, NodeMsg, hb_opts:get(operator, undefined, NodeMsg)).
+
+is_operator(Req, _NodeMsg, OperatorAddr) when ?IS_ID(OperatorAddr) ->
     Signers = hb_message:signers(Req),
-    OperatorAddr = hb_util:human_id(hb_opts:get(operator, undefined, NodeMsg)),
+    HumanOperatorAddr = hb_util:human_id(OperatorAddr),
     lists:any(
         fun(Signer) ->
-            OperatorAddr =:= hb_util:human_id(Signer)
+            HumanOperatorAddr =:= hb_util:human_id(Signer)
         end,
         Signers
-    ).
+    );
+is_operator(_, _, _) ->
+    false.
 
 %%% Tests
 
