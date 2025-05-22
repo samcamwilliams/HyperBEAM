@@ -194,7 +194,7 @@ deploy_scripts(Dir) ->
                 #{
                     <<"data-protocol">> => <<"ao">>,
                     <<"content-type">> => <<"application/lua">>,
-                    <<"name">> => File,
+                    <<"name">> => hb_util:bin(File),
                     <<"body">> => Script
                 },
                 wallet(),
