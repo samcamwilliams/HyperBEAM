@@ -389,7 +389,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             _ ->
                 case hb_ao:get(<<"target">>, ToSched, not_found, Opts) of
                     not_found -> find_target_id(Msg1, Msg2, Opts);
-                    Target -> Target
+                    Target -> hb_util:human_id(Target)
                 end
         end,
     ?event({proc_id, ProcID}),
@@ -733,7 +733,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
 %% two slots -- labelled as `from' and `to'. If the schedule is not local,
 %% we redirect to the remote scheduler or proxy based on the node opts.
 get_schedule(Msg1, Msg2, Opts) ->
-    ProcID = find_target_id(Msg1, Msg2, Opts),
+    ProcID = hb_util:human_id(find_target_id(Msg1, Msg2, Opts)),
     From =
         case hb_ao:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
@@ -1607,7 +1607,7 @@ http_get_legacy_schedule_as_aos2_test_() ->
     end}.
 
 http_post_legacy_schedule_test_() ->
-    % {timeout, 10, fun() ->
+    {timeout, 10, fun() ->
         {Node, Opts} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
         Msg1 = hb_message:commit(#{
@@ -1633,8 +1633,8 @@ http_post_legacy_schedule_test_() ->
         ?assertMatch(
             {ok, #{ <<"slot">> := Slot }} when Slot > 0,
             {Status, Res}
-        ).
-    % end}.
+        )
+    end}.
 
 http_get_json_schedule_test_() ->
 	{timeout, 20, fun() ->
