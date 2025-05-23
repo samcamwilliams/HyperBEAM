@@ -29,7 +29,14 @@ write(ProcID, Slot, Msg, Opts) ->
             ID = hb_util:human_id(hb_ao:get(id, Msg, Opts)),
             Opts
         ),
-    ?event({linking_id, {proc_id, ProcID}, {slot, Slot}, {id, ID}, {path, MsgIDPath}}),
+    ?event(
+        {linking_id,
+            {proc_id, ProcID},
+            {slot, Slot},
+            {id, ID},
+            {path, MsgIDPath}
+        }
+    ),
     hb_cache:link(Root, MsgIDPath, Opts),
     % Return the slot number path.
     {ok, SlotNumPath}.

@@ -668,13 +668,31 @@ test_deeply_nested_complex_message(Opts) ->
 	EnsuredLoadedOuter = hb_cache:ensure_all_loaded(OuterMsg, Opts),
     ?event({deep_message, {explicit, EnsuredLoadedOuter}}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_ao:get(<<"level1/level2/level3/other-test-key">>, EnsuredLoadedOuter)),
-    ?event({deep_message_match, {read, EnsuredLoadedOuter}, {write, Level3SignedSubmessage}}),
+    ?assertEqual(
+        [1,2,3],
+        hb_ao:get(
+            <<"level1/level2/level3/other-test-key">>,
+            EnsuredLoadedOuter,
+            Opts
+        )
+    ),
+    ?event(
+        {deep_message_match,
+            {read, EnsuredLoadedOuter},
+            {write, Level3SignedSubmessage}
+        }
+    ),
     ?event({reading_committed_outer, {id, CommittedID}, {expect, Outer}}),
     {ok, CommittedMsg} = read(hb_util:human_id(CommittedID), Opts),
 	EnsuredLoadedCommitted = hb_cache:ensure_all_loaded(CommittedMsg, Opts),
-	?assertEqual([1,2,3], hb_ao:get(<<"level1/level2/level3/other-test-key">>, EnsuredLoadedCommitted)).
-
+	?assertEqual(
+        [1,2,3],
+        hb_ao:get(
+            <<"level1/level2/level3/other-test-key">>,
+            EnsuredLoadedCommitted,
+            Opts
+        )
+    ).
 
 test_message_with_list(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
@@ -711,6 +729,14 @@ test_device_map_cannot_be_written_test() ->
     end.
 
 run_test() ->
-    Opts = #{ store =>
-        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
+    Opts =
+        #{
+            store =>
+                [
+                    #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
+                ]
+        },
     test_deeply_nested_complex_message(Opts).

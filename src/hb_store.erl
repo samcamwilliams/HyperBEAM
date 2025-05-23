@@ -237,35 +237,62 @@ test_stores() ->
     ].
 -else.
 test_stores() ->
-    [#{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/fs">>},
-     #{<<"store-module">> => hb_store_lru,
-       <<"store">> =>
-           [#{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/lru">>}]}].
+    [
+        #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        },
+        #{
+            <<"store-module">> => hb_store_lru,
+            <<"persistent-store">> => [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST/lru">>
+                }
+            ]
+        }
+    ].
 
 -endif.
 
 generate_test_suite(Suite) ->
     generate_test_suite(Suite, test_stores()).
 generate_test_suite(Suite, Stores) ->
-    lists:map(fun(Store = #{<<"store-module">> := Mod}) ->
-                 {foreach,
-                  fun() ->
-                     hb_store:start(Store),
-                     timer:sleep(100),
-                     hb_store:reset(Store)
-                  end,
-                  fun(_) ->
-                     hb_store:reset(Store),
-                     hb_store:stop(Store)
-                  end,
-                  [{atom_to_list(Mod) ++ ": " ++ Desc,
-                    fun() ->
-                       TestResult = Test(Store),
-                       TestResult
-                    end}
-                   || {Desc, Test} <- Suite]}
-              end,
-              Stores).
+    hb:init(),
+    lists:map(
+        fun(Store = #{<<"store-module">> := Mod}) ->
+            {foreach,
+                fun() ->
+                    % Create and set a random server ID for the test process.
+                    hb_http_server:set_proc_server_id(
+                        hb_util:human_id(crypto:strong_rand_bytes(32))
+                    ),
+                    hb_store:start(Store),
+                    timer:sleep(100),
+                    % Clear the server ID from the process dictionary for the
+                    % next test.
+                    hb_http_server:set_proc_server_id(undefined),
+                    hb_store:reset(Store)
+                end,
+                fun(_) ->
+                    hb_store:reset(Store),
+                    hb_store:stop(Store)
+                end,
+                [
+                    {
+                        atom_to_list(Mod) ++ ": " ++ Desc,
+                        fun() ->
+                            TestResult = Test(Store),
+                            TestResult
+                        end
+                    }
+                ||
+                    {Desc, Test} <- Suite
+                ]
+            }
+        end,
+        Stores
+    ).
 
 %%% Tests
 

@@ -10,8 +10,9 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
--export([start_node/0, start_node/1, set_default_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2]).
+-export([set_opts/1, get_opts/0, get_opts/1, set_default_opts/1, set_proc_server_id/1]).
+-export([start_node/0, start_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -291,6 +292,7 @@ handle_request(RawReq, Body, ServerID) ->
     StartTime = os:system_time(millisecond),
     Req = RawReq#{ start_time => StartTime },
     NodeMsg = get_opts(#{ http_server => ServerID }),
+    put(server_id, ServerID),
     case cowboy_req:path(RawReq) of
         <<"/">> ->
             % If the request is for the root path, serve a redirect to the default 
@@ -375,10 +377,18 @@ set_opts(Opts) ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
 
+%% @doc Get the node message for the current process.
+get_opts() ->
+    get_opts(#{ http_server => get(server_id) }).
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
     cowboy:get_env(ServerRef, node_msg, no_node_msg).
 
+%% @doc Initialize the server ID for the current process.
+set_proc_server_id(ServerID) ->
+    put(server_id, ServerID).
+
+%% @doc Apply the default node message to the given opts map.
 set_default_opts(Opts) ->
     % Create a temporary opts map that does not include the defaults.
     TempOpts = Opts#{ only => local },
