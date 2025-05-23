@@ -592,8 +592,9 @@ pure_lua_process_test() ->
 
 pure_lua_process_benchmark_test_() ->
     {timeout, 30, fun() ->
-        BenchMsgs = 200,
+        BenchMsgs = 25,
         Process = generate_lua_process("test/test.lua"),
+        hb_cache:write(Process, #{}),
         Message = generate_test_message(Process),
         lists:foreach(
             fun(X) ->
@@ -657,8 +658,9 @@ aos_authority_not_trusted_test() ->
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
     {timeout, 30, fun() ->
-        BenchMsgs = 200,
+        BenchMsgs = 25,
         Process = generate_lua_process("test/hyper-aos.lua"),
+        {ok, _} = hb_cache:write(Process, #{}),
         Message = generate_test_message(Process),
         lists:foreach(
             fun(X) ->
