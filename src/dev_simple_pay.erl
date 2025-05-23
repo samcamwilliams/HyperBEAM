@@ -1,8 +1,8 @@
 %%% @doc A simple device that allows the operator to specify a price for a
 %%% request and then charge the user for it, on a per message basis.
-%%% The device's ledger is stored in the node message at `simple_pay_ledger`,
+%%% The device's ledger is stored in the node message at `simple_pay_ledger',
 %%% and can be topped-up by either the operator, or an external device. The 
-%%% price is specified in the node message at `simple_pay_price`.
+%%% price is specified in the node message at `simple_pay_price'.
 %%% This device acts as both a pricing device and a ledger device, by p4's
 %%% definition.
 -module(dev_simple_pay).
@@ -36,7 +36,7 @@ debit(_, RawReq, NodeMsg) ->
         <<"pre">> ->
             ?event(payment, {debit_preprocessing, RawReq}),
             Req = hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
-            case hb_message:signers(Req) of
+            case hb_message:signers(Req, NodeMsg) of
                 [] -> {ok, false};
                 [Signer] ->
                     UserBalance = get_balance(Signer, NodeMsg),
@@ -60,8 +60,8 @@ debit(_, RawReq, NodeMsg) ->
 balance(_, RawReq, NodeMsg) ->
     Target =
         case hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }) of
-            not_found -> hd(hb_message:signers(RawReq));
-            Req -> hd(hb_message:signers(Req))
+            not_found -> hd(hb_message:signers(RawReq, NodeMsg));
+            Req -> hd(hb_message:signers(Req, NodeMsg))
         end,
     {ok, get_balance(Target, NodeMsg)}.
 
@@ -124,7 +124,7 @@ topup(_, Req, NodeMsg) ->
 
 %% @doc Check if the request is from the operator.
 is_operator(Req, NodeMsg) ->
-    Signers = hb_message:signers(Req),
+    Signers = hb_message:signers(Req, NodeMsg),
     OperatorAddr = hb_util:human_id(hb_opts:get(operator, undefined, NodeMsg)),
     lists:any(
         fun(Signer) ->
@@ -153,7 +153,11 @@ test_opts(Ledger) ->
             simple_pay_price => 10,
             operator => Address,
             preprocessor => ProcessorMsg,
-            postprocessor => ProcessorMsg
+            postprocessor => ProcessorMsg,
+            store => #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST">>
+            }
         }
     }.
 
@@ -167,9 +171,9 @@ get_balance_and_top_up_test() ->
             Node,
             hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                ClientWallet
+                Opts#{ priv_wallet => ClientWallet }
             ),
-            #{}
+            Opts
         ),
     ?assertEqual(80, Res),
     {ok, NewBalance} =
@@ -181,9 +185,9 @@ get_balance_and_top_up_test() ->
                     <<"amount">> => 100,
                     <<"recipient">> => ClientAddress
                 },
-                HostWallet
+                Opts#{ priv_wallet => HostWallet }
             ),
-            #{}
+            Opts
         ),
     ?assertEqual(180, NewBalance),
     {ok, Res2} =
@@ -191,8 +195,8 @@ get_balance_and_top_up_test() ->
             Node,
             hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                ClientWallet
+                Opts#{ priv_wallet => ClientWallet }
             ),
-            #{}
+            Opts
         ),
     ?assertEqual(160, Res2).

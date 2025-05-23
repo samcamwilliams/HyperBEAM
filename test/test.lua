@@ -5,12 +5,16 @@
 --- @treturn table
 --- @return a table with three key-value pairs. In Erlang, this will be
 --- represented as `#{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3}`.
-function AssocTable()
+function assoctable()
     return {
         a = 1,
         b = 2,
         c = 3
     }
+end
+
+function error_response()
+    return "error", "Very bad, but Lua caught it."
 end
 
 --- @function ListTable
@@ -21,17 +25,36 @@ function ListTable()
     return {1, 2, 3}
 end
 
---- @function handle
+function ao_resolve()
+    local status, res =
+        ao.resolve({
+            path = "/hello",
+            hello = "Hello, AO world!"
+        })
+    return res
+end
+
+function ao_relay()
+    local status, res =
+        ao.resolve({
+            path = "/~relay@1.0/call?relay-path=http://localhost:10000/hello"
+        })
+    return res
+end
+
+--- @function compute
 --- @tparam stringified AO process
 --- @tparam stringified AO message
 --- @return table An AO Process response, with the `ok` field set to `true`,
 --- the `response` field set to a table with the `Output` field set to a string,
 --- and the `messages` field set to an empty table.
-function handle(process, message, opts)
-    return {
-        body = 42,
-        messages = {}
+function compute(process, message, opts)
+    process.results = {
+        output = {
+            body = 42
+        }
     }
+    return process
 end
 
 --- @function json_result
@@ -63,5 +86,67 @@ end
 --- @tparam table request
 --- @return table an answer to every HTTP request with the words "i like turtles"
 function preprocess(base, req, opts)
-    return { { body = "i like turtles" } }
+    return "ok", { { body = "i like turtles" } }
+end
+
+--- @function sandboxed_fail
+--- @tparam table base
+--- @tparam table request
+--- @error fails when inside the sandbox
+function sandboxed_fail()
+    -- Do something that is not dangerous, but is sandboxed nonetheless.
+    return os.getenv("PWD")
+end
+
+--- @function route_provider
+--- @tparam table base
+--- @tparam table request
+--- @return table a static set of routes for testing purposes.
+function route_provider(base, req, opts)
+    return {
+        {
+            node = base.node
+        }
+    }
+end
+
+BaseRoutes = {
+    {
+        template = "test1",
+        host = "http://localhost:10000",
+        weight = 50
+    },
+    {
+        template = "test2",
+        strategy = "By-Weight",
+        choose = 1,
+        nodes = {
+            {
+                prefix = "http://localhost:10001/",
+                weight = 50
+            },
+            {
+                prefix = "http://localhost:10002/",
+                weight = 50
+            }
+        }
+    }
+}
+
+--- @function compute_routes
+--- @tparam table base
+--- @tparam table request
+--- @return table the state of a process after adding a route.
+function compute_routes(base, req, opts)
+    base["known-routes"] = base["known-routes"] or BaseRoutes
+    if req.body.path == "add-route" then
+        table.insert(base["known-routes"], req.body)
+        base.results = base.results or {}
+        base.results.output = {
+            status = 200,
+            ["content-type"] = "text/plain",
+            body = "Route added."
+        }
+    end
+    return base
 end

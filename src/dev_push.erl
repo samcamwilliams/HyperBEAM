@@ -1,4 +1,4 @@
-%%% @doc `push@1.0` takes a message or slot number, evaluates it, and recursively
+%%% @doc `push@1.0' takes a message or slot number, evaluates it, and recursively
 %%% pushes the resulting messages to other processes. The `push'ing mechanism
 %%% continues until the there are no remaining messages to push.
 -module(dev_push).
@@ -65,23 +65,38 @@ do_push(Base, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
-    Result = hb_ao:resolve(
+    {Status, Result} = hb_ao:resolve(
         {as, <<"process@1.0">>, Base},
-        #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
+        #{ <<"path">> => <<"compute/results">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
+    AdditionalRes =
+        case IncludeDepth = hb_opts:get(push_include_result, 1, Opts) of
+            X when X > 0 -> Result;
+            _ -> #{}
+        end,
+    NextOpts =
+        Opts#{
+            push_include_result => IncludeDepth - 1
+        },
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
-    case Result of
+    case {Status, hb_ao:get(<<"outbox">>, Result, #{}, Opts)} of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push_short, {push_complete, {process, {string, ID}}, {slot, Slot}}),
-            {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
+            {ok, AdditionalRes#{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
-                maps:map(
+                hb_maps:map(
                     fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
                         case hb_cache:read(Target, Opts) of
                             {ok, PushBase} ->
-                                push_result_message(PushBase, Slot, Key, MsgToPush, Opts);
+                                push_result_message(
+                                    PushBase,
+                                    Slot,
+                                    Key,
+                                    MsgToPush,
+                                    NextOpts
+                                );
                             not_found ->
                                 #{
                                     <<"response">> => <<"error">>,
@@ -99,12 +114,13 @@ do_push(Base, Assignment, Opts) ->
                                 <<"message">> => Msg
                             }
                     end,
-                    Outbox
+                    Outbox,
+                    Opts
                 ),
-            {ok, Downstream#{
+            {ok, maps:merge(Downstream, AdditionalRes#{
                 <<"slot">> => Slot,
                 <<"process">> => ID
-            }};
+            })};
         {Err, Error} when Err == error; Err == failure -> {error, Error}
     end.
 
@@ -135,7 +151,7 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     ),
                     {ok, TargetBase} = hb_cache:read(TargetID, Opts),
                     TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
-                    RecvdID = hb_message:id(TargetBase, all),
+                    RecvdID = hb_message:id(TargetBase, all, Opts),
                     ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
                     Resurse = hb_ao:resolve(
                         {as, <<"process@1.0">>, TargetAsProcess},
@@ -294,7 +310,7 @@ schedule_initial_message(Base, Req, Opts) ->
 
 remote_schedule_result(Location, SignedReq, Opts) ->
     ?event(push, {remote_schedule_result, {location, Location}, {req, SignedReq}}, Opts),
-    {Node, RedirectPath} = parse_redirect(Location),
+    {Node, RedirectPath} = parse_redirect(Location, Opts),
     Path =
         case find_type(SignedReq, Opts) of
             <<"Process">> -> <<"/schedule">>;
@@ -303,7 +319,7 @@ remote_schedule_result(Location, SignedReq, Opts) ->
     % Store a copy of the message for ourselves.
     {ok, _} = hb_cache:write(SignedReq, Opts),
     ?event(push, {remote_schedule_result, {path, Path}}, Opts),
-    case hb_http:post(Node, Path, maps:without([<<"path">>], SignedReq), Opts) of
+    case hb_http:post(Node, Path, hb_maps:without([<<"path">>], SignedReq, Opts), Opts) of
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_ao:get(<<"status">>, Res, 200, Opts) of
@@ -325,15 +341,15 @@ find_type(Req, Opts) ->
         Opts
     ).
 
-parse_redirect(Location) ->
+parse_redirect(Location, Opts) ->
     Parsed = uri_string:parse(Location),
     Node =
         uri_string:recompose(
-            (maps:remove(query, Parsed))#{
+            (hb_maps:remove(query, Parsed, Opts))#{
                 path => <<"/schedule">>
             }
         ),
-    {Node, maps:get(path, Parsed)}.
+    {Node, hb_maps:get(path, Parsed, undefined, Opts)}.
 
 %%% Tests
 
@@ -341,6 +357,7 @@ full_push_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Opts = #{
+            process_async_cache => false,
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>,
             store => [
@@ -366,8 +383,8 @@ full_push_test_() ->
         ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
-        ?event(push, {msg_sched_result, Msg2}),
+        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script, Opts),
+        ?event({msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),

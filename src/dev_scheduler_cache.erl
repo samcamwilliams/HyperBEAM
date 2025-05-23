@@ -8,8 +8,8 @@
 write(Assignment, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
-    ProcID = hb_ao:get(<<"process">>, Assignment),
-    Slot = hb_ao:get(<<"slot">>, Assignment),
+    ProcID = hb_ao:get(<<"process">>, Assignment, Opts),
+    Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ?event(
         {writing_assignment,
             {proc_id, ProcID},
@@ -121,7 +121,7 @@ read_location(Address, Opts) ->
 
 %% @doc Write the latest known scheduler location for an address.
 write_location(LocationMsg, Opts) ->
-    Signers = hb_message:signers(LocationMsg),
+    Signers = hb_message:signers(LocationMsg, Opts),
     ?event({writing_location_msg,
         {signers, Signers},
         {location_msg, LocationMsg}

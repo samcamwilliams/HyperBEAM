@@ -141,7 +141,7 @@ size_test() ->
 
 %% @doc Test writing memory in and out of bounds.
 write_test() ->
-    % Load the `test-print` WASM module, which has a simple print function.
+    % Load the `test-print' WASM module, which has a simple print function.
     % We do not call the function here, but instead check that we can write
     % to its memory. It has a single page (65,536 bytes) of memory.
     {ok, File} = file:read_file("test/test-print.wasm"),
@@ -153,7 +153,7 @@ write_test() ->
 
 %% @doc Test reading memory in and out of bounds.
 read_test() ->
-    % Our `test-print` module is hand-written in WASM, so we know that it
+    % Our `test-print' module is hand-written in WASM, so we know that it
     % has a `Hello, World!` string at precisely offset 66.
     {ok, File} = file:read_file("test/test-print.wasm"),
     {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),

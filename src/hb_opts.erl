@@ -13,7 +13,7 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, default_message/0, mimic_default_types/2]).
+-export([get/1, get/2, get/3, load/1, load/2, default_message/0, mimic_default_types/3]).
 -include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
@@ -62,12 +62,16 @@ default_message() ->
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
+            #{<<"name">> => <<"local-name@1.0">>, <<"module">> => dev_local_name},
             #{<<"name">> => <<"lookup@1.0">>, <<"module">> => dev_lookup},
             #{<<"name">> => <<"lua@5.3a">>, <<"module">> => dev_lua},
+            #{<<"name">> => <<"manifest@1.0">>, <<"module">> => dev_manifest},
             #{<<"name">> => <<"message@1.0">>, <<"module">> => dev_message},
             #{<<"name">> => <<"meta@1.0">>, <<"module">> => dev_meta},
             #{<<"name">> => <<"monitor@1.0">>, <<"module">> => dev_monitor},
             #{<<"name">> => <<"multipass@1.0">>, <<"module">> => dev_multipass},
+            #{<<"name">> => <<"name@1.0">>, <<"module">> => dev_name},
+            #{<<"name">> => <<"node-process@1.0">>, <<"module">> => dev_node_process},
             #{<<"name">> => <<"p4@1.0">>, <<"module">> => dev_p4},
             #{<<"name">> => <<"patch@1.0">>, <<"module">> => dev_patch},
             #{<<"name">> => <<"poda@1.0">>, <<"module">> => dev_poda},
@@ -88,7 +92,7 @@ default_message() ->
         cache_control => [<<"no-cache">>, <<"no-store">>],
         cache_lookup_hueristics => false,
         % Should we await in-progress executions, rather than re-running?
-        % Has three settings: false, only `named` executions, or all executions.
+        % Has three settings: false, only `named' executions, or all executions.
         await_inprogress => named,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
@@ -111,7 +115,7 @@ default_message() ->
         commitment_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
-        % Every modification to `Opts` called directly by the node operator
+        % Every modification to `Opts' called directly by the node operator
         % should be recorded here.
 		node_history => [],
         debug_stack_depth => 40,
@@ -119,13 +123,14 @@ default_message() ->
         debug_print_binary_max => 60,
         debug_print_indent => 2,
         debug_print => false,
-        stack_print_prefixes => ["hb", "dev", "ar"],
+        stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 5,
+        short_trace_len => 20,
         debug_metadata => true,
         debug_ids => false,
         debug_committers => false,
-        debug_show_priv => false,
+        debug_show_priv => if_present,
+        debug_resolve_links => true,
 		trusted => #{},
         routes => [
             #{
@@ -160,7 +165,10 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-mainnet">>
+                },
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
@@ -171,6 +179,7 @@ default_message() ->
                         ]
                 }
             ],
+        default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
         % Should we use the latest cached state of a process when computing?
         process_now_from_cache => false,
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
@@ -219,8 +228,8 @@ get(Key, Default, Opts = #{ only := local }) ->
         error -> 
             Default
     end;
-get(Key, Default, #{ only := global }) ->
-    case global_get(Key, hb_opts_not_found) of
+get(Key, Default, Opts = #{ only := global }) ->
+    case global_get(Key, hb_opts_not_found, Opts) of
         hb_opts_not_found -> Default;
         Value -> Value
     end;
@@ -256,22 +265,25 @@ get(Key, Default, Opts) ->
                 fun
                     (Str) when Str == "1" -> true;
                     (Str) when Str == "true" -> true;
-                    (Str) -> string:tokens(Str, ",")
+                    (Str) ->
+                        lists:map(fun hb_util:bin/1, string:tokens(Str, ","))
                 end,
                 ?DEFAULT_PRINT_OPTS
-            }
+            },
+        lua_scripts => {"LUA_SCRIPTS", "scripts"},
+        lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests}
     }
 ).
 
 %% @doc Get an environment variable or configuration key.
-global_get(Key, Default) ->
+global_get(Key, Default, Opts) ->
     case maps:get(Key, ?ENV_KEYS, Default) of
-        Default -> config_lookup(Key, Default);
+        Default -> config_lookup(Key, Default, Opts);
         {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
             ValParser(cached_os_env(EnvKey, normalize_default(DefaultValue)));
         {EnvKey, ValParser} when is_function(ValParser) ->
             case cached_os_env(EnvKey, not_found) of
-                not_found -> config_lookup(Key, Default);
+                not_found -> config_lookup(Key, Default, Opts);
                 Value -> ValParser(Value)
             end;
         {EnvKey, DefaultValue} ->
@@ -304,15 +316,16 @@ normalize_default(Default) -> Default.
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
 %% configuration system.
-config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
+config_lookup(Key, Default, Opts) -> hb_maps:get(Key, default_message(), Default, Opts).
 
 %% @doc Parse a `flat@1.0' encoded file into a map, matching the types of the 
 %% keys to those in the default message.
-load(Path) ->
+load(Path) -> load(Path, #{}).
+load(Path, Opts) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             try dev_codec_flat:deserialize(Bin) of
-                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
+                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms, Opts)}
             catch
                 error:B -> {error, B}
             end;
@@ -320,13 +333,13 @@ load(Path) ->
     end.
 
 %% @doc Mimic the types of the default message for a given map.
-mimic_default_types(Map, Mode) ->
+mimic_default_types(Map, Mode, Opts) ->
     Default = default_message(),
-    maps:from_list(lists:map(
+    hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
             NewKey = hb_util:key_to_atom(Key, Mode),
             NewValue = 
-                case maps:get(NewKey, Default, not_found) of
+                case hb_maps:get(NewKey, Default, not_found, Opts) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->
                         hb_util:atom(Value);
@@ -340,7 +353,7 @@ mimic_default_types(Map, Mode) ->
                 end,
             {NewKey, NewValue}
         end,
-        maps:to_list(Map)
+        hb_maps:to_list(Map, Opts)
     )).
     
 %%% Tests
@@ -382,12 +395,12 @@ load_test() ->
     % port: 1234
     % host: https://ao.computer
     % await-inprogress: false
-    {ok, Conf} = load("test/config.flat"),
+    {ok, Conf} = load("test/config.flat", #{}),
     ?event({loaded, {explicit, Conf}}),
     % Ensure we convert types as expected.
-    ?assertEqual(1234, maps:get(port, Conf)),
+    ?assertEqual(1234, hb_maps:get(port, Conf)),
     % A binary
-    ?assertEqual(<<"https://ao.computer">>, maps:get(host, Conf)),
+    ?assertEqual(<<"https://ao.computer">>, hb_maps:get(host, Conf)),
     % An atom, where the key contained a header-key `-' rather than a `_'.
-    ?assertEqual(false, maps:get(await_inprogress, Conf)).
+    ?assertEqual(false, hb_maps:get(await_inprogress, Conf)).
 -endif.

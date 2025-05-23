@@ -32,7 +32,7 @@ start() ->
                 #{}
         end,
     MergedConfig =
-        maps:merge(
+        hb_maps:merge(
             hb_opts:default_message(),
             Loaded
         ),
@@ -113,7 +113,7 @@ start(Opts) ->
 
 new_server(RawNodeMsg) ->
     NodeMsg =
-        maps:merge(
+        hb_maps:merge(
             hb_opts:default_message(),
             RawNodeMsg#{ only => local }
         ),
@@ -130,7 +130,7 @@ new_server(RawNodeMsg) ->
         ),
     % Put server ID into node message so it's possible to update current server
     % params
-    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
+    NodeMsgWithID = hb_maps:put(http_server, ServerID, NodeMsg),
     Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, ServerID}]}]),
     ProtoOpts = #{
         env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
@@ -141,7 +141,9 @@ new_server(RawNodeMsg) ->
     PrometheusOpts =
         case hb_opts:get(prometheus, not hb_features:test(), NodeMsg) of
             true ->
-                ?event(prometheus, {starting_prometheus, {test_mode, hb_features:test()}}),
+                ?event(prometheus,
+                    {starting_prometheus, {test_mode, hb_features:test()}}
+                ),
                 % Attempt to start the prometheus application, if possible.
                 try
                     application:ensure_all_started([prometheus, prometheus_cowboy]),
@@ -161,7 +163,9 @@ new_server(RawNodeMsg) ->
                         ProtoOpts
                 end;
             false ->
-                ?event(prometheus, {prometheus_not_started, {test_mode, hb_features:test()}}),
+                ?event(prometheus,
+                    {prometheus_not_started, {test_mode, hb_features:test()}}
+                ),
                 ProtoOpts
         end,
     DefaultProto =
@@ -210,14 +214,16 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
                 ServerID,
                 1024,
                 ranch:normalize_opts(
-                    maps:to_list(TransOpts#{ port => GivenPort })
+                    hb_maps:to_list(TransOpts#{ port => GivenPort })
                 ),
                 ProtoOpts,
                 []
             ),
             ranch_server:set_addr(ServerID, {<<"localhost">>, GivenPort}),
-            % Bypass ranch's requirement to have a connection supervisor defined to support updating protocol opts
-            % Quicer doesn't use a connection supervisor, so we just spawn one that does nothing
+            % Bypass ranch's requirement to have a connection supervisor define
+            % to support updating protocol opts.
+            % Quicer doesn't use a connection supervisor, so we just spawn one
+            % that does nothing.
             ConnSup = spawn(fun() -> http3_conn_sup_loop() end),
             ranch_server:set_connections_sup(ServerID, ConnSup),
             Parent ! {ok, GivenPort},
@@ -294,8 +300,8 @@ handle_request(RawReq, Body, ServerID) ->
                 #{
                     <<"location">> =>
                         hb_opts:get(
-                            default_req,
-                            <<"/~hyperbuddy@1.0/index">>,
+                            default_request,
+                            <<"/~hyperbuddy@1.0/dashboard">>,
                             NodeMsg
                         )
                 },
@@ -305,27 +311,69 @@ handle_request(RawReq, Body, ServerID) ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
             ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
+			TracePID = hb_tracer:start_trace(),
             % Parse the HTTP request into HyerBEAM's message format.
-            ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-            CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-            ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, CommitmentCodec}}),
-            {ok, Res} =
-                dev_meta:handle(
-                    NodeMsg#{ commitment_device => CommitmentCodec },
-                    ReqSingleton
+			try 
+				ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+				CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+				?event(http,
+                    {parsed_singleton,
+                        {req_singleton, ReqSingleton},
+                        {accept_codec, CommitmentCodec}},
+                    #{trace => TracePID}
                 ),
-            hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
-    end.
+				% hb_tracer:record_step(TracePID, request_parsing),
+				% Invoke the meta@1.0 device to handle the request.
+				{ok, Res} =
+					dev_meta:handle(
+						NodeMsg#{
+                            commitment_device => CommitmentCodec,
+                            trace => TracePID
+                        },
+						ReqSingleton
+					),
+				hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
+			catch
+                Type:Details:Stacktrace ->
+					Trace = hb_tracer:get_trace(TracePID),
+					TraceString = hb_tracer:format_error_trace(Trace),
+                    ?event(
+                        http_error,
+                        {http_error,
+                            {type, Type},
+                            {details, Details},
+                            {stacktrace, Stacktrace}
+                        }
+                    ),
+					hb_http:reply(
+                        Req,
+                        #{},
+                        #{
+                            <<"status">> => 500,
+                            <<"body">> => list_to_binary(TraceString)
+                        },
+                        NodeMsg
+                    )
+			end
+end.
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
-    {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>, <<"PATCH">>], Req, State}.
+    {
+        [<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>, <<"PATCH">>],
+        Req,
+        State
+    }.
 
 %% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
-    ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    ok = cowboy:set_env(ServerRef, node_msg, Opts).
+    case hb_opts:get(http_server, no_server_ref, Opts) of
+        no_server_ref ->
+            ok;
+        ServerRef ->
+            ok = cowboy:set_env(ServerRef, node_msg, Opts)
+    end.
 
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),

@@ -24,19 +24,19 @@ start() -> hb_name:start().
 start_monitor() ->
     start_monitor(global).
 start_monitor(Group) ->
+	start_monitor(Group, #{}).
+start_monitor(Group, Opts) ->
     start(),
     ?event({worker_monitor, {start_monitor, Group, hb_name:all()}}),
-    spawn(fun() -> do_monitor(Group) end).
+    spawn(fun() -> do_monitor(Group, #{}, Opts) end).
 
 stop_monitor(PID) ->
     PID ! stop.
 
-do_monitor(Group) ->
-    do_monitor(Group, #{}).
-do_monitor(Group, Last) ->
+do_monitor(Group, Last, Opts) ->
     Groups = lists:map(fun({Name, _}) -> Name end, hb_name:all()),
     New =
-        maps:from_list(
+        hb_maps:from_list(
             lists:map(
                 fun(G) ->
                     Pid = hb_name:lookup(G),
@@ -69,31 +69,33 @@ do_monitor(Group, Last) ->
             )
         ),
     Delta =
-        maps:filter(
+        hb_maps:filter(
             fun(G, NewState) ->
-                case maps:get(G, Last, []) of
+                case hb_maps:get(G, Last, []) of
                     NewState -> false;
                     _ -> true
                 end
             end,
-            New
+            New,
+			Opts
         ),
-    case maps:size(Delta) of
+    case hb_maps:size(Delta, Opts) of
         0 -> ok;
         Deltas ->
             io:format(standard_error, "== Sitrep ==> ~p named processes. ~p changes. ~n",
-                [maps:size(New), Deltas]),
-            maps:map(
+                [hb_maps:size(New, Opts), Deltas]),
+            hb_maps:map(
                 fun(G, #{pid := P, messages := Msgs}) ->
                     io:format(standard_error, "[~p: ~p] #M: ~p~n", [G, P, Msgs])
                 end,
-                Delta
+                Delta,
+				Opts
             ),
             io:format(standard_error, "~n", [])
     end,
     timer:sleep(1000),
     receive stop -> stopped
-    after 0 -> do_monitor(Group, New)
+    after 0 -> do_monitor(Group, New, Opts)
     end.
 
 %% @doc Register the process to lead an execution if none is found, otherwise
@@ -139,7 +141,7 @@ find_execution(Groupname, _Opts) ->
 %% `group' function if it is found in the `info', otherwise uses the default.
 group(Msg1, Msg2, Opts) ->
     Grouper =
-        maps:get(grouper, hb_ao:info(Msg1, Opts), fun default_grouper/3),
+        hb_maps:get(grouper, hb_ao:info(Msg1, Opts), fun default_grouper/3, Opts),
     apply(
         Grouper,
         hb_ao:truncate_args(Grouper, [Msg1, Msg2, Opts])
@@ -164,10 +166,11 @@ unregister_groupname(Groupname, _Opts) ->
 await(Worker, Msg1, Msg2, Opts) ->
     % Get the device's await function, if it exists.
     AwaitFun =
-        maps:get(
+        hb_maps:get(
             await,
             hb_ao:info(Msg1, Opts),
-            fun default_await/5
+            fun default_await/5,
+			Opts
         ),
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
@@ -263,13 +266,14 @@ start_worker(GroupName, Msg, Opts) ->
     ),
     WorkerPID = spawn(
         fun() ->
-            % If the device's info contains a `worker` function we
+            % If the device's info contains a `worker' function we
             % use that instead of the default implementation.
             WorkerFun =
-                maps:get(
+                hb_maps:get(
                     worker,
                     hb_ao:info(Msg, Opts),
-                    Def = fun default_worker/3
+                    Def = fun default_worker/3,
+					Opts
                 ),
             ?event(worker,
                 {new_worker,
@@ -290,11 +294,12 @@ start_worker(GroupName, Msg, Opts) ->
                     [
                         GroupName,
                         Msg,
-                        maps:merge(Opts, #{
+                        hb_maps:merge(Opts, #{
                             is_worker => true,
                             spawn_worker => false,
                             allow_infinite => true
-                        })
+                        },
+						Opts)
                     ]
                 )
             )
@@ -318,7 +323,7 @@ default_worker(GroupName, Msg1, Opts) ->
                 hb_ao:resolve(
                     Msg1,
                     Msg2,
-                    maps:merge(ListenerOpts, Opts)
+                    hb_maps:merge(ListenerOpts, Opts, Opts)
                 ),
             send_response(Listener, GroupName, Msg2, Res),
             notify(GroupName, Msg2, Res, Opts),
@@ -356,17 +361,17 @@ default_worker(GroupName, Msg1, Opts) ->
 %% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
 default_grouper(Msg1, Msg2, Opts) ->
     %?event({calculating_default_group_name, {msg1, Msg1}, {msg2, Msg2}}),
-    % Use Erlang's `phash2` to hash the result of the Grouper function.
-    % `phash2` is relatively fast and ensures that the group name is short for
-    % storage in `pg`. In production we should only use a hash with a larger
+    % Use Erlang's `phash2' to hash the result of the Grouper function.
+    % `phash2' is relatively fast and ensures that the group name is short for
+    % storage in `pg'. In production we should only use a hash with a larger
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
     case hb_opts:get(await_inprogress, true, Opts) of
         true ->
             erlang:phash2(
                 {
-                    maps:without([<<"priv">>], Msg1),
-                    maps:without([<<"priv">>], Msg2)
+                    hb_maps:without([<<"priv">>], Msg1, Opts),
+                    hb_maps:without([<<"priv">>], Msg2, Opts)
                 }
             );
         _ -> ungrouped_exec
@@ -388,7 +393,7 @@ test_device(Base) ->
     #{
         info =>
             fun() ->
-                maps:merge(
+                hb_maps:merge(
                     #{
                         grouper =>
                             fun(M1, _M2, _Opts) ->

@@ -1,6 +1,8 @@
 -module(dev_test).
+-export([info/3]).
 -export([info/1, test_func/1, compute/3, init/3, restore/3, snapshot/3, mul/2]).
--export([postprocess/3]).
+-export([update_state/3, increment_counter/3, delay/3]).
+-export([index/3, postprocess/3, load/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -11,12 +13,52 @@
 %%% other testing functionality -- care should equally be taken to avoid
 %%% using the `test' key in other settings.
 
+
 %% @doc Exports a default_handler function that can be used to test the
 %% handler resolution mechanism.
 info(_) ->
 	#{
-        <<"default">> => dev_message
+        <<"default">> => dev_message,
+		handlers => #{
+			<<"info">> => fun info/3,
+			<<"update_state">> => fun update_state/3,
+			<<"increment_counter">> => fun increment_counter/3
+		}
 	}.
+
+%% @doc Exports a default_handler function that can be used to test the
+%% handler resolution mechanism.
+info(_Msg1, _Msg2, _Opts) ->
+	InfoBody = #{
+		<<"description">> => <<"Test device for testing the AO-Core framework">>,
+		<<"version">> => <<"1.0">>,
+		<<"paths">> => #{
+			<<"info">> => <<"Get device info">>,
+			<<"test_func">> => <<"Test function">>,
+			<<"compute">> => <<"Compute function">>,
+			<<"init">> => <<"Initialize function">>,
+			<<"restore">> => <<"Restore function">>,
+			<<"mul">> => <<"Multiply function">>,
+			<<"snapshot">> => <<"Snapshot function">>,
+			<<"postprocess">> => <<"Postprocess function">>,
+			<<"update_state">> => <<"Update state function">>
+		}
+	},
+	{ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
+
+%% @doc Example index handler.
+index(Msg, _Req, Opts) ->
+    Name = hb_ao:get(<<"name">>, Msg, <<"turtles">>, Opts),
+    {ok,
+        #{
+            <<"content-type">> => <<"text/html">>,
+            <<"body">> => <<"i like ", Name/binary, "!">>
+        }
+    }.
+
+%% @doc Return a message with the device set to this module.
+load(Base, _, _Opts) ->
+    {ok, Base#{ <<"device">> => <<"test-device@1.0">> }}.
 
 test_func(_) ->
 	{ok, <<"GOOD_FUNCTION">>}.
@@ -83,6 +125,65 @@ postprocess(_Msg, #{ <<"body">> := Msgs }, Opts) ->
     ?event({postprocess_called, Opts}),
     hb_http_server:set_opts(Opts#{ <<"postprocessor-called">> => true }),
     {ok, Msgs}.
+
+%% @doc Find a test worker's PID and send it an update message.
+update_state(_Msg, Msg2, _Opts) ->
+    case hb_ao:get(<<"test-id">>, Msg2) of
+        not_found ->
+            {error, <<"No test ID found in message.">>};
+        ID ->
+            LookupResult = hb_name:lookup({<<"test">>, ID}),
+            case LookupResult of
+                undefined ->
+                    {error, <<"No test worker found.">>};
+                Pid ->
+                    Pid ! {update, Msg2},
+                    {ok, Pid}
+            end
+    end.
+
+%% @doc Find a test worker's PID and send it an increment message.
+increment_counter(_Msg1, Msg2, _Opts) ->
+    case hb_ao:get(<<"test-id">>, Msg2) of
+        not_found ->
+            {error, <<"No test ID found in message.">>};
+        ID ->
+            LookupResult = hb_name:lookup({<<"test">>, ID}),
+            case LookupResult of
+                undefined ->
+                    {error, <<"No test worker found for increment.">>};
+                Pid when is_pid(Pid) ->
+                    Pid ! {increment},
+				    {ok, Pid};
+                _ -> % Handle case where registered value isn't a PID
+                    {error, <<"Invalid registration found for test worker.">>}
+            end
+    end.
+
+%% @doc Does nothing, just sleeps `Req/duration or 750' ms and returns the 
+%% appropriate form in order to be used as preprocessor.
+delay(Msg1, Req, Opts) ->
+    Duration =
+        hb_ao:get_first(
+            [
+                {Msg1, <<"duration">>},
+                {Req, <<"duration">>}
+            ],
+            750,
+            Opts
+        ),
+    ?event(delay, {delay, {sleeping, Duration}}),
+    timer:sleep(Duration),
+    ?event({delay, waking}),
+    Return =
+        case hb_ao:get(<<"return">>, Msg1, Opts) of
+            not_found ->
+                hb_ao:get(<<"body">>, Req, #{ <<"result">> => <<"slept">> }, Opts);
+            ReturnMsgs ->
+                ReturnMsgs
+        end,
+    ?event(delay, {returning, Return}),
+    {ok, Return}.
 
 %%% Tests
 

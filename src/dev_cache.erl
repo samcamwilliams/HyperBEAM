@@ -34,7 +34,7 @@ read(_M1, M2, Opts) ->
 							{accept_header, <<"application/aos-2">>}
 						}
 					),
-                    JSONMsg = dev_json_iface:message_to_json_struct(Res),
+                    JSONMsg = dev_json_iface:message_to_json_struct(Res, Opts),
                     ?event(dev_cache, {read, {json_message, JSONMsg}}),
                     {ok,
                         #{
@@ -47,7 +47,7 @@ read(_M1, M2, Opts) ->
             end;
         not_found ->
             % The cache does not have this ID,but it may still be an explicit
-            % `data/` path.
+            % `data/' path.
             Store = hb_opts:get(store, [], Opts),
             ?event(dev_cache, {read, {location, Location}, {store, Store}}),
             hb_store:read(Store, Location)
@@ -77,12 +77,13 @@ write(_M1, M2, Opts) ->
                     write_single(M2, Opts);
                 <<"batch">> ->
                     ?event(dev_cache, {write, {write_batch_called}}),
-                    maps:map(
+                    hb_maps:map(
                         fun(_, Value) ->
                             ?event(dev_cache, {write, {batch_item, Value}}),
                             write_single(Value, Opts)
                         end,
-                        hb_ao:get(<<"body">>, M2, Opts)
+                        hb_ao:get(<<"body">>, M2, Opts),
+                        Opts
                     );
                 _ ->
                     ?event(dev_cache, {write, {invalid_write_type, Type}}),
@@ -185,7 +186,7 @@ write_single(Msg, Opts) ->
 %% @returns true if the request is from an authorized writer, false
 %%          otherwise.
 is_trusted_writer(Req, Opts) ->
-    Signers = hb_message:signers(Req),
+    Signers = hb_message:signers(Req, Opts),
     ?event(dev_cache, {is_trusted_writer, {signers, Signers}, {req, Req}}),
     CacheWriters = hb_opts:get(cache_writers, [], Opts),
     ?event(dev_cache, {is_trusted_writer, {cache_writers, CacheWriters}}),
@@ -330,7 +331,7 @@ cache_write_message_test() ->
     ?event(dev_cache, {cache_api_test, {data_written, Path}}),
     {ok, ReadData} = hb_cache:read(Path, Opts),
     ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
-    ?assert(hb_message:match(TestData, ReadData, only_present)),
+    ?assert(hb_message:match(TestData, ReadData, only_present, Opts)),
     ?event(dev_cache, {cache_api_test}),
     ok.
 
@@ -340,7 +341,6 @@ cache_write_binary_test() ->
     {ok, Opts, _} = setup_test_env(),
     TestData = <<"test_binary">>,
     {ok, Path} = hb_cache:write(TestData, Opts),
-    ?event(dev_cache, {cache_api_test, {data_written, Path}}),
     {ok, ReadData} = hb_cache:read(Path, Opts),
     ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
     ?assertEqual(TestData, ReadData),
