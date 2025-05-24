@@ -583,74 +583,85 @@ lua_http_preprocessor_test() ->
 
 %% @doc Call a process whose `execution-device' is set to `lua@5.3a'.
 pure_lua_process_test() ->
-    Process = generate_lua_process("test/test.lua"),
+    Process = generate_lua_process("test/test.lua", #{}),
     {ok, _} = hb_cache:write(Process, #{}),
-    Message = generate_test_message(Process),
+    Message = generate_test_message(Process, #{}),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
 pure_lua_process_benchmark_test_() ->
-    {timeout, 30, fun() ->
-        BenchMsgs = 25,
-        Process = generate_lua_process("test/test.lua"),
-        hb_cache:write(Process, #{}),
-        Message = generate_test_message(Process),
-        lists:foreach(
-            fun(X) ->
-                hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
-                ?event(debug_lua, {scheduled, X})
-            end,
-            lists:seq(1, BenchMsgs)
-        ),
-        ?event(debug_lua, {executing, BenchMsgs}),
-        BeforeExec = os:system_time(millisecond),
-        {ok, _} = hb_ao:resolve(
-            Process,
-            <<"now">>,
-            #{ hashpath => ignore, process_cache_frequency => 50 }
-        ),
-        AfterExec = os:system_time(millisecond),
-        ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
-        hb_util:eunit_print(
-            "Computed ~p pure Lua process executions in ~ps (~.2f calls/s)",
-            [
-                BenchMsgs,
-                (AfterExec - BeforeExec) / 1000,
-                BenchMsgs / ((AfterExec - BeforeExec) / 1000)
-            ]
-        )
-    end}.
+    {timeout, 30, fun pure_lua_process_benchmark/0}.
+pure_lua_process_benchmark() ->
+    BenchMsgs = 50,
+    hb:init(),
+    Opts = #{
+        process_async_cache => true,
+        hashpath => ignore,
+        process_cache_frequency => 50
+    },
+    Process = generate_lua_process("test/test.lua", Opts),
+    {ok, _} = hb_cache:write(Process, Opts),
+    Message = generate_test_message(Process, Opts),
+    lists:foreach(
+        fun(X) ->
+            hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+            ?event(debug_lua, {scheduled, X})
+        end,
+        lists:seq(1, BenchMsgs)
+    ),
+    ?event(debug_lua, {executing, BenchMsgs}),
+    BeforeExec = os:system_time(millisecond),
+    {ok, _} = hb_ao:resolve(
+        Process,
+        <<"now">>,
+        #{ hashpath => ignore, process_cache_frequency => 50 }
+    ),
+    AfterExec = os:system_time(millisecond),
+    ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
+    hb_util:eunit_print(
+        "Computed ~p pure Lua process executions in ~ps (~.2f calls/s)",
+        [
+            BenchMsgs,
+            (AfterExec - BeforeExec) / 1000,
+            BenchMsgs / ((AfterExec - BeforeExec) / 1000)
+        ]
+    ).
 
 invoke_aos_test() ->
-    Process = generate_lua_process("test/hyper-aos.lua"),
+    Opts = #{},
+    Process = generate_lua_process("test/hyper-aos.lua", Opts),
     {ok, _} = hb_cache:write(Process, #{}),
-    Message = generate_test_message(Process),
+    Message = generate_test_message(Process, Opts),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
     ?assertEqual(<<"1">>, Results).
 
 aos_authority_not_trusted_test() ->
-    Process = generate_lua_process("test/hyper-aos.lua"),
+    Opts = #{ priv_wallet => ar_wallet:new() },
+    Process = generate_lua_process("test/hyper-aos.lua", Opts),
     ProcID = hb_message:id(Process, all),
-    {ok, _} = hb_cache:write(Process, #{}),
-    GuestWallet = ar_wallet:new(),
-    Message = hb_message:commit(#{
-        <<"path">> => <<"schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> =>
-            hb_message:commit(
-                #{
-                    <<"target">> => ProcID,
-                    <<"type">> => <<"Message">>,
-                    <<"data">> => <<"1 + 1">>,
-                    <<"random-seed">> => rand:uniform(1337),
-                    <<"action">> => <<"Eval">>,
-                    <<"from-process">> => <<"1234">>
-
-        }, GuestWallet)
-      }, GuestWallet
+    {ok, _} = hb_cache:write(Process, Opts),
+    Message = hb_message:commit(
+        #{
+            <<"path">> => <<"schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                hb_message:commit(
+                    #{
+                        <<"target">> => ProcID,
+                        <<"type">> => <<"Message">>,
+                        <<"data">> => <<"1 + 1">>,
+                        <<"random-seed">> => rand:uniform(1337),
+                        <<"action">> => <<"Eval">>,
+                        <<"from-process">> => <<"1234">>
+                    },
+                    Opts
+                )
+        },
+        Opts
     ),
+    ?event({message, Message}),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
     ?assertEqual(<<"Message is not trusted.">>, Results).
@@ -658,13 +669,30 @@ aos_authority_not_trusted_test() ->
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
     {timeout, 30, fun() ->
-        BenchMsgs = 25,
-        Process = generate_lua_process("test/hyper-aos.lua"),
-        {ok, _} = hb_cache:write(Process, #{}),
-        Message = generate_test_message(Process),
+        BenchMsgs = 10,
+        Opts = #{
+            process_async_cache => false,
+            hashpath => ignore,
+            process_cache_frequency => 50,
+            store =>
+                [
+                    #{
+                        <<"store-module">> => hb_store_lru,
+                        <<"persistent-store">> =>
+                            [
+                                #{
+                                    <<"store-module">> => hb_store_fs,
+                                    <<"prefix">> => <<"cache-TEST">>
+                                }
+                            ]
+                    }
+                ]
+        },
+        Process = generate_lua_process("test/hyper-aos.lua", Opts),
+        Message = generate_test_message(Process, Opts),
         lists:foreach(
             fun(X) ->
-                hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+                hb_ao:resolve(Process, Message, Opts),
                 ?event(debug_lua, {scheduled, X})
             end,
             lists:seq(1, BenchMsgs)
@@ -674,7 +702,7 @@ aos_process_benchmark_test_() ->
         {ok, _} = hb_ao:resolve(
             Process,
             <<"now">>,
-            #{ hashpath => ignore, process_cache_frequency => 50 }
+            Opts
         ),
         AfterExec = os:system_time(millisecond),
         ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
@@ -691,31 +719,36 @@ aos_process_benchmark_test_() ->
 %%% Test helpers
 
 %% @doc Generate a Lua process message.
-generate_lua_process(File) ->
-    Wallet = hb:wallet(),
+generate_lua_process(File, Opts) ->
+    NormOpts = Opts#{ priv_wallet => maps:get(priv_wallet, Opts, hb:wallet()) },
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), NormOpts),
     {ok, Script} = file:read_file(File),
-    hb_message:commit(#{
-        <<"device">> => <<"process@1.0">>,
-        <<"type">> => <<"Process">>,
-        <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"execution-device">> => <<"lua@5.3a">>,
-        <<"script">> => #{
-            <<"content-type">> => <<"application/lua">>,
-            <<"body">> => Script
+    hb_message:commit(
+        #{
+            <<"device">> => <<"process@1.0">>,
+            <<"type">> => <<"Process">>,
+            <<"scheduler-device">> => <<"scheduler@1.0">>,
+            <<"execution-device">> => <<"lua@5.3a">>,
+            <<"script">> => #{
+                <<"content-type">> => <<"application/lua">>,
+                <<"body">> => Script
+            },
+            <<"authority">> => [ 
+            hb:address(), 
+            <<"E3FJ53E6xtAzcftBpaw2E1H4ZM9h6qy6xz9NXh5lhEQ">>
+            ], 
+            <<"scheduler-location">> =>
+                hb_util:human_id(ar_wallet:to_address(Wallet)),
+            <<"test-random-seed">> => rand:uniform(1337)
         },
-        <<"authority">> => [ 
-          hb:address(), 
-          <<"E3FJ53E6xtAzcftBpaw2E1H4ZM9h6qy6xz9NXh5lhEQ">>
-        ], 
-        <<"scheduler-location">> =>
-            hb_util:human_id(ar_wallet:to_address(Wallet)),
-        <<"test-random-seed">> => rand:uniform(1337)
-    }, Wallet).
+        NormOpts
+    ).
 
 %% @doc Generate a test message for a Lua process.
-generate_test_message(Process) ->
+generate_test_message(Process, Opts) ->
     ProcID = hb_message:id(Process, all),
-    Wallet = hb:wallet(),
+    NormOpts = Opts#{ priv_wallet => maps:get(priv_wallet, Opts, hb:wallet()) },
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), NormOpts),
     Code = """ 
       Count = 0
       function add() 
@@ -740,10 +773,10 @@ generate_test_message(Process) ->
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
-                    Wallet
+                    NormOpts
                 )
         },
-        Wallet
+        NormOpts
     ).
 
 %% @doc Generate a stack message for the Lua process.

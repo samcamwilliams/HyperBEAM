@@ -268,15 +268,14 @@ generate_test_suite(Suite, Stores) ->
                         hb_util:human_id(crypto:strong_rand_bytes(32))
                     ),
                     hb_store:start(Store),
-                    timer:sleep(100),
-                    % Clear the server ID from the process dictionary for the
-                    % next test.
-                    hb_http_server:set_proc_server_id(undefined),
-                    hb_store:reset(Store)
+                    timer:sleep(100)
                 end,
                 fun(_) ->
+                    % Clear the server ID from the process dictionary for the
+                    % next test.
                     hb_store:reset(Store),
-                    hb_store:stop(Store)
+                    hb_store:stop(Store),
+					hb_http_server:set_proc_server_id(undefined)
                 end,
                 [
                     {

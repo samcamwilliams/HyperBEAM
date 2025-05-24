@@ -49,8 +49,12 @@ find_pid(StoreOpts) ->
     PID =
         case erlang:get({cache_lru, ServerID}) of
             undefined ->
-                hb_name:lookup({in_memory, ServerID});
-            Pid -> Pid
+                case hb_name:lookup({in_memory, ServerID}) of
+                    undefined ->
+                        start(StoreOpts);
+                    FoundPID -> FoundPID
+                end;
+            FoundPID -> FoundPID
         end,
     cache_pid(ServerID, PID),
     PID.
@@ -100,6 +104,7 @@ init(Opts) ->
 %% @doc Stop the LRU in memory by offloading the keys in the ETS tables
 %% before exiting the process.
 stop(Opts) ->
+    ?event(cache_lru, {stopping_lru_server, Opts}),
     CacheServer = find_pid(Opts),
     CacheServer ! stop,
     ok.
@@ -134,12 +139,13 @@ server_loop(State =
             From ! CacheTable;
         {put, Key, Value, From, Ref} ->
             put_cache_entry(State, Key, Value, Opts),
+            ?event(debug_lru, {put, {key, Key}, {value, Value}}),
             From ! {ok, Ref};
         {link, Existing, New, From, Ref} ->
             link_cache_entry(State, Existing, New),
             From ! {ok, Ref};
         {make_group, Key, From, Ref} ->
-            ?event(cache_lru, {make_group, Key}),
+            ?event(debug_lru, {make_group, Key}),
             ensure_dir(State, Key),
             From ! {ok, Ref};
         {update_recent, Key, Entry} ->
@@ -179,8 +185,8 @@ read(Opts, RawKey) ->
             case get_persistent_store(Opts) of
                 no_store ->
                     not_found;
-                Store ->
-                    hb_cache:read(Key, #{store => Store})
+                PersistentStore ->
+                    hb_cache:read(Key, #{ store => PersistentStore })
             end;
         {raw, Entry = #{value := Value}} ->
             CacheServer = find_pid(Opts),
@@ -256,12 +262,16 @@ list(Opts, Path) ->
         no_store ->
             InMemoryKeys;
         Store ->
-            OffloadedKeys =
+            PersistentKeys =
                 lists:map(
                     fun hb_util:bin/1,
-                    hb_store:list(Store, Path)
+                    case hb_store:list(Store, Path) of
+                        {error, _} -> [];
+                        {ok, Keys} -> Keys;
+                        Keys -> Keys
+                    end
                 ),
-            InMemoryKeys ++ OffloadedKeys
+            InMemoryKeys ++ PersistentKeys
     end.
 
 %% @doc Determine the type of a key in the store.
@@ -337,6 +347,8 @@ put_cache_entry(State, Key, Value, Opts) ->
     ?event(cache_lru, {putting_entry, {size, ValueSize}, {opts, Opts}}),
     Capacity = hb_maps:get(<<"capacity">>, Opts, ?DEFAULT_LRU_CAPACITY),
     case ValueSize =< Capacity of
+        false ->
+            offload_to_store(Key, Value, [], undefined, Opts);
         true ->
             case get_cache_entry(State, Key) of
                 nil ->
@@ -371,9 +383,7 @@ put_cache_entry(State, Key, Value, Opts) ->
                 Entry ->
                     ?event(cache_lru, {replace_entry, Key, Value}),
                     replace_entry(State, Key, Value, ValueSize, Entry)
-            end;
-        false ->
-            offload_to_store(Key, Value, [], undefined, Opts)
+            end
     end.
 
 ensure_dir(State, Path) ->
@@ -485,12 +495,13 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
             ok;
         TailKey ->
             {raw,
-             Entry =
-                 #{size := ReclaimedSize,
-                   id := ID,
-                   value := TailValue,
-                   group := Group}} =
-                get_cache_entry(State, TailKey),
+                Entry = #{
+                    size := ReclaimedSize,
+                    id := ID,
+                    value := TailValue,
+                    group := Group
+                }
+            } = get_cache_entry(State, TailKey),
             ?event(cache_lru, {evict, TailKey, claiming_size, ReclaimedSize}),
             delete_cache_index(State, ID),
             delete_cache_entry(State, TailKey),
@@ -504,10 +515,8 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
                     BaseName = filename:basename(TailKey),
                     UpdatedGroupSet = sets:del_element(BaseName, GroupSet),
                     case sets:size(UpdatedGroupSet) of
-                        0 ->
-                            delete_cache_entry(State, Group);
-                        _ ->
-                            add_cache_entry(State, Group, {group, UpdatedGroupSet})
+                        0 -> delete_cache_entry(State, Group);
+                        _ -> add_cache_entry(State, Group, {group, UpdatedGroupSet})
                     end
             end,
             offload_to_store(TailKey, TailValue, Links, Group, Opts),
@@ -574,6 +583,7 @@ decrease_cache_size(#{stats_table := Table}, Size) ->
 
 replace_entry(State, Key, Value, ValueSize, OldEntry) ->
     % Update entry and move the keys in the front of the cache as the most used Key
+    ?event(debug_lru, {replace_entry, {key, Key}, {value, Value}, {explicit, OldEntry}}),
     #{size := PreviousSize} = OldEntry,
     NewEntry = OldEntry#{value := Value, size := ValueSize},
     add_cache_entry(State, Key, {raw, NewEntry}),
