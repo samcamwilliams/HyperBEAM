@@ -40,7 +40,7 @@ from(List, Req, Opts) when is_list(List) ->
     };
 from(Msg, Req, Opts) when is_map(Msg) ->
     % Normalize the message, offloading links to the cache.
-    NormLinks = hb_link:normalize(Msg, Opts),
+    NormLinks = hb_link:normalize(Msg, linkify_mode(Req, Opts), Opts),
     NormKeysMap = hb_ao:normalize_keys(NormLinks, Opts),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
@@ -114,6 +114,18 @@ from(Msg, Req, Opts) when is_map(Msg) ->
         end
     };
 from(Other, _Req, _Opts) -> {ok, hb_path:to_binary(Other)}.
+
+%% @doc Discern the linkify mode from the request and the options.
+linkify_mode(Req, Opts) ->
+    case hb_maps:get(<<"bundle">>, Req, not_found, Opts) of
+        not_found -> hb_opts:get(linkify_mode, offload, Opts);
+    	true ->
+            % The request is asking for a bundle, so we should _not_ linkify.
+            false;
+        false ->
+            % The request is asking for a flat message, so we should linkify.
+            true
+    end.
 
 %% @doc Convert a TABM into a native HyperBEAM message.
 to(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};

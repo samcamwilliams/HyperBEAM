@@ -19,6 +19,7 @@ test_codecs() ->
     [
         <<"structured@1.0">>,
         <<"httpsig@1.0">>,
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         <<"flat@1.0">>,
         <<"ans104@1.0">>,
         <<"json@1.0">>
@@ -33,16 +34,10 @@ suite_test_opts() ->
             name => normal,
             desc => "Default opts",
             opts => test_opts(normal)
-        },
-        #{
-            name => bundling,
-            desc => "Always bundle",
-            opts => test_opts(bundling),
-            skip => [<<"ID of linked message">>, <<"Deep typed message ID">>]
         }
     ].
 suite_test_opts(OptsName) ->
-    [O || O = #{name := OName} <- suite_test_opts(), OName == OptsName].
+    [ O || O = #{ name := OName } <- suite_test_opts(), OName == OptsName ].
 
 test_opts(normal) ->
     #{
@@ -54,18 +49,6 @@ test_opts(normal) ->
                 }
             ],
         priv_wallet => hb:wallet()
-    };
-test_opts(bundling) ->
-    #{
-        store =>
-            [
-                #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST">>
-                }
-            ],
-        priv_wallet => hb:wallet(),
-        always_bundle => true
     }.
  
 test_suite() ->
@@ -178,7 +161,10 @@ codec_test_suite(Codecs) ->
     lists:flatmap(
         fun(CodecName) ->
             lists:map(fun({Desc, Test}) ->
-                TestName = binary_to_list(CodecName) ++ ": " ++ binary_to_list(Desc),
+                TestName =
+                    binary_to_list(
+                        << (suite_name(CodecName))/binary, ": ", Desc/binary >>
+                    ),
                 {
                     Desc,
                     TestName,
@@ -188,6 +174,15 @@ codec_test_suite(Codecs) ->
         end,
         Codecs
     ).
+
+%% @doc Create a name for a suite from a codec spec.
+suite_name(CodecSpec) when is_binary(CodecSpec) -> CodecSpec;
+suite_name(CodecSpec) when is_map(CodecSpec) ->
+    CodecName = maps:get(<<"device">>, CodecSpec, <<"[! NO CODEC !]">>),
+    case maps:get(<<"bundle">>, CodecSpec, false) of
+        false -> CodecName;
+        true -> << CodecName/binary, " (bundle)">>
+    end.
 
 %%% Codec-specific/misc. tests
 

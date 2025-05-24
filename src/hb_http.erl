@@ -176,9 +176,9 @@ http_response_to_httpsig(Status, HeaderMap, Body, Opts) ->
             end,
 			Opts
         ),
-        <<"structured@1.0">>,
+        #{ <<"device">> => <<"structured@1.0">>, <<"bundle">> => true },
         <<"httpsig@1.0">>,
-        Opts#{always_bundle => true}
+        Opts
     ))#{ <<"status">> => hb_util:int(Status) }.
 
 %% @doc Given a message, return the information needed to make the request.
@@ -238,19 +238,31 @@ route_to_request(M, {error, Reason}, _Opts) ->
     {error, {no_viable_route, {reason, Reason}, {message, M}}}.
 
 %% @doc Turn a set of request arguments into a request message, formatted in the
-%% preferred format.
+%% preferred format. This function honors the `accept-bundle' option, if it is
+%% already present in the message, and sets it to `true' if it is not.
 prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     Message = hb_ao:normalize_keys(RawMessage, Opts),
+    WithAcceptBundle =
+        case hb_ao:get(<<"accept-bundle">>, Message, Opts) of
+            not_found -> Message#{ <<"accept-bundle">> => true };
+            _ -> Message
+        end,
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
         <<"httpsig@1.0">> ->
             FullEncoding =
-                hb_message:convert(Message, <<"httpsig@1.0">>, Opts#{always_bundle => true}),
+                hb_message:convert(
+                    WithAcceptBundle,
+                    #{
+                        <<"device">> => <<"httpsig@1.0">>,
+                        <<"bundle">> => true
+                    },
+                    Opts
+                ),
             Body = hb_maps:get(<<"body">>, FullEncoding, <<>>, Opts),
             Headers = hb_maps:without([<<"body">>], FullEncoding, Opts),
-
 			?event(http, {request_headers, {explicit, {headers, Headers}}}),
 			?event(http, {request_body, {explicit, {body, Body}}}),
             hb_maps:merge(ReqBase, #{ headers => Headers, body => Body }, Opts);
@@ -908,9 +920,7 @@ send_large_signed_request_test() ->
     ).
 
 index_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     NodeURL = hb_http_server:start_node(),
     {ok, Res} = get(NodeURL, <<"/~test-device@1.0/load">>, Opts),
     ?assertEqual(<<"i like turtles!">>, hb_ao:get(<<"body">>, Res, Opts)).

@@ -108,23 +108,23 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
     end.
 
 to_tabm(Msg, SourceFormat, Opts) ->
-    SourceCodecMod = get_codec(SourceFormat, Opts),
+    {SourceCodecMod, Params} = conversion_spec_to_req(SourceFormat, Opts),
     % We use _from_ here because the codecs are labelled from the perspective
     % of their own format. `dev_codec_ans104:from/1' will convert _from_
     % an ANS-104 message _into_ a TABM.
-    case SourceCodecMod:from(Msg, #{}, Opts) of
+    case SourceCodecMod:from(Msg, Params, Opts) of
         {ok, TypicalMsg} when is_map(TypicalMsg) ->
             TypicalMsg;
         {ok, OtherTypeRes} -> OtherTypeRes
     end.
 
 from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
-    TargetCodecMod = get_codec(TargetFormat, Opts),
+    {TargetCodecMod, Params} = conversion_spec_to_req(TargetFormat, Opts),
     % We use the _to_ function here because each of the codecs we may call in
     % this step are labelled from the perspective of the target format. For 
     % example, `dev_codec_httpsig:to/1' will convert _from_ a TABM to an
     % HTTPSig message.
-    case TargetCodecMod:to(Msg, #{}, Opts) of
+    case TargetCodecMod:to(Msg, Params, Opts) of
         {ok, TypicalMsg} when is_map(TypicalMsg) ->
             restore_priv(TypicalMsg, OldPriv, Opts);
         {ok, OtherTypeRes} -> OtherTypeRes
@@ -244,11 +244,29 @@ commit(Msg, WalletOrOpts) ->
     ).
 commit(Msg, Wallet, Format) when not is_map(Wallet) ->
     commit(Msg, #{ priv_wallet => Wallet }, Format);
-commit(Msg, Opts, Format) ->
+commit(Msg, Opts, CodecName) when is_binary(CodecName) ->
+    commit(Msg, Opts, #{ <<"device">> => CodecName });
+commit(Msg, Opts, Spec) ->
     {ok, Signed} =
         dev_message:commit(
             Msg,
-            #{ <<"commitment-device">> => Format },
+            Spec#{
+                <<"commitment-device">> =>
+                    case hb_maps:get(<<"commitment-device">>, Spec, none, Opts) of
+                        none ->
+                            case hb_maps:get(<<"device">>, Spec, none, Opts) of
+                                none ->
+                                    throw(
+                                        {
+                                            no_commitment_device_in_codec_spec,
+                                            Spec
+                                        }
+                                    );
+                                Device -> Device
+                            end;
+                        CommitmentDevice -> CommitmentDevice
+                    end
+            },
             Opts
         ),
     Signed.
@@ -261,7 +279,13 @@ committed(Msg, none, Opts) ->
 committed(Msg, List, Opts) when is_list(List) ->
     committed(Msg, #{ <<"commitments">> => List }, Opts);
 committed(Msg, CommittersMsg, Opts) ->
-    ?event({committed, {msg, {explicit, Msg}}, {committers_msg, {explicit, CommittersMsg}}, {opts, Opts}}),
+    ?event(
+        {committed,
+            {msg, {explicit, Msg}},
+            {committers_msg, {explicit, CommittersMsg}},
+            {opts, Opts}
+        }
+    ),
     {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
     CommittedKeys.
 
@@ -298,15 +322,31 @@ uncommitted(Msg, Opts) ->
 signers(Msg, Opts) ->
     hb_ao:get(<<"committers">>, Msg, [], Opts).
 
-%% @doc Get a codec from the options.
-get_codec(TargetFormat, Opts) ->
+%% @doc Get a codec device and request params from the given conversion request. 
+%% Expects conversion spec to either be a binary codec name, or a map with a
+%% `device' key and other parameters. Additionally honors the `always_bundle'
+%% key in the node message if present.
+conversion_spec_to_req(Spec, Opts) when is_binary(Spec) ->
+    conversion_spec_to_req(#{ <<"device">> => Spec }, Opts);
+conversion_spec_to_req(Spec, Opts) ->
     try
-        hb_ao:message_to_device(
-            #{ <<"device">> => TargetFormat },
-            Opts
-        )
+        {
+            hb_ao:message_to_device(
+                #{
+                    <<"device">> =>
+                        hb_ao:get(
+                            <<"device">>,
+                            Spec,
+                            no_codec_device_in_conversion_spec,
+                            Opts
+                        )
+                },
+                Opts
+            ),
+            hb_maps:without([<<"device">>], Spec, Opts)
+        }
     catch _:_ ->
-        throw({message_codec_not_viable, TargetFormat})
+        throw({message_codec_not_extractable, Spec})
     end.
 
 %% @doc Pretty-print a message.

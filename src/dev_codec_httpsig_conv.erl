@@ -326,18 +326,22 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
             % Return the encoded HTTPSig message without modification.
             {ok, EncOriginal}
     end;
-to(TABM, Req = #{<<"bundle">> := true}, FormatOpts, Opts) ->
-    to(TABM, Req, FormatOpts, Opts#{always_bundle => true});
-to(TABM, Req, FormatOpts, Opts = #{always_bundle := true}) ->
-    OptsWithoutBundle = hb_maps:without([always_bundle], Opts),
-    DecodedLinks = hb_message:convert(TABM, <<"structured@1.0">>, OptsWithoutBundle),
-    EnsureLoaded = hb_cache:ensure_all_loaded(DecodedLinks, Opts),
-    TABM2 = hb_message:convert(EnsureLoaded, tabm, OptsWithoutBundle#{linkify_mode => false}),
-    to(TABM2,
-        Req,
-        FormatOpts,
-        OptsWithoutBundle#{linkify_mode => false});
-to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
+to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
+    % Ensure that the material for the message is loaded, if the request is
+    % asking for a bundle.
+    Msg =
+        case hb_maps:get(<<"bundle">>, Req, false, Opts) of
+            false -> TABM;
+            true ->
+                hb_message:convert(
+                    hb_cache:ensure_all_loaded(TABM, Opts),
+                    #{
+                        <<"device">> => <<"structured@1.0">>,
+                        <<"bundle">> => true
+                    },
+                    Opts
+                )
+        end,
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
@@ -349,7 +353,8 @@ to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
                 <<"signature-input">>,
                 <<"priv">>
             ],
-            TABM
+            Msg,
+            Opts
         ),
     WithGroupedIDs = group_ids(Stripped),
     ?event(debug_links, {grouped, WithGroupedIDs}),
@@ -362,18 +367,18 @@ to(TABM, _Req, FormatOpts, Opts) when is_map(TABM) ->
         ),
     % Finally, add the signatures to the encoded HTTP message with the
     % commitments from the original message.
-    CommitmentsMap = case maps:get(<<"commitments">>, TABM, undefined) of
+    CommitmentsMap = case maps:get(<<"commitments">>, Msg, undefined) of
         undefined ->
-            case maps:get(<<"signature">>, TABM, undefined) of
+            case maps:get(<<"signature">>, Msg, undefined) of
                 undefined -> #{};
                 Signature ->
                     #{
                         Signature => #{
-                                <<"signature">> => Signature,
-                                <<"committed">> => maps:get(<<"committed">>, TABM, #{}),
-                                <<"keyid">> => maps:get(<<"keyid">>, TABM, <<>>),
-                                <<"commitment-device">> => <<"httpsig@1.0">>,
-                                <<"type">> => maps:get(<<"type">>, TABM, <<>>)
+                            <<"signature">> => Signature,
+                            <<"committed">> => maps:get(<<"committed">>, Msg, #{}),
+                            <<"keyid">> => maps:get(<<"keyid">>, Msg, <<>>),
+                            <<"commitment-device">> => <<"httpsig@1.0">>,
+                            <<"type">> => maps:get(<<"type">>, Msg, <<>>)
                         }
                     }
             end;
@@ -455,12 +460,19 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
                                 <<"body">>,
                                 Opts
                             );
-                           (Key, Value) ->
-                            ValueWithCommitted = case maps:get(<<Key/binary, "/committed">>, GroupedBodyMap, undefined) of
-                                undefined -> Value;
-                                Committed ->
-                                    maps:put(<<"committed">>, Committed, Value)
-                            end,
+                        (Key, Value) ->
+                            Committed =
+                                maps:get(
+                                    <<Key/binary, "/committed">>,
+                                    GroupedBodyMap,
+                                    undefined
+                                ),
+                            ValueWithCommitted =
+                                case Committed of
+                                    undefined -> Value;
+                                    Committed ->
+                                        maps:put(<<"committed">>, Committed, Value)
+                                end,
                             encode_body_part(Key, ValueWithCommitted, InlineKey, Opts)
                         end,
                         GroupedBodyMap,
@@ -653,9 +665,6 @@ boundary_from_parts(PartList) ->
     hb_util:encode(RawBoundary).
 
 %% @doc Encode a multipart body part to a flat binary.
-encode_body_part(PartName, BodyPart, InlineKey) -> 
-    encode_body_part(PartName, BodyPart, InlineKey, #{}).
-
 encode_body_part(PartName, BodyPart, InlineKey, Opts) ->
     % We'll need to prepend a Content-Disposition header
     % to the part, using the field name as the form part
