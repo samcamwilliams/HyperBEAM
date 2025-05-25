@@ -86,12 +86,22 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     {ok, SigName, SFSig, SFSigInput}.
 
 get_additional_params(Commitment) ->
-    AdditionalParams = sets:to_list(
-                         sets:subtract(
-                           sets:from_list(maps:keys(Commitment)), 
-                           sets:from_list([<<"alg">>, <<"keyid">>, <<"tag">>, <<"created">>, <<"expires">>, <<"nonce">>])
-                          )
-                        ),
+    AdditionalParams =
+        sets:to_list(
+            sets:subtract(
+                sets:from_list(maps:keys(Commitment)), 
+                sets:from_list(
+                    [
+                        <<"alg">>,
+                        <<"keyid">>,
+                        <<"tag">>,
+                        <<"created">>,
+                        <<"expires">>,
+                        <<"nonce">>
+                    ]
+                )
+            )
+        ),
     lists:map(fun(Param) ->
         ParamValue = maps:get(Param, Commitment),
         case ParamValue of

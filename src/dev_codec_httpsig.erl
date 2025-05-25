@@ -69,33 +69,51 @@ serialize(Msg, _Req, Opts) ->
     {ok, dev_codec_httpsig_conv:encode_http_msg(HTTPSig, Opts) }.
 
 % @doc Verify the signature of a commitment based on its `type' parameter.
-verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := EncID }, Opts) ->
+verify(Base, Req, Opts) ->
+    case hb_util:atom(hb_maps:get(<<"bundle">>, Req, false)) of
+        false -> do_verify(Base, Req, Opts);
+        true ->
+            {ok, Bundle} = to(Base, #{ <<"bundle">> => true }, Opts),
+            do_verify(Bundle, Req, Opts)
+    end.
+
+do_verify(B, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := ID }, Opts) ->
     % A hmac-sha256 commitment is verified simply by generating the ID from the
     % given committed keys.
-    ID = hb_util:decode(EncID),
-    case hmac(Base, Req, Opts) of
-        {ok, ID} -> {ok, true};
+    DecID = hb_util:decode(ID),
+    case hmac(B, Req, Opts) of
+        {ok, DecID} -> {ok, true};
         {error, _} -> {ok, false}
     end;
-verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+do_verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
     SigBase = signature_base(Base, Req, Opts),
+    ?event(debug_bundle, {rsa_signature_base_verify, {string, SigBase}}),
     PubKey = hb_util:decode(maps:get(<<"keyid">>, Req)),
     Signature = hb_util:decode(maps:get(<<"signature">>, Req)),
     {ok, ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512)};
-verify(_Base, Req, _Opts) ->
+do_verify(_Base, Req, _Opts) ->
     {error, {httpsig_unsupported_commitment_request, Req}}.
 
 %% @doc Commit to a message using the HTTP-Signature format. We use the `type'
 %% parameter to determine the type of commitment to use. If the `type' parameter
 %% is `signed', we default to the rsa-pss-sha512 algorithm. If the `type'
 %% parameter is `unsigned', we default to the hmac-sha256 algorithm.
-commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
-    commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
-commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
-    commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
-commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+commit(Msg, Req = #{ <<"bundle">> := true }, Opts) ->
+    % If the message is being bundled, then we need to convert it to its bundled
+    % form, then commit to the bundled message.
+    {ok, Bundle} = to(Msg, Req, Opts),
+    {ok, #{ <<"commitments">> := Commitments }} = do_commit(Bundle, Req, Opts),
+    {ok, Msg#{ <<"commitments">> => Commitments }};
+commit(Msg, Req, Opts) ->
+    % The message is not a bundle; commit to the it directly.
+    do_commit(Msg, Req, Opts).
+do_commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
+    do_commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
+do_commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
+    do_commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
+do_commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     % Utilize the hashpath, if present, as the tag for the commitment.
     MaybeTagMap =
@@ -106,18 +124,23 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         end,
     % Generate the unsigned commitment and signature base.
     UnsignedCommitment =
-        MaybeTagMap#{
-            <<"commitment-device">> => <<"httpsig@1.0">>,
-            <<"type">> => <<"rsa-pss-sha512">>,
-            <<"keyid">> => hb_util:encode(ar_wallet:to_pubkey(Wallet)),
-            <<"committer">> =>
-                hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"committed">> =>
-                hb_ao:normalize_keys(keys_to_commit(MsgToSign, Req, Opts))
-        },
+        maybe_bundle_tag_commitment(
+            MaybeTagMap#{
+                <<"commitment-device">> => <<"httpsig@1.0">>,
+                <<"type">> => <<"rsa-pss-sha512">>,
+                <<"keyid">> => hb_util:encode(ar_wallet:to_pubkey(Wallet)),
+                <<"committer">> =>
+                    hb_util:human_id(ar_wallet:to_address(Wallet)),
+                <<"committed">> =>
+                    hb_ao:normalize_keys(keys_to_commit(MsgToSign, Req, Opts))
+            },
+            Req,
+            Opts
+        ),
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
     SignatureBase = signature_base(MsgToSign, UnsignedCommitment, Opts),
+    ?event(debug_bundle, {rsa_signature_base, {string, SignatureBase}}),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
@@ -125,7 +148,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % Calculate the ID and place the signature into the `commitments' key of the
     % message. After, we call `commit' again to add the hmac to the new
     % message.
-    commit(
+    do_commit(
         MsgToSign#{
             <<"commitments">> =>
                 (maps:get(<<"commitments">>, MsgToSign, #{}))#{
@@ -140,7 +163,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         },
         Opts
     );
-commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
+do_commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
     % Find the ID of the message without hmac commitments, then add the hmac
     % using the set of all presently committed keys as the input. If no (other)
     % commitments are present, then use all keys from the encoded message.
@@ -153,31 +176,46 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Msg,
             Opts
         ),
+    % Merge together the bundle and tag maps.
     % Extract the base commitments from the message.
     Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     CommittedKeys = keys_to_commit(Msg, Req, Opts),
     {ok, ID} = hmac(WithoutHmac, #{ <<"committed">> => CommittedKeys }, Opts),
     EncID = hb_util:human_id(ID),
-    Res = {
-        ok,
-        hb_maps:put(
-            <<"commitments">>,
-            Commitments#{
-                EncID =>
-                    #{
-                        <<"commitment-device">> => <<"httpsig@1.0">>,
-                        <<"type">> => <<"hmac-sha256">>,
-                        <<"keyid">> => hb_util:encode(<<"ao">>),
-                        <<"signature">> => EncID,
-                        <<"committed">> => hb_ao:normalize_keys(CommittedKeys)
-                    }
-            },
-            Msg,
-			Opts
-        )
-    },
+    Res =
+        {
+            ok,
+            hb_maps:put(
+                <<"commitments">>,
+                Commitments#{
+                    EncID =>
+                        maybe_bundle_tag_commitment(
+                            #{
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => <<"hmac-sha256">>,
+                                <<"keyid">> => hb_util:encode(<<"ao">>),
+                                <<"signature">> => EncID,
+                                <<"committed">> =>
+                                    hb_ao:normalize_keys(CommittedKeys)
+                            },
+                            Req,
+                            Opts
+                        )
+                },
+                Msg,
+                Opts
+            )
+        },
     ?event({reset_hmac_complete, Res}),
     Res.
+
+%% @doc Annotate the commitment with the `bundle' key if the request contains
+%% it.
+maybe_bundle_tag_commitment(Commitment, Req, _Opts) ->
+    case hb_maps:get(<<"bundle">>, Req, false) of
+        true -> Commitment#{ <<"bundle">> => <<"true">> };
+        false -> Commitment
+    end.
 
 %% @doc Derive the set of keys to commit to from a `commit` request and a 
 %% base message.

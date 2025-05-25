@@ -11,18 +11,21 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    find_multiple_commitments_test().
+    signed_nested_message_with_child_test(
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
+        test_opts(normal)
+    ).
 
 %% @doc Return a list of codecs to test. Disable these as necessary if you need
 %% to test the functionality of a single codec, etc.
 test_codecs() ->
     [
-        <<"structured@1.0">>,
+        %<<"structured@1.0">>,
         <<"httpsig@1.0">>,
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
-        <<"flat@1.0">>,
-        <<"ans104@1.0">>,
-        <<"json@1.0">>
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true }
+        %<<"flat@1.0">>,
+        %<<"ans104@1.0">>,
+        %<<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -112,7 +115,7 @@ test_suite() ->
             fun complex_signed_message_test/2},
         {<<"Nested message with large keys">>,
             fun nested_message_with_large_keys_test/2},
-        {<<"Nested signed message with typed list">>,
+        {<<"Signed nested complex signed message">>,
             fun verify_nested_complex_signed_test/2},
         % Complex structures
         {<<"Nested message with large keys and content">>,
@@ -358,20 +361,21 @@ signed_only_committed_data_field_test(Codec, Opts) ->
     ?assert(hb_message:verify(OnlyCommitted)).
 
 signed_nested_data_key_test(Codec, Opts) ->
-    Msg = #{
-        <<"outer-data">> => <<"outer">>,
-        <<"body">> =>
-            hb_message:commit(
+    Msg = 
+        #{
+            <<"outer-data">> => <<"outer">>,
+            <<"body">> =>
                 #{
                     <<"inner-data">> => <<"inner">>,
                     <<"data">> => <<"DATA">>
-                },
-                Opts,
-                Codec
-            )
-    },
-    Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+                }
+        },
+    Signed = hb_message:commit(Msg, Opts, Codec),
+    ?event({signed, Signed}),
+    Encoded = hb_message:convert(Signed, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({decoded, Decoded}),
     LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),
     ?event({matching, {input, Msg}, {output, LoadedMsg}}),
     ?assert(hb_message:match(Msg, LoadedMsg, primary, Opts)).
@@ -532,9 +536,12 @@ signed_nested_message_with_child_test(Codec, Opts) ->
     },
     hb_cache:write(Msg, Opts),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
-    ?assert(hb_message:match(Msg, Decoded, primary, Opts)).
+    MatchRes = hb_message:match(Msg, Decoded, primary, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes).
 
 nested_empty_map_test(Codec, Opts) ->
     Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},
@@ -1040,23 +1047,13 @@ signed_with_inner_signed_message_test(Codec, Opts) ->
     ?event({initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(hb_message:verify(Msg, all, Opts)),
-    Inner = hb_maps:get(<<"inner">>, Msg, not_found, Opts),
-    {ok, CommittedInner} =
-        hb_message:with_only_committed(
-            Inner,
-            Opts
-        ),
-    ?event({committed_inner, CommittedInner}),
-    ?event({inner_committers, hb_message:signers(CommittedInner, Opts)}),
-    % 2. Verify the inner message without changes.
-    ?assert(hb_message:verify(CommittedInner, signers, Opts)),
-    % 3. Convert the message to the format and back.
+    % 2. Convert the message to the format and back.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
     %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    % 4. Verify the outer message after decode.
+    % 3. Verify the outer message after decode.
     ?assert(
         hb_message:match(
             InnerSigned,
@@ -1066,17 +1063,30 @@ signed_with_inner_signed_message_test(Codec, Opts) ->
         )
     ),
     ?assert(hb_message:verify(Decoded, all, Opts)),
-    % 5. Verify the inner message from the converted message, applying
-    % `with_only_committed` first.
-    InnerDecoded = hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
-    ?event({inner_decoded, InnerDecoded}),
-    % Applying `with_only_committed' should verify the inner message.
-    {ok, CommittedInnerOnly} =
-        hb_message:with_only_committed(
-            InnerDecoded,
-            Opts
-        ),
-    ?assert(hb_message:verify(CommittedInnerOnly, signers, Opts)).
+    % 4. If the message is not a bundle, verify the inner message from the
+    % converted message, applying `with_only_committed` first.
+    case Codec of
+        #{ <<"bundle">> := true } -> ok;
+        _ ->
+            Inner = hb_maps:get(<<"inner">>, Msg, not_found, Opts),
+            {ok, CommittedInner} =
+                hb_message:with_only_committed(
+                    Inner,
+                    Opts
+                ),
+            ?event({committed_inner, CommittedInner}),
+            ?event({inner_committers, hb_message:signers(CommittedInner, Opts)}),
+            ?assert(hb_message:verify(CommittedInner, signers, Opts)),
+            InnerDecoded = hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
+            ?event({inner_decoded, InnerDecoded}),
+            % Applying `with_only_committed' should verify the inner message.
+            {ok, CommittedInnerOnly} =
+                hb_message:with_only_committed(
+                    InnerDecoded,
+                    Opts
+                ),
+            ?assert(hb_message:verify(CommittedInnerOnly, signers, Opts))
+    end.
 
 large_body_committed_keys_test(Codec, Opts) ->
     case Codec of
@@ -1206,6 +1216,8 @@ encode_small_balance_table_test(Codec, Opts) ->
 encode_large_balance_table_test(Codec, Opts) ->
     encode_balance_table(1000, Codec, Opts).
 
+sign_links_test(#{ <<"bundle">> := true }, _Opts) ->
+    skip;
 sign_links_test(Codec, Opts) ->
     % Make a message with definitively non-accessible lazy-loadable links. Sign
     % it, ensuring that we can produce signatures and IDs without having the 

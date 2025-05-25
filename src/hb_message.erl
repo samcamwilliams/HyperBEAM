@@ -149,7 +149,6 @@ conversion_spec_to_req(Spec, Opts) when is_binary(Spec) or (Spec == tabm) ->
     conversion_spec_to_req(#{ <<"device">> => Spec }, Opts);
 conversion_spec_to_req(Spec, Opts) ->
     try
-        ?event(debug_bundle, {conversion_spec_to_req, {spec, Spec}}),
         Device =
             hb_maps:get(
                 <<"device">>,
@@ -157,7 +156,6 @@ conversion_spec_to_req(Spec, Opts) ->
                 no_codec_device_in_conversion_spec,
                 Opts
             ),
-        ?event(debug_bundle, {found_device, {spec, Spec}, {device, {explicit, Device}}}),
         {
             case Device of
                 tabm -> tabm;
@@ -336,11 +334,12 @@ verify(Msg, Committers, Opts) ->
     {ok, Res} =
         dev_message:verify(
             Msg,
-            #{ <<"committers">> =>
-                case ?IS_ID(Committers) of
-                    true -> [Committers];
-                    false -> Committers
-                end
+            #{
+                <<"committers">> =>
+                    case ?IS_ID(Committers) of
+                        true -> [Committers];
+                        false -> Committers
+                    end
             },
             Opts
         ),
