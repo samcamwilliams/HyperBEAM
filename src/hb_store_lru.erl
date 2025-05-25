@@ -584,8 +584,16 @@ decrease_cache_size(#{stats_table := Table}, Size) ->
 replace_entry(State, Key, Value, ValueSize, OldEntry) ->
     % Update entry and move the keys in the front of the cache as the most used Key
     ?event(debug_lru, {replace_entry, {key, Key}, {value, Value}, {explicit, OldEntry}}),
-    #{size := PreviousSize} = OldEntry,
-    NewEntry = OldEntry#{value := Value, size := ValueSize},
+    ?no_prod(<<"FIXME: OldEntry is not always a normalized map.">>),
+    NormOldEntry =
+        case OldEntry of
+            {_, X} when is_map(X) ->
+                X;
+            _ ->
+                #{ group => undefined }
+        end,
+    PreviousSize = maps:get(size, NormOldEntry, 0),
+    NewEntry = NormOldEntry#{value := Value, size := ValueSize},
     add_cache_entry(State, Key, {raw, NewEntry}),
     update_recently_used(State, Key, NewEntry),
     update_cache_size(State, PreviousSize, ValueSize).
