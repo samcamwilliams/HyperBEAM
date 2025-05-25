@@ -53,6 +53,10 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%% @doc The number of write and read operations to perform in the benchmark.
+-define(STORE_BENCH_WRITE_OPS, 100_000).
+-define(STORE_BENCH_READ_OPS, 100_000).
+
 behavior_info(callbacks) ->
     [
         {start, 1}, {stop, 1}, {reset, 1}, {make_group, 2}, {make_link, 3},
@@ -194,7 +198,6 @@ call_function(X, _Function, _Args) when not is_list(X) ->
 call_function([], _Function, _Args) ->
     no_viable_store;
 call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
-    ?event({calling, Mod, Function, Args}),
     try apply(Mod, Function, [Store | Args]) of
         not_found ->
             call_function(Rest, Function, Args);
@@ -280,10 +283,14 @@ generate_test_suite(Suite, Stores) ->
                 [
                     {
                         atom_to_list(Mod) ++ ": " ++ Desc,
-                        fun() ->
-                            TestResult = Test(Store),
-                            TestResult
-                        end
+                        {
+                            timeout,
+                            60,
+                            fun() ->
+                                TestResult = Test(Store),
+                                TestResult
+                            end
+                        }
                     }
                 ||
                     {Desc, Test} <- Suite
@@ -324,3 +331,77 @@ store_suite_test_() ->
         {"resursive path resolution", fun resursive_path_resolution_test/1},
         {"hierarchical path resolution", fun hierarchical_path_resolution_test/1}
     ]).
+
+benchmark_suite_test_() ->
+    hb_store:generate_test_suite([
+        {"benchmark store", fun benchmark_store/1}
+    ]).
+
+%% @doc Benchmark a store. By default, we write 10,000 keys and read 10,000
+%% keys. This can be altered by setting the `STORE_BENCH_WRITE_OPS' and
+%% `STORE_BENCH_READ_OPS' macros.
+benchmark_store(Store) ->
+    benchmark_store(Store, ?STORE_BENCH_WRITE_OPS, ?STORE_BENCH_READ_OPS).
+benchmark_store(Store, WriteOps, ReadOps) ->
+    start(Store),
+    timer:sleep(100),
+    ?event(
+        {benchmarking,
+            {store, Store},
+            {write_ops, WriteOps},
+            {read_ops, ReadOps}
+        }
+    ),
+    % Generate random data to write and the keys to read ahead of time.
+    RandomData = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    Keys =
+        lists:map(
+            fun(_) ->
+                << "key-", (integer_to_binary(rand:uniform(ReadOps)))/binary >>
+            end,
+            lists:seq(1, ReadOps)
+        ),
+    {WriteTime, ok} =
+        timer:tc(
+            fun() ->
+                lists:foreach(
+                    fun(Key) -> ok = write(Store, Key, RandomData) end,
+                    Keys
+                )
+            end
+        ),
+    % Calculate write rate.
+    WriteRate = erlang:round(WriteOps / (WriteTime / 1000000)),
+    hb_util:eunit_print(
+        "Wrote ~s records in ~p ms (~s records/s)",
+        [
+            hb_util:human_int(WriteOps),
+            WriteTime/1000,
+            hb_util:human_int(WriteRate)
+        ]
+    ),
+    % Generate keys to read ahead of time.
+    ReadKeys =
+        lists:map(
+            fun(_) ->
+                << "key", (rand:uniform(ReadOps)):256/integer >>
+            end,
+            lists:seq(1, ReadOps)
+        ),
+    % Time random reads.
+    {ReadTime, ok} =
+        timer:tc(
+            fun() ->
+                lists:foreach(fun(Key) -> read(Store, Key) end, ReadKeys)
+            end
+        ),
+    % Calculate read rate.
+    ReadRate = erlang:round(ReadOps / (ReadTime / 1000000)),
+    hb_util:eunit_print(
+        "Read ~s records in ~p ms (~s records/s)",
+        [
+            hb_util:human_int(ReadOps),
+            ReadTime/1000,
+            hb_util:human_int(ReadRate)
+        ]
+    ).
