@@ -226,19 +226,9 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 
 %%% Test helpers
 
--ifdef(ENABLE_ROCKSDB).
-test_stores() ->
-    [
-        #{
-            <<"store-module">> => hb_store_rocksdb,
-            <<"prefix">> => <<"cache-TEST/rocksdb">>
-        },
-        #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/fs">>
-        }
-    ].
--else.
+%% @doc Return a list of stores for testing. Additional individual functions are
+%% used to generate store options for those whose drivers are not built by 
+%% default into all HyperBEAM distributions.
 test_stores() ->
     [
         #{
@@ -254,8 +244,18 @@ test_stores() ->
                 }
             ]
         }
-    ].
+    ] ++ rocks_stores().
 
+-ifdef(ENABLE_ROCKSDB).
+rocks_stores() ->
+    [
+        #{
+            <<"store-module">> => hb_store_rocksdb,
+            <<"prefix">> => <<"cache-TEST/rocksdb">>
+        }
+    ].
+-else.
+rocks_stores() -> [].
 -endif.
 
 generate_test_suite(Suite) ->
