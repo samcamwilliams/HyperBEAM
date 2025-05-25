@@ -333,8 +333,13 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
         case hb_maps:get(<<"bundle">>, Req, false, Opts) of
             false -> TABM;
             true ->
+                % Convert back to the fully loaded structured@1.0 message, then
+                % convert to TABM with bundling enabled.
+                Structured = hb_message:convert(TABM, <<"structured@1.0">>, Opts),
+                Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
                 hb_message:convert(
-                    hb_cache:ensure_all_loaded(TABM, Opts),
+                    Loaded,
+                    tabm,
                     #{
                         <<"device">> => <<"structured@1.0">>,
                         <<"bundle">> => true

@@ -636,11 +636,11 @@ signed_message_encode_decode_verify_test(Codec, Opts) ->
         <<"test-data">> => <<"TEST DATA">>,
         <<"test-key">> => <<"TEST VALUE">>
     },
-    {ok, SignedMsg} =
-        dev_message:commit(
+    SignedMsg =
+        hb_message:commit(
             Msg,
-            #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts,
+            Codec
         ),
     ?event({signed_msg, SignedMsg}),
     ?assertEqual(true, hb_message:verify(SignedMsg, all, Opts)),
@@ -663,11 +663,11 @@ complex_signed_message_test(Codec, Opts) ->
             <<"list">> => [1,2,3]
         }
     },
-    {ok, SignedMsg} =
-        dev_message:commit(
+    SignedMsg =
+        hb_message:commit(
             Msg,
-            #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts,
+            Codec
         ),
     Encoded = hb_message:convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
@@ -717,18 +717,18 @@ deep_multisignature_test() ->
             <<"nested_key">> => <<"NESTED_VALUE">>
         }
     },
-    {ok, SignedMsg} =
-        dev_message:commit(
+    SignedMsg =
+        hb_message:commit(
             Msg,
-            #{ <<"commitment-device">> => Codec },
-            Opts#{ priv_wallet => Wallet1 }
+            Opts#{ priv_wallet => Wallet1 },
+            Codec
         ),
     ?event({signed_msg, SignedMsg}),
-    {ok, MsgSignedTwice} =
-        dev_message:commit(
+    MsgSignedTwice =
+        hb_message:commit(
             SignedMsg,
-            #{ <<"commitment-device">> => Codec },
-            Opts#{ priv_wallet => Wallet2 }
+            Opts#{ priv_wallet => Wallet2 },
+            Codec
         ),
     ?event({signed_msg_twice, MsgSignedTwice}),
     ?assert(hb_message:verify(MsgSignedTwice, all, Opts)),
@@ -778,11 +778,11 @@ signed_deep_message_test(Codec, Opts) ->
             Opts
         ),
     ?event({enc_dec, EncDec}),
-    {ok, SignedMsg} =
-        dev_message:commit(
+    SignedMsg =
+        hb_message:commit(
             EncDec,
-            #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts,
+            Codec
         ),
     ?event({signed_msg, SignedMsg}),
     {ok, Res} = dev_message:verify(SignedMsg, #{ <<"committers">> => <<"all">>}, Opts),
@@ -919,11 +919,11 @@ signed_message_with_derived_components_test(Codec, Opts) ->
         <<"content-digest">> => <<"TEST_DIGEST">>,
         <<"normal">> => <<"hello">>
     },
-    {ok, SignedMsg} =
-        dev_message:commit(
+    SignedMsg =
+        hb_message:commit(
             Msg,
-            #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts,
+            Codec
         ),
     ?event({signed_msg, SignedMsg}),
     ?assert(hb_message:verify(SignedMsg, all, Opts)),
@@ -1218,6 +1218,8 @@ sign_links_test(Codec, Opts) ->
     ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
+id_of_linked_message_test(#{ <<"bundle">> := true }, _Opts) ->
+    skip;
 id_of_linked_message_test(Codec, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,

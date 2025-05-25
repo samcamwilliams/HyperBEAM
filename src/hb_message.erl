@@ -140,6 +140,41 @@ restore_priv(Msg, OldPriv, Opts) ->
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
+
+%% @doc Get a codec device and request params from the given conversion request. 
+%% Expects conversion spec to either be a binary codec name, or a map with a
+%% `device' key and other parameters. Additionally honors the `always_bundle'
+%% key in the node message if present.
+conversion_spec_to_req(Spec, Opts) when is_binary(Spec) or (Spec == tabm) ->
+    conversion_spec_to_req(#{ <<"device">> => Spec }, Opts);
+conversion_spec_to_req(Spec, Opts) ->
+    try
+        ?event(debug_bundle, {conversion_spec_to_req, {spec, Spec}}),
+        Device =
+            hb_maps:get(
+                <<"device">>,
+                Spec,
+                no_codec_device_in_conversion_spec,
+                Opts
+            ),
+        ?event(debug_bundle, {found_device, {spec, Spec}, {device, {explicit, Device}}}),
+        {
+            case Device of
+                tabm -> tabm;
+                _ ->
+                    hb_ao:message_to_device(
+                        #{
+                            <<"device">> => Device
+                        },
+                        Opts
+                    )
+            end,
+            hb_maps:without([<<"device">>], Spec, Opts)
+        }
+    catch _:_ ->
+        throw({message_codec_not_extractable, Spec})
+    end.
+
 %% @doc Return the ID of a message.
 id(Msg) -> id(Msg, uncommitted).
 id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts);
@@ -321,33 +356,6 @@ uncommitted(Msg, Opts) ->
 %% addresses.
 signers(Msg, Opts) ->
     hb_ao:get(<<"committers">>, Msg, [], Opts).
-
-%% @doc Get a codec device and request params from the given conversion request. 
-%% Expects conversion spec to either be a binary codec name, or a map with a
-%% `device' key and other parameters. Additionally honors the `always_bundle'
-%% key in the node message if present.
-conversion_spec_to_req(Spec, Opts) when is_binary(Spec) ->
-    conversion_spec_to_req(#{ <<"device">> => Spec }, Opts);
-conversion_spec_to_req(Spec, Opts) ->
-    try
-        {
-            hb_ao:message_to_device(
-                #{
-                    <<"device">> =>
-                        hb_ao:get(
-                            <<"device">>,
-                            Spec,
-                            no_codec_device_in_conversion_spec,
-                            Opts
-                        )
-                },
-                Opts
-            ),
-            hb_maps:without([<<"device">>], Spec, Opts)
-        }
-    catch _:_ ->
-        throw({message_codec_not_extractable, Spec})
-    end.
 
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
