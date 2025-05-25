@@ -48,7 +48,7 @@ from(HTTP, _Req, Opts) ->
     % are handled separately.
     {_, InlinedKey} = inline_key(HTTP),
     ?event({inlined_body_key, InlinedKey}),
-    Headers = hb_maps:without([<<"body">>, <<"body-keys">>], HTTP, Opts),
+    Headers = hb_maps:without([<<"body">>], HTTP, Opts),
     ContentType = hb_maps:get(<<"content-type">>, Headers, undefined, Opts),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
@@ -79,7 +79,7 @@ from(HTTP, _Req, Opts) ->
     ?event({message_with_commitments, MsgWithSigs}),
     Res =
         hb_maps:without(
-            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>, <<"content-type">>, <<"body-keys">>] ++
+            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>, <<"content-type">>] ++
                 case hb_message:is_signed_key(<<"inline-body-key">>, MsgWithSigs, Opts) of
                     true -> [];
                     false -> [<<"inline-body-key">>]
@@ -144,22 +144,8 @@ from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
             FullTABM
     end.
 
-from_body_parts (TABM, _InlinedKey, [], Opts) ->
-    % Ensure the accumulated body keys, if any, are encoded
-    % adhering to the TABM structure that all values must be
-    % maps or binaries
-    % 
-    % This prevents needing to have exceptions for <<"body-keys">>
-    % during parsing (it's just another binary)
-    WithEncodedBodyKeys =
-        case hb_maps:get(<<"body-keys">>, TABM, undefined, Opts) of
-            undefined -> TABM;
-            % Assume already encoded
-            Bin when is_binary(Bin) -> TABM;
-            List when is_list(List) ->
-                TABM#{ <<"body-keys">> => encode_body_keys(List) }
-        end,
-    {ok, WithEncodedBodyKeys};
+from_body_parts (TABM, _InlinedKey, [], _Opts) ->
+    {ok, TABM};
 from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
     % Extract the Headers block and Body. Only split on the FIRST double CRLF
     [RawHeadersBlock, RawBody] =
@@ -258,11 +244,8 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                         end;
                     _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
-            BodyKey = hd(binary:split(PartName, <<"/">>)),
             TABMNext = TABM#{
-                PartName => ParsedPart,
-                <<"body-keys">> =>
-                    hb_maps:get(<<"body-keys">>, TABM, [], Opts) ++ [BodyKey]
+                PartName => ParsedPart
             },
             from_body_parts(TABMNext, InlinedKey, Rest, Opts)
     end.
@@ -507,10 +490,6 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
                 FinalBody = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
                 % Ensure we append the Content-Type to be a multipart response
                 Enc0#{
-                    % TODO: Is this needed here?
-                    % We ought not be sending body-keys over the wire, so we either need
-                    % to remove this here, or at the edge
-                    <<"body-keys">> => encode_body_keys(PartList),
                     <<"content-type">> =>
                         <<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>,
                     <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
@@ -576,16 +555,6 @@ ungroup_ids(Msg = #{ <<"ao-ids">> := IDBin }, Opts) ->
     hb_maps:merge(hb_maps:without([<<"ao-ids">>], Msg, Opts), hb_maps:from_list(IDsMap), Opts);
 
 ungroup_ids(Msg, _Opts) -> Msg.
-
-%% @doc Encode a list of body parts into a binary.
-encode_body_keys(PartList) when is_list(PartList) ->
-    iolist_to_binary(hb_structured_fields:list(lists:map(
-        fun
-            ({PartName, _}) -> {item, {string, PartName}, []};
-            (PartName) when is_binary(PartName) -> {item, {string, PartName}, []}
-        end,
-        PartList
-    ))).
 
 %% @doc Merge maps at the same level, if possible.
 group_maps(Map) ->

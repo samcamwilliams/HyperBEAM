@@ -581,14 +581,14 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
         hb_maps:keys(
             NormMap1 = minimize(
                 normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
-                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
+                [<<"content-type">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
         hb_maps:keys(
             NormMap2 = minimize(
                 normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
-                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
+                [<<"content-type">>, <<"inline-body-key">>]
             )
         ),
     PrimaryKeysPresent =

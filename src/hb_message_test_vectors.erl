@@ -20,12 +20,12 @@ run_test() ->
 %% to test the functionality of a single codec, etc.
 test_codecs() ->
     [
-        %<<"structured@1.0">>,
+        <<"structured@1.0">>,
         <<"httpsig@1.0">>,
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true }
-        %<<"flat@1.0">>,
-        %<<"ans104@1.0">>,
-        %<<"json@1.0">>
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
+        <<"flat@1.0">>,
+        <<"ans104@1.0">>,
+        <<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
