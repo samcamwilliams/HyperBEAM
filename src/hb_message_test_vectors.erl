@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    signed_nested_message_with_child_test(
+    signed_only_committed_data_field_test(
         #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -101,6 +101,8 @@ test_suite() ->
             fun signed_message_encode_decode_verify_test/2},
         {<<"Signed only committed data field">>,
             fun signed_only_committed_data_field_test/2},
+        {<<"Signed simple nested message">>,
+            fun simple_signed_nested_message_test/2},
         {<<"Signed nested message">>,
             fun signed_nested_message_with_child_test/2},
         {<<"Committed keys">>,
@@ -358,7 +360,10 @@ signed_only_committed_data_field_test(Codec, Opts) ->
     ?event({signed_msg, Msg}),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Msg, Opts),
     ?event({only_committed, OnlyCommitted}),
-    ?assert(hb_message:verify(OnlyCommitted)).
+    MatchRes = hb_message:match(Msg, OnlyCommitted, strict, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes),
+    ?assert(hb_message:verify(OnlyCommitted, all, Opts)).
 
 signed_nested_data_key_test(Codec, Opts) ->
     Msg = 
@@ -523,6 +528,23 @@ simple_nested_message_test(Codec, Opts) ->
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
+simple_signed_nested_message_test(Codec, Opts) ->
+    Msg =
+        hb_message:commit(
+            #{
+                <<"a">> => <<"1">>,
+                <<"nested">> => #{ <<"b">> => <<"1">> },
+                <<"c">> => <<"3">>
+            },
+            Opts,
+            Codec
+        ),
+    Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)),
+    ?assert(hb_message:verify(Decoded, all, Opts)).
+
 signed_nested_message_with_child_test(Codec, Opts) ->
     Msg = #{
         <<"outer-a">> => <<"1">>,
@@ -541,7 +563,8 @@ signed_nested_message_with_child_test(Codec, Opts) ->
     ?event({matching, {input, Msg}, {output, Decoded}}),
     MatchRes = hb_message:match(Msg, Decoded, primary, Opts),
     ?event({match_result, MatchRes}),
-    ?assert(MatchRes).
+    ?assert(MatchRes),
+    ?assert(hb_message:verify(Decoded, all, Opts)).
 
 nested_empty_map_test(Codec, Opts) ->
     Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},

@@ -80,9 +80,9 @@ from(HTTP, _Req, Opts) ->
     Res =
         hb_maps:without(
             Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>, <<"content-type">>] ++
-                case hb_message:is_signed_key(<<"inline-body-key">>, MsgWithSigs, Opts) of
+                case hb_message:is_signed_key(<<"ao-body-key">>, MsgWithSigs, Opts) of
                     true -> [];
-                    false -> [<<"inline-body-key">>]
+                    false -> [<<"ao-body-key">>]
                 end,
             MsgWithSigs,
             Opts
@@ -204,7 +204,7 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                     [
                         <<"content-disposition">>, 
                         <<"content-type">>, 
-                        <<"inline-body-key">>, 
+                        <<"ao-body-key">>, 
                         <<"content-digest">>
                     ],
                     Headers,
@@ -360,8 +360,9 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
             case maps:get(<<"signature">>, Msg, undefined) of
                 undefined -> #{};
                 Signature ->
+                    MaybeBundleTag = maps:with([<<"bundle">>], Msg),
                     #{
-                        Signature => #{
+                        Signature => MaybeBundleTag#{
                             <<"signature">> => Signature,
                             <<"committed">> => maps:get(<<"committed">>, Msg, #{}),
                             <<"keyid">> => maps:get(<<"keyid">>, Msg, <<>>),
@@ -690,21 +691,21 @@ inline_key(Msg, Opts) ->
     % in the body as the inline part
     % Otherwise, the Msg <<"body">> is used
     % Otherwise, the Msg <<"data">> is used
-    InlineBodyKey = hb_maps:get(<<"inline-body-key">>, Msg, false, Opts),
+    InlineBodyKey = hb_maps:get(<<"ao-body-key">>, Msg, false, Opts),
     ?event({inlined, InlineBodyKey}),
     case [
         InlineBodyKey,
         hb_maps:is_key(<<"body">>, Msg, Opts) andalso not ?IS_LINK(maps:get(<<"body">>, Msg, Opts)),
         hb_maps:is_key(<<"data">>, Msg, Opts) andalso not ?IS_LINK(maps:get(<<"data">>, Msg, Opts))
     ] of
-        % inline-body-key already exists, so no need to add one
+        % ao-body-key already exists, so no need to add one
         [Explicit, _, _] when Explicit =/= false -> {#{}, InlineBodyKey};
-        % inline-body-key defaults to <<"body">> (see below)
+        % ao-body-key defaults to <<"body">> (see below)
         % So no need to add one
         [_, true, _] -> {#{}, <<"body">>};
-        % We need to preserve the inline-body-key, as the <<"data">> field,
+        % We need to preserve the ao-body-key, as the <<"data">> field,
         % so that it is preserved during encoding and decoding
-        [_, _, true] -> {#{<<"inline-body-key">> => <<"data">>}, <<"data">>};
+        [_, _, true] -> {#{<<"ao-body-key">> => <<"data">>}, <<"data">>};
         % default to body being the inlined part.
         % This makes this utility compatible for both encoding
         % and decoding httpsig@1.0 messages

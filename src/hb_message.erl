@@ -216,7 +216,7 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                         #{ <<"commitments">> => <<"all">> },
                         Opts
                     ),
-                % Add the inline-body-key to the committed list if it is not
+                % Add the ao-body-key to the committed list if it is not
                 % already present.
                 ?event({committed_keys, CommittedKeys, {msg, Msg}}),
                 {ok, hb_maps:with(
@@ -581,14 +581,14 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
         hb_maps:keys(
             NormMap1 = minimize(
                 normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
-                [<<"content-type">>, <<"inline-body-key">>]
+                [<<"content-type">>, <<"ao-body-key">>]
             )
         ),
     Keys2 =
         hb_maps:keys(
             NormMap2 = minimize(
                 normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
-                [<<"content-type">>, <<"inline-body-key">>]
+                [<<"content-type">>, <<"ao-body-key">>]
             )
         ),
     PrimaryKeysPresent =
