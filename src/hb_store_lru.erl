@@ -87,7 +87,11 @@ init(Opts) ->
         Store -> hb_store:start(Store)
     end,
     % Create LRU tables
-    CacheTable = ets:new(hb_cache_lru, [set, protected, {read_concurrency, true}]),
+    CacheTable = ets:new(hb_cache_lru, [
+        set,
+        protected,
+        {read_concurrency, true}
+    ]),
     CacheStatsTable = ets:new(hb_cache_lru_stats, [set]),
     CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
     hb_name:register({in_memory, ServerID}),
@@ -464,21 +468,48 @@ add_cache_entry(#{cache_table := Table}, Key, Value) ->
 add_cache_index(#{index_table := Table}, ID, Key) ->
     ets:insert(Table, {ID, Key}).
 
-link_cache_entry(#{cache_table := Table}, Existing, New) ->
+link_cache_entry(#{cache_table := Table}, Existing, New) ->	
     ?event(cache_lru, {link, Existing, New}),
+    % Remove the link from the previous linked entry
+    clean_old_link(Table, New),
     ets:insert(Table, {New, {link, Existing}}),
+    % Add links to the linked entry
     case ets:lookup(Table, Existing) of
         [{_, {raw, Entry}}] ->
-            NewEntry =
+            NewLinks =
                 case Entry of
-                    #{links := Links} ->
-                        [New | Links];
+                    #{links := ExistingLinks} ->
+                        [New | ExistingLinks];
                     _ ->
-                        Entry#{links => [New]}
+                        [New]
                 end,
-            ets:insert(Table, {Existing, {raw, NewEntry}});
+            ets:insert(Table, {Existing, {raw, Entry#{links => NewLinks}}});
         _ ->
             ignore
+    end.
+
+% @doc Remove the link association for the the old linked data to the given key
+clean_old_link(Table, Link) ->
+    case ets:lookup(Table, Link) of
+        [{_, {link, PreviousEntry}}] ->
+            ?event(cache_lru, {removing_previous_link,
+                {link, Link},
+                {previous_entry, PreviousEntry}
+            }),
+            case ets:lookup(Table, PreviousEntry) of
+                [{_, {raw, OldEntry}}] ->
+                    Links = sets:from_list(maps:get(links, OldEntry, [])),
+                    UpdatedLinks = sets:del_element(Link, Links),
+                    UpdatedEntry = maps:put(
+                        links,
+                        sets:to_list(UpdatedLinks),
+                        OldEntry
+                    ),
+                    ets:insert(Table, {PreviousEntry, {raw, UpdatedEntry}});
+                _ ->
+                    skip
+            end;
+        _ -> skip
     end.
 
 increase_cache_size(#{stats_table := StatsTable}, ValueSize) ->
@@ -515,12 +546,23 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
                     BaseName = filename:basename(TailKey),
                     UpdatedGroupSet = sets:del_element(BaseName, GroupSet),
                     case sets:size(UpdatedGroupSet) of
-                        0 -> delete_cache_entry(State, Group);
-                        _ -> add_cache_entry(State, Group, {group, UpdatedGroupSet})
+                        0 ->
+                            delete_cache_entry(State, Group);
+                        _ ->
+                            add_cache_entry(
+                                State,
+                                Group,
+                                {group, UpdatedGroupSet}
+                            )
                     end
             end,
             offload_to_store(TailKey, TailValue, Links, Group, Opts),
-            evict_oldest_entry(State, ValueSize, FreeSize + ReclaimedSize, Opts)
+            evict_oldest_entry(
+                State,
+                ValueSize,
+                FreeSize + ReclaimedSize,
+                Opts
+            )
     end.
 
 evict_all_entries(#{cache_table := Table}, Opts) ->
@@ -581,15 +623,23 @@ delete_cache_entry(#{cache_table := Table}, Key) ->
 decrease_cache_size(#{stats_table := Table}, Size) ->
     ets:update_counter(Table, size, {2, -Size, 0, 0}).
 
-replace_entry(State, Key, Value, ValueSize, OldEntry) ->
-    % Update entry and move the keys in the front of the cache as the most used Key
-    ?event(debug_lru, {replace_entry, {key, Key}, {value, Value}, {explicit, OldEntry}}),
+replace_entry(State, Key, Value, ValueSize, {raw, OldEntry}) ->
+    % Update entry and move the keys in the front of the cache 
+    % as the most used Key
+    ?event(debug_lru, {replace_entry, 
+        {key, Key},
+        {value, Value},
+        {explicit, OldEntry}
+    }),
     #{size := PreviousSize} = OldEntry,
     NewEntry = OldEntry#{value := Value, size := ValueSize},
     add_cache_entry(State, Key, {raw, NewEntry}),
     update_recently_used(State, Key, NewEntry),
-    update_cache_size(State, PreviousSize, ValueSize).
-
+    update_cache_size(State, PreviousSize, ValueSize);
+replace_entry(_State, _Key, _Value, _ValueSize, {Type, _}) ->
+    % Link or group should be handle directly with `make_link` or `make_group`
+    % This aim of this function is to be used along with direct data insertion.
+    throw({error, can_only_replace_raw_entry, {type, Type}}).
 update_recently_used(State, Key, Entry) ->
     % Acquire a new ID
     NewID = get_index_id(State),
@@ -766,3 +816,19 @@ type_test() ->
     ?assertEqual(composite, type(StoreOpts, <<"sub">>)),
     make_link(StoreOpts, <<"key1">>, <<"keylink">>),
     ?assertEqual(simple, type(StoreOpts, <<"keylink">>)).
+
+replace_link_test() ->
+    DefaultOpts = test_opts(no_store),
+    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
+    start(StoreOpts),
+    timer:sleep(100),
+    write(StoreOpts, <<"key1">>, <<"Hello">>),
+    make_link(StoreOpts, <<"key1">>, <<"keylink">>),
+    ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"keylink">>)),
+    write(StoreOpts, <<"key2">>, <<"Hello2">>),
+    make_link(StoreOpts, <<"key2">>, <<"keylink">>),
+    ?assertEqual({ok, <<"Hello2">>}, read(StoreOpts, <<"keylink">>)),
+    ServerID = find_id(StoreOpts),
+    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    {raw, #{links := Links }}= get_cache_entry(CacheTables, <<"key1">>),
+    ?assertEqual([], Links).
