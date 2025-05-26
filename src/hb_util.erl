@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, number/1, list_to_numbered_map/1]).
+-export([deep_merge/3, number/1, list_to_numbered_message/1]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
@@ -264,7 +264,7 @@ number(List) ->
     ).
 
 %% @doc Convert a list of elements to a map with numbered keys.
-list_to_numbered_map(List) ->
+list_to_numbered_message(List) ->
     hb_maps:from_list(number(List)).
 
 %% @doc Determine if the message given is an ordered list, starting from 1.

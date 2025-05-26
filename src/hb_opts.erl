@@ -130,7 +130,7 @@ default_message() ->
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => if_present,
-        debug_resolve_links => true,
+        debug_resolve_links => false,
 		trusted => #{},
         routes => [
             #{

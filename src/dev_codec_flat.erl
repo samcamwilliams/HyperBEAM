@@ -18,7 +18,24 @@ from(Map, Req, Opts) when is_map(Map) ->
     {ok,
         maps:fold(
             fun(Path, Value, Acc) ->
-                inject_at_path(hb_path:term_to_path_parts(Path, Opts), hb_util:ok(from(Value, Req, Opts)), Acc, Opts)
+                case Value of
+                    [] ->
+                        ?event(error,
+                            {empty_list_value,
+                                {path, Path},
+                                {value, Value},
+                                {map, Map}
+                            }
+                        );
+                    _ ->
+                        ok
+                end,
+                inject_at_path(
+                    hb_path:term_to_path_parts(Path, Opts),
+                    hb_util:ok(from(Value, Req, Opts)),
+                    Acc,
+                    Opts
+                )
             end,
             #{},
             Map

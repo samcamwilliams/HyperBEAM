@@ -391,7 +391,7 @@ decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc, Opts) ->
     %% Build our message‐map
     Entry = #{
         <<"function">>   => FuncBin,
-        <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
+        <<"parameters">> => hb_util:list_to_numbered_message(DecodedParams)
     },
     MaybeLine =
         if is_binary(File) andalso is_integer(Line) ->

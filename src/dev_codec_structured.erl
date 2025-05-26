@@ -25,7 +25,7 @@ from(List, Req, Opts) when is_list(List) ->
     % If the message to encode is a list, we encode it as if it is a map, then
     % add the `.' key to the `ao-types' field, indicating that this message is
     % a list.
-    {ok, DecodedAsMap} = from(hb_util:list_to_numbered_map(List), Req, Opts),
+    {ok, DecodedAsMap} = from(hb_util:list_to_numbered_message(List), Req, Opts),
     AOTypes = decode_ao_types(DecodedAsMap, Opts),
     {ok,
         DecodedAsMap#{

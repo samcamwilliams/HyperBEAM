@@ -79,7 +79,9 @@ from(HTTP, _Req, Opts) ->
     ?event({message_with_commitments, MsgWithSigs}),
     Res =
         hb_maps:without(
-            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>, <<"content-type">>] ++
+            Removed =
+                hb_maps:keys(Commitments) ++
+                [<<"content-digest">>, <<"content-type">>] ++
                 case hb_message:is_signed_key(<<"ao-body-key">>, MsgWithSigs, Opts) of
                     true -> [];
                     false -> [<<"ao-body-key">>]
@@ -89,7 +91,6 @@ from(HTTP, _Req, Opts) ->
         ),
     ?event({message_without_commitments, Res, Removed}),
     {ok, Res}.
-
 
 from_body(TABM, _InlinedKey, _ContentType, <<>>, _Opts) -> TABM;
 from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
@@ -377,7 +378,11 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
     {ok,
         maps:merge(
             Intermediate,
-            dev_codec_httpsig_siginfo:commitments_to_siginfo(CommitmentsMap, Opts)
+            dev_codec_httpsig_siginfo:commitments_to_siginfo(
+                Intermediate,
+                CommitmentsMap,
+                Opts
+            )
         )
     }.
 
@@ -496,7 +501,7 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
                     <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
                 }
         end,
-    % Add the content-digest to the HTTP message. `generate_content_digest/1'
+    % Add the content-digest to the HTTP message. `add_content_digest/1'
     % will return a map with the `content-digest' key set, but the body removed,
     % so we merge the two maps together to maintain the body and the content-digest.
     Enc2 = case hb_maps:get(<<"body">>, Enc1, <<>>, Opts) of
@@ -687,10 +692,9 @@ inline_key(Msg) ->
     inline_key(Msg, #{}).
 
 inline_key(Msg, Opts) ->
-    % The message can named a key whose value will be placed
-    % in the body as the inline part
-    % Otherwise, the Msg <<"body">> is used
-    % Otherwise, the Msg <<"data">> is used
+    % The message can name a key whose value will be placed in the body as the
+    % inline part. Otherwise, the Msg <<"body">> is used. If not present, the
+    % Msg <<"data">> is used.
     InlineBodyKey = hb_maps:get(<<"ao-body-key">>, Msg, false, Opts),
     ?event({inlined, InlineBodyKey}),
     case [

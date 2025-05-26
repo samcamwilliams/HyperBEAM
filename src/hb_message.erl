@@ -218,7 +218,7 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                     ),
                 % Add the ao-body-key to the committed list if it is not
                 % already present.
-                ?event({committed_keys, CommittedKeys, {msg, Msg}}),
+                ?event(debug_bundle, {committed_keys, CommittedKeys, {msg, Msg}}),
                 {ok, hb_maps:with(
                     CommittedKeys ++ [<<"commitments">>],
                     Msg,
@@ -482,22 +482,8 @@ format(Map, Indent) when is_map(Map) ->
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        maps:to_list(
-            minimize(Map,
-                case hb_opts:get(debug_metadata, false, #{}) of
-                    false ->
-                        [
-                            <<"commitments">>,
-                            <<"path">>,
-                            <<"device">>
-                        ];
-                    true -> [
-                        <<"path">>,
-                        <<"device">>
-                    ]
-                end
-            )
-        ) ++ FooterKeys,
+        maps:to_list(Map) ++
+        FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
         fun({Key, Val}) ->

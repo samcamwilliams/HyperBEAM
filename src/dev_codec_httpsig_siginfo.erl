@@ -1,29 +1,44 @@
 %% @doc A module for converting between commitments and their encoded `signature'
 %% and `signature-input' keys.
 -module(dev_codec_httpsig_siginfo).
--export([commitments_to_siginfo/2, siginfo_to_commitments/2]).
--export([commitment_to_siginfo/2, commitment_to_sig_name/1]).
--export([committed_keys_to_tabm/1, committed_keys_to_siginfo/1]).
+-export([commitments_to_siginfo/3, siginfo_to_commitments/2]).
+-export([committed_keys_to_siginfo/1, to_siginfo_keys/2]).
+-export([add_derived_specifiers/1, remove_derived_specifiers/1]).
+-export([commitment_to_sig_name/1]).
 -include("include/hb.hrl").
+
+%%% A list of components that are `derived' in the context of RFC-9421 from the
+%%% request message.
+-define(DERIVED_COMPONENTS, [
+    <<"method">>,
+    <<"target-uri">>,
+    <<"authority">>,
+    <<"scheme">>,
+    <<"request-target">>,
+    <<"path">>,
+    <<"query">>,
+    <<"query-param">>,
+    <<"status">>
+]).
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
 %% map.
-commitments_to_siginfo(Commitments, _Opts) when ?IS_EMPTY_MESSAGE(Commitments) ->
+commitments_to_siginfo(_Msg, Comms, _Opts) when ?IS_EMPTY_MESSAGE(Comms) ->
     #{};
-commitments_to_siginfo(Commitments, Opts) ->
+commitments_to_siginfo(Msg, Comms, Opts) ->
     % Generate a SF item for each commitment's signature and signature-input.
     {Sigs, SigsInputs} =
         maps:fold(
             fun(_CommID, Commitment, {Sigs, SigsInputs}) ->
                 {ok, SigName, SFSig, SFSigInput} =
-                    commitment_to_sf_siginfo(Commitment, Opts),
+                    commitment_to_sf_siginfo(Msg, Commitment, Opts),
                 {
                     Sigs#{ SigName => SFSig },
                     SigsInputs#{ SigName => SFSigInput }
                 }
             end,
             {#{}, #{}},
-            Commitments
+            Comms
         ),
     #{
         <<"signature">> =>
@@ -34,7 +49,7 @@ commitments_to_siginfo(Commitments, Opts) ->
 
 %% @doc Generate a `signature' and `signature-input' key pair from a given
 %% commitment.
-commitment_to_sf_siginfo(Commitment, Opts) ->
+commitment_to_sf_siginfo(Msg, Commitment, Opts) ->
     % Generate the `alg' key from the commitment.
     Alg = commitment_to_alg(Commitment, Opts),
     % Find the public key from the commitment, which we will use as the
@@ -43,7 +58,8 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     % Extract the signature from the commitment.
     Signature = maps:get(<<"signature">>, Commitment),
     % Extract the keys present in the commitment.
-    CommittedKeys = committed_keys_to_siginfo(maps:get(<<"committed">>, Commitment)),
+    CommittedKeys = to_siginfo_keys(Msg, maps:get(<<"committed">>, Commitment)),
+    ?event(debug_bundle, {normalized_for_enc, CommittedKeys, {commitment, Commitment}}),
     % Extract the hashpath, used as a tag, from the commitment.
     Tag = maps:get(<<"tag">>, Commitment, undefined),
     % Extract other permissible values, if present.
@@ -82,7 +98,17 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
             ],
             Params
         },
-        ?event(debug, {input, SFSigInput}),
+    ?event(debug_bundle,
+        {sig_input,
+            {string,
+                hb_util:bin(
+                    hb_structured_fields:dictionary(
+                        #{ <<"sig">> => SFSigInput }
+                    )
+                )
+            }
+        }
+    ),
     {ok, SigName, SFSig, SFSigInput}.
 
 get_additional_params(Commitment) ->
@@ -126,16 +152,6 @@ nested_map_to_string(Map) ->
                 Val
         end
     end, maps:keys(Map)).
-
-%% @doc Return a binary encoded `signature' and `signature-input' key pair for
-%% a commitment.
-commitment_to_siginfo(Commitment, Opts) ->
-    {ok, SigName, SFSig, SFSigInput} = commitment_to_sf_siginfo(Commitment, Opts),
-    {
-        SigName,
-        hb_util:bin(hb_structured_fields:item(SFSig)),
-        hb_util:bin(hb_structured_fields:list(SFSigInput))
-    }.
 
 %% @doc Take a message with a `signature' and `signature-input' key pair and
 %% return a map of commitments.
@@ -207,9 +223,10 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
         ||
             {item, {string, Key}, []} <- SigInput
         ],
+    CommittedKeys = from_siginfo_keys(RawCommittedKeys),
     % Merge and cleanup the output.
     % 1. Remove the `content-digest' key from the committed keys, if present, and
-    %    replace it with the `body' key.
+    %    replace it with the `body' key. Remove the `ao-body-key' key, if present.
     % 2. Decode the `keyid` (typically a public key) to its raw byte form.
     % 3. Decode the `signature` to its raw byte form.
     % 4. Filter undefined keys.
@@ -221,9 +238,8 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
     Commitment3 =
         Commitment2#{
             <<"signature">> => EncodedSig,
-            <<"committed">> => committed_keys_to_tabm(RawCommittedKeys)
+            <<"committed">> => CommittedKeys
         },
-    %Commitment4 = decode_byte_keys([<<"keyid">>, <<"signature">>], Commitment3),
     Commitment5 =
         case hb_util:decode(maps:get(<<"keyid">>, Commitment3)) of
             DecKeyID when byte_size(DecKeyID) =< 32 ->
@@ -266,16 +282,52 @@ decode_byte_keys([Key|Keys], Msg) when is_map_key(Key, Msg)->
 decode_byte_keys([_NotPresentKey|Keys], Msg) ->
     decode_byte_keys(Keys, Msg).
 
-%% @doc Normalize committed keys to their TABM format. This involves removing
-%% the `content-digest' key from the committed keys, if present, and replacing
-%% it with the `body' key.
-committed_keys_to_tabm(List) ->
-    hb_ao:normalize_keys(do_committed_keys_to_tabm(List)).
-do_committed_keys_to_tabm([]) -> [];
-do_committed_keys_to_tabm([<<"content-digest">> | Rest]) ->
-    [<<"body">> | Rest];
-do_committed_keys_to_tabm([Key | Rest]) ->
-    [Key | do_committed_keys_to_tabm(Rest)].
+%% @doc Normalize a list of AO-Core keys to their equivalents in `httpsig@1.0'
+%% format. This involves:
+%% - If the HTTPSig message given has an `ao-body-key' key and the committed keys
+%%   list contains it, we replace it in the list with the `body' key and add the
+%%   `ao-body-key' key.
+%% - If the list contains a `body' key, we replace it with the `content-digest'
+%%   key.
+%% - Otherwise, we return the list unchanged.
+to_siginfo_keys(HTTPSig, List) ->
+    NormList = hb_util:message_to_ordered_list(List),
+    NormListWithBodyKey =
+        case hb_maps:get(<<"ao-body-key">>, HTTPSig, not_found) of
+            not_found ->
+                NormList;
+            AOBodyKey ->
+                [
+                    <<"ao-body-key">>
+                |
+                    replace_key(AOBodyKey, <<"body">>, NormList)
+                ]
+        end,
+    Res = replace_key(<<"body">>, <<"content-digest">>, NormListWithBodyKey),
+    Res.
+
+%% @doc Normalize a list of `httpsig@1.0' keys to their equivalents in AO-Core
+%% format.
+from_siginfo_keys(List) ->
+    remove_derived_specifiers(
+        replace_key(
+            <<"content-digest">>,
+            <<"body">>,
+            List -- [<<"ao-body-key">>]
+        )
+    ).
+
+%% @doc Replace a key in the list with the given value.
+replace_key(Key, Value, List) ->
+    lists:map(
+        fun(Elem) ->
+            case Elem of
+                Key -> Value;
+                _ -> Elem
+            end
+        end,
+        List
+    ).
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with
@@ -360,3 +412,39 @@ commitment_to_sig_name(Commitment) ->
             <<"-">>
         ),
     <<DeviceStr/binary, ".", BaseStr/binary>>.
+
+%% @doc Normalize key parameters to ensure their names are correct for inclusion
+%% in the `signature-input' and associated keys.
+add_derived_specifiers(ComponentIdentifiers) ->
+    % Remove the @ prefix from the component identifiers, if present.
+    Stripped =
+        lists:map(
+            fun(<<"@", Key/binary>>) -> Key; (Key) -> Key end,
+            ComponentIdentifiers
+        ),
+    % Add the @ prefix to the component identifiers, if they are derived.
+    lists:flatten(
+        lists:map(
+            fun(Key) ->
+                case lists:member(Key, ?DERIVED_COMPONENTS) of
+                    true -> << "@", Key/binary >>;
+                    false -> Key
+                end
+            end,
+            Stripped
+        )
+    ).
+
+%% @doc Remove derived specifiers from a list of component identifiers.
+remove_derived_specifiers(ComponentIdentifiers) ->
+    lists:map(
+        fun(<<"@", Key/binary>>) ->
+            Key;
+        (Key) ->
+            case hb_link:is_link_key(Key) of
+                true -> binary:part(Key, 0, byte_size(Key) - 5);
+                false -> Key
+            end
+        end,
+        ComponentIdentifiers
+    ).
