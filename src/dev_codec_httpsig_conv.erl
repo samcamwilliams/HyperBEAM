@@ -87,6 +87,7 @@ from(HTTP, _Req, Opts) ->
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
             WithIDs,
+            maps:keys(BodyKeys),
             Opts
         ),
     MsgWithSigs =
@@ -213,7 +214,8 @@ from_body_part(InlinedKey, Part, Opts) ->
                 end,
             Commitments =
                 dev_codec_httpsig_siginfo:siginfo_to_commitments(
-                    Headers#{ <<"body">> => RawBody },
+                    Headers#{ PartName => RawBody },
+                    [PartName],
                     Opts
                 ),
             RestHeaders =

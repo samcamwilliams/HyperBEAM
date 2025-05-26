@@ -285,20 +285,22 @@ is_ordered_list(N, Msg, _Opts) ->
 
 %% @doc Replace a key in a list with a new value.
 list_replace(List, Key, Value) ->
-    lists:map(
-        fun(Elem) ->
+    lists:foldl(
+        fun(Elem, Acc) ->
             case Elem of
-                Key -> Value;
-                _ -> Elem
+                Key when is_list(Value) -> Value ++ Acc;
+                Key -> [Value | Acc];
+                _ -> [Elem | Acc]
             end
         end,
+        [],
         List
     ).
 
 %% @doc Take a list and return a list of unique elements. The function is
 %% order-preserving.
 unique(List) ->
-    lists:foldl(
+    lists:foldr(
         fun(Item, Acc) ->
             case lists:member(Item, Acc) of
                 true -> Acc;

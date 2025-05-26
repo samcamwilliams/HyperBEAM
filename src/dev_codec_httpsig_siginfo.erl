@@ -1,7 +1,7 @@
 %% @doc A module for converting between commitments and their encoded `signature'
 %% and `signature-input' keys.
 -module(dev_codec_httpsig_siginfo).
--export([commitments_to_siginfo/3, siginfo_to_commitments/2]).
+-export([commitments_to_siginfo/3, siginfo_to_commitments/3]).
 -export([committed_keys_to_siginfo/1, to_siginfo_keys/3]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 -export([commitment_to_sig_name/1]).
@@ -157,6 +157,7 @@ nested_map_to_string(Map) ->
 %% return a map of commitments.
 siginfo_to_commitments(
         Msg = #{ <<"signature">> := SFSigBin, <<"signature-input">> := SFSigInputBin },
+        BodyKeys,
         Opts) ->
     % Parse the signature and signature-input structured-fields.
     SFSigs = hb_structured_fields:parse_dictionary(SFSigBin),
@@ -174,21 +175,21 @@ siginfo_to_commitments(
         lists:map(
             fun ({SFSig, SFSigInput}) ->
                 {ok, ID, Commitment} =
-                    sf_siginfo_to_commitment(Msg, SFSig, SFSigInput, Opts),
+                    sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts),
                 {ID, Commitment}
             end,
             CommitmentSFs
         ),
     % Convert the list of commitments into a map.
     maps:from_list(CommitmentMessages);
-siginfo_to_commitments(_Msg, _Opts) ->
+siginfo_to_commitments(_Msg, _BodyKeys, _Opts) ->
     % If the message does not contain a `signature' or `signature-input' key,
     % we return an empty map.
     #{}.
 
 %% @doc Take a signature and signature-input as parsed structured-fields and 
 %% return a commitment.
-sf_siginfo_to_commitment(Msg, SFSig, SFSigInput, Opts) ->
+sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
     % Extract the signature and signature-input from the structured-fields.
     {item, {binary, EncodedSig}, []} = SFSig,
     {list, SigInput, ParamsKV} = SFSigInput,
@@ -223,7 +224,7 @@ sf_siginfo_to_commitment(Msg, SFSig, SFSigInput, Opts) ->
         ||
             {item, {string, Key}, []} <- SigInput
         ],
-    CommittedKeys = from_siginfo_keys(Msg, RawCommittedKeys),
+    CommittedKeys = from_siginfo_keys(Msg, BodyKeys, RawCommittedKeys),
     % Merge and cleanup the output.
     % 1. Remove the `content-digest' key from the committed keys, if present, and
     %    replace it with the `body' key. Remove the `ao-body-key' key, if present.
@@ -292,24 +293,40 @@ to_siginfo_keys(Msg, Commitment, Opts) ->
 %% format. There are three stages:
 %% 1. Remove the @ prefix from the component identifiers, if present.
 %% 2. Replace the `content-digest' key with the `body' key, if present.
-%% 3. Replace the `body' key with the value of the `ao-body-key' key, if present.
-from_siginfo_keys(Msg, RawList) ->
+%% 3. Replace `body' with the body keys.
+%% 4. Replace the `body' key again with the value of the `ao-body-key' key, if
+%%    present. This is possible because the keys derived from the body often
+%%    contain the `body' key itself.
+%% 5. If the `content-type' starts with `multipart/', we remove it.
+from_siginfo_keys(Msg, BodyKeys, RawList) ->
     % 1. Remove specifiers from the list.
     BaseList = remove_derived_specifiers(RawList),
     % 2. Replace the `content-digest' key with the `body' key, if present.
     ListWithBody = hb_util:list_replace(BaseList, <<"content-digest">>, <<"body">>),
-    % 3. Replace the `body' key with the value of the `ao-body-key' key, if present.
+    % 3. Replace `body' with the body keys.
+    ListWithBodyKeys = hb_util:list_replace(ListWithBody, <<"body">>, BodyKeys),
+    % 4. Replace the `body' key again with the value of the `ao-body-key' key, if present.
     ?event(debug_siginfo, {from_siginfo_keys, {raw_list, RawList}, {list_with_body, ListWithBody}}),
-    case lists:member(<<"ao-body-key">>, ListWithBody) of
-        true ->
-            hb_util:list_replace(
-                ListWithBody,
-                <<"body">>,
-                maps:get(<<"ao-body-key">>, Msg, <<"body">>)
-            ) -- [<<"ao-body-key">>];
-        false ->
-            ListWithBody
-    end.
+    ListWithoutBodyKey =
+        case lists:member(<<"ao-body-key">>, ListWithBody) of
+            true ->
+                hb_util:list_replace(
+                    ListWithBodyKeys,
+                    <<"body">>,
+                    maps:get(<<"ao-body-key">>, Msg, <<"body">>)
+                ) -- [<<"ao-body-key">>];
+            false ->
+                ListWithBodyKeys
+        end,
+    % 5. If the `content-type' starts with `multipart/', we remove it.
+    ListWithoutContentType =
+        case maps:get(<<"content-type">>, Msg, undefined) of
+            <<"multipart/", _/binary>> ->
+                hb_util:list_replace(ListWithoutBodyKey, <<"content-type">>, []);
+            _ ->
+                ListWithoutBodyKey
+        end,
+    hb_ao:normalize_keys(hb_util:to_sorted_list(ListWithoutContentType)).
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with

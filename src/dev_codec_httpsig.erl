@@ -239,12 +239,13 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
     Inputs =
         lists:map(
             fun(Key) ->
-                case maps:is_key(Key, Msg) of
-                    true -> Key;
+                NormalizedKey = hb_ao:normalize_key(Key),
+                case maps:is_key(NormalizedKey, Msg) of
+                    true -> NormalizedKey;
                     false ->
-                        case maps:is_key(<<Key/binary, "+link">>, Msg) of
-                            true -> <<Key/binary, "+link">>;
-                            false -> Key
+                        case maps:is_key(<<NormalizedKey/binary, "+link">>, Msg) of
+                            true -> <<NormalizedKey/binary, "+link">>;
+                            false -> NormalizedKey
                         end
                 end
             end,
@@ -279,10 +280,12 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
                 ]
         end,
     FinalKeys =
-        hb_util:list_replace(
-            EncodedKeysWithBodyKey,
-            <<"body">>,
-            <<"content-digest">>
+        hb_util:to_sorted_list(
+            hb_util:list_replace(
+                EncodedKeysWithBodyKey,
+                <<"body">>,
+                <<"content-digest">>
+            )
         ),
     ?event(
         {generating_signature_base_with,
