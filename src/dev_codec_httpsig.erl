@@ -13,7 +13,7 @@
 %%% Commitment API functions
 -export([commit/3, verify/3]).
 %%% Public API functions
--export([add_content_digest/2]).
+-export([add_content_digest/2, normalize_for_encoding/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -53,7 +53,8 @@ serialize(Msg, _Req, Opts) ->
 verify(Base, Req, Opts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
-    SigBase = signature_base(Base, Req, Opts),
+    {ok, EncMsg, EncComm} = normalize_for_encoding(Base, Req, Opts),
+    SigBase = signature_base(EncMsg, EncComm, Opts),
     ?event(debug_bundle, {signature_base_verify, {string, SigBase}}),
     KeyID = hb_util:decode(maps:get(<<"keyid">>, Req)),
     Signature = hb_util:decode(maps:get(<<"signature">>, Req)),
@@ -105,9 +106,10 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             Req,
             Opts
         ),
+    {ok, EncMsg, EncComm} = normalize_for_encoding(MsgToSign, UnsignedCommitment, Opts),
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
-    SignatureBase = signature_base(MsgToSign, UnsignedCommitment, Opts),
+    SignatureBase = signature_base(EncMsg, EncComm, Opts),
     ?event(debug_bundle, {rsa_signature_base, {string, SignatureBase}}),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
@@ -157,18 +159,18 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Req,
             Opts
         ),
-    SigBase = signature_base(Msg, UnauthedCommitment, Opts),    
+    {ok, EncMsg, EncComm} = normalize_for_encoding(Msg, UnauthedCommitment, Opts),
+    SigBase = signature_base(EncMsg, EncComm, Opts),    
     HMac = hb_util:human_id(crypto:mac(hmac, sha256, <<"ao">>, SigBase)),
     Res =
         {
             ok,
-            maps:put(
-                <<"commitments">>,
-                Commitments#{
-                    HMac => UnauthedCommitment#{ <<"signature">> => HMac }
-                },
-                Msg
-            )
+            Msg#{
+                <<"commitments">> =>
+                    Commitments#{
+                        HMac => UnauthedCommitment#{ <<"signature">> => HMac }
+                    }
+            }
         },
     ?event(debug_inputs, {reset_hmac_complete, Res}),
     Res.
@@ -224,12 +226,9 @@ add_content_digest(Msg, _Opts) ->
         _ -> Msg
     end.
 
-%% @doc create the signature base that will be signed in order to create the
-%% Signature and SignatureInput.
-%%
-%% This implements a portion of RFC-9421 see:
-%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
-signature_base(Msg, Commitment, Opts) when is_map(Commitment) ->
+%% @doc Given a base message and a commitment, derive the message and commitment
+%% normalized for encoding.
+normalize_for_encoding(Msg, Commitment, Opts) ->
     % Extract the requested keys to include in the signature base.
     RawInputs =
         hb_util:message_to_ordered_list(
@@ -268,9 +267,26 @@ signature_base(Msg, Commitment, Opts) when is_map(Commitment) ->
     Encoded = add_content_digest(EncodedWithSigInfo, Opts),
     % Transform the list of requested keys to their `httpsig@1.0' equivalents.
     EncodedKeys = maps:keys(Encoded),
-    ?event(debug_bundle,
+    EncodedKeysWithBodyKey =
+        case hb_maps:get(<<"ao-body-key">>, EncodedWithSigInfo, not_found) of
+            not_found ->
+                EncodedKeys;
+            AOBodyKey ->
+                [
+                    <<"ao-body-key">>
+                |
+                    hb_util:list_replace(EncodedKeys, AOBodyKey, <<"body">>)
+                ]
+        end,
+    FinalKeys =
+        hb_util:list_replace(
+            EncodedKeysWithBodyKey,
+            <<"body">>,
+            <<"content-digest">>
+        ),
+    ?event(
         {generating_signature_base_with,
-        	{final_inputs, EncodedKeys},
+            {final_inputs, EncodedKeys},
             {raw_inputs, Inputs},
             {commitment, Commitment},
             {msg_encoded_with_content_digest, Encoded},
@@ -279,15 +295,22 @@ signature_base(Msg, Commitment, Opts) when is_map(Commitment) ->
             {msg, Msg}
         }
     ),
-    NewCommitment = Commitment#{ <<"committed">> => EncodedKeys },
+    {ok, EncodedWithSigInfo, Commitment#{ <<"committed">> => FinalKeys }}.
+
+%% @doc create the signature base that will be signed in order to create the
+%% Signature and SignatureInput.
+%%
+%% This implements a portion of RFC-9421 see:
+%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
+signature_base(EncodedMsg, Commitment, Opts) ->
 	ComponentsLine =
         signature_components_line(
-            NewCommitment,
-            Encoded,
+            EncodedMsg,
+            Commitment,
             Opts
         ),
     ?event({component_identifiers_for_sig_base, ComponentsLine}),
-	ParamsLine = signature_params_line(NewCommitment, Opts),
+	ParamsLine = signature_params_line(Commitment, Opts),
     SignatureBase = 
         <<
             ComponentsLine/binary, "\n",
@@ -302,7 +325,7 @@ signature_base(Msg, Commitment, Opts) when is_map(Commitment) ->
 %% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.1
 %%
 %% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.1
-signature_components_line(Commitment, Req, _Opts) ->
+signature_components_line(Req, Commitment, _Opts) ->
 	ComponentsLines =
         lists:map(
             fun(Name) ->

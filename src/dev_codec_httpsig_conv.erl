@@ -52,7 +52,25 @@ from(HTTP, _Req, Opts) ->
     ContentType = hb_maps:get(<<"content-type">>, Headers, undefined, Opts),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
-    WithBodyKeys = from_body(Headers, InlinedKey, ContentType, Body, Opts),
+    BodyKeys =
+        case body_to_parts(ContentType, Body, Opts) of
+            no_body -> #{};
+            {normal, RawBody} ->
+                % The body is not a multipart, so we just return the inlined key.
+                #{ InlinedKey => RawBody };
+            {multipart, Parts} ->
+                GroupedTABM =
+                    lists:foldl(
+                        fun(Part, Acc) ->
+                            maps:merge(Acc, from_body_part(InlinedKey, Part, Opts))
+                        end,
+                        #{},
+                        Parts
+                    ),
+                hb_util:ok(dev_codec_flat:from(GroupedTABM, #{}, Opts))
+        end,
+    % Merge the body keys with the headers.
+    WithBodyKeys = maps:merge(Headers, BodyKeys),
     % Decode the `ao-ids' key into a map. `ao-ids' is an encoding of literal
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
@@ -68,7 +86,7 @@ from(HTTP, _Req, Opts) ->
     % Finally, we need to add the signatures to the TABM.
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
-            Headers,
+            WithIDs,
             Opts
         ),
     MsgWithSigs =
@@ -92,11 +110,11 @@ from(HTTP, _Req, Opts) ->
     ?event({message_without_commitments, Res, Removed}),
     {ok, Res}.
 
-from_body(TABM, _InlinedKey, _ContentType, <<>>, _Opts) -> TABM;
-from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
+%% @doc Split the body into parts, if it is a multipart.
+body_to_parts(_ContentType, <<>>, _Opts) -> no_body;
+body_to_parts(ContentType, Body, _Opts) ->
     ?event(
         {from_body,
-            {from_headers, TABM},
             {content_type, {explicit, ContentType}},
             {body, Body}
         }
@@ -113,7 +131,7 @@ from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
         false ->
             % The body is not a multipart, so just set as is to the Inlined key on
             % the TABM.
-            hb_maps:put(InlinedKey, Body, TABM, Opts);
+            {normal, Body};
         {_, {_Type, Boundary}} ->
             % We need to manually parse the multipart body into key/values on the
             % TABM.
@@ -136,25 +154,23 @@ from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
             % By taking into account all parts of the surrounding boundary above,
             % we get precisely the sub-part that we're interested without any
             % additional parsing
-            Parts = binary:split(BodyPart, [<<?CRLF/binary, "--", Boundary/binary>>], [global]),
-            % Finally, for each part within the sub-part, we need to parse it,
-            % potentially recursively as a sub-TABM, and then add it to the
-            % current TABM
-            {ok, GroupedTABM} = from_body_parts(TABM, InlinedKey, Parts, Opts),
-            {ok, FullTABM} = dev_codec_flat:from(GroupedTABM, #{}, Opts),
-            FullTABM
+            {multipart, binary:split(
+                BodyPart,
+                [<<?CRLF/binary, "--", Boundary/binary>>],
+                [global]
+            )}
     end.
 
-from_body_parts (TABM, _InlinedKey, [], _Opts) ->
-    {ok, TABM};
-from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
+%% @doc Parse a single part of a multipart body into a TABM.
+from_body_part(InlinedKey, Part, Opts) ->
     % Extract the Headers block and Body. Only split on the FIRST double CRLF
-    [RawHeadersBlock, RawBody] =
+    {RawHeadersBlock, RawBody} =
         case binary:split(Part, [?DOUBLE_CRLF], []) of
             [XRawHeadersBlock] ->
-                % no body
-                [XRawHeadersBlock, <<>>];
-            [XRawHeadersBlock, XRawBody] -> [XRawHeadersBlock, XRawBody]
+                % The message has no body.
+                {XRawHeadersBlock, <<>>};
+            [XRawHeadersBlock, XRawBody] ->
+                {XRawHeadersBlock, XRawBody}
         end,
     % Extract individual headers
     RawHeaders = binary:split(RawHeadersBlock, ?CRLF, [global]),
@@ -172,11 +188,6 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
             end,
             RawHeaders
         )),
-        Commitments =
-                dev_codec_httpsig_siginfo:siginfo_to_commitments(
-                    Headers,
-                    Opts
-                ),
     % The Content-Disposition is from the parent message,
     % so we separate off from the rest of the headers
     case hb_maps:get(<<"content-disposition">>, Headers, undefined, Opts) of
@@ -200,6 +211,11 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                             false -> no_part_name_found
                         end
                 end,
+            Commitments =
+                dev_codec_httpsig_siginfo:siginfo_to_commitments(
+                    Headers#{ <<"body">> => RawBody },
+                    Opts
+                ),
             RestHeaders =
                 hb_maps:without(
                     [
@@ -245,10 +261,7 @@ from_body_parts(TABM, InlinedKey, [Part | Rest], Opts) ->
                         end;
                     _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
-            TABMNext = TABM#{
-                PartName => ParsedPart
-            },
-            from_body_parts(TABMNext, InlinedKey, Rest, Opts)
+            #{ PartName => ParsedPart }
     end.
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
@@ -375,11 +388,12 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
         Commitments ->
             Commitments
     end,
+    ?event(debug_siginfo, {converting_commitments_to_siginfo, Msg}),
     {ok,
         maps:merge(
             Intermediate,
             dev_codec_httpsig_siginfo:commitments_to_siginfo(
-                Intermediate,
+                TABM,
                 CommitmentsMap,
                 Opts
             )

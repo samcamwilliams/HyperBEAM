@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, number/1, list_to_numbered_message/1]).
+-export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
@@ -282,6 +282,18 @@ is_ordered_list(N, Msg, _Opts) ->
 				_Opts
             )
     end.
+
+%% @doc Replace a key in a list with a new value.
+list_replace(List, Key, Value) ->
+    lists:map(
+        fun(Elem) ->
+            case Elem of
+                Key -> Value;
+                _ -> Elem
+            end
+        end,
+        List
+    ).
 
 %% @doc Take a list and return a list of unique elements. The function is
 %% order-preserving.

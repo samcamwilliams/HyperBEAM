@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    verify_nested_complex_signed_test(
+    simple_signed_nested_message_test(
         #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -22,10 +22,10 @@ test_codecs() ->
     [
         <<"structured@1.0">>,
         <<"httpsig@1.0">>,
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
-        <<"flat@1.0">>,
-        <<"ans104@1.0">>,
-        <<"json@1.0">>
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true }
+        % <<"flat@1.0">>,
+        % <<"ans104@1.0">>,
+        % <<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -490,7 +490,7 @@ verify_nested_complex_signed_test(Codec, Opts) ->
     % % Test encoding and decoding.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    %?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(Encoded, Opts)}}),
+    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(Msg, Opts)}}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),

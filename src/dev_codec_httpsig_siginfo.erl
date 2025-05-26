@@ -2,7 +2,7 @@
 %% and `signature-input' keys.
 -module(dev_codec_httpsig_siginfo).
 -export([commitments_to_siginfo/3, siginfo_to_commitments/2]).
--export([committed_keys_to_siginfo/1, to_siginfo_keys/2]).
+-export([committed_keys_to_siginfo/1, to_siginfo_keys/3]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 -export([commitment_to_sig_name/1]).
 -include("include/hb.hrl").
@@ -58,8 +58,8 @@ commitment_to_sf_siginfo(Msg, Commitment, Opts) ->
     % Extract the signature from the commitment.
     Signature = maps:get(<<"signature">>, Commitment),
     % Extract the keys present in the commitment.
-    CommittedKeys = to_siginfo_keys(Msg, maps:get(<<"committed">>, Commitment)),
-    ?event(debug_bundle, {normalized_for_enc, CommittedKeys, {commitment, Commitment}}),
+    CommittedKeys = to_siginfo_keys(Msg, Commitment, Opts),
+    ?event({normalized_for_enc, CommittedKeys, {commitment, Commitment}}),
     % Extract the hashpath, used as a tag, from the commitment.
     Tag = maps:get(<<"tag">>, Commitment, undefined),
     % Extract other permissible values, if present.
@@ -156,7 +156,7 @@ nested_map_to_string(Map) ->
 %% @doc Take a message with a `signature' and `signature-input' key pair and
 %% return a map of commitments.
 siginfo_to_commitments(
-        #{ <<"signature">> := SFSigBin, <<"signature-input">> := SFSigInputBin },
+        Msg = #{ <<"signature">> := SFSigBin, <<"signature-input">> := SFSigInputBin },
         Opts) ->
     % Parse the signature and signature-input structured-fields.
     SFSigs = hb_structured_fields:parse_dictionary(SFSigBin),
@@ -174,7 +174,7 @@ siginfo_to_commitments(
         lists:map(
             fun ({SFSig, SFSigInput}) ->
                 {ok, ID, Commitment} =
-                    sf_siginfo_to_commitment(SFSig, SFSigInput, Opts),
+                    sf_siginfo_to_commitment(Msg, SFSig, SFSigInput, Opts),
                 {ID, Commitment}
             end,
             CommitmentSFs
@@ -188,7 +188,7 @@ siginfo_to_commitments(_Msg, _Opts) ->
 
 %% @doc Take a signature and signature-input as parsed structured-fields and 
 %% return a commitment.
-sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
+sf_siginfo_to_commitment(Msg, SFSig, SFSigInput, Opts) ->
     % Extract the signature and signature-input from the structured-fields.
     {item, {binary, EncodedSig}, []} = SFSig,
     {list, SigInput, ParamsKV} = SFSigInput,
@@ -223,7 +223,7 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
         ||
             {item, {string, Key}, []} <- SigInput
         ],
-    CommittedKeys = from_siginfo_keys(RawCommittedKeys),
+    CommittedKeys = from_siginfo_keys(Msg, RawCommittedKeys),
     % Merge and cleanup the output.
     % 1. Remove the `content-digest' key from the committed keys, if present, and
     %    replace it with the `body' key. Remove the `ao-body-key' key, if present.
@@ -275,13 +275,6 @@ decoding_nested_map_binary(Bin) ->
             Res
     end.
 
-%% @doc Decode a list of keys, if they are present in the given message.
-decode_byte_keys([], Msg) -> Msg;
-decode_byte_keys([Key|Keys], Msg) when is_map_key(Key, Msg)->
-    decode_byte_keys(Keys, Msg#{ Key => hb_util:decode(maps:get(Key, Msg)) });
-decode_byte_keys([_NotPresentKey|Keys], Msg) ->
-    decode_byte_keys(Keys, Msg).
-
 %% @doc Normalize a list of AO-Core keys to their equivalents in `httpsig@1.0'
 %% format. This involves:
 %% - If the HTTPSig message given has an `ao-body-key' key and the committed keys
@@ -290,44 +283,33 @@ decode_byte_keys([_NotPresentKey|Keys], Msg) ->
 %% - If the list contains a `body' key, we replace it with the `content-digest'
 %%   key.
 %% - Otherwise, we return the list unchanged.
-to_siginfo_keys(HTTPSig, List) ->
-    NormList = hb_util:message_to_ordered_list(List),
-    NormListWithBodyKey =
-        case hb_maps:get(<<"ao-body-key">>, HTTPSig, not_found) of
-            not_found ->
-                NormList;
-            AOBodyKey ->
-                [
-                    <<"ao-body-key">>
-                |
-                    replace_key(AOBodyKey, <<"body">>, NormList)
-                ]
-        end,
-    Res = replace_key(<<"body">>, <<"content-digest">>, NormListWithBodyKey),
-    Res.
+to_siginfo_keys(Msg, Commitment, Opts) ->
+    {ok, _EncMsg, EncComm} =
+        dev_codec_httpsig:normalize_for_encoding(Msg, Commitment, Opts),
+    maps:get(<<"committed">>, EncComm).
 
 %% @doc Normalize a list of `httpsig@1.0' keys to their equivalents in AO-Core
-%% format.
-from_siginfo_keys(List) ->
-    remove_derived_specifiers(
-        replace_key(
-            <<"content-digest">>,
-            <<"body">>,
-            List -- [<<"ao-body-key">>]
-        )
-    ).
-
-%% @doc Replace a key in the list with the given value.
-replace_key(Key, Value, List) ->
-    lists:map(
-        fun(Elem) ->
-            case Elem of
-                Key -> Value;
-                _ -> Elem
-            end
-        end,
-        List
-    ).
+%% format. There are three stages:
+%% 1. Remove the @ prefix from the component identifiers, if present.
+%% 2. Replace the `content-digest' key with the `body' key, if present.
+%% 3. Replace the `body' key with the value of the `ao-body-key' key, if present.
+from_siginfo_keys(Msg, RawList) ->
+    % 1. Remove specifiers from the list.
+    BaseList = remove_derived_specifiers(RawList),
+    % 2. Replace the `content-digest' key with the `body' key, if present.
+    ListWithBody = hb_util:list_replace(BaseList, <<"content-digest">>, <<"body">>),
+    % 3. Replace the `body' key with the value of the `ao-body-key' key, if present.
+    ?event(debug_siginfo, {from_siginfo_keys, {raw_list, RawList}, {list_with_body, ListWithBody}}),
+    case lists:member(<<"ao-body-key">>, ListWithBody) of
+        true ->
+            hb_util:list_replace(
+                ListWithBody,
+                <<"body">>,
+                maps:get(<<"ao-body-key">>, Msg, <<"body">>)
+            ) -- [<<"ao-body-key">>];
+        false ->
+            ListWithBody
+    end.
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with
