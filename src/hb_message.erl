@@ -278,7 +278,7 @@ commit(Msg, WalletOrOpts) ->
 commit(Msg, Wallet, Format) when not is_map(Wallet) ->
     commit(Msg, #{ priv_wallet => Wallet }, Format);
 commit(Msg, Opts, CodecName) when is_binary(CodecName) ->
-    commit(Msg, Opts, #{ <<"device">> => CodecName });
+    commit(Msg, Opts, #{ <<"commitment-device">> => CodecName });
 commit(Msg, Opts, Spec) ->
     {ok, Signed} =
         dev_message:commit(

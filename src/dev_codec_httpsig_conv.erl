@@ -46,31 +46,12 @@ from(HTTP, _Req, Opts) ->
     Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
     % First, parse all headers excluding the signature-related headers, as they
     % are handled separately.
-    {_, InlinedKey} = inline_key(HTTP),
-    ?event({inlined_body_key, InlinedKey}),
     Headers = hb_maps:without([<<"body">>], HTTP, Opts),
-    ContentType = hb_maps:get(<<"content-type">>, Headers, undefined, Opts),
-    % Next, we need to potentially parse the body and add to the TABM
-    % potentially as sub-TABMs.
-    BodyKeys =
-        case body_to_parts(ContentType, Body, Opts) of
-            no_body -> #{};
-            {normal, RawBody} ->
-                % The body is not a multipart, so we just return the inlined key.
-                #{ InlinedKey => RawBody };
-            {multipart, Parts} ->
-                GroupedTABM =
-                    lists:foldl(
-                        fun(Part, Acc) ->
-                            maps:merge(Acc, from_body_part(InlinedKey, Part, Opts))
-                        end,
-                        #{},
-                        Parts
-                    ),
-                hb_util:ok(dev_codec_flat:from(GroupedTABM, #{}, Opts))
-        end,
+    % Next, we need to potentially parse the body, get the ordering of the body
+    % parts, and add them to the TABM.
+    {OrderedBodyKeys, BodyTABM} = body_to_tabm(HTTP, Opts),
     % Merge the body keys with the headers.
-    WithBodyKeys = maps:merge(Headers, BodyKeys),
+    WithBodyKeys = maps:merge(Headers, BodyTABM),
     % Decode the `ao-ids' key into a map. `ao-ids' is an encoding of literal
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
@@ -87,7 +68,7 @@ from(HTTP, _Req, Opts) ->
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
             WithIDs,
-            maps:keys(BodyKeys),
+            OrderedBodyKeys,
             Opts
         ),
     MsgWithSigs =
@@ -100,7 +81,11 @@ from(HTTP, _Req, Opts) ->
         hb_maps:without(
             Removed =
                 hb_maps:keys(Commitments) ++
-                [<<"content-digest">>, <<"content-type">>] ++
+                [<<"content-digest">>] ++
+                case maps:get(<<"content-type">>, MsgWithSigs, undefined) of
+                    <<"multipart/", _/binary>> -> [<<"content-type">>];
+                    _ -> []
+                end ++
                 case hb_message:is_signed_key(<<"ao-body-key">>, MsgWithSigs, Opts) of
                     true -> [];
                     false -> [<<"ao-body-key">>]
@@ -110,6 +95,58 @@ from(HTTP, _Req, Opts) ->
         ),
     ?event({message_without_commitments, Res, Removed}),
     {ok, Res}.
+
+%% @doc Generate the body TABM from the `body' key of the encoded message.
+body_to_tabm(HTTP, Opts) ->
+    % Extract the body and content-type from the HTTP message.
+    Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
+    ContentType = hb_maps:get(<<"content-type">>, HTTP, undefined, Opts),
+    {_, InlinedKey} = inline_key(HTTP),
+    ?event({inlined_body_key, InlinedKey}),
+    % Parse the body into a TABM.
+    {OrderedBodyKeys, BodyTABM} =
+        case body_to_parts(ContentType, Body, Opts) of
+            no_body -> {[], #{}};
+            {normal, RawBody} ->
+                % The body is not a multipart, so we just return the inlined key.
+                {[InlinedKey], #{ InlinedKey => RawBody }};
+            {multipart, Parts} ->
+                % Parse each part of the multipart body into an individual TABM,
+                % with its associated key.
+                OrderedBodyTABMs =
+                    lists:map(
+                        fun(Part) ->
+                            from_body_part(InlinedKey, Part, Opts)
+                        end,
+                        Parts
+                    ),
+                % Merge all of the parts into a single TABM.
+                {ok, MergedParts} =
+                    dev_codec_flat:from(
+                        maps:from_list(OrderedBodyTABMs),
+                        #{},
+                        Opts
+                    ),
+                % Calculate the ordered body keys of the multipart data. The
+                % nested body parts are labelled by `path`, rather than `key`:
+                % That is, a body part may contain a `/` in its key, representing
+                % that the nested form is not a direct child of the parent 
+                % message. Subsequently, we need to take just the first
+                % `path part' of the key and return the unique'd list.
+                {MessagePaths, _} = lists:unzip(OrderedBodyTABMs),
+                Keys =
+                    hb_util:unique(
+                        lists:map(
+                            fun(Path) ->
+                                hd(binary:split(Path, <<"/">>, [global]))
+                            end,
+                            MessagePaths
+                        )
+                    ),
+                % Return both as a pair.
+                {Keys, MergedParts}
+        end,
+    {OrderedBodyKeys, BodyTABM}.
 
 %% @doc Split the body into parts, if it is a multipart.
 body_to_parts(_ContentType, <<>>, _Opts) -> no_body;
@@ -263,7 +300,7 @@ from_body_part(InlinedKey, Part, Opts) ->
                         end;
                     _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
-            #{ PartName => ParsedPart }
+            {PartName, ParsedPart}
     end.
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
@@ -390,7 +427,7 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
         Commitments ->
             Commitments
     end,
-    ?event(debug_siginfo, {converting_commitments_to_siginfo, Msg}),
+    ?event({converting_commitments_to_siginfo, Msg}),
     {ok,
         maps:merge(
             Intermediate,
@@ -713,19 +750,21 @@ inline_key(Msg, Opts) ->
     % Msg <<"data">> is used.
     InlineBodyKey = hb_maps:get(<<"ao-body-key">>, Msg, false, Opts),
     ?event({inlined, InlineBodyKey}),
-    case [
+    case {
         InlineBodyKey,
-        hb_maps:is_key(<<"body">>, Msg, Opts) andalso not ?IS_LINK(maps:get(<<"body">>, Msg, Opts)),
-        hb_maps:is_key(<<"data">>, Msg, Opts) andalso not ?IS_LINK(maps:get(<<"data">>, Msg, Opts))
-    ] of
+        hb_maps:is_key(<<"body">>, Msg, Opts)
+            andalso not ?IS_LINK(maps:get(<<"body">>, Msg, Opts)),
+        hb_maps:is_key(<<"data">>, Msg, Opts)
+            andalso not ?IS_LINK(maps:get(<<"data">>, Msg, Opts))
+    } of
         % ao-body-key already exists, so no need to add one
-        [Explicit, _, _] when Explicit =/= false -> {#{}, InlineBodyKey};
+        {Explicit, _, _} when Explicit =/= false -> {#{}, InlineBodyKey};
         % ao-body-key defaults to <<"body">> (see below)
         % So no need to add one
-        [_, true, _] -> {#{}, <<"body">>};
+        {_, true, _} -> {#{}, <<"body">>};
         % We need to preserve the ao-body-key, as the <<"data">> field,
         % so that it is preserved during encoding and decoding
-        [_, _, true] -> {#{<<"ao-body-key">> => <<"data">>}, <<"data">>};
+        {_, _, true} -> {#{<<"ao-body-key">> => <<"data">>}, <<"data">>};
         % default to body being the inlined part.
         % This makes this utility compatible for both encoding
         % and decoding httpsig@1.0 messages

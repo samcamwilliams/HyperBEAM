@@ -273,11 +273,11 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             not_found ->
                 EncodedKeys;
             AOBodyKey ->
-                [
-                    <<"ao-body-key">>
-                |
-                    hb_util:list_replace(EncodedKeys, AOBodyKey, <<"body">>)
-                ]
+                hb_util:list_replace(
+                    EncodedKeys,
+                    AOBodyKey,
+                    [<<"body">>, <<"ao-body-key">>]
+                )
         end,
     FinalKeys =
         hb_util:to_sorted_list(
@@ -298,7 +298,11 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             {msg, Msg}
         }
     ),
-    {ok, EncodedWithSigInfo, Commitment#{ <<"committed">> => FinalKeys }}.
+    {
+        ok,
+        EncodedWithSigInfo,
+        Commitment#{ <<"committed">> => FinalKeys }
+    }.
 
 %% @doc create the signature base that will be signed in order to create the
 %% Signature and SignatureInput.
@@ -380,7 +384,8 @@ signature_params_line(Commitment, Opts) ->
                                     <<"expires">>,
                                     <<"nonce">>,
                                     <<"keyid">>,
-                                    <<"tag">>
+                                    <<"tag">>,
+                                    <<"bundle">>
                                 ],
                                 Commitment
                             )

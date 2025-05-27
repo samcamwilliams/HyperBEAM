@@ -226,15 +226,13 @@ sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
         ],
     CommittedKeys = from_siginfo_keys(Msg, BodyKeys, RawCommittedKeys),
     % Merge and cleanup the output.
-    % 1. Remove the `content-digest' key from the committed keys, if present, and
-    %    replace it with the `body' key. Remove the `ao-body-key' key, if present.
-    % 2. Decode the `keyid` (typically a public key) to its raw byte form.
-    % 3. Decode the `signature` to its raw byte form.
-    % 4. Filter undefined keys.
-    % 5. Generate the ID for the commitment from the signature. We use a SHA2-256
+    % 1. Decode the `keyid` (typically a public key) to its raw byte form.
+    % 2. Decode the `signature` to its raw byte form.
+    % 3. Filter undefined keys.
+    % 4. Generate the ID for the commitment from the signature. We use a SHA2-256
     %    hash of the signature, unless the signature is 32 bytes, in which case we
     %    use the signature directly as the ID.
-    % 6. If the `keyid' is a public key (determined by length >= 32 bytes), set
+    % 5. If the `keyid' is a public key (determined by length >= 32 bytes), set
     %    the `committer' to its hash.
     Commitment3 =
         Commitment2#{
@@ -292,33 +290,42 @@ to_siginfo_keys(Msg, Commitment, Opts) ->
 %% @doc Normalize a list of `httpsig@1.0' keys to their equivalents in AO-Core
 %% format. There are three stages:
 %% 1. Remove the @ prefix from the component identifiers, if present.
-%% 2. Replace the `content-digest' key with the `body' key, if present.
-%% 3. Replace `body' with the body keys.
-%% 4. Replace the `body' key again with the value of the `ao-body-key' key, if
+%% 2. Replace `content-digest' with the body keys, if present.
+%% 3. Replace the `body' key again with the value of the `ao-body-key' key, if
 %%    present. This is possible because the keys derived from the body often
 %%    contain the `body' key itself.
-%% 5. If the `content-type' starts with `multipart/', we remove it.
+%% 4. If the `content-type' starts with `multipart/', we remove it.
 from_siginfo_keys(Msg, BodyKeys, RawList) ->
     % 1. Remove specifiers from the list.
-    BaseList = remove_derived_specifiers(RawList),
+    BaseCommitted = remove_derived_specifiers(RawList),
     % 2. Replace the `content-digest' key with the `body' key, if present.
-    ListWithBody = hb_util:list_replace(BaseList, <<"content-digest">>, <<"body">>),
-    % 3. Replace `body' with the body keys.
-    ListWithBodyKeys = hb_util:list_replace(ListWithBody, <<"body">>, BodyKeys),
-    % 4. Replace the `body' key again with the value of the `ao-body-key' key, if present.
-    ?event(debug_siginfo, {from_siginfo_keys, {raw_list, RawList}, {list_with_body, ListWithBody}}),
+    WithBody =
+        hb_util:list_replace(BaseCommitted, <<"content-digest">>, BodyKeys),
+    % 3. Replace the `body' key again with the value of the `ao-body-key' key,
+    %    if present.
+    ?event(debug_siginfo,
+        {from_siginfo_keys,
+            {raw_committed, RawList},
+            {with_body, {explicit, WithBody}}
+        }
+    ),
     ListWithoutBodyKey =
-        case lists:member(<<"ao-body-key">>, ListWithBody) of
+        case lists:member(<<"ao-body-key">>, WithBody) of
             true ->
-                hb_util:list_replace(
-                    ListWithBodyKeys,
-                    <<"body">>,
-                    maps:get(<<"ao-body-key">>, Msg, <<"body">>)
-                ) -- [<<"ao-body-key">>];
+                WithOrigBodyKey =
+                    hb_util:list_replace(
+                        WithBody,
+                        <<"body">>,
+                        maps:get(<<"ao-body-key">>, Msg)
+                    ),
+                ?event(debug_siginfo,
+                    {with_orig_body_key, WithOrigBodyKey}
+                ),
+                WithOrigBodyKey -- [<<"ao-body-key">>];
             false ->
-                ListWithBodyKeys
+                WithBody
         end,
-    % 5. If the `content-type' starts with `multipart/', we remove it.
+    % 4. If the `content-type' starts with `multipart/', we remove it.
     ListWithoutContentType =
         case maps:get(<<"content-type">>, Msg, undefined) of
             <<"multipart/", _/binary>> ->

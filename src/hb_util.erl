@@ -285,7 +285,7 @@ is_ordered_list(N, Msg, _Opts) ->
 
 %% @doc Replace a key in a list with a new value.
 list_replace(List, Key, Value) ->
-    lists:foldl(
+    lists:foldr(
         fun(Elem, Acc) ->
             case Elem of
                 Key when is_list(Value) -> Value ++ Acc;
