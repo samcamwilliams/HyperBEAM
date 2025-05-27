@@ -17,7 +17,7 @@
 %%%   size, capacity, and indexing.
 -module(hb_store_lru).
 -export([start/1, stop/1, reset/1, scope/0]).
--export([write/3, read/2, list/2, type/2, make_link/3, make_group/2]).
+-export([write/3, read/2, list/2, type/2, make_link/3, make_group/2, resolve/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -200,25 +200,29 @@ read(Opts, RawKey) ->
             not_found
     end.
 
-resolve(CacheTables, Key) ->
-    PathList =
-        hb_path:term_to_path_parts(
-            hb_store:join(Key)),
-    ResolvedParts =
-        lists:map(
-            fun(Path) ->
-                do_resolve(CacheTables, Path)
-            end,
-            PathList
-        ),
-    hb_store:join(ResolvedParts).
+resolve(Opts, Key) ->
+    Res = resolve(Opts, "", hb_path:term_to_path_parts(hb_store:join(Key), Opts)),
+    ?event({resolved, Key, Res}),
+    Res.
 
-do_resolve(CacheTables, Path) ->
-    case get_cache_entry(CacheTables, Path) of
+resolve(_, CurrPath, []) ->
+    hb_store:join(CurrPath);
+resolve(Opts, CurrPath, [Next|Rest]) ->
+    PathPart = hb_store:join([CurrPath, Next]),
+    ?event(
+        {resolving,
+            {accumulated_path, CurrPath},
+            {next_segment, Next},
+            {generated_partial_path_to_test, PathPart}
+        }
+    ),
+    ServerID = find_id(Opts),
+    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    case get_cache_entry(CacheTables, PathPart) of
         {link, Link} ->
-            do_resolve(CacheTables, Link);
+            resolve(Opts, Link, Rest);
         _ ->
-            Path
+            resolve(Opts, PathPart, Rest)
     end.
 
 %% @doc Make a link from a key to another in the store.
