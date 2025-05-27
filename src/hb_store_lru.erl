@@ -196,8 +196,10 @@ read(Opts, RawKey) ->
             CacheServer = find_pid(Opts),
             CacheServer ! {update_recent, Key, Entry},
             {ok, Value};
-        _ ->
-            not_found
+        {link, Link} ->
+            ?event({link_found, RawKey, Link}),
+            read(Opts, Link);
+        _ -> not_found
     end.
 
 resolve(Opts, Key) ->
