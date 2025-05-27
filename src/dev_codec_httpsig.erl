@@ -869,6 +869,10 @@ trim_ws_end(Value, N) ->
 %% message that is sent over HTTP, signed with the codec.
 validate_large_message_from_http_test() ->
     Node = hb_http_server:start_node(Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST">>
+        },
         force_signed => true,
         commitment_device => <<"httpsig@1.0">>,
         extra =>
