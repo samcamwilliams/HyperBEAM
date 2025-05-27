@@ -297,7 +297,7 @@ normal_tags(Tags) ->
 
 %% @doc Convert an ANS-104 encoded tag list into a HyperBEAM-compatible map.
 encoded_tags_to_map(Tags) ->
-    hb_util:list_to_numbered_map(
+    hb_util:list_to_numbered_message(
         lists:map(
             fun({Key, Value}) ->
                 #{

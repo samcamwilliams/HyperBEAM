@@ -123,7 +123,8 @@ get_additional_params(Commitment) ->
                         <<"tag">>,
                         <<"created">>,
                         <<"expires">>,
-                        <<"nonce">>
+                        <<"nonce">>,
+                        <<"committed">>
                     ]
                 )
             )

@@ -374,7 +374,7 @@ committed(Self, Req, Opts) ->
     % Remove commitments that are not in *every* committer's list.
     % To start, we need to create the super-set of committed keys.
     AllCommittedKeys =
-        lists:foldl(
+        lists:foldr(
             fun(Key, Acc) ->
                 case lists:member(Key, Acc) of
                     true -> Acc;
