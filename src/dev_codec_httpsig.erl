@@ -112,6 +112,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % Generate the signature base
     SignatureBase = signature_base(EncMsg, EncComm, Opts),
     ?event(debug_bundle, {rsa_signature_base, {string, SignatureBase}}),
+    ?event(debug_order, {mod_committed_keys, ModCommittedKeys}),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
@@ -294,10 +295,6 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
     % of being added to the body. These keys will need to be removed from the
     % `committed' list and re-added where the `content-digest' was.
     RemovedKeys =
-        case maps:get(<<"ao-body-key">>, EncodedWithSigInfo, not_found) of
-            not_found -> [];
-            BodyKey -> [BodyKey]
-        end ++
         lists:filter(
             fun(Key) -> not key_present(Key, EncodedWithSigInfo) end,
             RawInputs
@@ -311,26 +308,25 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
         ),
     % The keys to be used in the `committed' list of the commitment:
     KeysForCommitment =
-        lists:map(
-            fun hb_link:remove_link_specifier/1,
-            hb_util:list_replace(
-                lists:filter(
-                    fun(Key) -> not lists:member(Key, RemovedKeys) end,
-                    Inputs
-                ),
-                <<"body">>,
-                RemovedKeys
+    	hb_ao:normalize_keys(
+            lists:map(
+                fun hb_link:remove_link_specifier/1,
+                hb_util:list_replace(
+                    KeysForEncoding,
+                    <<"content-digest">>,
+                    RemovedKeys
+                ) --
+                case maps:get(<<"content-type">>, Msg, not_found) of
+                    not_found -> [<<"content-type">>];
+                    _ -> []
+                end
             )
         ),
-    ?event(debug_siginfo,
-        {generating_signature_base_with,
-            {final_inputs, EncodedKeys},
+    ?event(debug_order,
+        {normalized_for_encoding,
             {raw_inputs, Inputs},
-            {commitment, Commitment},
-            {msg_encoded_with_content_digest, Encoded},
-            {msg_encoded_with_sig_info, EncodedWithSigInfo},
-            {msg_with_only_inputs, MsgWithOnlyInputs},
-            {msg, Msg}
+            {final_for_encoding, KeysForEncoding},
+            {final_for_commitment, KeysForCommitment}
         }
     ),
     {
