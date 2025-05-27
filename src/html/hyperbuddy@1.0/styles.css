@@ -10,7 +10,8 @@
 	--accent-color: #e9ffc5;
 	--link-color: #1A73E8;
 	--link-hover-color: #0C47A1;
-	--indicator-color: #27D735;
+	--indicator-color: #f17100;
+	--pulse-color: #17a923;
 	--indicator-color-active: #23BE30;
 	--border-radius: 7.5px;
 }
@@ -29,7 +30,7 @@
 
 	0%,
 	100% {
-		background: var(--indicator-color);
+		background: var(--pulse-color);
 		transform: scale(1);
 	}
 
@@ -244,9 +245,9 @@ a:hover {
 }
 
 .subheader-indicator {
-	height: 13.5px;
-	width: 13.5px;
-	background: var(--indicator-color);
+	height: 8px;
+	width: 8px;
+	background: var(--pulse-color);
 	border-radius: 50%;
 	animation: pulse 1.075s infinite;
 }
@@ -458,7 +459,7 @@ a:hover {
 
 	0%,
 	100% {
-		background: var(--indicator-color);
+		background: var(--pulse-color);
 		transform: scale(1);
 	}
 
@@ -902,7 +903,7 @@ a:hover {
 	color: var(--text-color-light) !important;
 	font-size: 12px !important;
 	font-weight: 500 !important;
-	background: var(--indicator-color) !important;
+	background: var(--pulse-color) !important;
 	border-radius: var(--border-radius) !important;
 }
 
