@@ -361,39 +361,33 @@ put_cache_entry(State, Key, Value, Opts) ->
             case get_cache_entry(State, Key) of
                 nil ->
                     ?event(cache_lru, {assign_entry, Key, Value}),
-                    case filename:dirname(Key) of
-                        <<".">> ->
-                            assign_new_entry(
-                                State,
-                                Key,
-                                Value,
-                                ValueSize,
-                                Capacity,
-                                undefined,
-                                Opts
-                            );
-                        BaseDir ->
-                            ensure_dir(State, BaseDir),
-                            {group, Entry} = get_cache_entry(State, BaseDir),
-                            BaseName = filename:basename(Key),
-                            NewGroup = append_key_to_group(BaseName, Entry),
-                            add_cache_entry(State, BaseDir, {group, NewGroup}),
-                            assign_new_entry(
-                                State,
-                                Key,
-                                Value,
-                                ValueSize,
-                                Capacity,
-                                BaseDir,
-                                Opts
-                            )
-                    end;
+                    Group = handle_group(State, Key),
+                    assign_new_entry(
+                        State,
+                        Key,
+                        Value,
+                        ValueSize,
+                        Capacity,
+                        Group,
+                        Opts
+                    );
                 Entry ->
                     ?event(cache_lru, {replace_entry, Key, Value}),
                     replace_entry(State, Key, Value, ValueSize, Entry)
             end
     end.
 
+handle_group(State, Key) ->
+    case filename:dirname(Key) of
+        <<".">> -> undefined ;
+        BaseDir ->
+            ensure_dir(State, BaseDir),
+            {group, Entry} = get_cache_entry(State, BaseDir),
+            BaseName = filename:basename(Key),
+            NewGroup = append_key_to_group(BaseName, Entry),
+            add_cache_entry(State, BaseDir, {group, NewGroup}),
+            BaseDir
+    end.
 ensure_dir(State, Path) ->
     PathParts = hb_path:term_to_path_parts(Path),
     [First | Rest] = PathParts,
@@ -472,10 +466,11 @@ add_cache_entry(#{cache_table := Table}, Key, Value) ->
 add_cache_index(#{index_table := Table}, ID, Key) ->
     ets:insert(Table, {ID, Key}).
 
-link_cache_entry(#{cache_table := Table}, Existing, New) ->	
+link_cache_entry(State = #{cache_table := Table}, Existing, New) ->	
     ?event(cache_lru, {link, Existing, New}),
     % Remove the link from the previous linked entry
     clean_old_link(Table, New),
+    _ = handle_group(State, New),
     ets:insert(Table, {New, {link, Existing}}),
     % Add links to the linked entry
     case ets:lookup(Table, Existing) of
