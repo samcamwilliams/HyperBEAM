@@ -268,7 +268,7 @@ list(Opts, Path) ->
         end,
     case get_persistent_store(Opts) of
         no_store ->
-            InMemoryKeys;
+            {ok, InMemoryKeys};
         Store ->
             PersistentKeys =
                 lists:map(
@@ -279,7 +279,7 @@ list(Opts, Path) ->
                         Keys -> Keys
                     end
                 ),
-            InMemoryKeys ++ PersistentKeys
+            {ok, InMemoryKeys ++ PersistentKeys}
     end.
 
 %% @doc Determine the type of a key in the store.
@@ -796,17 +796,20 @@ list_test() ->
     write(StoreOpts, <<"hello">>, <<"world">>),
     write(StoreOpts, <<"sub/key1">>, Binary),
     write(StoreOpts, <<"sub/key2">>, Binary),
-    ?assertEqual([<<"key1">>, <<"key2">>], lists:sort(list(StoreOpts, <<"sub">>))),
+    {ok, Keys1} = list(StoreOpts, <<"sub">>),
+    ?assertEqual([<<"key1">>, <<"key2">>], lists:sort(Keys1)),
     write(StoreOpts, <<"sub/key3">>, Binary),
+    {ok, Keys2} = list(StoreOpts, <<"sub">>),
     ?assertEqual(
         [<<"key1">>, <<"key2">>, <<"key3">>],
-        lists:sort(list(StoreOpts, <<"sub">>))
+        lists:sort(Keys2)
     ),
     write(StoreOpts, <<"sub/inner/key1">>, Binary),
+    {ok, Keys3} = list(StoreOpts, <<"sub">>),
     ?assertEqual([<<"inner">>, <<"key1">>, <<"key2">>, <<"key3">>],
-                 lists:sort(list(StoreOpts, <<"sub">>))),
+                 lists:sort(Keys3)),
     write(StoreOpts, <<"complex">>, #{<<"a">> => 10, <<"b">> => Binary}),
-    ?assertEqual([<<"a">>, <<"b">>], list(StoreOpts, <<"complex">>)).
+    ?assertEqual({ok, [<<"a">>, <<"b">>]}, list(StoreOpts, <<"complex">>)).
 
 type_test() ->
     DefaultOpts = test_opts(default, 500),
