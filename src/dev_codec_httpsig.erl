@@ -196,10 +196,14 @@ keys_to_commit(Base, _Req, Opts) ->
         [] ->
             % Case 3: Default to all keys in the TABM-encoded message, aside
             % metadata.
-            hb_util:list_to_numbered_message(lists:map(
-                fun hb_link:remove_link_specifier/1,
-                maps:keys(Base) -- [<<"commitments">>, <<"priv">>]
-            ));
+            hb_util:list_to_numbered_message(
+                hb_util:to_sorted_list(
+                    lists:map(
+                        fun hb_link:remove_link_specifier/1,
+                        maps:keys(Base) -- [<<"commitments">>, <<"priv">>]
+                    )
+                )
+            );
         Keys ->
             % Case 2: Replicate the raw keys that the existing commitments have
             % used. This leads to a message whose commitments can be 'stacked'
