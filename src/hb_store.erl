@@ -281,7 +281,7 @@ generate_test_suite(Suite, Stores) ->
                     {
                         atom_to_list(Mod) ++ ": " ++ Desc,
                         fun() ->
-                            TestResult = Test(Store),
+                            TestResult = Test(#{ store => Store}),
                             TestResult
                         end
                     }
@@ -312,7 +312,7 @@ resursive_path_resolution_test(Opts) ->
 
 %% @doc Ensure that we can resolve links through a directory.
 hierarchical_path_resolution_test(Opts) ->
-    Store = Opts,
+    Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),
