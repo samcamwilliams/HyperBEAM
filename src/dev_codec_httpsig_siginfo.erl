@@ -284,7 +284,7 @@ decoding_nested_map_binary(Bin) ->
 %%   key.
 %% - Otherwise, we return the list unchanged.
 to_siginfo_keys(Msg, Commitment, Opts) ->
-    {ok, _EncMsg, EncComm} =
+    {ok, _EncMsg, EncComm, _} =
         dev_codec_httpsig:normalize_for_encoding(Msg, Commitment, Opts),
     maps:get(<<"committed">>, EncComm).
 
@@ -334,7 +334,7 @@ from_siginfo_keys(Msg, BodyKeys, RawList) ->
             _ ->
                 ListWithoutBodyKey
         end,
-    hb_ao:normalize_keys(hb_util:to_sorted_list(ListWithoutContentType)).
+    hb_ao:normalize_keys(ListWithoutContentType).
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with

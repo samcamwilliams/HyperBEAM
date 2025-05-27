@@ -53,7 +53,7 @@ serialize(Msg, _Req, Opts) ->
 verify(Base, Req, Opts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
-    {ok, EncMsg, EncComm} = normalize_for_encoding(Base, Req, Opts),
+    {ok, EncMsg, EncComm, _} = normalize_for_encoding(Base, Req, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),
     ?event(debug_bundle, {signature_base_verify, {string, SigBase}}),
     KeyID = hb_util:decode(maps:get(<<"keyid">>, Req)),
@@ -106,7 +106,8 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             Req,
             Opts
         ),
-    {ok, EncMsg, EncComm} = normalize_for_encoding(MsgToSign, UnsignedCommitment, Opts),
+    {ok, EncMsg, EncComm, ModCommittedKeys} =
+        normalize_for_encoding(MsgToSign, UnsignedCommitment, Opts),
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
     SignatureBase = signature_base(EncMsg, EncComm, Opts),
@@ -115,6 +116,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
+    ?event(debug_siginfo, {rsa_commit, {committed, ToCommit}}),
     % Calculate the ID and place the signature into the `commitments' key of the
     % message. After, we call `commit' again to add the hmac to the new
     % message.
@@ -124,7 +126,8 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
                 (maps:get(<<"commitments">>, MsgToSign, #{}))#{
                     ID =>
                         UnsignedCommitment#{
-                            <<"signature">> => hb_util:encode(Signature)
+                            <<"signature">> => hb_util:encode(Signature),
+                            <<"committed">> => ModCommittedKeys
                         }
                 }
         },
@@ -148,6 +151,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
     % Extract the base commitments from the message.
     Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     CommittedKeys = keys_to_commit(Msg, Req, Opts),
+    ?event(debug_siginfo, {hmac_commit, {committed, CommittedKeys}}),
     UnauthedCommitment =
         maybe_bundle_tag_commitment(
             #{
@@ -159,7 +163,8 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Req,
             Opts
         ),
-    {ok, EncMsg, EncComm} = normalize_for_encoding(Msg, UnauthedCommitment, Opts),
+    {ok, EncMsg, EncComm, ModCommittedKeys} =
+        normalize_for_encoding(Msg, UnauthedCommitment, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),    
     HMac = hb_util:human_id(crypto:mac(hmac, sha256, <<"ao">>, SigBase)),
     Res =
@@ -168,7 +173,11 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Msg#{
                 <<"commitments">> =>
                     Commitments#{
-                        HMac => UnauthedCommitment#{ <<"signature">> => HMac }
+                        HMac =>
+                            UnauthedCommitment#{
+                                <<"signature">> => HMac,
+                                <<"committed">> => ModCommittedKeys
+                            }
                     }
             }
         },
@@ -197,11 +206,9 @@ keys_to_commit(Base, _Req, Opts) ->
             % Case 3: Default to all keys in the TABM-encoded message, aside
             % metadata.
             hb_util:list_to_numbered_message(
-                hb_util:to_sorted_list(
-                    lists:map(
-                        fun hb_link:remove_link_specifier/1,
-                        maps:keys(Base) -- [<<"commitments">>, <<"priv">>]
-                    )
+                lists:map(
+                    fun hb_link:remove_link_specifier/1,
+                    maps:keys(Base) -- [<<"commitments">>, <<"priv">>]
                 )
             );
         Keys ->
@@ -283,15 +290,39 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
                     [<<"body">>, <<"ao-body-key">>]
                 )
         end,
-    FinalKeys =
-        hb_util:to_sorted_list(
+    % Calculate the keys that have been removed from the message, as a result
+    % of being added to the body. These keys will need to be removed from the
+    % `committed' list and re-added where the `content-digest' was.
+    RemovedKeys =
+        case maps:get(<<"ao-body-key">>, EncodedWithSigInfo, not_found) of
+            not_found -> [];
+            BodyKey -> [BodyKey]
+        end ++
+        lists:filter(
+            fun(Key) -> not key_present(Key, EncodedWithSigInfo) end,
+            RawInputs
+        ),
+    % The keys to be used in encodings of the message:
+    KeysForEncoding =
+        hb_util:list_replace(
+            EncodedKeysWithBodyKey,
+            <<"body">>,
+            <<"content-digest">>
+        ),
+    % The keys to be used in the `committed' list of the commitment:
+    KeysForCommitment =
+        lists:map(
+            fun hb_link:remove_link_specifier/1,
             hb_util:list_replace(
-                EncodedKeysWithBodyKey,
+                lists:filter(
+                    fun(Key) -> not lists:member(Key, RemovedKeys) end,
+                    Inputs
+                ),
                 <<"body">>,
-                <<"content-digest">>
+                RemovedKeys
             )
         ),
-    ?event(
+    ?event(debug_siginfo,
         {generating_signature_base_with,
             {final_inputs, EncodedKeys},
             {raw_inputs, Inputs},
@@ -305,8 +336,15 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
     {
         ok,
         EncodedWithSigInfo,
-        Commitment#{ <<"committed">> => FinalKeys }
+        Commitment#{ <<"committed">> => KeysForEncoding },
+        KeysForCommitment
     }.
+
+%% @doc Calculate if a key or its `+link' TABM variant is present in a message.
+key_present(Key, Msg) ->
+    NormalizedKey = hb_ao:normalize_key(Key),
+    maps:is_key(NormalizedKey, Msg)
+        orelse maps:is_key(<<NormalizedKey/binary, "+link">>, Msg).
 
 %% @doc create the signature base that will be signed in order to create the
 %% Signature and SignatureInput.
@@ -353,7 +391,7 @@ signature_components_line(Req, Commitment, _Opts) ->
                         << Name/binary, <<": ">>/binary, Value/binary>>
                 end
             end,
-            hb_util:to_sorted_list(maps:get(<<"committed">>, Commitment))
+            maps:get(<<"committed">>, Commitment)
         ),
 	iolist_to_binary(lists:join(<<"\n">>, ComponentsLines)).
 

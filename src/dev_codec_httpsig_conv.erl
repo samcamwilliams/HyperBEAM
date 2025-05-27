@@ -366,7 +366,7 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
     % Ensure that the material for the message is loaded, if the request is
     % asking for a bundle.
     Msg =
-        case hb_maps:get(<<"bundle">>, Req, false, Opts) of
+        case hb_util:atom(hb_maps:get(<<"bundle">>, Req, false, Opts)) of
             false -> TABM;
             true ->
                 % Convert back to the fully loaded structured@1.0 message, then

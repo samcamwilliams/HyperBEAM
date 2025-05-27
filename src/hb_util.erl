@@ -264,6 +264,12 @@ number(List) ->
     ).
 
 %% @doc Convert a list of elements to a map with numbered keys.
+list_to_numbered_message(Msg) when is_map(Msg) ->
+    case is_ordered_list(Msg, #{}) of
+        true -> Msg;
+        false ->
+            throw({cannot_convert_to_numbered_message, Msg})
+    end;
 list_to_numbered_message(List) ->
     hb_maps:from_list(number(List)).
 
@@ -311,9 +317,13 @@ unique(List) ->
         List
     ).
 
+%% @doc Returns the intersection of two lists, with stable ordering.
+list_intersection(List1, List2) ->
+    lists:filter(fun(Item) -> lists:member(Item, List2) end, List1).
+
 %% @doc Take a message with numbered keys and convert it to a list of tuples
-%% with the associated key as an integer and a value. Optionally, it takes a
-%% standard map of HyperBEAM runtime options.
+%% with the associated key as an integer. Optionally, it takes a standard
+%% message of HyperBEAM runtime options.
 message_to_ordered_list(Message) ->
     message_to_ordered_list(Message, #{}).
 message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->

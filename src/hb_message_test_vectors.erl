@@ -11,8 +11,8 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    signed_with_inner_signed_message_test(
-        <<"httpsig@1.0">>,
+    simple_signed_nested_message_test(
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
 
@@ -22,10 +22,10 @@ test_codecs() ->
     [
         <<"structured@1.0">>,
         <<"httpsig@1.0">>,
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true }
-        % <<"flat@1.0">>,
-        % <<"ans104@1.0">>,
-        % <<"json@1.0">>
+        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
+        <<"flat@1.0">>,
+        <<"ans104@1.0">>,
+        <<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -99,6 +99,8 @@ test_suite() ->
         % Signed messages
         {<<"Signed message to message and back">>,
             fun signed_message_encode_decode_verify_test/2},
+        {<<"Specific order signed message">>,
+            fun specific_order_signed_message_test/2},
         {<<"Signed only committed data field">>,
             fun signed_only_committed_data_field_test/2},
         {<<"Signed simple nested message">>,
@@ -539,6 +541,7 @@ simple_nested_message_test(Codec, Opts) ->
         <<"c">> => <<"3">>
     },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
@@ -683,8 +686,11 @@ nested_message_with_large_keys_test(Codec, Opts) ->
 
 signed_message_encode_decode_verify_test(Codec, Opts) ->
     Msg = #{
-        <<"test-data">> => <<"TEST DATA">>,
-        <<"test-key">> => <<"TEST VALUE">>
+        <<"test-1">> => <<"TEST VALUE 1">>,
+        <<"test-2">> => <<"TEST VALUE 2">>,
+        <<"test-3">> => <<"TEST VALUE 3">>,
+        <<"test-4">> => <<"TEST VALUE 4">>,
+        <<"test-5">> => <<"TEST VALUE 5">>
     },
     SignedMsg =
         hb_message:commit(
@@ -700,9 +706,30 @@ signed_message_encode_decode_verify_test(Codec, Opts) ->
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
     ?event({matching, {input, SignedMsg}, {encoded, Encoded}, {decoded, Decoded}}),
+    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
     MatchRes = hb_message:match(SignedMsg, Decoded, strict, Opts),
     ?event({match_result, MatchRes}),
     ?assert(MatchRes).
+
+specific_order_signed_message_test(RawCodec, Opts) ->
+    Msg = #{
+        <<"key-1">> => <<"DATA-1">>,
+        <<"key-2">> => <<"DATA-2">>,
+        <<"key-3">> => <<"DATA-3">>
+    },
+    Codec =
+        if is_map(RawCodec) -> RawCodec;
+        true -> #{ <<"device">> => RawCodec }
+        end,
+    SignedMsg =
+        hb_message:commit(
+            Msg,
+            Opts,
+            Codec#{ <<"committed">> => [<<"key-3">>, <<"key-1">>, <<"key-2">>] }
+        ),
+    ?event({signed_msg, SignedMsg}),
+    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
+    ?assert(hb_message:verify(SignedMsg, all, Opts)).
 
 complex_signed_message_test(Codec, Opts) ->
     Msg = #{
@@ -1388,3 +1415,43 @@ find_multiple_commitments_test_disabled() ->
     LoadedCommitments = hb_cache:ensure_all_loaded(ReadMsg, Opts),
     ?event(debug_commitments, {read, LoadedCommitments}),
     ok.
+
+%% @doc Ensure that a httpsig@1.0 message which is bundled and requests an 
+%% invalid ordering of keys is normalized to a valid ordering.
+bundled_ordering_test() ->
+    Opts = #{ priv_wallet => ar_wallet:new() },
+    Codec = #{
+        <<"device">> => <<"httpsig@1.0">>,
+        <<"bundle">> => <<"true">>
+    },
+    Msg =
+        hb_message:commit(
+            #{
+                <<"a">> => <<"1">>,
+                <<"b">> => <<"2">>,
+                <<"b-2">> => #{ <<"nested">> => #{ <<"n">> => <<"2">> } },
+                <<"c">> => <<"3">>,
+                <<"c-2">> => #{ <<"nested">> => #{ <<"n">> => <<"3">> } },
+                <<"d">> => <<"4">>
+            },
+            Opts,
+            Codec#{
+                <<"committed">> => [
+                    <<"a">>,
+                    <<"b">>,
+                    <<"c">>,
+                    <<"c-2">>,
+                    <<"d">>
+                ]
+            }
+        ),
+    ?event({committed, Msg}),
+    Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, Encoded}),
+    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(Msg, Opts)}}),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    MatchRes = hb_message:match(Msg, Decoded, primary, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes),
+    ?assert(hb_message:verify(Decoded, all, Opts)).
