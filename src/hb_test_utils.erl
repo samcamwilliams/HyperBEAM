@@ -30,10 +30,11 @@ suite_with_opts(Suite, OptsList) ->
                     {true, {foreach,
                         fun() ->
                             ?event({starting, Store}),
+                            hb_store:reset(Store),
                             hb_store:start(Store)
                         end,
                         fun(_) ->
-                            %hb_store:reset(Store),
+                            hb_store:reset(Store),
                             ok
                         end,
                         [

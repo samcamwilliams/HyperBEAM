@@ -8,7 +8,7 @@
 
 %% The size at which a value should be made into a body item, instead of a
 %% tag.
--define(MAX_TAG_VAL, 128).
+-define(MAX_TAG_VAL, 4096).
 %% The list of TX fields that users can set directly. Data is excluded because
 %% it may be set by the codec in order to support nested messages.
 -define(TX_KEYS,
@@ -178,6 +178,18 @@ do_from(RawTX, Req, Opts) ->
         hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData, Opts), Opts),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
+    CommittedKeys =
+        hb_ao:normalize_keys(
+            hb_util:unique(
+                ?BASE_COMMITTED_TAGS ++
+                [
+                    hb_ao:normalize_key(Tag)
+                ||
+                    {Tag, _} <- TX#tx.tags
+                ] ++
+                hb_util:to_sorted_keys(NormalizedDataMap)
+            )
+        ),
     WithCommitments =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
@@ -215,29 +227,25 @@ do_from(RawTX, Req, Opts) ->
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"committer">> => Address,
-                    <<"committed">> =>
-						hb_ao:normalize_keys(
-							hb_util:unique(
-								?BASE_COMMITTED_TAGS ++
-                                    [
-                                        hb_ao:normalize_key(Tag)
-                                    ||
-                                        {Tag, _} <- TX#tx.tags
-                                    ]
-							)
-						),
+                    <<"committed">> => CommittedKeys,
                     <<"keyid">> => hb_util:encode(TX#tx.owner),
                     <<"signature">> => hb_util:encode(TX#tx.signature),
                     <<"type">> => <<"rsa-pss-sha256">>
                 },
+                CommitmentWithBundle =
+                    case lists:member(<<"bundle-format">>, maps:values(CommittedKeys)) of
+                        true -> Commitment#{ <<"bundle">> => true };
+                        false -> Commitment
+                    end,
                 WithoutBaseCommitment#{
                     <<"commitments">> => #{
                         ID =>
                             case normal_tags(TX#tx.tags) of
-                                true -> Commitment;
-                                false -> Commitment#{
-                                    <<"original-tags">> => OriginalTagMap
-                                }
+                                true -> CommitmentWithBundle;
+                                false ->
+                                    CommitmentWithBundle#{
+                                        <<"original-tags">> => OriginalTagMap
+                                    }
                             end
                     }
                 }
@@ -254,7 +262,6 @@ deduplicating_from_list(Tags, Opts) ->
         lists:foldl(
             fun({Key, Value}, Acc) ->
                 NormKey = hb_ao:normalize_key(Key),
-                ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
                 case hb_maps:get(NormKey, Acc, undefined, Opts) of
                     undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->
@@ -343,6 +350,7 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(NormTABM, Req, Opts) when is_map(NormTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
+    ?event({to, {inbound, NormTABM}, {req, Req}}),
     MaybeBundle =
         case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
             false -> NormTABM;
@@ -351,17 +359,23 @@ to(NormTABM, Req, Opts) when is_map(NormTABM) ->
                 % convert to TABM with bundling enabled.
                 Structured = hb_message:convert(NormTABM, <<"structured@1.0">>, Opts),
                 Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
-                hb_message:convert(
-                    Loaded,
-                    tabm,
-                    #{
-                        <<"device">> => <<"structured@1.0">>,
-                        <<"bundle">> => true
-                    },
-                    Opts
-                )
+                % Convert to TABM with bundling enabled.
+                LoadedTABM =
+                    hb_message:convert(
+                        Loaded,
+                        tabm,
+                        #{
+                            <<"device">> => <<"structured@1.0">>,
+                            <<"bundle">> => true
+                        },
+                        Opts
+                    ),
+                % Ensure the commitments from the original message are the only
+                % ones in the fully loaded message.
+                LoadedComms = maps:get(<<"commitments">>, NormTABM, #{}),
+                LoadedTABM#{ <<"commitments">> => LoadedComms }
         end,
-    ?event({to, {inbound, NormTABM}, {maybe_bundle, MaybeBundle}}),
+    ?event({to, {maybe_bundle, MaybeBundle}}),
     TABM =
         hb_ao:normalize_keys(
             hb_maps:without([<<"commitments">>], MaybeBundle, Opts),

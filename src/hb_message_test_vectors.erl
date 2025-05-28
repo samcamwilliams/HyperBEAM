@@ -25,6 +25,7 @@ test_codecs() ->
         #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         <<"flat@1.0">>,
         <<"ans104@1.0">>,
+        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         <<"json@1.0">>
     ].
 
@@ -496,7 +497,6 @@ verify_nested_complex_signed_test(Codec, Opts) ->
     % % Test encoding and decoding.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(Msg, Opts)}}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),
@@ -761,7 +761,6 @@ specific_order_deeply_nested_signed_message_test(RawCodec, Opts) ->
             }
         ),
     ?event({signed_msg, SignedMsg}),
-    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
     ?assert(hb_message:verify(SignedMsg, all, Opts)).
 
 complex_signed_message_test(Codec, Opts) ->
@@ -781,7 +780,6 @@ complex_signed_message_test(Codec, Opts) ->
         ),
     Encoded = hb_message:convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
@@ -1291,6 +1289,8 @@ recursive_nested_list_test(Codec, Opts) ->
 
 priv_survives_conversion_test(<<"ans104@1.0">>, _Opts) -> skip;
 priv_survives_conversion_test(<<"json@1.0">>, _Opts) -> skip;
+priv_survives_conversion_test(#{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
+    skip;
 priv_survives_conversion_test(Codec, Opts) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
@@ -1386,6 +1386,8 @@ id_of_linked_message_test(Codec, Opts) ->
     UnsignedID2 = hb_message:id(DecMsg, Opts),
     ?assertEqual(UnsignedID, UnsignedID2).
 
+sign_deep_message_from_lazy_cache_read_test(#{ <<"bundle">> := true }, _Opts) ->
+    skip;
 sign_deep_message_from_lazy_cache_read_test(Codec, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,

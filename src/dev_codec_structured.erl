@@ -164,7 +164,7 @@ to(TABM0, Req, Opts) ->
     % If the message is a list, we need to convert it back.
     case maps:get(<<".">>, Types, not_found) of
         not_found -> {ok, ResMsg};
-        <<"list">> -> {ok, hb_util:message_to_ordered_list(ResMsg)}
+        <<"list">> -> {ok, hb_util:message_to_ordered_list(ResMsg, Opts)}
     end.
 
 %% @doc Generate an `ao-types' structured field from a map of keys and their
