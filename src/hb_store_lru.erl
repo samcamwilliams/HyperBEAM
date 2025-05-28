@@ -151,8 +151,9 @@ server_loop(State =
             ?event(debug_lru, {make_group, Key}),
             ensure_dir(State, Key),
             From ! {ok, Ref};
-        {update_recent, Key, Entry} ->
-            update_recently_used(State, Key, Entry);
+        {update_recent, Key, Entry, From, Ref} ->
+            update_recently_used(State, Key, Entry),
+            From ! {ok, Ref};
         {reset, From, Ref} ->
             ets:delete_all_objects(CacheTable),
             ets:delete_all_objects(StatsTable),
@@ -193,8 +194,10 @@ read(Opts, RawKey) ->
             end;
         {raw, Entry = #{value := Value}} ->
             CacheServer = find_pid(Opts),
-            CacheServer ! {update_recent, Key, Entry},
-            {ok, Value};
+            CacheServer ! {update_recent, Key, Entry, self(), Ref = make_ref()},
+            receive
+                {ok, Ref} -> {ok, Value}
+            end;
         {link, Link} ->
             ?event({link_found, RawKey, Link}),
             read(Opts, Link);
