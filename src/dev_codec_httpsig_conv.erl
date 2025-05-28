@@ -812,10 +812,11 @@ field_to_http(Httpsig, {Name, Value}, Opts) when is_binary(Value) ->
     %
     % Note that a "where" Opts may force the location of the encoded
     % value -- this is only a default location if not specified in Opts 
-    DefaultWhere = case {maps:get(where, Opts, headers), byte_size(Value)} of
-        {headers, Fits} when Fits =< ?MAX_HEADER_LENGTH -> headers;
-        _ -> body
-    end,
+    DefaultWhere =
+        case {maps:get(where, Opts, headers), byte_size(Value)} of
+            {headers, Fits} when Fits =< ?MAX_HEADER_LENGTH -> headers;
+            _ -> body
+        end,
     case maps:get(where, Opts, DefaultWhere) of
         headers ->
             Httpsig#{ NormalizedName => Value };
