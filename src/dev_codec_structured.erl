@@ -228,10 +228,9 @@ encode_value(Value) when is_float(Value) ->
     ?no_prod("Must use structured field representation for floats!"),
     {<<"float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
-    [EncodedIOList, _] =
-        hb_structured_fields:item(
-            {item, {string, atom_to_binary(Value, latin1)}, []}),
-    Encoded = list_to_binary(EncodedIOList),
+    EncodedIOList =
+        hb_structured_fields:item({item, {token, hb_util:bin(Value)}, []}),
+    Encoded = hb_util:bin(EncodedIOList),
     {<<"atom">>, Encoded};
 encode_value(Values) when is_list(Values) ->
     EncodedValues =
@@ -281,7 +280,7 @@ decode_value(float, Value) ->
 decode_value(atom, Value) ->
     {item, {_, AtomString}, _} =
         hb_structured_fields:parse_item(Value),
-    binary_to_existing_atom(AtomString);
+    hb_util:atom(AtomString);
 decode_value(list, Value) when is_binary(Value) ->
     lists:map(
         fun({item, {string, <<"(ao-type-", Rest/binary>>}, _}) ->
