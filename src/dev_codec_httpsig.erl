@@ -307,20 +307,30 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             <<"content-digest">>
         ),
     % The keys to be used in the `committed' list of the commitment:
+    KeysWithBodyKeyForCommitment =
+        lists:map(
+            fun hb_link:remove_link_specifier/1,
+            hb_util:list_replace(
+                KeysForEncoding,
+                <<"content-digest">>,
+                RemovedKeys
+            ) --
+            case maps:get(<<"content-type">>, Msg, not_found) of
+                not_found -> [<<"content-type">>];
+                _ -> []
+            end
+        ),
     KeysForCommitment =
-    	hb_ao:normalize_keys(
-            lists:map(
-                fun hb_link:remove_link_specifier/1,
-                hb_util:list_replace(
-                    KeysForEncoding,
-                    <<"content-digest">>,
-                    RemovedKeys
-                ) --
-                case maps:get(<<"content-type">>, Msg, not_found) of
-                    not_found -> [<<"content-type">>];
-                    _ -> []
-                end
-            )
+        hb_ao:normalize_keys(
+            case maps:get(<<"ao-body-key">>, EncodedWithSigInfo, not_found) of
+                not_found -> KeysWithBodyKeyForCommitment;
+                _ ->
+                    hb_util:list_replace(
+                        KeysWithBodyKeyForCommitment,
+                        <<"ao-body-key">>,
+                        []
+                    )
+            end
         ),
     ?event(debug_order,
         {normalized_for_encoding,
