@@ -3,6 +3,7 @@
 	--section-bg-color-primary: #fff;
 	--section-bg-color-alt1: #ffffff;
 	--section-bg-color-alt2: #ffffffbf;
+	--section-bg-color-accent: #f8faf8f5;
 	--border-color: #eaeaea;
 	--active-action-bg: #EDEDED;
 	--text-color-primary: #000000;
@@ -198,7 +199,15 @@ footer {
 }
 
 .logo {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	height: 18px;
+}
+
+.logo p {
+	font-size: clamp(0.65rem, 1.75vw, 0.7rem);
+	color: var(--text-color-alt1)
 }
 
 .logo img {
@@ -265,10 +274,16 @@ footer {
 }
 
 .section-groups {
+	position: relative;
 	width: 100%;
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
+}
+
+.section-group,
+.tabs-wrapper {
+	z-index: 10;
 }
 
 .section-group {
@@ -282,8 +297,11 @@ footer {
 	height: fit-content;
 	flex: 1;
 	border-radius: var(--border-radius);
-	background: var(--section-bg-color-primary);
+	background: var(--section-bg-color-accent);
 	border: 1px solid var(--border-color);
+	box-shadow: 0px 4px 4px 0px rgba(0, 0, 0, 0.02);
+	gap: 48px;
+	padding: 12px;
 }
 
 .section-header {
@@ -308,7 +326,7 @@ footer {
 .key-metric-value {
 	font-size: clamp(1rem, 2.75vw, 1.8rem);
 	font-weight: 400;
-	color: var(--indicator-color);
+	color: var(--indicator-color-active);
 }
 
 .key-metric-label {
@@ -398,6 +416,7 @@ footer {
 	display: flex;
 	flex-direction: column;
 	border-radius: var(--border-radius);
+	box-shadow: 0px 4px 4px 0px rgba(0, 0, 0, 0.02);
 }
 
 .tabs {
@@ -433,6 +452,14 @@ footer {
 	position: absolute;
 	bottom: -6px;
 	left: 0;
+}
+
+.hyperstate-tab-button.active::after {
+	background: var(--indicator-color);
+}
+
+.dashboard-tab-button.active::after {
+	background: var(--indicator-color-active);
 }
 
 .tab-button:hover {
@@ -962,28 +989,12 @@ footer {
 
 /* Graph visualization styles */
 .graph-link {
-	position: absolute;
-	z-index: 100;
-	top: 22.5px;
-	right: 21.5px;
-	background: var(--accent-color);
-	border-radius: 5px;
-	border: 0.5px solid var(--border-color);
-	height: 36px;
-	padding: 0px 12px;
-	font-size: clamp(0.6rem, 1.75vw, 0.9rem);
-	font-weight: 500;
-	color: var(--indicator-color);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
+	font-size: clamp(0.65rem, 1.75vw, 0.75rem);
+	color: var(--indicator-color-active)
 }
 
 .graph-link:hover {
-	background: var(--section-bg-color-alt1);
-	color: var(--indicator-color-active);
-	text-decoration: none;
+	opacity: 75%;
 
 }
 

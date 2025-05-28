@@ -6,7 +6,7 @@
         <link
             rel="icon"
             type="image/png"
-            href="https://arweave.net/oTMNDjwfn-Mv0bJZPGmMpDPPYWqINH6lQeTVc92bwjA"
+            href="https://arweave.net/rBcLwnVU2fWNEKUW8PY0TzEAPuCHMj2Vp6z6CedHJf0"
         />
         <link
             href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
@@ -17,39 +17,160 @@
     </head>
 
     <body>
-        <div class="header">
-            <a class="graph-link" href="/~hyperbuddy@1.0/graph" target="_blank">
-                Cache Visualizer
-            </a>
+        <header>
             <div class="header-inner">
-                <div class="header-hyperbeam-chain">
-                    <video autoplay muted loop playsinline width="500">
-                        <source
-                            src="https://arweave.net/kvebTQY2E5J7Zx-SSnsbwxIqS0-BxII9Bb0bQc__Rmg"
-                            type="video/mp4"
-                        />
-                    </video>
+                <div class="logo">
+                    <img
+                        src="https://arweave.net/Ggr1cz-jbiDS2gAVFHxkoKzmNQQD4WcMTfipWyuEmgY"
+                        alt="hyperbeam-logo"
+                    />
+                    <p>Dashboard</p>
                 </div>
-                <div class="header-main">
-                    <div class="header-left">
-                        <div class="video-container">
-                            <video
-                                autoplay
-                                muted
-                                loop
-                                playsinline
-                                width="500"
-                                class="light-video"
-                            >
-                                <source
-                                    src="https://arweave.net/ewmiCoSJpWpNv02F7AW5ZCp4meyaJxZHbOD4WEsuDFY"
-                                    type="video/mp4"
-                                />
-                                Your browser does not support the video tag.
-                            </video>
+
+                <a
+                    class="graph-link"
+                    href="/~hyperbuddy@1.0/graph"
+                    target="_blank"
+                >
+                    Cache Visualizer
+                </a>
+            </div>
+        </header>
+        <div class="view-wrapper">
+            <div class="message-id-wrapper">
+                <span>Node Id:</span>
+                <p class="message-value">...</p>
+                <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 9 9"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                >
+                    <path
+                        d="M3.93945 0.34407C6.0128 -0.482774 7.8625 0.43974 7.89746 0.457351L7.32812 5.89876C7.30668 5.89005 5.11956 5.00545 3.65137 5.81477C2.40855 6.49984 0.0246489 5.9639 0 5.95833L0.467773 0.16243C0.467773 0.16243 1.84627 1.17878 3.93945 0.34407ZM4.11523 1.61262H4.07324V2.67122C3.71213 2.67868 3.35039 2.68548 2.98926 2.68098V1.62337C2.85511 1.62155 2.72009 1.61807 2.58594 1.61262V4.13313C2.7201 4.13949 2.8551 4.14303 2.98926 4.14485V3.0345C3.35039 3.03967 3.71213 3.03127 4.07324 3.02376V4.13411C4.08769 4.13411 4.10164 4.13404 4.11523 4.13313C4.23589 4.13131 4.35701 4.12902 4.47852 4.1263V1.60481C4.35701 1.60663 4.23589 1.6099 4.11523 1.61262ZM4.74805 2.72591V3.94661C4.81014 3.94661 4.8715 3.94563 4.93359 3.94563C4.94143 3.9057 4.94821 3.86656 4.95605 3.82747C4.97439 3.85387 4.99747 3.87843 5.02539 3.89973C5.05327 3.92013 5.08552 3.9365 5.12207 3.94759C5.15955 3.96034 5.20091 3.96707 5.24707 3.96712C5.32928 3.96797 5.40275 3.95094 5.46484 3.91341C5.52847 3.87674 5.57848 3.8255 5.61426 3.75911C5.65 3.69268 5.66697 3.61682 5.66699 3.53255C5.66699 3.44468 5.64904 3.36654 5.6123 3.29915C5.57652 3.23027 5.52651 3.17525 5.46289 3.13606C5.40088 3.09431 5.32817 3.07336 5.24609 3.07161C5.17531 3.07076 5.11654 3.08549 5.06934 3.1136C5.02211 3.14005 4.98404 3.17532 4.95605 3.21712V2.72493C4.88617 2.72493 4.81706 2.72505 4.74805 2.72591ZM5.2041 3.25032C5.25282 3.25037 5.29652 3.26163 5.33398 3.2845C5.37247 3.30839 5.40274 3.34121 5.42285 3.38216C5.44466 3.42306 5.45604 3.4701 5.45605 3.52376C5.45605 3.5774 5.44463 3.62531 5.42285 3.66536C5.40274 3.70459 5.37245 3.7351 5.33398 3.75813C5.29645 3.78027 5.25296 3.79129 5.2041 3.79134C5.15513 3.79048 5.10987 3.77921 5.07227 3.75618C5.03479 3.73235 5.0062 3.70054 4.98438 3.66145C4.96341 3.62055 4.95315 3.57255 4.95312 3.51887C4.95312 3.46522 4.96345 3.4183 4.98438 3.37825C5.00618 3.33742 5.03481 3.30556 5.07227 3.28255C5.10987 3.26037 5.15513 3.24947 5.2041 3.25032Z"
+                        fill="black"
+                    />
+                    <path
+                        d="M7.99475 0.487231C8.0855 0.494902 8.09239 0.495496 8.09291 0.495578C8.09292 0.495498 8.0929 0.49562 8.09291 0.495578C8.09288 0.495755 8.09282 0.496237 8.09277 0.496588C8.09268 0.497293 8.09254 0.498353 8.09236 0.499753C8.09198 0.502565 8.09144 0.506788 8.0907 0.512344C8.08924 0.523453 8.0871 0.539978 8.08424 0.561633C8.07852 0.60497 8.07009 0.668887 8.05925 0.751105C8.03757 0.915535 8.00627 1.15326 7.96774 1.44645C7.89068 2.03286 7.7847 2.84117 7.66922 3.72863C7.43824 5.50364 7.16905 7.59518 7.0162 8.86194L6.81965 8.84639C6.97257 7.5791 7.24174 5.48714 7.47271 3.7122C7.5882 2.8247 7.69417 2.01639 7.77124 1.42995C7.80977 1.13674 7.84107 0.898985 7.86275 0.734538C7.87359 0.652319 7.88201 0.588408 7.88774 0.545065C7.8906 0.523394 7.89283 0.506828 7.8943 0.495713C7.89503 0.490184 7.89558 0.485998 7.89595 0.483189C7.89614 0.481782 7.89627 0.480665 7.89637 0.479957C7.89672 0.479947 7.90255 0.479437 7.99475 0.487231Z"
+                        fill="black"
+                    />
+                    <ellipse
+                        cx="7.98676"
+                        cy="0.187845"
+                        rx="0.187936"
+                        ry="0.187845"
+                        fill="black"
+                    />
+                </svg>
+            </div>
+            <div class="section-groups">
+                <div class="bg-video">
+                    <video
+                        src="https://arweave.net/tJd9JJa8ap5dHHvRAAPOE4Gh6VAY4h8KpBY1gzrtVWo"
+                        alt="bg-hyperbeam-video"
+                        autoplay
+                        loop
+                        muted
+                        playsinline
+                    ></video>
+                </div>
+                <div class="section-group">
+                    <div class="section">
+                        <h4 class="key-metric-header section-header">Uptime</h4>
+                        <div class="key-metric-wrapper">
+                            <h2 id="uptime-value" class="key-metric-value">
+                                -
+                            </h2>
+                            <span class="key-metric-label">Seconds</span>
+                        </div>
+                    </div>
+                    <div class="section">
+                        <h4 class="key-metric-header section-header">
+                            AO-Core Executions
+                        </h4>
+                        <div class="key-metric-wrapper">
+                            <h2 id="executions-value" class="key-metric-value">
+                                -
+                            </h2>
+                            <span class="key-metric-label">Executions</span>
+                        </div>
+                    </div>
+                    <div class="section">
+                        <h4 class="key-metric-header section-header">
+                            System Load
+                        </h4>
+                        <div class="key-metric-wrapper">
+                            <h2 id="system-value" class="key-metric-value">
+                                -
+                            </h2>
+                            <span class="key-metric-label">CPU Average</span>
                         </div>
                     </div>
                 </div>
+                <div class="section-group">
+                    <div class="section">
+                        <h4 class="key-metric-header section-header">
+                            Read Requests Handled
+                        </h4>
+                        <div class="key-metric-wrapper">
+                            <h2 id="read-value" class="key-metric-value">-</h2>
+                            <span class="key-metric-label">Requests</span>
+                        </div>
+                    </div>
+                    <div class="section">
+                        <h4 class="key-metric-header section-header">
+                            Write Requests Handled
+                        </h4>
+                        <div class="key-metric-wrapper">
+                            <h2 id="write-value" class="key-metric-value">-</h2>
+                            <span class="key-metric-label">Requests</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tabs-wrapper">
+                <div class="tabs">
+                    <button
+                        class="tab-button dashboard-tab-button active"
+                        data-tab="devices-tab"
+                    >
+                        Devices
+                    </button>
+                    <button
+                        class="tab-button dashboard-tab-button"
+                        data-tab="metrics-tab"
+                    >
+                        Metrics
+                    </button>
+                    <button
+                        class="tab-button dashboard-tab-button"
+                        data-tab="console-tab"
+                    >
+                        Console
+                    </button>
+                </div>
+
+                <div id="devices-tab" class="tab-content active">
+                    <div id="info-section-lines" class="device-cards-container">
+                        <div class="info-line">
+                            <p>Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="metrics-tab" class="tab-content">
+                    <div id="metrics-section"></div>
+                </div>
+
+                <div id="console-tab" class="tab-content">
+                    <div id="console-section"></div>
+                </div>
+            </div>
+        </div>
+        <footer>
+            <div class="footer-inner">
                 <div class="subheader">
                     <div class="subheader-value">
                         <p>Status:</p>
@@ -58,97 +179,9 @@
                             <p>Live</p>
                         </div>
                     </div>
-                    <div class="subheader-value">
-                        <p>Operator:</p>
-                        <button id="operator-action" disabled="true">
-                            Loading...
-                        </button>
-                    </div>
                 </div>
             </div>
-        </div>
-
-        <div class="section-groups">
-            <div class="section-group">
-                <div class="section">
-                    <h4 class="key-metric-header section-header">Uptime</h4>
-                    <div class="key-metric-wrapper">
-                        <h2 id="uptime-value" class="key-metric-value">-</h2>
-                        <span class="key-metric-label">Seconds</span>
-                    </div>
-                </div>
-                <div class="section">
-                    <h4 class="key-metric-header section-header">
-                        AO-Core Executions
-                    </h4>
-                    <div class="key-metric-wrapper">
-                        <h2 id="executions-value" class="key-metric-value">
-                            -
-                        </h2>
-                        <span class="key-metric-label">Executions</span>
-                    </div>
-                </div>
-                <div class="section">
-                    <h4 class="key-metric-header section-header">
-                        System Load
-                    </h4>
-                    <div class="key-metric-wrapper">
-                        <h2 id="system-value" class="key-metric-value">-</h2>
-                        <span class="key-metric-label">CPU Average</span>
-                    </div>
-                </div>
-            </div>
-            <div class="section-group">
-                <div class="section">
-                    <h4 class="key-metric-header section-header">
-                        Read Requests Handled
-                    </h4>
-                    <div class="key-metric-wrapper">
-                        <h2 id="read-value" class="key-metric-value">-</h2>
-                        <span class="key-metric-label">Requests</span>
-                    </div>
-                </div>
-                <div class="section">
-                    <h4 class="key-metric-header section-header">
-                        Write Requests Handled
-                    </h4>
-                    <div class="key-metric-wrapper">
-                        <h2 id="write-value" class="key-metric-value">-</h2>
-                        <span class="key-metric-label">Requests</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="tabs-wrapper">
-            <div class="tabs">
-                <button class="tab-button active" data-tab="devices-tab">
-                    Devices
-                </button>
-                <button class="tab-button" data-tab="metrics-tab">
-                    Metrics
-                </button>
-                <button class="tab-button" data-tab="console-tab">
-                    Console
-                </button>
-            </div>
-
-            <div id="devices-tab" class="tab-content active">
-                <div id="info-section-lines" class="device-cards-container">
-                    <div class="info-line">
-                        <p>Loading...</p>
-                    </div>
-                </div>
-            </div>
-
-            <div id="metrics-tab" class="tab-content">
-                <div id="metrics-section"></div>
-            </div>
-
-            <div id="console-tab" class="tab-content">
-                <div id="console-section"></div>
-            </div>
-        </div>
+        </footer>
 
         <!-- Load modular JavaScript files -->
         <script type="module" src="main.js"></script>
