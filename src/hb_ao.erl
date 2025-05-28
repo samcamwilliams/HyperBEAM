@@ -182,7 +182,7 @@ do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
     {ok, hb_cache:ensure_loaded(Msg3, Opts)};
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
-    ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
         {ok, Msg3} ->
             ?event(ao_core,

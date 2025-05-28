@@ -21,6 +21,13 @@
 to(Msg, Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Req, Opts).
 from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
 
+%% @doc Generate the `Opts' to use during AO-Core operations in the codec.
+opts(RawOpts) ->
+    RawOpts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>]
+    }.
+
 %% @doc A helper utility for creating a direct encoding of a HTTPSig message.
 %% 
 %% This function supports two modes of operation:
@@ -50,9 +57,10 @@ serialize(Msg, _Req, Opts) ->
     HTTPSig = hb_message:convert(Msg, <<"httpsig@1.0">>, Opts), 
     {ok, dev_codec_httpsig_conv:encode_http_msg(HTTPSig, Opts) }.
 
-verify(Base, Req, Opts) ->
+verify(Base, Req, RawOpts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
+    Opts = opts(RawOpts),
     {ok, EncMsg, EncComm, _} = normalize_for_encoding(Base, Req, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),
     ?event({signature_base_verify, {string, SigBase}}),
@@ -79,10 +87,11 @@ commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
 commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
-commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
     ?event(
         {generating_rsa_pss_sha512_commitment, {msg, MsgToSign}, {req, Req}}
     ),
+    Opts = opts(RawOpts),
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     % Utilize the hashpath, if present, as the tag for the commitment.
     MaybeTagMap =
@@ -135,10 +144,11 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         Req#{ <<"type">> => <<"hmac-sha256">> },
         Opts
     );
-commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
+commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
     % Find the ID of the message without hmac commitments, then add the hmac
     % using the set of all presently committed keys as the input. If no (other)
     % commitments are present, then use all keys from the encoded message.
+    Opts = opts(RawOpts),
     WithoutHmac =
         hb_message:without_commitments(
             #{
@@ -202,7 +212,7 @@ keys_to_commit(_Base, #{ <<"committed">> := Explicit}, _Opts) ->
     hb_util:list_to_numbered_message(Explicit);
 keys_to_commit(Base, _Req, Opts) ->
     % Extract the set of committed keys from the message.
-    case hb_message:committed(Base, #{ <<"committers">> => <<"all">> }, Opts) of
+    case hb_message:committed(Base, #{ <<"committers">> => <<"all">> }, opts(Opts)) of
         [] ->
             % Case 3: Default to all keys in the TABM-encoded message, aside
             % metadata.
