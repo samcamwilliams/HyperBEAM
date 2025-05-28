@@ -2,7 +2,7 @@
 %% and `signature-input' keys.
 -module(dev_codec_httpsig_siginfo).
 -export([commitments_to_siginfo/3, siginfo_to_commitments/3]).
--export([committed_keys_to_siginfo/1, to_siginfo_keys/3]).
+-export([committed_keys_to_siginfo/1, to_siginfo_keys/3, from_siginfo_keys/3]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 -export([commitment_to_sig_name/1]).
 -include("include/hb.hrl").
@@ -296,17 +296,18 @@ to_siginfo_keys(Msg, Commitment, Opts) ->
 %%    present. This is possible because the keys derived from the body often
 %%    contain the `body' key itself.
 %% 4. If the `content-type' starts with `multipart/', we remove it.
-from_siginfo_keys(Msg, BodyKeys, RawList) ->
+from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
     % 1. Remove specifiers from the list.
-    BaseCommitted = remove_derived_specifiers(RawList),
+    BaseCommitted = remove_derived_specifiers(SigInfoCommitted),
     % 2. Replace the `content-digest' key with the `body' key, if present.
     WithBody =
         hb_util:list_replace(BaseCommitted, <<"content-digest">>, BodyKeys),
     % 3. Replace the `body' key again with the value of the `ao-body-key' key,
     %    if present.
-    ?event(debug_siginfo,
+    ?event(debug_order,
         {from_siginfo_keys,
-            {raw_committed, RawList},
+            {body_keys, BodyKeys},
+            {raw_committed, SigInfoCommitted},
             {with_body, {explicit, WithBody}}
         }
     ),
@@ -317,7 +318,7 @@ from_siginfo_keys(Msg, BodyKeys, RawList) ->
                     hb_util:list_replace(
                         WithBody,
                         <<"body">>,
-                        maps:get(<<"ao-body-key">>, Msg)
+                        maps:get(<<"ao-body-key">>, HTTPEncMsg)
                     ),
                 ?event(debug_siginfo,
                     {with_orig_body_key, WithOrigBodyKey}
@@ -328,13 +329,21 @@ from_siginfo_keys(Msg, BodyKeys, RawList) ->
         end,
     % 4. If the `content-type' starts with `multipart/', we remove it.
     ListWithoutContentType =
-        case maps:get(<<"content-type">>, Msg, undefined) of
+        case maps:get(<<"content-type">>, HTTPEncMsg, undefined) of
             <<"multipart/", _/binary>> ->
                 hb_util:list_replace(ListWithoutBodyKey, <<"content-type">>, []);
             _ ->
                 ListWithoutBodyKey
         end,
-    hb_ao:normalize_keys(ListWithoutContentType).
+    Final =
+        hb_ao:normalize_keys(
+            lists:map(
+                fun hb_link:remove_link_specifier/1,
+                ListWithoutContentType
+            )
+        ),
+    ?event(debug_order, {from_siginfo_keys, {list, Final}}),
+    Final.
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with
@@ -448,10 +457,7 @@ remove_derived_specifiers(ComponentIdentifiers) ->
         fun(<<"@", Key/binary>>) ->
             Key;
         (Key) ->
-            case hb_link:is_link_key(Key) of
-                true -> binary:part(Key, 0, byte_size(Key) - 5);
-                false -> Key
-            end
+            Key
         end,
         ComponentIdentifiers
     ).
