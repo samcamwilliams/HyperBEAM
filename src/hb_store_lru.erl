@@ -626,7 +626,7 @@ delete_cache_entry(#{cache_table := Table}, Key) ->
 decrease_cache_size(#{stats_table := Table}, Size) ->
     ets:update_counter(Table, size, {2, -Size, 0, 0}).
 
-replace_entry(State, Key, Value, ValueSize, {raw, OldEntry}) ->
+replace_entry(State, Key, Value, ValueSize, {raw, OldEntry = #{ value := OldValue}}) when Value =/= OldValue ->
     % Update entry and move the keys in the front of the cache 
     % as the most used Key
     ?event(debug_lru, {replace_entry, 
@@ -639,6 +639,7 @@ replace_entry(State, Key, Value, ValueSize, {raw, OldEntry}) ->
     add_cache_entry(State, Key, {raw, NewEntry}),
     update_recently_used(State, Key, NewEntry),
     update_cache_size(State, PreviousSize, ValueSize);
+replace_entry(_State, _Key, _Value, _ValueSize, {raw, _}) -> ok;
 replace_entry(_State, _Key, _Value, _ValueSize, {Type, _}) ->
     % Link or group should be handle directly with `make_link` or `make_group`
     % This aim of this function is to be used along with direct data insertion.
