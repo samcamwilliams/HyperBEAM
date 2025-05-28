@@ -113,7 +113,7 @@ serialize(Map, Opts) when is_map(Map) ->
                     ]
                 end,
                 <<>>,
-                hb_maps:keys(Flattened, Opts)
+                hb_util:to_sorted_keys(Flattened, Opts)
             )
         )
     }.

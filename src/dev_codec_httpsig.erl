@@ -55,7 +55,7 @@ verify(Base, Req, Opts) ->
     % base and validating against the signature.
     {ok, EncMsg, EncComm, _} = normalize_for_encoding(Base, Req, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),
-    ?event(debug_bundle, {signature_base_verify, {string, SigBase}}),
+    ?event({signature_base_verify, {string, SigBase}}),
     KeyID = hb_util:decode(maps:get(<<"keyid">>, Req)),
     Signature = hb_util:decode(maps:get(<<"signature">>, Req)),
     case maps:get(<<"type">>, Req) of
@@ -80,7 +80,7 @@ commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
 commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
 commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
-    ?event(debug_bundle,
+    ?event(
         {generating_rsa_pss_sha512_commitment, {msg, MsgToSign}, {req, Req}}
     ),
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
@@ -92,7 +92,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         end,
     % Generate the unsigned commitment and signature base.
     ToCommit = hb_ao:normalize_keys(keys_to_commit(MsgToSign, Req, Opts)),
-    ?event(debug_inputs, {to_commit, ToCommit}),
+    ?event({to_commit, ToCommit}),
     UnsignedCommitment =
         maybe_bundle_tag_commitment(
             MaybeTagMap#{
@@ -111,13 +111,13 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
     SignatureBase = signature_base(EncMsg, EncComm, Opts),
-    ?event(debug_bundle, {rsa_signature_base, {string, SignatureBase}}),
-    ?event(debug_order, {mod_committed_keys, ModCommittedKeys}),
+    ?event({rsa_signature_base, {string, SignatureBase}}),
+    ?event({mod_committed_keys, ModCommittedKeys}),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
-    ?event(debug_siginfo, {rsa_commit, {committed, ToCommit}}),
+    ?event({rsa_commit, {committed, ToCommit}}),
     % Calculate the ID and place the signature into the `commitments' key of the
     % message. After, we call `commit' again to add the hmac to the new
     % message.
@@ -152,7 +152,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
     % Extract the base commitments from the message.
     Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     CommittedKeys = keys_to_commit(Msg, Req, Opts),
-    ?event(debug_siginfo, {hmac_commit, {committed, CommittedKeys}}),
+    ?event({hmac_commit, {committed, CommittedKeys}}),
     UnauthedCommitment =
         maybe_bundle_tag_commitment(
             #{
@@ -182,7 +182,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
                     }
             }
         },
-    ?event(debug_inputs, {reset_hmac_complete, Res}),
+    ?event({reset_hmac_complete, Res}),
     Res.
 
 %% @doc Annotate the commitment with the `bundle' key if the request contains
@@ -264,7 +264,7 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             end,
             RawInputs
         ),
-    ?event(debug_inputs, {inputs, {list, Inputs}}),
+    ?event({inputs, {list, Inputs}}),
     % Filter the message down to only the requested keys, then encode it.
     MsgWithOnlyInputs = maps:with(Inputs, Msg),
     {ok, EncodedWithSigInfo} =
@@ -313,7 +313,7 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             BodyKeys,
             KeysForEncoding
         ),
-    ?event(debug_order,
+    ?event(
         {normalized_for_encoding,
             {raw_inputs, Inputs},
             {final_for_encoding, KeysForEncoding},

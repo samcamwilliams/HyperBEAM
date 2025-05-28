@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    simple_signed_nested_message_test(
+    sign_node_message_test(
         #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -101,6 +101,8 @@ test_suite() ->
             fun signed_message_encode_decode_verify_test/2},
         {<<"Specific order signed message">>,
             fun specific_order_signed_message_test/2},
+        {<<"Specific order deeply nested signed message">>,
+            fun specific_order_deeply_nested_signed_message_test/2},
         {<<"Signed only committed data field">>,
             fun signed_only_committed_data_field_test/2},
         {<<"Signed simple nested message">>,
@@ -288,7 +290,7 @@ codec_roundtrip_conversion_is_idempotent_test(Codec, Opts) ->
                         Codec
                     )
             },
-    %?assert(is_idempotent(Roundtrip, SimpleMsg, Opts)),
+    ?assert(is_idempotent(Roundtrip, SimpleMsg, Opts)),
     ?assert(is_idempotent(Roundtrip, Signed, Opts)),
     ?assert(is_idempotent(Roundtrip, ComplexMsg, Opts)).
 
@@ -731,6 +733,37 @@ specific_order_signed_message_test(RawCodec, Opts) ->
     ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
     ?assert(hb_message:verify(SignedMsg, all, Opts)).
 
+specific_order_deeply_nested_signed_message_test(RawCodec, Opts) ->
+    Msg = #{
+        <<"key-1">> => <<"DATA-1">>,
+        <<"key-2">> => #{ <<"body">> => [1,2] },
+        <<"key-3">> => <<"DATA-3">>,
+        <<"key-4">> => #{ <<"body">> => [1,2,3,4] },
+        <<"key-5">> => <<"DATA-5">>
+    },
+    Codec =
+        if is_map(RawCodec) -> RawCodec;
+        true -> #{ <<"device">> => RawCodec }
+        end,
+    SignedMsg =
+        hb_message:commit(
+            Msg,
+            Opts,
+            Codec#{
+                <<"committed">> =>
+                    [
+                        <<"key-3">>,
+                        <<"key-5">>,
+                        <<"key-1">>,
+                        <<"key-2">>,
+                        <<"key-4">>
+                    ]
+            }
+        ),
+    ?event({signed_msg, SignedMsg}),
+    ?event({http, {string, dev_codec_httpsig_conv:encode_http_msg(SignedMsg, Opts)}}),
+    ?assert(hb_message:verify(SignedMsg, all, Opts)).
+
 complex_signed_message_test(Codec, Opts) ->
     Msg = #{
         <<"data">> => <<"TEST DATA">>,
@@ -792,9 +825,9 @@ deep_multisignature_test() ->
     Wallet2 = ar_wallet:new(),
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
-        <<"test_key">> => <<"TEST_VALUE">>,
+        <<"test-key">> => <<"TEST_VALUE">>,
         <<"body">> => #{
-            <<"nested_key">> => <<"NESTED_VALUE">>
+            <<"nested-key">> => <<"NESTED_VALUE">>
         }
     },
     SignedMsg =

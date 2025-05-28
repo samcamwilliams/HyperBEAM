@@ -98,7 +98,7 @@ commitment_to_sf_siginfo(Msg, Commitment, Opts) ->
             ],
             Params
         },
-    ?event(debug_bundle,
+    ?event(
         {sig_input,
             {string,
                 hb_util:bin(
@@ -304,7 +304,7 @@ from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
         hb_util:list_replace(BaseCommitted, <<"content-digest">>, BodyKeys),
     % 3. Replace the `body' key again with the value of the `ao-body-key' key,
     %    if present.
-    ?event(debug_order,
+    ?event(
         {from_siginfo_keys,
             {body_keys, BodyKeys},
             {raw_committed, SigInfoCommitted},
@@ -320,7 +320,7 @@ from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
                         <<"body">>,
                         maps:get(<<"ao-body-key">>, HTTPEncMsg)
                     ),
-                ?event(debug_siginfo,
+                ?event(
                     {with_orig_body_key, WithOrigBodyKey}
                 ),
                 WithOrigBodyKey -- [<<"ao-body-key">>];
@@ -342,7 +342,7 @@ from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
                 ListWithoutContentType
             )
         ),
-    ?event(debug_order, {from_siginfo_keys, {list, Final}}),
+    ?event({from_siginfo_keys, {list, Final}}),
     Final.
 
 %% @doc Convert committed keys to their siginfo format. This involves removing

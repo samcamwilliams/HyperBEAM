@@ -398,7 +398,7 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
             Opts
         ),
     WithGroupedIDs = group_ids(Stripped),
-    ?event(debug_links, {grouped, WithGroupedIDs}),
+    ?event({grouped, WithGroupedIDs}),
     {InlineFieldHdrs, InlineKey} = inline_key(WithGroupedIDs),
     Intermediate =
         do_to(
@@ -923,7 +923,7 @@ encode_message_with_links_test() ->
     ?assertMatch({link, _, _}, maps:get(<<"typed-key">>, Read, #{})),
     % Encode and decode the message as `httpsig@1.0`
     Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-    ?event(debug_links, {encoded, Enc}),
+    ?event({encoded, Enc}),
     Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
     % Ensure that the result is the same as the original message
     ?event({decoded, Dec}),
