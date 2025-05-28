@@ -209,7 +209,8 @@ keys_to_commit(Base, _Req, Opts) ->
             hb_util:list_to_numbered_message(
                 lists:map(
                     fun hb_link:remove_link_specifier/1,
-                    maps:keys(Base) -- [<<"commitments">>, <<"priv">>]
+                    hb_util:to_sorted_keys(Base, Opts)
+                        -- [<<"commitments">>, <<"priv">>]
                 )
             );
         Keys ->
