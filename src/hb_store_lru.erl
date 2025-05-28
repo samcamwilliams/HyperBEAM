@@ -16,7 +16,7 @@
 %%% - A cache statistics table containing all the information about the cache
 %%%   size, capacity, and indexing.
 -module(hb_store_lru).
--export([start/1, stop/1, reset/1, scope/0]).
+-export([start/1, stop/1, reset/1, scope/1]).
 -export([write/3, read/2, list/2, type/2, make_link/3, make_group/2, resolve/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -114,8 +114,7 @@ stop(Opts) ->
     ok.
 
 %% @doc The LRU store is always local, for now.
-scope() ->
-    local.
+scope(_) -> local.
 
 %% @doc Reset the store by completely cleaning the ETS tables and
 %% delegate the reset to the underlying offloading store.
