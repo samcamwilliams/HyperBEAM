@@ -2,6 +2,7 @@
 	--bg-color: #fcfcfc;
 	--section-bg-color-primary: #fff;
 	--section-bg-color-alt1: #ffffff;
+	--section-bg-color-alt2: #ffffffbf;
 	--border-color: #eaeaea;
 	--active-action-bg: #EDEDED;
 	--text-color-primary: #000000;
@@ -784,6 +785,7 @@ footer {
 .visual-body {
 	min-height: calc(600px + 56px);
 	width: 100%;
+	background: var(--section-bg-color-alt2);
 }
 
 .visual-body iframe {
