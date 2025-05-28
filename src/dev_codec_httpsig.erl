@@ -291,14 +291,6 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
                     [<<"body">>, <<"ao-body-key">>]
                 )
         end,
-    % Calculate the keys that have been removed from the message, as a result
-    % of being added to the body. These keys will need to be removed from the
-    % `committed' list and re-added where the `content-digest' was.
-    RemovedKeys =
-        lists:filter(
-            fun(Key) -> not key_present(Key, EncodedWithSigInfo) end,
-            RawInputs
-        ),
     % The keys to be used in encodings of the message:
     KeysForEncoding =
         hb_util:list_replace(
@@ -306,31 +298,19 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             <<"body">>,
             <<"content-digest">>
         ),
-    % The keys to be used in the `committed' list of the commitment:
-    KeysWithBodyKeyForCommitment =
-        lists:map(
-            fun hb_link:remove_link_specifier/1,
-            hb_util:list_replace(
-                KeysForEncoding,
-                <<"content-digest">>,
-                RemovedKeys
-            ) --
-            case maps:get(<<"content-type">>, Msg, not_found) of
-                not_found -> [<<"content-type">>];
-                _ -> []
-            end
+    % Calculate the keys that have been removed from the message, as a result
+    % of being added to the body. These keys will need to be removed from the
+    % `committed' list and re-added where the `content-digest' was.
+    BodyKeys =
+        lists:filter(
+            fun(Key) -> not key_present(Key, Encoded) end,
+            RawInputs
         ),
     KeysForCommitment =
-        hb_ao:normalize_keys(
-            case maps:get(<<"ao-body-key">>, EncodedWithSigInfo, not_found) of
-                not_found -> KeysWithBodyKeyForCommitment;
-                _ ->
-                    hb_util:list_replace(
-                        KeysWithBodyKeyForCommitment,
-                        <<"ao-body-key">>,
-                        []
-                    )
-            end
+        dev_codec_httpsig_siginfo:from_siginfo_keys(
+            EncodedWithSigInfo,
+            BodyKeys,
+            KeysForEncoding
         ),
     ?event(debug_order,
         {normalized_for_encoding,
