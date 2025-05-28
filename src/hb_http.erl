@@ -267,15 +267,32 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 			?event(http, {request_body, {explicit, {body, Body}}}),
             hb_maps:merge(ReqBase, #{ headers => Headers, body => Body }, Opts);
         <<"ans104@1.0">> ->
+            ?event(debug_accept, {request_message, {message, Message}}),
             ReqBase#{
                 headers =>
                     #{
                         <<"codec-device">> => <<"ans104@1.0">>,
-                        <<"content-type">> => <<"application/ans104">>
+                        <<"content-type">> => <<"application/ans104">>,
+                        <<"accept-bundle">> =>
+                            hb_util:bin(
+                                hb_ao:get(
+                                    <<"accept-bundle">>,
+                                    Message,
+                                    false,
+                                    Opts
+                                )
+                            )
                     },
                 body =>
                     ar_bundles:serialize(
-                        hb_message:convert(Message, <<"ans104@1.0">>, Opts)
+                        hb_message:convert(
+                            Message,
+                            #{
+                                <<"device">> => <<"ans104@1.0">>,
+                                <<"bundle">> => true
+                            },
+                            Opts
+                        )
                     )
             }
     end.
@@ -552,7 +569,17 @@ encode_reply(TABMReq, Message, Opts) ->
             {ok, EncMessage} =
                 dev_codec_httpsig:to(
                     TABM,
-                    #{ <<"index">> => hb_opts:get(generate_index, true, Opts) },
+                    case hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)) of
+                        true ->
+                            #{
+                                <<"bundle">> => true
+                            };
+                        false ->
+                            #{
+                                <<"index">> =>
+                                    hb_opts:get(generate_index, true, Opts)
+                            }
+                    end,
                     Opts
                 ),
             {
@@ -711,11 +738,16 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
             case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
-					Store = maps:get(store, Opts, #{
+                    {ok, _} =
+                        hb_cache:write(SignedMsg,
+                            Opts#{
+                                store =>
+                                    #{
                                         <<"store-module">> => hb_store_fs,
                                         <<"prefix">> => <<"cache-http">>
-                                    }),
-                    {ok, _} = hb_cache:write(SignedMsg, Opts#{ store => Store });
+                                    }
+                            }
+                        );
                 false ->
                     do_nothing
             end,
@@ -738,12 +770,13 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
 %% 1. The path in the message
 %% 2. The path in the request URI
 normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+    ?event(debug_accept, {req, {explicit, Req}}),
     Method = cowboy_req:method(Req),
     MsgPath =
         hb_ao:get(
             <<"path">>,
             Msg,
-            hb_maps:get(
+            maps:get(
                 <<"path">>, 
                 RawHeaders,
                 iolist_to_binary(
@@ -755,14 +788,14 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                             scheme => undefined
                         }
                     )
-                ),
-				Opts
+                )
             ),
             Opts
         ),
     (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
         <<"method">> => Method,
-        <<"path">> => MsgPath
+        <<"path">> => MsgPath,
+        <<"accept-bundle">> => maps:get(<<"accept-bundle">>, RawHeaders, false)
     }.
 
 %% @doc Remove all keys from the message unless they are signed.

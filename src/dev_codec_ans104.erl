@@ -218,8 +218,12 @@ do_from(RawTX, Req, Opts) ->
                     <<"committed">> =>
 						hb_ao:normalize_keys(
 							hb_util:unique(
-								?BASE_COMMITTED_TAGS
-									++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
+								?BASE_COMMITTED_TAGS ++
+                                    [
+                                        hb_ao:normalize_key(Tag)
+                                    ||
+                                        {Tag, _} <- TX#tx.tags
+                                    ]
 							)
 						),
                     <<"keyid">> => hb_util:encode(TX#tx.owner),
@@ -338,14 +342,32 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
     };
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(NormTABM, Req, Opts) when is_map(NormTABM) ->
-    % Ensure that the TABM is fully loaded, for now.
-    ?event({to, {norm, NormTABM}}),
+    % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
+    MaybeBundle =
+        case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
+            false -> NormTABM;
+            true ->
+                % Convert back to the fully loaded structured@1.0 message, then
+                % convert to TABM with bundling enabled.
+                Structured = hb_message:convert(NormTABM, <<"structured@1.0">>, Opts),
+                Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
+                hb_message:convert(
+                    Loaded,
+                    tabm,
+                    #{
+                        <<"device">> => <<"structured@1.0">>,
+                        <<"bundle">> => true
+                    },
+                    Opts
+                )
+        end,
+    ?event({to, {inbound, NormTABM}, {maybe_bundle, MaybeBundle}}),
     TABM =
         hb_ao:normalize_keys(
-            hb_maps:without([<<"commitments">>], NormTABM, Opts),
+            hb_maps:without([<<"commitments">>], MaybeBundle, Opts),
 			Opts
         ),
-    Commitments = hb_maps:get(<<"commitments">>, NormTABM, #{}, Opts),
+    Commitments = hb_maps:get(<<"commitments">>, MaybeBundle, #{}, Opts),
     TABMWithComm =
         case hb_maps:keys(Commitments, Opts) of
             [] -> TABM;
