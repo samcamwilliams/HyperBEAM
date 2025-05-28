@@ -25,7 +25,8 @@ from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
 opts(RawOpts) ->
     RawOpts#{
         hashpath => ignore,
-        cache_control => [<<"no-cache">>, <<"no-store">>]
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        force_message => false
     }.
 
 %% @doc A helper utility for creating a direct encoding of a HTTPSig message.
@@ -445,10 +446,6 @@ signature_params_line(Commitment, Opts) ->
 %% message that is sent over HTTP, signed with the codec.
 validate_large_message_from_http_test() ->
     Node = hb_http_server:start_node(Opts = #{
-        store => #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST">>
-        },
         force_signed => true,
         commitment_device => <<"httpsig@1.0">>,
         extra =>
