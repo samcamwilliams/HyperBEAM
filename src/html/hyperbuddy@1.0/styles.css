@@ -3,6 +3,7 @@
 	--section-bg-color-primary: #fff;
 	--section-bg-color-alt1: #ffffff;
 	--section-bg-color-alt2: #ffffffbf;
+	--section-bg-color-alt3: #ffffffee;
 	--section-bg-color-accent: #f8faf8f5;
 	--border-color: #eaeaea;
 	--active-action-bg: #EDEDED;
@@ -297,7 +298,7 @@ footer {
 	height: fit-content;
 	flex: 1;
 	border-radius: var(--border-radius);
-	background: var(--section-bg-color-accent);
+	background: var(--section-bg-color-alt3);
 	border: 1px solid var(--border-color);
 	box-shadow: 0px 4px 4px 0px rgba(0, 0, 0, 0.02);
 	gap: 48px;
@@ -326,7 +327,7 @@ footer {
 .key-metric-value {
 	font-size: clamp(1rem, 2.75vw, 1.8rem);
 	font-weight: 400;
-	color: var(--indicator-color-active);
+
 }
 
 .key-metric-label {
