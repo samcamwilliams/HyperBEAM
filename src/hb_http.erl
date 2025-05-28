@@ -795,9 +795,7 @@ simple_ao_resolve_signed_test() ->
     ?assertEqual(<<"Value1">>, Res).
 
 nested_ao_resolve_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     URL = hb_http_server:start_node(Opts),
     Wallet = hb:wallet(),
     {ok, Res} =
@@ -830,36 +828,28 @@ wasm_compute_request(Opts, ImageFile, Func, Params, ResultPath) ->
     }, Opts#{ priv_wallet => Wallet}).
 
 run_wasm_unsigned_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     Node = hb_http_server:start_node(Opts#{force_signed => false}),
     Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, Opts),
     ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
 
 run_wasm_signed_test() ->
- 	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+ 	Opts = #{},
     URL = hb_http_server:start_node(Opts#{force_signed => true}),
     Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, Opts),
     ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
 
 get_deep_unsigned_wasm_state_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     URL = hb_http_server:start_node(Opts#{force_signed => false}),
     Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, Opts),
     ?assertEqual(6.0, hb_ao:get(<<"/output/1">>, Res, Opts)).
 
 get_deep_signed_wasm_state_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     URL = hb_http_server:start_node(Opts#{force_signed => true}),
     Msg = wasm_compute_request(Opts,
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
@@ -867,9 +857,7 @@ get_deep_signed_wasm_state_test() ->
     ?assertEqual(6.0, hb_ao:get(<<"1">>, Res, Opts)).
 
 cors_get_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     URL = hb_http_server:start_node(),
     {ok, Res} = get(URL, <<"/~meta@1.0/info">>, Opts),
     ?assertEqual(
@@ -878,9 +866,7 @@ cors_get_test() ->
     ).
 
 ans104_wasm_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     URL = hb_http_server:start_node(Opts#{force_signed => true}),
     {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
     Wallet = hb:wallet(),
@@ -899,9 +885,7 @@ ans104_wasm_test() ->
     ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
 
 send_large_signed_request_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
+	Opts = #{},
     % Note: If the signature scheme ever changes, we will need to do
     % `hb_message:commit(hb_message:uncommitted(Req), #{})' to get a freshly
     % signed request.
