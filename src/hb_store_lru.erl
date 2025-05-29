@@ -16,8 +16,8 @@
 %%% - A cache statistics table containing all the information about the cache
 %%%   size, capacity, and indexing.
 -module(hb_store_lru).
--export([start/1, stop/1, reset/1, scope/0]).
--export([write/3, read/2, list/2, type/2, make_link/3, make_group/2]).
+-export([start/1, stop/1, reset/1, scope/1]).
+-export([write/3, read/2, list/2, type/2, make_link/3, make_group/2, resolve/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -51,10 +51,15 @@ find_pid(StoreOpts) ->
             undefined ->
                 case hb_name:lookup({in_memory, ServerID}) of
                     undefined ->
-                        start(StoreOpts);
-                    FoundPID -> FoundPID
+                        {ok, ServerPID} = start(StoreOpts),
+                        ServerPID;
+                    FoundPID ->
+                        ?event(x, {registered, {server, ServerID}, {pid, FoundPID}}),
+                        FoundPID
                 end;
-            FoundPID -> FoundPID
+            FoundPID ->
+                ?event(x, {in_process, {server, ServerID}, {pid, FoundPID}}),
+                FoundPID
         end,
     cache_pid(ServerID, PID),
     PID.
@@ -63,23 +68,30 @@ find_pid(StoreOpts) ->
 cache_pid(ServerID, PID) ->
     erlang:put({cache_lru, ServerID}, PID).
 
+clean_cache_pid(ServerPID) ->
+    erlang:erase({cache_lru, ServerPID}).
+
 %% @doc Start the LRU cache.
 start(Opts) ->
     ServerID = find_id(Opts),
     NormOpts = Opts#{ <<"server-id">> => ServerID },
     ?event(cache_lru, {starting_lru_server, ServerID}),
+    From = self(),
     spawn(
         fun() ->
-            State = init(NormOpts),
+            State = init(From, NormOpts),
             server_loop(State, NormOpts)
         end
-    ).
+    ),
+    receive
+        {ok, PID} -> {ok, PID}
+    end.
 
 %% @doc Create the `ets' tables for the LRU cache:
 %% - The cache of data itself (public, with read concurrency enabled)
 %% - A set for the LRU's stats.
 %% - An ordered set for the cache's index.
-init(Opts) ->
+init(From, Opts) ->
     ServerID = find_id(Opts),
     % Start the persistent store.
     case hb_maps:get(<<"persistent-store">>, Opts, no_store) of
@@ -87,7 +99,11 @@ init(Opts) ->
         Store -> hb_store:start(Store)
     end,
     % Create LRU tables
-    CacheTable = ets:new(hb_cache_lru, [set, protected, {read_concurrency, true}]),
+    CacheTable = ets:new(hb_cache_lru, [
+        set,
+        protected,
+        {read_concurrency, true}
+    ]),
     CacheStatsTable = ets:new(hb_cache_lru_stats, [set]),
     CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
     hb_name:register({in_memory, ServerID}),
@@ -95,6 +111,7 @@ init(Opts) ->
         {in_memory_lru_cache, ServerID},
         #{cache_table => CacheTable}
     ),
+    From ! {ok, self()},
     #{
         cache_table => CacheTable,
         stats_table => CacheStatsTable,
@@ -106,12 +123,15 @@ init(Opts) ->
 stop(Opts) ->
     ?event(cache_lru, {stopping_lru_server, Opts}),
     CacheServer = find_pid(Opts),
-    CacheServer ! stop,
-    ok.
+    CacheServer ! {stop, self()},
+    receive
+      ok ->
+        clean_cache_pid(find_id(Opts)),
+        ok
+    end.
 
 %% @doc The LRU store is always local, for now.
-scope() ->
-    local.
+scope(_) -> local.
 
 %% @doc Reset the store by completely cleaning the ETS tables and
 %% delegate the reset to the underlying offloading store.
@@ -148,15 +168,20 @@ server_loop(State =
             ?event(debug_lru, {make_group, Key}),
             ensure_dir(State, Key),
             From ! {ok, Ref};
-        {update_recent, Key, Entry} ->
-            update_recently_used(State, Key, Entry);
+        {update_recent, Key, Entry, From, Ref} ->
+            update_recently_used(State, Key, Entry),
+            From ! {ok, Ref};
         {reset, From, Ref} ->
             ets:delete_all_objects(CacheTable),
             ets:delete_all_objects(StatsTable),
             ets:delete_all_objects(IndexTable),
             From ! {ok, Ref};
-        stop ->
+        {stop, From} ->
             evict_all_entries(State, Opts),
+            persistent_term:erase(
+                {in_memory_lru_cache, find_id(Opts)}
+            ),
+            From ! ok,
             exit(self(), ok)
     end,
     server_loop(State, Opts).
@@ -190,31 +215,39 @@ read(Opts, RawKey) ->
             end;
         {raw, Entry = #{value := Value}} ->
             CacheServer = find_pid(Opts),
-            CacheServer ! {update_recent, Key, Entry},
-            {ok, Value};
-        _ ->
-            not_found
+            CacheServer ! {update_recent, Key, Entry, self(), Ref = make_ref()},
+            receive
+                {ok, Ref} -> {ok, Value}
+            end;
+        {link, Link} ->
+            ?event({link_found, RawKey, Link}),
+            read(Opts, Link);
+        _ -> not_found
     end.
 
-resolve(CacheTables, Key) ->
-    PathList =
-        hb_path:term_to_path_parts(
-            hb_store:join(Key)),
-    ResolvedParts =
-        lists:map(
-            fun(Path) ->
-                do_resolve(CacheTables, Path)
-            end,
-            PathList
-        ),
-    hb_store:join(ResolvedParts).
+resolve(Opts, Key) ->
+    Res = resolve(Opts, "", hb_path:term_to_path_parts(hb_store:join(Key), Opts)),
+    ?event({resolved, Key, Res}),
+    Res.
 
-do_resolve(CacheTables, Path) ->
-    case get_cache_entry(CacheTables, Path) of
+resolve(_, CurrPath, []) ->
+    hb_store:join(CurrPath);
+resolve(Opts, CurrPath, [Next|Rest]) ->
+    PathPart = hb_store:join([CurrPath, Next]),
+    ?event(
+        {resolving,
+            {accumulated_path, CurrPath},
+            {next_segment, Next},
+            {generated_partial_path_to_test, PathPart}
+        }
+    ),
+    ServerID = find_id(Opts),
+    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    case get_cache_entry(CacheTables, PathPart) of
         {link, Link} ->
-            do_resolve(CacheTables, Link);
+            resolve(Opts, Link, Rest);
         _ ->
-            Path
+            resolve(Opts, PathPart, Rest)
     end.
 
 %% @doc Make a link from a key to another in the store.
@@ -224,13 +257,15 @@ make_link(Opts, RawExisting, New) ->
     Existing = hb_store:join(RawExisting),
     ServerID = find_id(Opts),
     CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    case get_cache_entry(CacheTables, Existing) of
+    ExistingKeyBin = convert_if_list(RawExisting),
+    NewKeyBin = convert_if_list(New),
+    case get_cache_entry(CacheTables, ExistingKeyBin) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
                     no_viable_store;
                 Store ->
-                    hb_store:make_link(Store, RawExisting, New)
+                    hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
         _ ->
             CacheServer = find_pid(Opts),
@@ -260,7 +295,7 @@ list(Opts, Path) ->
         end,
     case get_persistent_store(Opts) of
         no_store ->
-            InMemoryKeys;
+            {ok, InMemoryKeys};
         Store ->
             PersistentKeys =
                 lists:map(
@@ -271,7 +306,7 @@ list(Opts, Path) ->
                         Keys -> Keys
                     end
                 ),
-            InMemoryKeys ++ PersistentKeys
+            {ok, InMemoryKeys ++ PersistentKeys}
     end.
 
 %% @doc Determine the type of a key in the store.
@@ -353,39 +388,33 @@ put_cache_entry(State, Key, Value, Opts) ->
             case get_cache_entry(State, Key) of
                 nil ->
                     ?event(cache_lru, {assign_entry, Key, Value}),
-                    case filename:dirname(Key) of
-                        <<".">> ->
-                            assign_new_entry(
-                                State,
-                                Key,
-                                Value,
-                                ValueSize,
-                                Capacity,
-                                undefined,
-                                Opts
-                            );
-                        BaseDir ->
-                            ensure_dir(State, BaseDir),
-                            {group, Entry} = get_cache_entry(State, BaseDir),
-                            BaseName = filename:basename(Key),
-                            NewGroup = append_key_to_group(BaseName, Entry),
-                            add_cache_entry(State, BaseDir, {group, NewGroup}),
-                            assign_new_entry(
-                                State,
-                                Key,
-                                Value,
-                                ValueSize,
-                                Capacity,
-                                BaseDir,
-                                Opts
-                            )
-                    end;
+                    Group = handle_group(State, Key),
+                    assign_new_entry(
+                        State,
+                        Key,
+                        Value,
+                        ValueSize,
+                        Capacity,
+                        Group,
+                        Opts
+                    );
                 Entry ->
                     ?event(cache_lru, {replace_entry, Key, Value}),
                     replace_entry(State, Key, Value, ValueSize, Entry)
             end
     end.
 
+handle_group(State, Key) ->
+    case filename:dirname(Key) of
+        <<".">> -> undefined ;
+        BaseDir ->
+            ensure_dir(State, BaseDir),
+            {group, Entry} = get_cache_entry(State, BaseDir),
+            BaseName = filename:basename(Key),
+            NewGroup = append_key_to_group(BaseName, Entry),
+            add_cache_entry(State, BaseDir, {group, NewGroup}),
+            BaseDir
+    end.
 ensure_dir(State, Path) ->
     PathParts = hb_path:term_to_path_parts(Path),
     [First | Rest] = PathParts,
@@ -464,21 +493,49 @@ add_cache_entry(#{cache_table := Table}, Key, Value) ->
 add_cache_index(#{index_table := Table}, ID, Key) ->
     ets:insert(Table, {ID, Key}).
 
-link_cache_entry(#{cache_table := Table}, Existing, New) ->
+link_cache_entry(State = #{cache_table := Table}, Existing, New) ->	
     ?event(cache_lru, {link, Existing, New}),
+    % Remove the link from the previous linked entry
+    clean_old_link(Table, New),
+    _ = handle_group(State, New),
     ets:insert(Table, {New, {link, Existing}}),
+    % Add links to the linked entry
     case ets:lookup(Table, Existing) of
         [{_, {raw, Entry}}] ->
-            NewEntry =
+            NewLinks =
                 case Entry of
-                    #{links := Links} ->
-                        [New | Links];
+                    #{links := ExistingLinks} ->
+                        [New | ExistingLinks];
                     _ ->
-                        Entry#{links => [New]}
+                        [New]
                 end,
-            ets:insert(Table, {Existing, {raw, NewEntry}});
+            ets:insert(Table, {Existing, {raw, Entry#{links => NewLinks}}});
         _ ->
             ignore
+    end.
+
+% @doc Remove the link association for the the old linked data to the given key
+clean_old_link(Table, Link) ->
+    case ets:lookup(Table, Link) of
+        [{_, {link, PreviousEntry}}] ->
+            ?event(cache_lru, {removing_previous_link,
+                {link, Link},
+                {previous_entry, PreviousEntry}
+            }),
+            case ets:lookup(Table, PreviousEntry) of
+                [{_, {raw, OldEntry}}] ->
+                    Links = sets:from_list(maps:get(links, OldEntry, [])),
+                    UpdatedLinks = sets:del_element(Link, Links),
+                    UpdatedEntry = maps:put(
+                        links,
+                        sets:to_list(UpdatedLinks),
+                        OldEntry
+                    ),
+                    ets:insert(Table, {PreviousEntry, {raw, UpdatedEntry}});
+                _ ->
+                    skip
+            end;
+        _ -> skip
     end.
 
 increase_cache_size(#{stats_table := StatsTable}, ValueSize) ->
@@ -515,12 +572,23 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
                     BaseName = filename:basename(TailKey),
                     UpdatedGroupSet = sets:del_element(BaseName, GroupSet),
                     case sets:size(UpdatedGroupSet) of
-                        0 -> delete_cache_entry(State, Group);
-                        _ -> add_cache_entry(State, Group, {group, UpdatedGroupSet})
+                        0 ->
+                            delete_cache_entry(State, Group);
+                        _ ->
+                            add_cache_entry(
+                                State,
+                                Group,
+                                {group, UpdatedGroupSet}
+                            )
                     end
             end,
             offload_to_store(TailKey, TailValue, Links, Group, Opts),
-            evict_oldest_entry(State, ValueSize, FreeSize + ReclaimedSize, Opts)
+            evict_oldest_entry(
+                State,
+                ValueSize,
+                FreeSize + ReclaimedSize,
+                Opts
+            )
     end.
 
 evict_all_entries(#{cache_table := Table}, Opts) ->
@@ -581,23 +649,24 @@ delete_cache_entry(#{cache_table := Table}, Key) ->
 decrease_cache_size(#{stats_table := Table}, Size) ->
     ets:update_counter(Table, size, {2, -Size, 0, 0}).
 
-replace_entry(State, Key, Value, ValueSize, OldEntry) ->
-    % Update entry and move the keys in the front of the cache as the most used Key
-    ?event(debug_lru, {replace_entry, {key, Key}, {value, Value}, {explicit, OldEntry}}),
-    ?no_prod(<<"FIXME: OldEntry is not always a normalized map.">>),
-    NormOldEntry =
-        case OldEntry of
-            {_, X} when is_map(X) ->
-                X;
-            _ ->
-                #{ group => undefined }
-        end,
-    PreviousSize = maps:get(size, NormOldEntry, 0),
-    NewEntry = NormOldEntry#{value := Value, size := ValueSize},
+replace_entry(State, Key, Value, ValueSize, {raw, OldEntry = #{ value := OldValue}}) when Value =/= OldValue ->
+    % Update entry and move the keys in the front of the cache 
+    % as the most used Key
+    ?event(debug_lru, {replace_entry, 
+        {key, Key},
+        {value, Value},
+        {explicit, OldEntry}
+    }),
+    #{size := PreviousSize} = OldEntry,
+    NewEntry = OldEntry#{value := Value, size := ValueSize},
     add_cache_entry(State, Key, {raw, NewEntry}),
     update_recently_used(State, Key, NewEntry),
-    update_cache_size(State, PreviousSize, ValueSize).
-
+    update_cache_size(State, PreviousSize, ValueSize);
+replace_entry(_State, _Key, _Value, _ValueSize, {raw, _}) -> ok;
+replace_entry(_State, _Key, _Value, _ValueSize, {Type, _}) ->
+    % Link or group should be handle directly with `make_link` or `make_group`
+    % This aim of this function is to be used along with direct data insertion.
+    throw({error, can_only_replace_raw_entry, {type, Type}}).
 update_recently_used(State, Key, Entry) ->
     % Acquire a new ID
     NewID = get_index_id(State),
@@ -620,6 +689,21 @@ get_persistent_store(Opts) ->
             <<"prefix">> => <<"cache-mainnet">>
         }
     ).
+
+convert_if_list(Value) when is_list(Value) ->
+    join(Value);  % Perform the conversion if it's a list
+convert_if_list(Value) ->
+    Value.
+
+join(Key) when is_list(Key) ->
+    KeyList = hb_store:join(Key),
+    maybe_convert_to_binary(KeyList);
+join(Key) when is_binary(Key) -> Key.
+
+maybe_convert_to_binary(Value) when is_list(Value) ->
+    list_to_binary(Value);
+maybe_convert_to_binary(Value) when is_binary(Value) ->
+    Value.
 
 %%% Tests
 
@@ -660,14 +744,12 @@ unknown_value_test() ->
     DefaultOpts = test_opts(no_store),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     ?assertEqual(not_found, read(StoreOpts, <<"key1">>)).
 
 cache_term_test() ->
     DefaultOpts = test_opts(no_store),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"key1">>)).
 
@@ -675,7 +757,6 @@ evict_oldest_items_test() ->
     DefaultOpts = test_opts(no_store, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -688,7 +769,6 @@ evict_items_with_insufficient_space_test() ->
     DefaultOpts = test_opts(no_store, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -700,7 +780,6 @@ evict_but_able_to_read_from_fs_store_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -715,13 +794,11 @@ evict_but_able_to_read_from_fs_store_test() ->
 stop_test() ->
     Opts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, Opts),
-    ServerPID = start(StoreOpts),
-    timer:sleep(100),
+    {ok, ServerPID} = start(StoreOpts),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
-    stop(StoreOpts),
-    timer:sleep(100),
+    ok = stop(StoreOpts),
     ?assertEqual(false, is_process_alive(ServerPID)),
     PersistentStore = hb_maps:get(<<"persistent-store">>, StoreOpts),
     ?assertEqual({ok, Binary}, hb_store:read(PersistentStore, <<"key1">>)),
@@ -731,7 +808,6 @@ reset_test() ->
     DefaultOpts = test_opts(default),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     write(StoreOpts, <<"key2">>, <<"Hi">>),
     reset(StoreOpts),
@@ -744,29 +820,30 @@ list_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     make_group(StoreOpts, <<"sub">>),
     write(StoreOpts, <<"hello">>, <<"world">>),
     write(StoreOpts, <<"sub/key1">>, Binary),
     write(StoreOpts, <<"sub/key2">>, Binary),
-    ?assertEqual([<<"key1">>, <<"key2">>], lists:sort(list(StoreOpts, <<"sub">>))),
+    {ok, Keys1} = list(StoreOpts, <<"sub">>),
+    ?assertEqual([<<"key1">>, <<"key2">>], lists:sort(Keys1)),
     write(StoreOpts, <<"sub/key3">>, Binary),
+    {ok, Keys2} = list(StoreOpts, <<"sub">>),
     ?assertEqual(
         [<<"key1">>, <<"key2">>, <<"key3">>],
-        lists:sort(list(StoreOpts, <<"sub">>))
+        lists:sort(Keys2)
     ),
     write(StoreOpts, <<"sub/inner/key1">>, Binary),
+    {ok, Keys3} = list(StoreOpts, <<"sub">>),
     ?assertEqual([<<"inner">>, <<"key1">>, <<"key2">>, <<"key3">>],
-                 lists:sort(list(StoreOpts, <<"sub">>))),
+                 lists:sort(Keys3)),
     write(StoreOpts, <<"complex">>, #{<<"a">> => 10, <<"b">> => Binary}),
-    ?assertEqual([<<"a">>, <<"b">>], list(StoreOpts, <<"complex">>)).
+    ?assertEqual({ok, [<<"a">>, <<"b">>]}, list(StoreOpts, <<"complex">>)).
 
 type_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     ?assertEqual(simple, type(StoreOpts, <<"key1">>)),
@@ -774,3 +851,18 @@ type_test() ->
     ?assertEqual(composite, type(StoreOpts, <<"sub">>)),
     make_link(StoreOpts, <<"key1">>, <<"keylink">>),
     ?assertEqual(simple, type(StoreOpts, <<"keylink">>)).
+
+replace_link_test() ->
+    DefaultOpts = test_opts(no_store),
+    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
+    start(StoreOpts),
+    write(StoreOpts, <<"key1">>, <<"Hello">>),
+    make_link(StoreOpts, <<"key1">>, <<"keylink">>),
+    ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"keylink">>)),
+    write(StoreOpts, <<"key2">>, <<"Hello2">>),
+    make_link(StoreOpts, <<"key2">>, <<"keylink">>),
+    ?assertEqual({ok, <<"Hello2">>}, read(StoreOpts, <<"keylink">>)),
+    ServerID = find_id(StoreOpts),
+    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    {raw, #{links := Links }}= get_cache_entry(CacheTables, <<"key1">>),
+    ?assertEqual([], Links).

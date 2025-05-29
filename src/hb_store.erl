@@ -264,12 +264,11 @@ generate_test_suite(Suite, Stores) ->
     hb:init(),
     lists:map(
         fun(Store = #{<<"store-module">> := Mod}) ->
+            ServerID = hb_util:human_id(crypto:strong_rand_bytes(32)),
             {foreach,
                 fun() ->
                     % Create and set a random server ID for the test process.
-                    hb_http_server:set_proc_server_id(
-                        hb_util:human_id(crypto:strong_rand_bytes(32))
-                    ),
+                    hb_http_server:set_proc_server_id(ServerID),
                     hb_store:start(Store),
                     timer:sleep(100)
                 end,
@@ -278,7 +277,7 @@ generate_test_suite(Suite, Stores) ->
                     % next test.
                     hb_store:reset(Store),
                     hb_store:stop(Store),
-					hb_http_server:set_proc_server_id(undefined)
+                    hb_http_server:set_proc_server_id(undefined)
                 end,
                 [
                     {
@@ -319,7 +318,7 @@ resursive_path_resolution_test(Opts) ->
 
 %% @doc Ensure that we can resolve links through a directory.
 hierarchical_path_resolution_test(Opts) ->
-    Store = Opts,
+    Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),

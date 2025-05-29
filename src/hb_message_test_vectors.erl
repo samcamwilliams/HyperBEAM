@@ -48,8 +48,11 @@ test_opts(normal) ->
         store =>
             [
                 #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST">>
+                    <<"store-module">> => hb_store_lru,
+                    <<"persistent-store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
                 }
             ],
         priv_wallet => hb:wallet()

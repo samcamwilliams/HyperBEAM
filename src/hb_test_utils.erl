@@ -30,6 +30,10 @@ suite_with_opts(Suite, OptsList) ->
                     {true, {foreach,
                         fun() ->
                             ?event({starting, Store}),
+                            %Create and set a random server ID for the test process.
+                            hb_http_server:set_proc_server_id(
+                                hb_util:human_id(crypto:strong_rand_bytes(32))
+                            ),
                             hb_store:reset(Store),
                             hb_store:start(Store)
                         end,
