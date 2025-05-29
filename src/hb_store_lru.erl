@@ -257,13 +257,15 @@ make_link(Opts, RawExisting, New) ->
     Existing = hb_store:join(RawExisting),
     ServerID = find_id(Opts),
     CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    case get_cache_entry(CacheTables, Existing) of
+    ExistingKeyBin = convert_if_list(RawExisting),
+    NewKeyBin = convert_if_list(New),
+    case get_cache_entry(CacheTables, ExistingKeyBin) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
                     no_viable_store;
                 Store ->
-                    hb_store:make_link(Store, RawExisting, New)
+                    hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
         _ ->
             CacheServer = find_pid(Opts),
@@ -687,6 +689,21 @@ get_persistent_store(Opts) ->
             <<"prefix">> => <<"cache-mainnet">>
         }
     ).
+
+convert_if_list(Value) when is_list(Value) ->
+    join(Value);  % Perform the conversion if it's a list
+convert_if_list(Value) ->
+    Value.
+
+join(Key) when is_list(Key) ->
+    KeyList = hb_store:join(Key),
+    maybe_convert_to_binary(KeyList);
+join(Key) when is_binary(Key) -> Key.
+
+maybe_convert_to_binary(Value) when is_list(Value) ->
+    list_to_binary(Value);
+maybe_convert_to_binary(Value) when is_binary(Value) ->
+    Value.
 
 %%% Tests
 
