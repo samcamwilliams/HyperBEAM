@@ -28,7 +28,7 @@
 
 %%% @doc The default capacity is used when no capacity is provided in the store
 %%% options.
--define(DEFAULT_LRU_CAPACITY, 100_000_000).
+-define(DEFAULT_LRU_CAPACITY, 4_000_000_000).
 
 %% @doc The server ID is either found in the `StoreOpts` or in the process
 %% dictionary, using the `server_id' key. This is typically set by the HTTP 

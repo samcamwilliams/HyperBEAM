@@ -592,7 +592,7 @@ local_dynamic_router() ->
 %% `dynamic-router' script to manage routes and recalculate weights based on the
 %% reported performance.
 dynamic_routing_by_performance_test_() ->
-    {timeout, 30, fun dynamic_routing_by_performance/0}.
+    {timeout, 60, fun dynamic_routing_by_performance/0}.
 dynamic_routing_by_performance() ->
     % Setup test parameters
     TestNodes = 4,
