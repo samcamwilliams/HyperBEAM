@@ -684,10 +684,7 @@ get_persistent_store(Opts) ->
     hb_maps:get(
         <<"persistent-store">>,
         Opts,
-        #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-mainnet">>
-        }
+        no_store
     ).
 
 convert_if_list(Value) when is_list(Value) ->
