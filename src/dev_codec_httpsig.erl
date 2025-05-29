@@ -193,7 +193,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
                     }
             }
         },
-    ?event({reset_hmac_complete, Res}),
+    ?event({hmac_generation_complete, Res}),
     Res.
 
 %% @doc Annotate the commitment with the `bundle' key if the request contains
@@ -324,16 +324,17 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
             BodyKeys,
             KeysForEncoding
         ),
-    ?event(
+    ?event(debug_httpsig,
         {normalized_for_encoding,
             {raw_inputs, Inputs},
-            {final_for_encoding, KeysForEncoding},
-            {final_for_commitment, KeysForCommitment}
+            {inputs_for_encoding, KeysForEncoding},
+            {final_for_commitment_message, KeysForCommitment},
+            {encoded_message, Encoded}
         }
     ),
     {
         ok,
-        EncodedWithSigInfo,
+        Encoded,
         Commitment#{ <<"committed">> => KeysForEncoding },
         KeysForCommitment
     }.
@@ -382,7 +383,8 @@ signature_components_line(Req, Commitment, _Opts) ->
                             {
                                 missing_key_for_signature_component_line,
                                 Name,
-                                {context, Req}
+                                {message, Req},
+                                {commitment, Commitment}
                             }
                         );
                     Value ->

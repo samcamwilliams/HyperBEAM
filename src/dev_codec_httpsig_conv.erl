@@ -42,8 +42,6 @@
 from(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
 from(Link, _Req, _Opts) when ?IS_LINK(Link) -> {ok, Link};
 from(HTTP, _Req, Opts) ->
-    % Decode the keys of the HTTP message
-    Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
     % First, parse all headers excluding the signature-related headers, as they
     % are handled separately.
     Headers = hb_maps:without([<<"body">>], HTTP, Opts),
@@ -63,7 +61,6 @@ from(HTTP, _Req, Opts) ->
         WithIDs,
         Opts
     ),
-    ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Finally, we need to add the signatures to the TABM.
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
@@ -99,7 +96,7 @@ from(HTTP, _Req, Opts) ->
 %% @doc Generate the body TABM from the `body' key of the encoded message.
 body_to_tabm(HTTP, Opts) ->
     % Extract the body and content-type from the HTTP message.
-    Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
+    Body = hb_maps:get(<<"body">>, HTTP, no_body, Opts),
     ContentType = hb_maps:get(<<"content-type">>, HTTP, undefined, Opts),
     {_, InlinedKey} = inline_key(HTTP),
     ?event({inlined_body_key, InlinedKey}),
@@ -149,7 +146,7 @@ body_to_tabm(HTTP, Opts) ->
     {OrderedBodyKeys, BodyTABM}.
 
 %% @doc Split the body into parts, if it is a multipart.
-body_to_parts(_ContentType, <<>>, _Opts) -> no_body;
+body_to_parts(_ContentType, no_body, _Opts) -> no_body;
 body_to_parts(ContentType, Body, _Opts) ->
     ?event(
         {from_body,
