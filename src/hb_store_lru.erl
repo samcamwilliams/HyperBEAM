@@ -68,6 +68,9 @@ find_pid(StoreOpts) ->
 cache_pid(ServerID, PID) ->
     erlang:put({cache_lru, ServerID}, PID).
 
+clean_cache_pid(ServerPID) ->
+    erlang:erase({cache_lru, ServerPID}).
+
 %% @doc Start the LRU cache.
 start(Opts) ->
     ServerID = find_id(Opts),
@@ -120,8 +123,12 @@ init(From, Opts) ->
 stop(Opts) ->
     ?event(cache_lru, {stopping_lru_server, Opts}),
     CacheServer = find_pid(Opts),
-    CacheServer ! stop,
-    ok.
+    CacheServer ! {stop, self()},
+    receive
+      ok ->
+        clean_cache_pid(find_id(Opts)),
+        ok
+    end.
 
 %% @doc The LRU store is always local, for now.
 scope(_) -> local.
@@ -169,8 +176,12 @@ server_loop(State =
             ets:delete_all_objects(StatsTable),
             ets:delete_all_objects(IndexTable),
             From ! {ok, Ref};
-        stop ->
+        {stop, From} ->
             evict_all_entries(State, Opts),
+            persistent_term:erase(
+                {in_memory_lru_cache, find_id(Opts)}
+            ),
+            From ! ok,
             exit(self(), ok)
     end,
     server_loop(State, Opts).
@@ -770,8 +781,7 @@ stop_test() ->
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
-    stop(StoreOpts),
-    timer:sleep(100),
+    ok = stop(StoreOpts),
     ?assertEqual(false, is_process_alive(ServerPID)),
     PersistentStore = hb_maps:get(<<"persistent-store">>, StoreOpts),
     ?assertEqual({ok, Binary}, hb_store:read(PersistentStore, <<"key1">>)),
