@@ -307,23 +307,20 @@ generate_test_suite(Suite, Stores) ->
 %%% Tests
 
 %% @doc Test path resolution dynamics.
-simple_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+simple_path_resolution_test(Store) ->
     ok = hb_store:write(Store, <<"test-file">>, <<"test-data">>),
     hb_store:make_link(Store, <<"test-file">>, <<"test-link">>),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, <<"test-link">>)).
 
 %% @doc Ensure that we can resolve links recursively.
-resursive_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+resursive_path_resolution_test(Store) ->
     hb_store:write(Store, <<"test-file">>, <<"test-data">>),
     hb_store:make_link(Store, <<"test-file">>, <<"test-link">>),
     hb_store:make_link(Store, <<"test-link">>, <<"test-link2">>),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, <<"test-link2">>)).
 
 %% @doc Ensure that we can resolve links through a directory.
-hierarchical_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+hierarchical_path_resolution_test(Store) ->
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),
