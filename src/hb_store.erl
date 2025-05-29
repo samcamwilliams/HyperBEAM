@@ -261,12 +261,11 @@ generate_test_suite(Suite, Stores) ->
     hb:init(),
     lists:map(
         fun(Store = #{<<"store-module">> := Mod}) ->
+            ServerID = hb_util:human_id(crypto:strong_rand_bytes(32)),
             {foreach,
                 fun() ->
                     % Create and set a random server ID for the test process.
-                    hb_http_server:set_proc_server_id(
-                        hb_util:human_id(crypto:strong_rand_bytes(32))
-                    ),
+                    hb_http_server:set_proc_server_id(ServerID),
                     hb_store:start(Store),
                     timer:sleep(100)
                 end,
@@ -275,12 +274,13 @@ generate_test_suite(Suite, Stores) ->
                     % next test.
                     hb_store:reset(Store),
                     hb_store:stop(Store),
-					hb_http_server:set_proc_server_id(undefined)
+                    hb_http_server:set_proc_server_id(undefined)
                 end,
                 [
                     {
                         atom_to_list(Mod) ++ ": " ++ Desc,
                         fun() ->
+                            hb_http_server:set_proc_server_id(ServerID),
                             TestResult = Test(#{ store => Store}),
                             TestResult
                         end
