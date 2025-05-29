@@ -267,15 +267,38 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 			?event(http, {request_body, {explicit, {body, Body}}}),
             hb_maps:merge(ReqBase, #{ headers => Headers, body => Body }, Opts);
         <<"ans104@1.0">> ->
+            ?event(debug_accept, {request_message, {message, Message}}),
+            {ok, FilteredMessage} =
+                case hb_message:signers(Message, Opts) of
+                    [] -> Message;
+                    _ ->
+                        hb_message:with_only_committed(Message, Opts)
+                end,
             ReqBase#{
                 headers =>
                     #{
                         <<"codec-device">> => <<"ans104@1.0">>,
-                        <<"content-type">> => <<"application/ans104">>
+                        <<"content-type">> => <<"application/ans104">>,
+                        <<"accept-bundle">> =>
+                            hb_util:bin(
+                                hb_ao:get(
+                                    <<"accept-bundle">>,
+                                    Message,
+                                    true,
+                                    Opts
+                                )
+                            )
                     },
                 body =>
                     ar_bundles:serialize(
-                        hb_message:convert(Message, <<"ans104@1.0">>, Opts)
+                        hb_message:convert(
+                            FilteredMessage,
+                            #{
+                                <<"device">> => <<"ans104@1.0">>,
+                                <<"bundle">> => true
+                            },
+                            Opts
+                        )
                     )
             }
     end.
@@ -552,7 +575,17 @@ encode_reply(TABMReq, Message, Opts) ->
             {ok, EncMessage} =
                 dev_codec_httpsig:to(
                     TABM,
-                    #{ <<"index">> => hb_opts:get(generate_index, true, Opts) },
+                    case hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)) of
+                        true ->
+                            #{
+                                <<"bundle">> => true
+                            };
+                        false ->
+                            #{
+                                <<"index">> =>
+                                    hb_opts:get(generate_index, true, Opts)
+                            }
+                    end,
                     Opts
                 ),
             {
@@ -573,7 +606,18 @@ encode_reply(TABMReq, Message, Opts) ->
                             hb_message:signers(Message, Opts),
 							Opts
                         ),
-                        <<"ans104@1.0">>,
+                        #{
+                            <<"device">> => <<"ans104@1.0">>,
+                            <<"bundle">> =>
+                                hb_util:atom(
+                                    hb_ao:get(
+                                        <<"accept-bundle">>,
+                                        TABMReq,
+                                        true,
+                                        Opts
+                                    )
+                                )
+                        },
                         <<"structured@1.0">>,
                         Opts#{ topic => ao_internal }
                     )
@@ -665,7 +709,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
             httpsig_to_tabm_singleton(Req, Body, Opts);
         <<"ans104@1.0">> ->
             Item = ar_bundles:deserialize(Body),
-            ?event(ans104,
+            ?event(debug_accept,
                 {deserialized_ans104,
                     {item, Item},
                     {exact, {explicit, Item}}
@@ -711,11 +755,16 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
             case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
-					Store = maps:get(store, Opts, #{
+                    {ok, _} =
+                        hb_cache:write(SignedMsg,
+                            Opts#{
+                                store =>
+                                    #{
                                         <<"store-module">> => hb_store_fs,
                                         <<"prefix">> => <<"cache-http">>
-                                    }),
-                    {ok, _} = hb_cache:write(SignedMsg, Opts#{ store => Store });
+                                    }
+                            }
+                        );
                 false ->
                     do_nothing
             end,
@@ -738,12 +787,13 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
 %% 1. The path in the message
 %% 2. The path in the request URI
 normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+    ?event(debug_accept, {req, {explicit, Req}}),
     Method = cowboy_req:method(Req),
     MsgPath =
         hb_ao:get(
             <<"path">>,
             Msg,
-            hb_maps:get(
+            maps:get(
                 <<"path">>, 
                 RawHeaders,
                 iolist_to_binary(
@@ -755,14 +805,19 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                             scheme => undefined
                         }
                     )
-                ),
-				Opts
+                )
             ),
             Opts
         ),
     (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
         <<"method">> => Method,
-        <<"path">> => MsgPath
+        <<"path">> => MsgPath,
+        <<"accept-bundle">> =>
+            maps:get(
+                <<"accept-bundle">>,
+                Msg,
+                maps:get(<<"accept-bundle">>, RawHeaders, false)
+            )
     }.
 
 %% @doc Remove all keys from the message unless they are signed.
@@ -795,10 +850,7 @@ simple_ao_resolve_signed_test() ->
     ?assertEqual(<<"Value1">>, Res).
 
 nested_ao_resolve_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    URL = hb_http_server:start_node(Opts),
+    URL = hb_http_server:start_node(),
     Wallet = hb:wallet(),
     {ok, Res} =
         post(
@@ -811,14 +863,14 @@ nested_ao_resolve_test() ->
                             <<"key3">> => <<"Value2">>
                         }
                     }
-            }, Opts#{ priv_wallet => Wallet }),
-			Opts
+            }, Wallet),
+            #{}
         ),
     ?assertEqual(<<"Value2">>, Res).
 
-wasm_compute_request(Opts, ImageFile, Func, Params) ->
-    wasm_compute_request(Opts, ImageFile, Func, Params, <<"">>).
-wasm_compute_request(Opts, ImageFile, Func, Params, ResultPath) ->
+wasm_compute_request(ImageFile, Func, Params) ->
+    wasm_compute_request(ImageFile, Func, Params, <<"">>).
+wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
     Wallet = hb:wallet(),
     hb_message:commit(#{
@@ -827,84 +879,85 @@ wasm_compute_request(Opts, ImageFile, Func, Params, ResultPath) ->
         <<"function">> => Func,
         <<"parameters">> => Params,
         <<"body">> => Bin
-    }, Opts#{ priv_wallet => Wallet}).
+    }, Wallet).
 
 run_wasm_unsigned_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    Node = hb_http_server:start_node(Opts#{force_signed => false}),
-    Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0]),
-    {ok, Res} = post(Node, Msg, Opts),
-    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
+    Node = hb_http_server:start_node(#{force_signed => false}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
+    {ok, Res} = post(Node, Msg, #{}),
+    ?event({res, Res}),
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
- 	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    URL = hb_http_server:start_node(Opts#{force_signed => true}),
-    Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
-    {ok, Res} = post(URL, Msg, Opts),
-    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
+    Opts = #{ priv_wallet => hb:wallet() },
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
+    {ok, Res} = post(URL, hb_message:commit(Msg, Opts), Opts),
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    URL = hb_http_server:start_node(Opts#{force_signed => false}),
-    Msg = wasm_compute_request(Opts, <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
-    {ok, Res} = post(URL, Msg, Opts),
-    ?assertEqual(6.0, hb_ao:get(<<"/output/1">>, Res, Opts)).
+    URL = hb_http_server:start_node(#{force_signed => false}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?assertEqual(6.0, hb_ao:get(<<"/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    URL = hb_http_server:start_node(Opts#{force_signed => true}),
-    Msg = wasm_compute_request(Opts,
-        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
-    {ok, Res} = post(URL, Msg, Opts),
-    ?assertEqual(6.0, hb_ao:get(<<"1">>, Res, Opts)).
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    Msg =
+        wasm_compute_request(
+            <<"test/test-64.wasm">>,
+            <<"fac">>,
+            [3.0],
+            <<"/output">>
+        ),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?assertEqual(6.0, hb_ao:get(<<"1">>, Res, #{})).
 
 cors_get_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
     URL = hb_http_server:start_node(),
-    {ok, Res} = get(URL, <<"/~meta@1.0/info">>, Opts),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info">>, #{}),
     ?assertEqual(
         <<"*">>,
-        hb_ao:get(<<"access-control-allow-origin">>, Res, Opts)
+        hb_ao:get(<<"access-control-allow-origin">>, Res, #{})
     ).
 
 ans104_wasm_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    URL = hb_http_server:start_node(Opts#{force_signed => true}),
+    URL = hb_http_server:start_node(#{force_signed => true}),
     {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
     Wallet = hb:wallet(),
     Msg = hb_message:commit(#{
-        <<"path">> => <<"/init/compute/results">>,
         <<"accept-codec">> => <<"ans104@1.0">>,
         <<"codec-device">> => <<"ans104@1.0">>,
         <<"device">> => <<"WASM-64@1.0">>,
         <<"function">> => <<"fac">>,
         <<"parameters">> => [3.0],
         <<"body">> => Bin
-    }, Opts#{ priv_wallet => Wallet}, <<"ans104@1.0">>),
+    }, Wallet, #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }),
+    ?assert(hb_message:verify(Msg, all, #{})),
     ?event({msg, Msg}),
-    {ok, Res} = post(URL, Msg, Opts),
+    {ok, Res} = post(URL, Msg#{ <<"path">> => <<"/init/compute/results">> }, #{}),
     ?event({res, Res}),
-    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, Opts)).
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 send_large_signed_request_test() ->
-	Opts = #{
-		 store => #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">>}
-	},
-    % Note: If the signature scheme ever changes, we will need to do
-    % `hb_message:commit(hb_message:uncommitted(Req), #{})' to get a freshly
-    % signed request.
+    % Note: If the signature scheme ever changes, we will need to run the 
+    % following to get a freshly signed request.
+    %     file:write_file(
+    %         "test/large-message.eterm",
+    %         hb_util:bin(
+    %             io_lib:format(
+    %                "~p.", 
+    %                 [
+    %                 hb_message:commit(
+    %                     hb_message:uncommitted(hd(hb_util:ok(
+    %                         file:consult(<<"test/large-message.eterm">>)
+    %                     )),
+    %                     #{ priv_wallet => hb:wallet() }
+    %                     )
+    %                 ]
+    %             )
+    %         )
+    %     ).
     {ok, [Req]} = file:consult(<<"test/large-message.eterm">>),
     % Get the short trace length from the node message in the large, stored
     % request. 
@@ -912,7 +965,7 @@ send_large_signed_request_test() ->
     ?assertMatch(
         {ok, 5},
         post(
-            hb_http_server:start_node(Opts),
+            hb_http_server:start_node(),
             <<"/node-message/short_trace_len">>,
             Req,
             #{ http_client => httpc }
@@ -920,12 +973,27 @@ send_large_signed_request_test() ->
     ).
 
 index_test() ->
-	Opts = #{},
     NodeURL = hb_http_server:start_node(),
-    {ok, Res} = get(NodeURL, <<"/~test-device@1.0/load">>, Opts),
-    ?assertEqual(<<"i like turtles!">>, hb_ao:get(<<"body">>, Res, Opts)).
+    {ok, Res} =
+        get(
+            NodeURL,
+            #{
+                <<"path">> => <<"/~test-device@1.0/load">>,
+                <<"accept-bundle">> => false
+            },
+            #{}
+        ),
+    ?assertEqual(<<"i like turtles!">>, hb_ao:get(<<"body">>, Res, #{})).
 
 index_request_test() ->
     URL = hb_http_server:start_node(),
-    {ok, Res} = get(URL, <<"/~test-device@1.0/load?name=dogs">>, #{}),
+    {ok, Res} =
+        get(
+            URL,
+            #{
+                <<"path">> => <<"/~test-device@1.0/load?name=dogs">>,
+                <<"accept-bundle">> => false
+            },
+            #{}
+        ),
     ?assertEqual(<<"i like dogs!">>, hb_ao:get(<<"body">>, Res, #{})).

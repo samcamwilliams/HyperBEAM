@@ -391,7 +391,7 @@ decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc, Opts) ->
     %% Build our message‐map
     Entry = #{
         <<"function">>   => FuncBin,
-        <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
+        <<"parameters">> => hb_util:list_to_numbered_message(DecodedParams)
     },
     MaybeLine =
         if is_binary(File) andalso is_integer(Line) ->
@@ -673,20 +673,7 @@ aos_process_benchmark_test_() ->
         Opts = #{
             process_async_cache => false,
             hashpath => ignore,
-            process_cache_frequency => 50,
-            store =>
-                [
-                    #{
-                        <<"store-module">> => hb_store_lru,
-                        <<"persistent-store">> =>
-                            [
-                                #{
-                                    <<"store-module">> => hb_store_fs,
-                                    <<"prefix">> => <<"cache-TEST">>
-                                }
-                            ]
-                    }
-                ]
+            process_cache_frequency => 50
         },
         Process = generate_lua_process("test/hyper-aos.lua", Opts),
         Message = generate_test_message(Process, Opts),

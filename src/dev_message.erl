@@ -374,7 +374,7 @@ committed(Self, Req, Opts) ->
     % Remove commitments that are not in *every* committer's list.
     % To start, we need to create the super-set of committed keys.
     AllCommittedKeys =
-        lists:foldl(
+        lists:foldr(
             fun(Key, Acc) ->
                 case lists:member(Key, Acc) of
                     true -> Acc;
@@ -410,10 +410,8 @@ committed(Self, Req, Opts) ->
                     OnlyCommittedKeys
                 )
         end,
-    % Normalize the ordering of the keys.
-    OrderedKeys = hb_util:to_sorted_list(CommittedNormalizedKeys),
-    ?event({only_committed_keys, OrderedKeys}),
-    {ok, OrderedKeys}.
+    ?event({only_committed_keys, CommittedNormalizedKeys}),
+    {ok, CommittedNormalizedKeys}.
 
 %% @doc Return a message with only the relevant commitments for a given request.
 %% See `commitment_ids_from_request/3' for more information on the request format.

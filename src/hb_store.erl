@@ -235,6 +235,11 @@ test_stores() ->
             <<"store-module">> => hb_store_fs,
             <<"prefix">> => <<"cache-TEST/fs">>
         },
+        % #{
+        %     <<"store-module">> => hb_store_lmdb,
+        %     <<"prefix">> => <<"cache-TEST/lmdb">>,
+        %     <<"max-size">> => 600 * 1024 * 1024
+        % },
         #{
             <<"store-module">> => hb_store_lru,
             <<"persistent-store">> => [
@@ -264,12 +269,11 @@ generate_test_suite(Suite, Stores) ->
     hb:init(),
     lists:map(
         fun(Store = #{<<"store-module">> := Mod}) ->
+            ServerID = hb_util:human_id(crypto:strong_rand_bytes(32)),
             {foreach,
                 fun() ->
                     % Create and set a random server ID for the test process.
-                    hb_http_server:set_proc_server_id(
-                        hb_util:human_id(crypto:strong_rand_bytes(32))
-                    ),
+                    hb_http_server:set_proc_server_id(ServerID),
                     hb_store:start(Store),
                     timer:sleep(100)
                 end,
@@ -278,7 +282,7 @@ generate_test_suite(Suite, Stores) ->
                     % next test.
                     hb_store:reset(Store),
                     hb_store:stop(Store),
-					hb_http_server:set_proc_server_id(undefined)
+                    hb_http_server:set_proc_server_id(undefined)
                 end,
                 [
                     {
@@ -303,23 +307,20 @@ generate_test_suite(Suite, Stores) ->
 %%% Tests
 
 %% @doc Test path resolution dynamics.
-simple_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+simple_path_resolution_test(Store) ->
     ok = hb_store:write(Store, <<"test-file">>, <<"test-data">>),
     hb_store:make_link(Store, <<"test-file">>, <<"test-link">>),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, <<"test-link">>)).
 
 %% @doc Ensure that we can resolve links recursively.
-resursive_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+resursive_path_resolution_test(Store) ->
     hb_store:write(Store, <<"test-file">>, <<"test-data">>),
     hb_store:make_link(Store, <<"test-file">>, <<"test-link">>),
     hb_store:make_link(Store, <<"test-link">>, <<"test-link2">>),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, <<"test-link2">>)).
 
 %% @doc Ensure that we can resolve links through a directory.
-hierarchical_path_resolution_test(Opts) ->
-    Store = Opts,
+hierarchical_path_resolution_test(Store) ->
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),

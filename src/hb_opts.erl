@@ -130,7 +130,7 @@ default_message() ->
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => if_present,
-        debug_resolve_links => true,
+        debug_resolve_links => false,
 		trusted => #{},
         routes => [
             #{
@@ -165,6 +165,13 @@ default_message() ->
         ],
         store =>
             [
+                #{
+                    <<"store-module">> => hb_store_lru,
+                    <<"persistent-store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-mainnet">>
+                    }
+                },
                 #{
                     <<"store-module">> => hb_store_fs,
                     <<"prefix">> => <<"cache-mainnet">>

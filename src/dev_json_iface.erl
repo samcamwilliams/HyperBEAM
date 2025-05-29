@@ -102,7 +102,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
         hb_message:convert(
             hb_private:reset(RawMsg),
             tabm,
-            #{}
+            Opts
         ),
     MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),

@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, number/1, list_to_numbered_map/1]).
+-export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
@@ -264,7 +264,13 @@ number(List) ->
     ).
 
 %% @doc Convert a list of elements to a map with numbered keys.
-list_to_numbered_map(List) ->
+list_to_numbered_message(Msg) when is_map(Msg) ->
+    case is_ordered_list(Msg, #{}) of
+        true -> Msg;
+        false ->
+            throw({cannot_convert_to_numbered_message, Msg})
+    end;
+list_to_numbered_message(List) ->
     hb_maps:from_list(number(List)).
 
 %% @doc Determine if the message given is an ordered list, starting from 1.
@@ -283,10 +289,24 @@ is_ordered_list(N, Msg, _Opts) ->
             )
     end.
 
+%% @doc Replace a key in a list with a new value.
+list_replace(List, Key, Value) ->
+    lists:foldr(
+        fun(Elem, Acc) ->
+            case Elem of
+                Key when is_list(Value) -> Value ++ Acc;
+                Key -> [Value | Acc];
+                _ -> [Elem | Acc]
+            end
+        end,
+        [],
+        List
+    ).
+
 %% @doc Take a list and return a list of unique elements. The function is
 %% order-preserving.
 unique(List) ->
-    lists:foldl(
+    lists:foldr(
         fun(Item, Acc) ->
             case lists:member(Item, Acc) of
                 true -> Acc;
@@ -297,9 +317,13 @@ unique(List) ->
         List
     ).
 
+%% @doc Returns the intersection of two lists, with stable ordering.
+list_intersection(List1, List2) ->
+    lists:filter(fun(Item) -> lists:member(Item, List2) end, List1).
+
 %% @doc Take a message with numbered keys and convert it to a list of tuples
-%% with the associated key as an integer and a value. Optionally, it takes a
-%% standard map of HyperBEAM runtime options.
+%% with the associated key as an integer. Optionally, it takes a standard
+%% message of HyperBEAM runtime options.
 message_to_ordered_list(Message) ->
     message_to_ordered_list(Message, #{}).
 message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
@@ -591,6 +615,8 @@ format_binary(Bin) ->
     end.
 
 %% @doc Add `,' characters to a number every 3 digits to make it human readable.
+human_int(Float) when is_float(Float) ->
+    human_int(erlang:round(Float));
 human_int(Int) ->
     lists:reverse(add_commas(lists:reverse(integer_to_list(Int)))).
 

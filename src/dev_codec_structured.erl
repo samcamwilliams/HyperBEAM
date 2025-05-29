@@ -25,7 +25,7 @@ from(List, Req, Opts) when is_list(List) ->
     % If the message to encode is a list, we encode it as if it is a map, then
     % add the `.' key to the `ao-types' field, indicating that this message is
     % a list.
-    {ok, DecodedAsMap} = from(hb_util:list_to_numbered_map(List), Req, Opts),
+    {ok, DecodedAsMap} = from(hb_util:list_to_numbered_message(List), Req, Opts),
     AOTypes = decode_ao_types(DecodedAsMap, Opts),
     {ok,
         DecodedAsMap#{
@@ -164,7 +164,7 @@ to(TABM0, Req, Opts) ->
     % If the message is a list, we need to convert it back.
     case maps:get(<<".">>, Types, not_found) of
         not_found -> {ok, ResMsg};
-        <<"list">> -> {ok, hb_util:message_to_ordered_list(ResMsg)}
+        <<"list">> -> {ok, hb_util:message_to_ordered_list(ResMsg, Opts)}
     end.
 
 %% @doc Generate an `ao-types' structured field from a map of keys and their
@@ -228,10 +228,9 @@ encode_value(Value) when is_float(Value) ->
     ?no_prod("Must use structured field representation for floats!"),
     {<<"float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
-    [EncodedIOList, _] =
-        hb_structured_fields:item(
-            {item, {string, atom_to_binary(Value, latin1)}, []}),
-    Encoded = list_to_binary(EncodedIOList),
+    EncodedIOList =
+        hb_structured_fields:item({item, {token, hb_util:bin(Value)}, []}),
+    Encoded = hb_util:bin(EncodedIOList),
     {<<"atom">>, Encoded};
 encode_value(Values) when is_list(Values) ->
     EncodedValues =
@@ -281,7 +280,7 @@ decode_value(float, Value) ->
 decode_value(atom, Value) ->
     {item, {_, AtomString}, _} =
         hb_structured_fields:parse_item(Value),
-    binary_to_existing_atom(AtomString);
+    hb_util:atom(AtomString);
 decode_value(list, Value) when is_binary(Value) ->
     lists:map(
         fun({item, {string, <<"(ao-type-", Rest/binary>>}, _}) ->

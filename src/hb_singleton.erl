@@ -237,10 +237,11 @@ apply_types(Msg, Opts) ->
     hb_maps:fold(
         fun(Key, Val, Acc) ->
             {_, K, V} = maybe_typed(Key, Val, Opts),
-            hb_maps:put(K, V, Acc)
+            hb_maps:put(K, V, Acc, Opts)
         end,
         #{},
-        Msg
+        Msg,
+        Opts
     ).
 
 %% @doc Step 4: Group headers/query by N-scope.
