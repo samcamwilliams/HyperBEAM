@@ -93,18 +93,44 @@ type(Opts, Key) ->
                     end
             end;
         not_found ->
-            ?event(debug_type_detection, {key_not_found_checking_children, Key}),
-            % Check if this is a composite by seeing if it has children
-            case list(Opts, Key) of
-                {ok, []} -> 
-                    ?event(debug_type_detection, {no_children_not_found, Key}),
-                    not_found;  % No children, doesn't exist
-                {ok, Children} -> 
-                    ?event(debug_type_detection, {has_children_composite, Key, Children}),
-                    composite;  % Has children, it's a composite
-                {error, Error} -> 
-                    ?event(debug_type_detection, {list_error_not_found, Key, Error}),
-                    not_found
+            ?event(debug_type_detection, {key_not_found_triggering_flush, Key}),
+            % Key not found in committed data, trigger flush and retry
+            find_or_spawn_instance(Opts) ! {flush, self(), Ref = make_ref()},
+            receive
+                {flushed, Ref} -> 
+                    case lmdb:get(find_env(Opts), Key) of
+                        {ok, Value} ->
+                            ?event(debug_type_detection, {found_after_flush, Key, Value}),
+                            LinkPrefixSize = byte_size(<<"link:">>),
+                            case byte_size(Value) > LinkPrefixSize andalso
+                                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
+                                true ->
+                                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
+                                    type(Opts, Link);
+                                false ->
+                                    case Value of
+                                        <<"group">> -> composite;
+                                        _ -> simple
+                                    end
+                            end;
+                        not_found ->
+                            ?event(debug_type_detection, {still_not_found_after_flush_checking_children, Key}),
+                            % Still not found after flush, check if this is a composite by seeing if it has children
+                            case list(Opts, Key) of
+                                {ok, []} -> 
+                                    ?event(debug_type_detection, {no_children_not_found, Key}),
+                                    not_found;  % No children, doesn't exist
+                                {ok, Children} -> 
+                                    ?event(debug_type_detection, {has_children_composite, Key, Children}),
+                                    composite;  % Has children, it's a composite
+                                {error, Error} -> 
+                                    ?event(debug_type_detection, {list_error_not_found, Key, Error}),
+                                    not_found
+                            end
+                    end
+            after ?CONNECT_TIMEOUT -> 
+                ?event(debug_type_detection, {flush_timeout, Key}),
+                not_found
             end
     end.
 
@@ -443,8 +469,6 @@ make_link(StoreOpts, Existing, New) when is_list(Existing) ->
     make_link(StoreOpts, ExistingBin, New);
 make_link(StoreOpts, Existing, New) ->
    ExistingBin = hb_util:bin(Existing),
-   % Debug: Log what links are being created
-   io:format("LMDB make_link: ~p -> ~p~n", [New, ExistingBin]),
    % Ensure parent groups exist for the new link path (like filesystem ensure_dir)
    ensure_parent_groups(StoreOpts, New),
    write(StoreOpts, New, <<"link:", ExistingBin/binary>>). 
@@ -1416,4 +1440,4 @@ isolated_type_debug_test() ->
     OtherKeyResult = read(StoreOpts, OtherKeyPath),
     ?event(isolated_debug, {other_key_read_result, OtherKeyResult}),
     
-    stop(StoreOpts).
+    stop(StoreOpts). 
