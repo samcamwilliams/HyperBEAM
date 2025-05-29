@@ -889,9 +889,10 @@ run_wasm_unsigned_test() ->
     ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
+    Opts = #{ priv_wallet => hb:wallet() },
     URL = hb_http_server:start_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
-    {ok, Res} = post(URL, Msg, #{}),
+    {ok, Res} = post(URL, hb_message:commit(Msg, Opts), Opts),
     ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->

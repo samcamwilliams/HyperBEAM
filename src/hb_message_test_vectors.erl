@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    sign_node_message_test(
+    signed_non_bundle_is_bundlable_test(
         #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -83,6 +83,8 @@ test_suite() ->
             fun message_with_simple_embedded_list_test/2},
         {<<"Nested empty map">>,
             fun nested_empty_map_test/2},
+        {<<"Empty body">>,
+            fun empty_body_test/2},
         {<<"Nested structured fields">>,
             fun nested_structured_fields_test/2},
         {<<"Single layer message to encoding">>,
@@ -155,6 +157,8 @@ test_suite() ->
             fun sign_deep_message_from_lazy_cache_read_test/2},
         {<<"ID of deep message and link message match">>,
             fun id_of_deep_message_and_link_message_match_test/2},
+        {<<"Signed non-bundle is bundlable">>,
+            fun signed_non_bundle_is_bundlable_test/2},
         {<<"Codec round-trip conversion is idempotent">>,
             fun codec_roundtrip_conversion_is_idempotent_test/2}
     ].
@@ -595,6 +599,16 @@ nested_empty_map_test(Codec, Opts) ->
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     MatchRes = hb_message:match(Msg, Decoded, strict, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes).
+
+empty_body_test(Codec, Opts) ->
+    Msg = #{ <<"body">> => <<>> },
+    Signed = hb_message:commit(Msg, Opts, Codec),
+    Encoded = hb_message:convert(Signed, Codec, <<"structured@1.0">>, Opts),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    MatchRes = hb_message:match(Signed, Decoded, strict, Opts),
     ?event({match_result, MatchRes}),
     ?assert(MatchRes).
 
@@ -1429,6 +1443,39 @@ id_of_deep_message_and_link_message_match_test(_Codec, Opts) ->
     LinkID = hb_message:id(Linkified, Opts),
     ?event(linkify, {test_recvd_link_id, {id, LinkID}}),
     ?assertEqual(BaseID, LinkID).
+
+signed_non_bundle_is_bundlable_test(
+        Codec = #{ <<"device">> := <<"httpsig@1.0">>, <<"bundle">> := true },
+        Opts) ->
+    Msg =
+        hb_message:commit(
+            #{
+                <<"target">> => hb_util:human_id(crypto:strong_rand_bytes(32)),
+                <<"type">> => <<"Message">>,
+                <<"function">> => <<"fac">>,
+                <<"parameters">> => [5.0]
+            },
+            Opts,
+            maps:get(<<"device">>, Codec)
+        ),
+    Encoded =
+       hb_message:convert(
+            Msg,
+            Codec,
+            <<"structured@1.0">>,
+            Opts
+        ),
+    Decoded =
+        hb_message:convert(
+            Encoded,
+            <<"structured@1.0">>,
+            maps:get(<<"device">>, Codec),
+            Opts
+        ),
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)),
+    ?assert(hb_message:verify(Decoded, all, Opts));
+signed_non_bundle_is_bundlable_test(_Codec, _Opts) ->
+    skip.
 
 %% Ensure that we can write a message with multiple commitments to the store,
 %% then read back all of the written commitments by loading the message's 
