@@ -51,10 +51,15 @@ find_pid(StoreOpts) ->
             undefined ->
                 case hb_name:lookup({in_memory, ServerID}) of
                     undefined ->
-                        start(StoreOpts);
-                    FoundPID -> FoundPID
+                        {ok, ServerPID} = start(StoreOpts),
+                        ServerPID;
+                    FoundPID ->
+                        ?event(x, {registered, {server, ServerID}, {pid, FoundPID}}),
+                        FoundPID
                 end;
-            FoundPID -> FoundPID
+            FoundPID ->
+                ?event(x, {in_process, {server, ServerID}, {pid, FoundPID}}),
+                FoundPID
         end,
     cache_pid(ServerID, PID),
     PID.
@@ -68,18 +73,22 @@ start(Opts) ->
     ServerID = find_id(Opts),
     NormOpts = Opts#{ <<"server-id">> => ServerID },
     ?event(cache_lru, {starting_lru_server, ServerID}),
+    From = self(),
     spawn(
         fun() ->
-            State = init(NormOpts),
+            State = init(From, NormOpts),
             server_loop(State, NormOpts)
         end
-    ).
+    ),
+    receive
+        {ok, PID} -> {ok, PID}
+    end.
 
 %% @doc Create the `ets' tables for the LRU cache:
 %% - The cache of data itself (public, with read concurrency enabled)
 %% - A set for the LRU's stats.
 %% - An ordered set for the cache's index.
-init(Opts) ->
+init(From, Opts) ->
     ServerID = find_id(Opts),
     % Start the persistent store.
     case hb_maps:get(<<"persistent-store">>, Opts, no_store) of
@@ -99,6 +108,7 @@ init(Opts) ->
         {in_memory_lru_cache, ServerID},
         #{cache_table => CacheTable}
     ),
+    From ! {ok, self()},
     #{
         cache_table => CacheTable,
         stats_table => CacheStatsTable,
@@ -706,14 +716,12 @@ unknown_value_test() ->
     DefaultOpts = test_opts(no_store),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     ?assertEqual(not_found, read(StoreOpts, <<"key1">>)).
 
 cache_term_test() ->
     DefaultOpts = test_opts(no_store),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"key1">>)).
 
@@ -721,7 +729,6 @@ evict_oldest_items_test() ->
     DefaultOpts = test_opts(no_store, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -734,7 +741,6 @@ evict_items_with_insufficient_space_test() ->
     DefaultOpts = test_opts(no_store, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -746,7 +752,6 @@ evict_but_able_to_read_from_fs_store_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -761,8 +766,7 @@ evict_but_able_to_read_from_fs_store_test() ->
 stop_test() ->
     Opts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, Opts),
-    ServerPID = start(StoreOpts),
-    timer:sleep(100),
+    {ok, ServerPID} = start(StoreOpts),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -777,7 +781,6 @@ reset_test() ->
     DefaultOpts = test_opts(default),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     write(StoreOpts, <<"key2">>, <<"Hi">>),
     reset(StoreOpts),
@@ -790,7 +793,6 @@ list_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     make_group(StoreOpts, <<"sub">>),
     write(StoreOpts, <<"hello">>, <<"world">>),
@@ -815,7 +817,6 @@ type_test() ->
     DefaultOpts = test_opts(default, 500),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     ?assertEqual(simple, type(StoreOpts, <<"key1">>)),
@@ -828,7 +829,6 @@ replace_link_test() ->
     DefaultOpts = test_opts(no_store),
     StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
     start(StoreOpts),
-    timer:sleep(100),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     make_link(StoreOpts, <<"key1">>, <<"keylink">>),
     ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"keylink">>)),
