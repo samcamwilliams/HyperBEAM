@@ -23,8 +23,7 @@
 -export([start/1, stop/1, scope/0, scope/1, reset/1]).
 -export([read/2, write/3, list/2]).
 -export([make_group/2, make_link/3, type/2]).
--export([path/2, add_path/3, sync/1, resolve/2]).
--export([resolve_path_links/2, find_env/1]).
+-export([path/2, add_path/3, resolve/2]).
 
 %% Test framework and project includes
 -include_lib("eunit/include/eunit.hrl").
@@ -220,6 +219,7 @@ read(StoreOpts, Key) ->
 %% This is the internal implementation that handles actual database reads.
 read_direct(StoreOpts, Key) ->
     LinkPrefixSize = byte_size(<<"link:">>),
+
     case lmdb:get(find_env(StoreOpts), Key) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
@@ -247,11 +247,11 @@ read_direct(StoreOpts, Key) ->
             ?event(read_miss, {miss, Key}),
             find_or_spawn_instance(StoreOpts) ! {flush, self(), Ref = make_ref()},
             receive
-                {flushed, Ref} -> 
+                {flushed, Ref} ->
                     case lmdb:get(find_env(StoreOpts), Key) of
-                        {ok, Value} -> {ok, Value};
+                        {ok, _} -> read_direct(StoreOpts, Key);
                         not_found -> not_found
-                    end
+                    end 
             after ?CONNECT_TIMEOUT -> {error, timeout}
             end
     end.
@@ -340,6 +340,7 @@ scope(_) -> scope().
 -spec list(map(), binary()) -> {ok, [binary()]} | {error, term()}.
 list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
     Env = find_env(StoreOpts),
+    ?event(debug_lmdb, { path, Path }),
     PathSize = byte_size(Path),
     try
        Children = lmdb:fold(Env, default,
@@ -376,6 +377,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            end,
            []
        ),
+       ?event(debug_lmdb, {children, Children}),
        Children
     catch
        _:Error -> {error, Error}
@@ -973,6 +975,7 @@ basic_test() ->
         <<"prefix">> => <<"/tmp/store-1">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     Res = write(StoreOpts, <<"Hello">>, <<"World2">>),
     ?assertEqual(ok, Res),
     {ok, Value} = read(StoreOpts, <<"Hello">>),
@@ -1018,6 +1021,7 @@ group_test() ->
       <<"prefix">> => <<"/tmp/store3">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     make_group(StoreOpts, <<"colors">>),
     % Groups should be detected as composite types
     ?assertEqual(composite, type(StoreOpts, <<"colors">>)),
@@ -1034,11 +1038,24 @@ link_test() ->
       <<"prefix">> => <<"/tmp/store3">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     write(StoreOpts, <<"foo/bar/baz">>, <<"Bam">>),
     make_link(StoreOpts, <<"foo/bar/baz">>, <<"foo/beep/baz">>),
     {ok, Result} = read(StoreOpts, <<"foo/beep/baz">>),
     ?event({ result, Result}),
-    ?assertEqual(Result, <<"Bam">>).
+    ?assertEqual(<<"Bam">>, Result).
+
+link_fragment_test() ->
+    StoreOpts = #{
+      <<"prefix">> => <<"/tmp/store3">>,
+      <<"max-size">> => ?DEFAULT_SIZE
+    },
+    reset(StoreOpts),
+    write(StoreOpts, [<<"data">>, <<"bar">>, <<"baz">>], <<"Bam">>),
+    make_link(StoreOpts, [<<"data">>, <<"bar">>], <<"my-link">>),
+    {ok, Result} = read(StoreOpts, [<<"my-link">>, <<"baz">>]),
+    ?event({ result, Result}),
+    ?assertEqual(<<"Bam">>, Result).
 
 %% @doc Type test - verifies type detection for both simple and composite entries.
 %%
@@ -1050,6 +1067,7 @@ type_test() ->
       <<"prefix">> => <<"/tmp/store-6">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     make_group(StoreOpts, <<"assets">>),
     Type = type(StoreOpts, <<"assets">>),
     ?event({type, Type}),
@@ -1079,6 +1097,7 @@ link_key_list_test() ->
       <<"prefix">> => <<"/tmp/store-7">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     write(StoreOpts, [ <<"parent">>, <<"key">> ], <<"value">>),
     make_link(StoreOpts, [ <<"parent">>, <<"key">> ], <<"my-link">>),
     timer:sleep(100),
@@ -1101,6 +1120,7 @@ path_traversal_link_test() ->
       <<"prefix">> => <<"/tmp/store-8">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
+    reset(StoreOpts),
     % Create the actual data at group/key
     write(StoreOpts, [<<"group">>, <<"key">>], <<"target-value">>),
     % Create a link from "link" to "group"
@@ -1151,29 +1171,6 @@ exact_hb_store_test() ->
     ?assertEqual({ok, <<"test-data">>}, Result),
     ok = stop(StoreOpts).
 
-%% @doc Sync test - verifies that sync forces immediate flush of writes.
-%%
-%% This test writes data to the store and immediately calls sync to force
-%% a flush, then verifies that the data is immediately readable without
-%% waiting for automatic flush timers.
-sync_test() ->
-    StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store-sync">>,
-      <<"max-size">> => ?DEFAULT_SIZE
-    },
-    
-    % Write some data
-    write(StoreOpts, <<"sync-key">>, <<"sync-value">>),
-    
-    % Force immediate flush
-    ?assertEqual(ok, sync(StoreOpts)),
-    
-    % Data should be immediately readable
-    {ok, Value} = read(StoreOpts, <<"sync-key">>),
-    ?assertEqual(<<"sync-value">>, Value),
-    
-    ok = stop(StoreOpts).
-
 %% @doc Test cache-style usage through hb_store interface
 cache_style_test() ->
     hb:init(),
@@ -1182,15 +1179,12 @@ cache_style_test() ->
       <<"prefix">> => <<"/tmp/store-cache-style">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
-    
+    reset(StoreOpts),
     % Start the store
     hb_store:start(StoreOpts),
     
     % Test writing through hb_store interface  
     ok = hb_store:write(StoreOpts, <<"test-key">>, <<"test-value">>),
-    
-    % Wait a bit
-    timer:sleep(100),
     
     % Test reading through hb_store interface
     Result = hb_store:read(StoreOpts, <<"test-key">>),
@@ -1440,4 +1434,4 @@ isolated_type_debug_test() ->
     OtherKeyResult = read(StoreOpts, OtherKeyPath),
     ?event(isolated_debug, {other_key_read_result, OtherKeyResult}),
     
-    stop(StoreOpts). 
+    stop(StoreOpts).
