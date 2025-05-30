@@ -54,11 +54,9 @@ find_pid(StoreOpts) ->
                         {ok, ServerPID} = start(StoreOpts),
                         ServerPID;
                     FoundPID ->
-                        ?event(x, {registered, {server, ServerID}, {pid, FoundPID}}),
                         FoundPID
                 end;
             FoundPID ->
-                ?event(x, {in_process, {server, ServerID}, {pid, FoundPID}}),
                 FoundPID
         end,
     cache_pid(ServerID, PID),
@@ -551,14 +549,21 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
         nil ->
             ok;
         TailKey ->
-            {raw,
-                Entry = #{
-                    size := ReclaimedSize,
-                    id := ID,
-                    value := TailValue,
-                    group := Group
-                }
-            } = get_cache_entry(State, TailKey),
+            Entry = #{
+                size := ReclaimedSize,
+                id := ID,
+                value := TailValue,
+                group := Group
+            } = case get_cache_entry(State, TailKey) of
+                nil ->
+                    % Raises a runtime error as this represents
+                    % a non-recoverable error. This would signifies a
+                    % inconsistency between the index and the cache table.
+                    erlang:error(cache_entry_not_found, [TailKey]);
+                {raw, RawEntry} ->
+                    RawEntry
+            end,
+
             ?event(cache_lru, {evict, TailKey, claiming_size, ReclaimedSize}),
             delete_cache_index(State, ID),
             delete_cache_entry(State, TailKey),
@@ -673,12 +678,12 @@ replace_entry(_State, _Key, _Value, _ValueSize, {Type, _}) ->
 update_recently_used(State, Key, Entry) ->
     % Acquire a new ID
     NewID = get_index_id(State),
+    % Update the entry's ID
+    add_cache_entry(State, Key, {raw, Entry#{id := NewID}}),
     #{id := PreviousID} = Entry,
     % Delete previous ID to priorize the new NewID
     delete_cache_index(State, PreviousID),
-    add_cache_index(State, NewID, Key),
-    % Update the entry's ID
-    add_cache_entry(State, Key, {raw, Entry#{id := NewID}}).
+    add_cache_index(State, NewID, Key).
 
 update_cache_size(#{stats_table := Table}, PreviousSize, NewSize) ->
     ets:update_counter(Table, size, [{2, -PreviousSize}, {2, NewSize}]).
