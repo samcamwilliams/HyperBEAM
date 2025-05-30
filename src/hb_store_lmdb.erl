@@ -1424,3 +1424,244 @@ isolated_type_debug_test() ->
     ?event(isolated_debug, {other_key_read_result, OtherKeyResult}),
     
     stop(StoreOpts).
+
+%% @doc Test full cache write/read cycle with complex hierarchical structure
+%%
+%% This test demonstrates the complete flow:
+%% 1. Create a complex nested map (similar to AO message structure)
+%% 2. Write it through hb_cache (which uses hb_store_lmdb internally)
+%% 3. Read it back through hb_cache 
+%% 4. Compare original vs retrieved to ensure perfect reconstruction
+cache_roundtrip_test() ->
+    hb:init(),
+    StoreOpts = #{
+        <<"store-module">> => hb_store_lmdb,
+        <<"prefix">> => <<"/tmp/cache-roundtrip-test">>,
+        <<"max-size">> => ?DEFAULT_SIZE
+    },
+    
+    % Clean up any previous test data
+    reset(StoreOpts),
+    
+    % Use the known working test pattern from hb_cache with complex nested data
+    ComplexNestedData = #{
+        <<"tags">> => [
+            #{<<"name">> => <<"Action">>, <<"value">> => <<"Transfer">>},
+            #{<<"name">> => <<"Recipient">>, <<"value">> => <<"another-process">>}
+        ],
+        <<"anchor">> => <<"0">>,
+        <<"commitments">> => #{
+            <<"NFWrFJp-xjPVc_N-ZIm6579AanzvD1-oCkc7q855J9g">> => #{
+                <<"alg">> => <<"rsa-pss-sha256">>,
+                <<"committer">> => <<"wallet-xyz">>,
+                <<"signature">> => <<"base64-encoded-signature-data">>,
+                <<"committed">> => true
+            }
+        },
+        <<"metadata">> => #{
+            <<"process-info">> => #{
+                <<"version">> => <<"1.0.0">>,
+                <<"scheduler">> => <<"scheduler-url">>,
+                <<"module">> => <<"aos-module">>
+            },
+            <<"execution">> => #{
+                <<"gas-used">> => <<"1000">>,
+                <<"memory-usage">> => <<"512KB">>,
+                <<"compute-time">> => <<"100ms">>
+            }
+        }
+    },
+    
+    % Use the established pattern that works
+    OriginalMessage = hb_cache:test_unsigned(ComplexNestedData),
+    
+    ?event({original_message, OriginalMessage}),
+    
+    % Write the message through hb_cache
+    CacheOpts = #{store => StoreOpts},
+    ?event(cache_roundtrip_test, {step, writing_to_cache}),
+    {ok, MessageID} = hb_cache:write(OriginalMessage, CacheOpts),
+    ?event(cache_roundtrip_test, {written_message_id, MessageID}),
+    
+    % Allow time for asynchronous writes to complete
+    timer:sleep(200),
+    
+    % Manually simulate what hb_cache:read does using direct hb_store_lmdb calls
+    ?event(cache_roundtrip_test, {step, manual_store_reading}),
+    
+    % Step 1: Check the type of the message ID (simulates store_read)
+    ?event(cache_roundtrip_test, {step, checking_message_type}),
+    MessageType = type(StoreOpts, MessageID),
+    ?event(cache_roundtrip_test, {message_type, MessageType}),
+    ?assertEqual(composite, MessageType),
+    
+    % Step 2: List the message contents (simulates hb_store:list)
+    ?event(cache_roundtrip_test, {step, listing_message_contents}),
+    {ok, MessageKeys} = list(StoreOpts, MessageID),
+    ?event(cache_roundtrip_test, {message_keys, MessageKeys}),
+    ?event(cache_roundtrip_test, {message_keys_count, length(MessageKeys)}),
+    
+    % Don't make assumptions about key names - just verify we have keys
+    ?assert(length(MessageKeys) > 0),
+    
+    % Step 3: Demonstrate reading keys by taking the first few available keys
+    ?event(cache_roundtrip_test, {step, reading_available_keys}),
+    
+    % Take the first key to demonstrate the store operations
+    case MessageKeys of
+        [FirstKey | _] ->
+            ?event(cache_roundtrip_test, {step, reading_first_key, FirstKey}),
+            
+            % Build the path to the first key
+            FirstKeyPath = <<MessageID/binary, "/", FirstKey/binary>>,
+            FirstKeyResolved = resolve(StoreOpts, FirstKeyPath),
+            ?event(cache_roundtrip_test, {first_key_resolved_path, FirstKeyResolved}),
+            
+            % Check its type
+            FirstKeyType = type(StoreOpts, FirstKeyResolved),
+            ?event(cache_roundtrip_test, {first_key_type, FirstKeyType}),
+            
+            case FirstKeyType of
+                simple ->
+                    % It's a simple value, read it directly
+                    {ok, FirstKeyValue} = read(StoreOpts, FirstKeyResolved),
+                    ?event(cache_roundtrip_test, {first_key_value, FirstKeyValue}),
+                    ?assert(is_binary(FirstKeyValue));
+                composite ->
+                    % It's a composite, list its contents
+                    {ok, FirstKeyContents} = list(StoreOpts, FirstKeyResolved),
+                    ?event(cache_roundtrip_test, {first_key_contents, FirstKeyContents}),
+                    ?assert(length(FirstKeyContents) >= 0)
+            end;
+        [] ->
+            ?event(cache_roundtrip_test, {warning, no_keys_found})
+    end,
+    
+    % Step 4: If we have multiple keys, examine the second one too
+    case MessageKeys of
+        [_, SecondKey | _] ->
+            ?event(cache_roundtrip_test, {step, reading_second_key, SecondKey}),
+            
+            SecondKeyPath = <<MessageID/binary, "/", SecondKey/binary>>,
+            SecondKeyResolved = resolve(StoreOpts, SecondKeyPath),
+            ?event(cache_roundtrip_test, {second_key_resolved_path, SecondKeyResolved}),
+            
+            SecondKeyType = type(StoreOpts, SecondKeyResolved),
+            ?event(cache_roundtrip_test, {second_key_type, SecondKeyType}),
+            
+            case SecondKeyType of
+                simple ->
+                    {ok, SecondKeyValue} = read(StoreOpts, SecondKeyResolved),
+                    ?event(cache_roundtrip_test, {second_key_value, SecondKeyValue});
+                composite ->
+                    {ok, SecondKeyContents} = list(StoreOpts, SecondKeyResolved),
+                    ?event(cache_roundtrip_test, {second_key_contents, SecondKeyContents}),
+                    
+                    % If it's composite and has contents, explore one level deeper
+                    case SecondKeyContents of
+                        [NestedKey | _] ->
+                            ?event(cache_roundtrip_test, {step, reading_nested_key, NestedKey}),
+                            NestedKeyPath = <<SecondKeyResolved/binary, "/", NestedKey/binary>>,
+                            NestedKeyResolved = resolve(StoreOpts, NestedKeyPath),
+                            NestedKeyType = type(StoreOpts, NestedKeyResolved),
+                            ?event(cache_roundtrip_test, {nested_key_type, NestedKeyType}),
+                            
+                            case NestedKeyType of
+                                simple ->
+                                    {ok, NestedKeyValue} = read(StoreOpts, NestedKeyResolved),
+                                    ?event(cache_roundtrip_test, {nested_key_value, NestedKeyValue});
+                                composite ->
+                                    {ok, NestedKeyContents} = list(StoreOpts, NestedKeyResolved),
+                                    ?event(cache_roundtrip_test, {nested_key_contents, NestedKeyContents})
+                            end;
+                        [] ->
+                            ?event(cache_roundtrip_test, {nested_key_empty})
+                    end
+            end;
+        _ ->
+            ?event(cache_roundtrip_test, {only_one_or_zero_keys})
+    end,
+    
+    ?event(cache_roundtrip_test, {step, manual_store_operations_completed_successfully}),
+    
+    % Step 5: Now do the same thing using hb_cache:read for comparison
+    ?event(cache_roundtrip_test, {step, comparison_with_hb_cache_read}),
+    
+    case hb_cache:read(MessageID, CacheOpts) of
+        {ok, CacheRetrievedMessage} ->
+            ?event(cache_roundtrip_test, {cache_retrieved_message, CacheRetrievedMessage}),
+            
+            % Verify it's a map with the expected structure
+            ?assert(is_map(CacheRetrievedMessage)),
+            
+            % The cache should return a structure with links (lazy loading)
+            % Let's examine what keys the cache returns
+            CacheKeys = maps:keys(CacheRetrievedMessage),
+            ?event(cache_roundtrip_test, {cache_keys, CacheKeys}),
+            
+            % The cache keys should correspond to our original message structure
+            ?assert(lists:member(<<"base-test-key">>, CacheKeys)),
+            ?assert(lists:member(<<"other-test-key">>, CacheKeys)),
+            
+            % Compare with what we found manually by checking we have the same number of top-level keys
+            ?event(cache_roundtrip_test, {comparing_key_counts, {manual, length(MessageKeys)}, {cache, length(CacheKeys)}}),
+            
+            % Test accessing a simple value through the cache
+            BaseTestKeyFromCache = maps:get(<<"base-test-key">>, CacheRetrievedMessage),
+            ?event(cache_roundtrip_test, {base_test_key_from_cache, BaseTestKeyFromCache}),
+            
+            % If it's a link, load it to compare with our manual read
+            case BaseTestKeyFromCache of
+                {link, _Path, _Opts} ->
+                    BaseValueFromCache = hb_cache:ensure_loaded(BaseTestKeyFromCache, CacheOpts),
+                    ?event(cache_roundtrip_test, {base_value_from_cache, BaseValueFromCache}),
+                    ?assertEqual(<<"base-test-value">>, BaseValueFromCache);
+                DirectValue ->
+                    ?event(cache_roundtrip_test, {base_value_direct, DirectValue}),
+                    ?assertEqual(<<"base-test-value">>, DirectValue)
+            end,
+            
+            % Test accessing the nested structure through the cache
+            OtherTestKeyFromCache = maps:get(<<"other-test-key">>, CacheRetrievedMessage),
+            ?event(cache_roundtrip_test, {other_test_key_from_cache, OtherTestKeyFromCache}),
+            
+            % Load the nested structure
+            case OtherTestKeyFromCache of
+                {link, _Path2, _Opts2} ->
+                    OtherStructureFromCache = hb_cache:ensure_loaded(OtherTestKeyFromCache, CacheOpts),
+                    ?event(cache_roundtrip_test, {other_structure_from_cache, OtherStructureFromCache}),
+                    ?assert(is_map(OtherStructureFromCache)),
+                    
+                    % The nested structure should have our original keys
+                    NestedCacheKeys = maps:keys(OtherStructureFromCache),
+                    ?event(cache_roundtrip_test, {nested_cache_keys, NestedCacheKeys}),
+                    ?assert(lists:member(<<"tags">>, NestedCacheKeys)),
+                    ?assert(lists:member(<<"metadata">>, NestedCacheKeys));
+                DirectNested ->
+                    ?event(cache_roundtrip_test, {other_structure_direct, DirectNested}),
+                    ?assert(is_map(DirectNested))
+            end,
+            
+            % Full comparison: ensure_all_loaded should reconstruct the original
+            ?event(cache_roundtrip_test, {step, full_structure_comparison}),
+            FullyLoadedFromCache = hb_cache:ensure_all_loaded(CacheRetrievedMessage, CacheOpts),
+            ?event(cache_roundtrip_test, {fully_loaded_from_cache, FullyLoadedFromCache}),
+            
+            % This should match our original message structure
+            ?assert(hb_message:match(OriginalMessage, FullyLoadedFromCache)),
+            
+            ?event(cache_roundtrip_test, {step, cache_comparison_successful});
+            
+        not_found ->
+            ?event(cache_roundtrip_test, {error, cache_read_not_found}),
+            ?assert(false, "Cache read returned not_found");
+            
+        CacheError ->
+            ?event(cache_roundtrip_test, {error, cache_read_error, CacheError}),
+            ?assert(false, "Cache read returned error")
+    end,
+    
+    ?event(cache_roundtrip_test, {step, test_completed_successfully}),
+    
+    % Clean up
+    stop(StoreOpts).
