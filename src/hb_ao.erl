@@ -181,9 +181,9 @@ resolve_many(MsgList, Opts) ->
     Res = do_resolve_many(MsgList, Opts),
     ?event(ao_core, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
     Res.
-do_resolve_many([Msg3], Opts) ->
-    ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
-    {ok, hb_cache:ensure_loaded(Msg3, Opts)};
+do_resolve_many([Msg3], _Opts) ->
+    ?event(ao_core, {stage, 13, resolve_complete, Msg3}),
+    {ok, Msg3};
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
@@ -508,7 +508,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = hb_maps:without(?TEMP_OPTS, Opts, Opts),
+	UserOpts1 = hb_maps:remove(trace, hb_maps:without(?TEMP_OPTS, Opts, Opts), Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
@@ -628,7 +628,7 @@ resolve_stage(9, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 end;
             reset ->
                 Priv = hb_private:from_message(Msg3),
-                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }};
+                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
             ignore ->
                 Priv = hb_private:from_message(Msg3),
                 if not is_map(Priv) ->
@@ -646,8 +646,8 @@ resolve_stage(9, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) -
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
     Priv = hb_private:from_message(Msg3),
     resolve_stage(
-        8, Msg1, Msg2,
-        {Status, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }},
+        10, Msg1, Msg2,
+        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 9, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -700,7 +700,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     Msg1b =
         case DevID of
             undefined -> Msg1;
-            _ -> set(Msg1, <<"device">>, DevID, hb_maps:without(?TEMP_OPTS, Opts, Opts))
+            _ -> set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts))
         end,
     % If there is no path but there are elements to the request, we set these on
     % the base message. If there is a path, we do not modify the base message 
@@ -738,7 +738,12 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
 %% @doc Ensure that a message is loaded from the cache if it is an ID, or 
 %% a link, such that it is ready for execution.
 ensure_message_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
-    hb_util:ok(hb_cache:read(MsgID, Opts));
+    case hb_cache:read(MsgID, Opts) of
+        {ok, LoadedMsg} ->
+            LoadedMsg;
+        not_found ->
+            throw({necessary_message_not_found, MsgID})
+    end;
 ensure_message_loaded(MsgLink, Opts) when ?IS_LINK(MsgLink) ->
     hb_cache:ensure_loaded(MsgLink, Opts);
 ensure_message_loaded(Msg, _Opts) ->
@@ -979,13 +984,11 @@ deep_set(Msg, [], Value, Opts) when is_map(Msg) or is_list(Msg) ->
 deep_set(_Msg, [], Value, _Opts) ->
     Value;
 deep_set(Msg, [Key], Value, Opts) ->
-    DevRes = device_set(Msg, Key, Value, Opts),
-    ?event(debug, {deep_device_set_result, {msg, Msg}, {key, Key}, {res, DevRes}}),
-    DevRes;
+    device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 
         {ok, SubMsg} ->
-            ?event(debug,
+            ?event(
                 {traversing_deeper_to_set,
                     {current_key, Key},
                     {current_value, SubMsg},
@@ -996,7 +999,7 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
             ?event(debug, {deep_set_result, {msg, Msg}, {key, Key}, {res, Res}}),
             Res;
         _ ->
-            ?event(debug,
+            ?event(
                 {creating_new_map,
                     {current_key, Key},
                     {rest, Rest}
@@ -1028,12 +1031,13 @@ device_set(Msg, Key, Value, Mode, Opts) ->
             <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
         end,
 	?event(
-        debug,
+        ao_internal,
         {
             calling_device_set,
             {msg, Msg},
             {applying_set, Req}
-        }
+        },
+        Opts
     ),
 	Res =
         hb_util:ok(
@@ -1182,7 +1186,7 @@ message_to_device(Msg, Opts) ->
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
-	case hb_maps:find(exclude, HandlerMap, Opts) of
+	case hb_maps:find(excludes, HandlerMap, Opts) of
 		{ok, Exclude} ->
 			case lists:member(Key, Exclude) of
 				true ->
@@ -1262,8 +1266,7 @@ is_exported(_Info, _Key, _Opts) -> true.
 %% @doc Convert a key to a binary in normalized form.
 normalize_key(Key) -> normalize_key(Key, #{}).
 normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
-normalize_key(Key, _Opts) when is_binary(Key) ->
-    hb_util:to_lower(Key);
+normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
 normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
 normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
 normalize_key(Key, _Opts) when is_list(Key) ->
@@ -1347,10 +1350,25 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
                                 ok ->
                                     ModName =
                                         hb_util:key_to_atom(
-                                            hb_maps:get(<<"module-name">>, Msg),
+                                            hb_maps:get(
+                                                <<"module-name">>,
+                                                Msg,
+                                                undefined,
+                                                Opts
+                                            ),
                                             new_atoms
                                         ),
-                                    case erlang:load_module(ModName, hb_maps:get(<<"body">>, Msg, undefined, Opts)) of
+                                    LoadRes = 
+                                        erlang:load_module(
+                                            ModName,
+                                            hb_maps:get(
+                                                <<"body">>,
+                                                Msg,
+                                                undefined,
+                                                Opts
+                                            )
+                                        ),
+                                    case LoadRes of
                                         {module, _} ->
                                             {ok, ModName};
                                         {error, Reason} ->
@@ -1460,10 +1478,10 @@ default_module() -> dev_message.
 %% @doc The execution options that are used internally by this module
 %% when calling itself.
 internal_opts(Opts) ->
-    hb_maps:merge(Opts, #{
+    maps:merge(Opts, #{
         topic => hb_opts:get(topic, ao_internal, Opts),
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],
         spawn_worker => false,
         await_inprogress => false
-    }, Opts).
+    }).
