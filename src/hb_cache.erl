@@ -567,8 +567,8 @@ test_store_unsigned_empty_message(Store) ->
     ?event({retrieved_item, {path, {string, Path}}, {item, RetrievedItem}}),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
-test_store_unsigned_nested_empty_message(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+test_store_unsigned_nested_empty_message(Store) ->
+    ?event(debug_store_test, {store, Store}),
     hb_store:reset(Store),
     Item =
         #{ <<"layer1">> =>
@@ -580,6 +580,7 @@ test_store_unsigned_nested_empty_message(Opts) ->
                 <<"layer3c">> => #{}
             }
         },
+    Opts = #{ store => Store },
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
     ?assert(hb_message:match(Item, RetrievedItem, strict, Opts)).
@@ -658,11 +659,11 @@ test_deeply_nested_complex_message(Store) ->
                             <<"g">> => [<<"h">>, <<"i">>],
                             <<"j">> => 1337
                         },
-                        Opts#{ priv_wallet => Wallet }
+                        Opts
                     ),
                 <<"a">> => <<"b">>
             },
-            Opts#{ priv_wallet => Wallet }
+            Opts
         ),
     UID = hb_message:id(Outer, none, Opts),
     ?event({string, <<"================================================">>}),

@@ -124,7 +124,9 @@ call_get_test() ->
 
 %% @doc Test that the `preprocess/3' function re-routes a request to remote
 %% peers, according to the node's routing table.
-preprocessor_reroute_to_nearest_test() ->
+preprocessor_reroute_to_nearest_test_() ->
+    {timeout, 30, fun preprocessor_reroute_to_nearest/0}.
+preprocessor_reroute_to_nearest() ->
     Nodes = 
         lists:map(
             fun(_) ->

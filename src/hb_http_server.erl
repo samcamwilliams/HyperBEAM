@@ -415,7 +415,6 @@ set_opts(Request, Opts) ->
     },
     {set_opts(FinalOpts), FinalOpts}.
 
-
 %% @doc Get the node message for the current process.
 get_opts() ->
     get_opts(#{ http_server => get(server_id) }).

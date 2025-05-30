@@ -411,6 +411,12 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                     % Ensure that the response is from the expected peer, avoiding
                     % the risk of a man-in-the-middle attack.
                     Signers = hb_message:signers(Resp, Opts),
+					?event(green_zone, {join, signers, Signers}),
+					IsVerified = hb_message:verify(Resp, Signers, Opts),
+					?event(green_zone, {join, verify, IsVerified}),
+					IsPeerSigner = lists:member(PeerID, Signers),
+					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
+                    Signers = hb_message:signers(Resp, Opts),
                     ?event(green_zone, {join, signers, Signers}),
                     IsVerified = hb_message:verify(Resp, Signers, Opts),
                     ?event(green_zone, {join, verify, IsVerified}),

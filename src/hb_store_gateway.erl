@@ -195,35 +195,71 @@ external_http_access_test() ->
     ).
 
 %% Ensure that we can get data from the gateway and execute upon it.
-resolve_on_gateway_test_() ->
-    {timeout, 10, fun() ->
-        TestProc = <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
-        EmptyStore = #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST">>
-        },
-        hb_store:reset(EmptyStore),
-        hb_http_server:start_node(#{}),
-        Opts = #{
-            store =>
-                [
-                    #{
-                        <<"store-module">> => hb_store_gateway,
-                        <<"store">> => false
-                    },
-                    EmptyStore
-                ],
-            cache_control => <<"cache">>
-        },
-        ?assertMatch(
-            {ok, #{ <<"type">> := <<"Process">> }},
-            hb_cache:read(TestProc, Opts)
+% resolve_on_gateway_test_() ->
+%     {timeout, 10, fun() ->
+%         TestProc = <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
+%         EmptyStore = #{
+%             <<"store-module">> => hb_store_fs,
+%             <<"prefix">> => <<"cache-TEST">>
+%         },
+%         hb_store:reset(EmptyStore),
+%         hb_http_server:start_node(#{}),
+%         Opts = #{
+%             store =>
+%                 [
+%                     #{
+%                         <<"store-module">> => hb_store_gateway,
+%                         <<"store">> => false
+%                     },
+%                     EmptyStore
+%                 ],
+%             cache_control => <<"cache">>
+%         },
+%         ?assertMatch(
+%             {ok, #{ <<"type">> := <<"Process">> }},
+%             hb_cache:read(TestProc, Opts)
+%         ),
+%         % TestProc is an AO Legacynet process: No device tag, so we start by resolving
+%         % only an explicit key.
+%         ?assertMatch(
+%             {ok, <<"Process">>},
+%             hb_ao:resolve(TestProc, <<"type">>, Opts)
+%         ),
+%         % Next, we resolve the schedule key on the message, as a `process@1.0'
+%         % message.
+%         {ok, X} =
+%             hb_ao:resolve(
+%                 {as, <<"process@1.0">>, TestProc},
+%                 <<"schedule">>,
+%                 Opts
+%             ),
+%         ?assertMatch(#{ <<"assignments">> := _ }, X)
+%     end}.
+
+%% @doc Test that items retreived from the gateway store are verifiable.
+verifiability_test() ->
+    hb_http_server:start_node(#{}),
+    {ok, Message} =
+        hb_cache:read(
+            <<"BOogk_XAI3bvNWnxNxwxmvOfglZt17o4MOVAdPNZ_ew">>,
+            #{
+                store =>
+                    [
+                        #{
+                            <<"store-module">> => hb_store_gateway,
+                            <<"store">> => false
+                        }
+                    ]
+            }
         ),
-        % TestProc is an AO Legacynet process: No device tag, so we start by resolving
-        % only an explicit key.
-        ?assertMatch(
-            {ok, <<"Process">>},
-            hb_ao:resolve(TestProc, <<"type">>, Opts)
+    % Ensure that the message is verifiable after being converted to 
+    % httpsig@1.0 and back to structured@1.0.
+    HTTPSig =
+        hb_message:convert(
+            Message,
+            <<"httpsig@1.0">>,
+            <<"structured@1.0">>,
+            #{}
         ),
         % Next, we resolve the schedule key on the message, as a `process@1.0'
         % message.

@@ -181,9 +181,9 @@ resolve_many(MsgList, Opts) ->
     Res = do_resolve_many(MsgList, Opts),
     ?event(ao_core, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
     Res.
-do_resolve_many([Msg3], _Opts) ->
-    ?event(ao_core, {stage, 13, resolve_complete, Msg3}),
-    {ok, Msg3};
+do_resolve_many([Msg3], Opts) ->
+    ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
+    {ok, hb_cache:ensure_loaded(Msg3, Opts)};
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
@@ -628,7 +628,7 @@ resolve_stage(9, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 end;
             reset ->
                 Priv = hb_private:from_message(Msg3),
-                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
+                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }};
             ignore ->
                 Priv = hb_private:from_message(Msg3),
                 if not is_map(Priv) ->
@@ -700,7 +700,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     Msg1b =
         case DevID of
             undefined -> Msg1;
-            _ -> set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts))
+            _ -> set(Msg1, <<"device">>, DevID, hb_maps:without(?TEMP_OPTS, Opts, Opts))
         end,
     % If there is no path but there are elements to the request, we set these on
     % the base message. If there is a path, we do not modify the base message 
@@ -1266,7 +1266,8 @@ is_exported(_Info, _Key, _Opts) -> true.
 %% @doc Convert a key to a binary in normalized form.
 normalize_key(Key) -> normalize_key(Key, #{}).
 normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
-normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
+normalize_key(Key, _Opts) when is_binary(Key) ->
+    hb_util:to_lower(Key);
 normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
 normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
 normalize_key(Key, _Opts) when is_list(Key) ->
@@ -1478,7 +1479,7 @@ default_module() -> dev_message.
 %% @doc The execution options that are used internally by this module
 %% when calling itself.
 internal_opts(Opts) ->
-    maps:merge(Opts, #{
+    hb_maps:merge(Opts, #{
         topic => hb_opts:get(topic, ao_internal, Opts),
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],

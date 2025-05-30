@@ -192,11 +192,12 @@ footer {
 	padding: 8px 24px;
 }
 
-.header-main {
-    display: flex;
-    flex-direction: column;
-    gap: 7.5px;
-    overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	overflow: hidden;
+	gap: 10px;
+	padding: 8px 24px;
 }
 
 .logo {
