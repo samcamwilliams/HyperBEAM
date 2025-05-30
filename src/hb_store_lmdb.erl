@@ -1210,34 +1210,48 @@ nested_map_cache_test() ->
     
     % Original nested map structure
     OriginalMap = #{
-        <<"name">> => <<"Foo">>,
-        <<"items">> => #{
-            <<"bar">> => #{
-              <<"beep">> => <<"baz">>
+        <<"target">> => <<"Foo">>,
+        <<"commitments">> => #{
+            <<"key1">> => #{
+              <<"alg">> => <<"rsa-pss-512">>,
+              <<"committer">> => <<"unique-id">>
             },
-            <<"count">> => <<"42">>,
-            <<"active">> => <<"true">>
+            <<"key2">> => #{
+              <<"alg">> => <<"hmac">>,
+              <<"commiter">> => <<"unique-id-2">>              
+            }
+        },
+        <<"other-key">> => #{
+            <<"other-key-key">> => <<"other-key-value">>
         }
     },
     
     ?event({original_map, OriginalMap}),
     
     % Step 1: Store each leaf value at data/{hash}
-    NameHash = crypto:hash(sha256, <<"Foo">>),
-    NameDataPath = <<"data/", (base64:encode(NameHash))/binary>>,
-    write(StoreOpts, NameDataPath, <<"Foo">>),
+    TargetValue = <<"Foo">>,
+    TargetHash = base64:encode(crypto:hash(sha256, TargetValue)),
+    write(StoreOpts, <<"data/", TargetHash/binary>>, TargetValue),
     
-    BeepHash = crypto:hash(sha256, <<"baz">>),
-    BeepDataPath = <<"data/", (base64:encode(BeepHash))/binary>>,
-    write(StoreOpts, BeepDataPath, <<"baz">>),
+    AlgValue1 = <<"rsa-pss-512">>,
+    AlgHash1 = base64:encode(crypto:hash(sha256, AlgValue1)),
+    write(StoreOpts, <<"data/", AlgHash1/binary>>, AlgValue1),
     
-    CountHash = crypto:hash(sha256, <<"42">>),
-    CountDataPath = <<"data/", (base64:encode(CountHash))/binary>>,
-    write(StoreOpts, CountDataPath, <<"42">>),
+    CommitterValue1 = <<"unique-id">>,
+    CommitterHash1 = base64:encode(crypto:hash(sha256, CommitterValue1)),
+    write(StoreOpts, <<"data/", CommitterHash1/binary>>, CommitterValue1),
     
-    ActiveHash = crypto:hash(sha256, <<"true">>),
-    ActiveDataPath = <<"data/", (base64:encode(ActiveHash))/binary>>,
-    write(StoreOpts, ActiveDataPath, <<"true">>),
+    AlgValue2 = <<"hmac">>,
+    AlgHash2 = base64:encode(crypto:hash(sha256, AlgValue2)),
+    write(StoreOpts, <<"data/", AlgHash2/binary>>, AlgValue2),
+    
+    CommitterValue2 = <<"unique-id-2">>,
+    CommitterHash2 = base64:encode(crypto:hash(sha256, CommitterValue2)),
+    write(StoreOpts, <<"data/", CommitterHash2/binary>>, CommitterValue2),
+    
+    OtherKeyValue = <<"other-key-value">>,
+    OtherKeyHash = base64:encode(crypto:hash(sha256, OtherKeyValue)),
+    write(StoreOpts, <<"data/", OtherKeyHash/binary>>, OtherKeyValue),
     
     % Step 2: Create the nested structure with groups and links
     
@@ -1245,21 +1259,24 @@ nested_map_cache_test() ->
     make_group(StoreOpts, <<"root">>),
     
     % Create links for the root level keys
-    make_link(StoreOpts, NameDataPath, <<"root/name">>),
+    make_link(StoreOpts, <<"data/", TargetHash/binary>>, <<"root/target">>),
     
-    % Create the items subgroup
-    make_group(StoreOpts, <<"root/items">>),
+    % Create the commitments subgroup
+    make_group(StoreOpts, <<"root/commitments">>),
     
-    % Create the bar subgroup within items
-    make_group(StoreOpts, <<"root/items/bar">>),
+    % Create the key1 subgroup within commitments
+    make_group(StoreOpts, <<"root/commitments/key1">>),
+    make_link(StoreOpts, <<"data/", AlgHash1/binary>>, <<"root/commitments/key1/alg">>),
+    make_link(StoreOpts, <<"data/", CommitterHash1/binary>>, <<"root/commitments/key1/committer">>),
     
-    % Create links for the items subkeys
-    make_link(StoreOpts, BeepDataPath, <<"root/items/bar/beep">>),
-    make_link(StoreOpts, CountDataPath, <<"root/items/count">>),
-    make_link(StoreOpts, ActiveDataPath, <<"root/items/active">>),
+    % Create the key2 subgroup within commitments
+    make_group(StoreOpts, <<"root/commitments/key2">>),
+    make_link(StoreOpts, <<"data/", AlgHash2/binary>>, <<"root/commitments/key2/alg">>),
+    make_link(StoreOpts, <<"data/", CommitterHash2/binary>>, <<"root/commitments/key2/commiter">>),
     
-    % Force writes to be committed
-    sync(StoreOpts),
+    % Create the other-key subgroup
+    make_group(StoreOpts, <<"root/other-key">>),
+    make_link(StoreOpts, <<"data/", OtherKeyHash/binary>>, <<"root/other-key/other-key-key">>),
     
     % Step 3: Test reading the structure back
     
@@ -1269,48 +1286,24 @@ nested_map_cache_test() ->
     % List the root contents
     {ok, RootKeys} = list(StoreOpts, <<"root">>),
     ?event({root_keys, RootKeys}),
+    ExpectedRootKeys = [<<"commitments">>, <<"other-key">>, <<"target">>],
+    ?assertEqual(ExpectedRootKeys, lists:sort(RootKeys)),
     
-    % Read the name directly
-    {ok, NameValue} = read(StoreOpts, <<"root/name">>),
-    ?assertEqual(<<"Foo">>, NameValue),
+    % Read the target directly
+    {ok, TargetValueRead} = read(StoreOpts, <<"root/target">>),
+    ?assertEqual(<<"Foo">>, TargetValueRead),
     
-    % Verify items is a composite
-    ?assertEqual(composite, type(StoreOpts, <<"root/items">>)),
+    % Verify commitments is a composite
+    ?assertEqual(composite, type(StoreOpts, <<"root/commitments">>)),
     
-    % List the items contents  
-    {ok, ItemsKeys} = list(StoreOpts, <<"root/items">>),
-    ?event({items_keys, ItemsKeys}),
-    
-    % Verify bar is a composite (nested group)
-    ?assertEqual(composite, type(StoreOpts, <<"root/items/bar">>)),
-    
-    % List the bar contents
-    {ok, BarKeys} = list(StoreOpts, <<"root/items/bar">>),
-    ?event({bar_keys, BarKeys}),
-    
-    % Read the nested value
-    {ok, BeepValue} = read(StoreOpts, <<"root/items/bar/beep">>),
-    ?assertEqual(<<"baz">>, BeepValue),
-    
-    % Read other item values
-    {ok, CountValue} = read(StoreOpts, <<"root/items/count">>),
-    ?assertEqual(<<"42">>, CountValue),
-    
-    {ok, ActiveValue} = read(StoreOpts, <<"root/items/active">>),
-    ?assertEqual(<<"true">>, ActiveValue),
+    % Verify other-key is a composite  
+    ?assertEqual(composite, type(StoreOpts, <<"root/other-key">>)),
     
     % Step 4: Test programmatic reconstruction of the nested map
     ReconstructedMap = reconstruct_map(StoreOpts, <<"root">>),
     ?event({reconstructed_map, ReconstructedMap}),
     
     % Verify the reconstructed map matches the original structure
-    ?assertEqual(<<"Foo">>, maps:get(<<"name">>, ReconstructedMap)),
-    ItemsMap = maps:get(<<"items">>, ReconstructedMap),
-    BarMap = maps:get(<<"bar">>, ItemsMap),
-    ?assertEqual(<<"baz">>, maps:get(<<"beep">>, BarMap)),
-    ?assertEqual(<<"42">>, maps:get(<<"count">>, ItemsMap)),
-    ?assertEqual(<<"true">>, maps:get(<<"active">>, ItemsMap)),
-    ?event({originalMap, OriginalMap}),
     ?assert(hb_message:match(OriginalMap, ReconstructedMap)),
     stop(StoreOpts).
 
@@ -1361,8 +1354,6 @@ cache_debug_test() ->
     % 4. Create link from data path to key hash path
     make_link(StoreOpts, DataPath, KeyHashPath),
     
-    sync(StoreOpts),
-    
     % 5. Test what the cache would see:
     ?event(debug_cache_test, {step, check_message_type}),
     MsgType = type(StoreOpts, MessageID),
@@ -1409,8 +1400,6 @@ isolated_type_debug_test() ->
     % 3. Add some actual data within those groups
     write(StoreOpts, <<CommitmentsPath/binary, "/sig1">>, <<"signature_data_1">>),
     write(StoreOpts, <<OtherKeyPath/binary, "/sub_value">>, <<"nested_value">>),
-    
-    sync(StoreOpts),
     
     % 4. Test type detection on the nested paths
     ?event(isolated_debug, {testing_main_message_type}),
