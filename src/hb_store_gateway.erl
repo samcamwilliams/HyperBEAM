@@ -12,7 +12,7 @@ resolve(_, Key) -> Key.
 list(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
-        {ok, Message} -> {ok, maps:keys(Message)}
+        {ok, Message} -> {ok, hb_maps:keys(Message, StoreOpts)}
     end.
 
 %% @doc Get the type of the data at the given key. We potentially cache the
@@ -23,10 +23,10 @@ type(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Data} ->
-            ?event({type, hb_private:reset(hb_message:uncommitted(Data))}),
+            ?event({type, hb_private:reset(hb_message:uncommitted(Data, StoreOpts))}),
             IsFlat = lists:all(
                 fun({_, Value}) -> not is_map(Value) end,
-                maps:to_list(hb_private:reset(hb_message:uncommitted(Data)))
+                hb_maps:to_list(hb_private:reset(hb_message:uncommitted(Data, StoreOpts)), StoreOpts)
             ),
             if
                 IsFlat -> simple;
@@ -37,7 +37,7 @@ type(StoreOpts, Key) ->
 %% @doc Read the data at the given key from the GraphQL route. Will only attempt
 %% to read the data if the key is an ID.
 read(StoreOpts, Key) ->
-    case hb_path:term_to_path_parts(Key) of
+    case hb_path:term_to_path_parts(Key, StoreOpts) of
         [ID] when ?IS_ID(ID) ->
             ?event({read, StoreOpts, Key}),
             case hb_gateway_client:read(Key, StoreOpts) of
@@ -58,10 +58,10 @@ read(StoreOpts, Key) ->
 maybe_cache(StoreOpts, Data) ->
     ?event({maybe_cache, StoreOpts, Data}),
     % Check for store in both the direct map and the legacy opts map
-    Store = case maps:get(<<"store">>, StoreOpts, not_found) of
+    Store = case hb_maps:get(<<"store">>, StoreOpts, not_found, StoreOpts) of
         not_found -> 
             % Check in legacy opts format
-            NestedOpts = maps:get(<<"opts">>, StoreOpts, #{}),
+            NestedOpts = hb_maps:get(<<"opts">>, StoreOpts, #{}, StoreOpts),
             hb_opts:get(store, false, NestedOpts);
         FoundStore -> 
             FoundStore
@@ -266,3 +266,39 @@ store_opts_test() ->
         ),
     ?event(debug_gateway, {res, Res}),
     ?assertEqual(<<"Hello World">>,hb_ao:get(<<"data">>, Res)).
+
+%% @doc Test that items retreived from the gateway store are verifiable.
+verifiability_test() ->
+    hb_http_server:start_node(#{}),
+    {ok, Message} =
+        hb_cache:read(
+            <<"BOogk_XAI3bvNWnxNxwxmvOfglZt17o4MOVAdPNZ_ew">>,
+            #{
+                store =>
+                    [
+                        #{
+                            <<"store-module">> => hb_store_gateway,
+                            <<"store">> => false
+                        }
+                    ]
+            }
+        ),
+    % Ensure that the message is verifiable after being converted to 
+    % httpsig@1.0 and back to structured@1.0.
+    HTTPSig =
+        hb_message:convert(
+            Message,
+            <<"httpsig@1.0">>,
+            <<"structured@1.0">>,
+            #{}
+        ),
+    ?assert(hb_message:verify(HTTPSig)),
+    Structured =
+        hb_message:convert(
+            HTTPSig,
+            <<"structured@1.0">>,
+            <<"httpsig@1.0">>,
+            #{}
+        ),
+    ?event(debug, {verifying, {structured, Structured}, {original, Message}}),
+    ?assert(hb_message:verify(Structured)).
