@@ -66,16 +66,34 @@ verify(Base, Req, RawOpts) ->
     SigBase = signature_base(EncMsg, EncComm, Opts),
     ?event({signature_base_verify, {string, SigBase}}),
     KeyID = hb_util:decode(maps:get(<<"keyid">>, Req)),
-    Signature = hb_util:decode(maps:get(<<"signature">>, Req)),
+    RawSignature = hb_util:decode(Signature = maps:get(<<"signature">>, Req)),
     case maps:get(<<"type">>, Req) of
         <<"rsa-pss-sha512">> ->
-            {ok, ar_wallet:verify({{rsa, 65537}, KeyID}, SigBase, Signature, sha512)};
+            ?event(httpsig_verify, {verify, {rsa_pss_sha512, {sig_base, SigBase}}}),
+            {
+                ok,
+                ar_wallet:verify(
+                    {{rsa, 65537}, KeyID},
+                    SigBase,
+                    RawSignature,
+                    sha512
+                )
+            };
         <<"hmac-sha256">> ->
-            ExpectedHMac =
+            ActualHMac =
                 hb_util:human_id(
                     crypto:mac(hmac, sha256, <<"ao">>, SigBase)
                 ),
-            {ok, Signature =:= ExpectedHMac};
+            ?event(httpsig_verify,
+                {verify,
+                    {hmac_sha256,
+                        {sig_base, SigBase},
+                        {actual_hmac, {string, ActualHMac}},
+                        {signature, {string, Signature}},
+                        {matches, Signature =:= ActualHMac}
+                    }
+                }),
+            {ok, Signature =:= ActualHMac};
         UnsupportedType ->
             {error, <<"Unsupported commitment type: ", UnsupportedType/binary>>}
     end.
@@ -94,6 +112,11 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
     ),
     Opts = opts(RawOpts),
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    if Wallet =:= no_viable_wallet ->
+        throw({cannot_commit, no_viable_wallet, MsgToSign});
+    true ->
+        ok
+    end,
     % Utilize the hashpath, if present, as the tag for the commitment.
     MaybeTagMap =
         case MsgToSign of
@@ -163,7 +186,6 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
     % Extract the base commitments from the message.
     Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     CommittedKeys = keys_to_commit(Msg, Req, Opts),
-    ?event({hmac_commit, {committed, CommittedKeys}}),
     UnauthedCommitment =
         maybe_bundle_tag_commitment(
             #{
@@ -179,6 +201,14 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
         normalize_for_encoding(Msg, UnauthedCommitment, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),    
     HMac = hb_util:human_id(crypto:mac(hmac, sha256, <<"ao">>, SigBase)),
+    ?event(httpsig_commit,
+        {hmac_commit,
+            {type, <<"hmac-sha256">>},
+            {committed, CommittedKeys},
+            {sig_base, SigBase},
+            {hmac, HMac}
+        }
+    ),
     Res =
         {
             ok,
@@ -278,6 +308,7 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
     ?event({inputs, {list, Inputs}}),
     % Filter the message down to only the requested keys, then encode it.
     MsgWithOnlyInputs = maps:with(Inputs, Msg),
+    ?event(find_lru, {msg_with_only_inputs, maps:without([<<"commitments">>], MsgWithOnlyInputs)}),
     {ok, EncodedWithSigInfo} =
         to(
             maps:without([<<"commitments">>], MsgWithOnlyInputs),

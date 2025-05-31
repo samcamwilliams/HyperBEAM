@@ -162,17 +162,24 @@ test_suite() ->
             fun id_of_deep_message_and_link_message_match_test/2},
         {<<"Signed non-bundle is bundlable">>,
             fun signed_non_bundle_is_bundlable_test/2},
+        {<<"Bundled ordering">>,
+            fun bundled_ordering_test/2},
         {<<"Codec round-trip conversion is idempotent">>,
-            fun codec_roundtrip_conversion_is_idempotent_test/2}
+            fun codec_roundtrip_conversion_is_idempotent_test/2},
+        {<<"Bundled and unbundled IDs differ">>,
+            fun bundled_and_unbundled_ids_differ_test/2},
+        {<<"Tabm conversion is idempotent">>,
+            fun tabm_conversion_is_idempotent_test/2}
     ].
 
 %% @doc Organizes a test battery for the `hb_message' module and its codecs.
 suite_test_() ->
-    ?event(debug, suite_test_opts(normal)),
-    hb_test_utils:suite_with_opts(codec_test_suite(test_codecs()), suite_test_opts(normal)).
-    
-suite_bundling_test_() ->
-    hb_test_utils:suite_with_opts(codec_test_suite([<<"httpsig@1.0">>]), suite_test_opts(bundling)).
+    hb_test_utils:suite_with_opts(
+        codec_test_suite(
+            test_codecs()
+        ),
+        suite_test_opts(normal)
+    ).
 
 codec_test_suite(Codecs) ->
     lists:flatmap(
@@ -219,8 +226,7 @@ is_idempotent(Func, Msg, Opts) ->
 
 %% @doc Ensure that converting a message to/from TABM multiple times repeatedly 
 %% does not alter the message's contents.
-tabm_conversion_is_idempotent_test() ->
-    Opts = test_opts(normal),
+tabm_conversion_is_idempotent_test(_Codec, Opts) ->
     From = fun(M) -> hb_message:convert(M, <<"structured@1.0">>, tabm, Opts) end,
     To = fun(M) -> hb_message:convert(M, tabm, <<"structured@1.0">>, Opts) end,
     SimpleMsg = #{ <<"a">> => <<"x">>, <<"b">> => <<"y">>, <<"c">> => <<"z">> },
@@ -1099,7 +1105,14 @@ committed_empty_keys_test(Codec, Opts) ->
     ?assert(lists:member(<<"non-empty">>, CommittedKeys)).
 
 deeply_nested_committed_keys_test() ->
-    Opts = test_opts(normal),
+    Opts = (test_opts(normal))#{
+        store => [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST">>
+            }
+        ]
+    },
     Msg = #{
         <<"a">> => 1,
         <<"b">> => #{ <<"c">> => #{ <<"d">> => <<0:((1 + 1024) * 1024)>> } },
@@ -1357,18 +1370,20 @@ sign_links_test(Codec, Opts) ->
     ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
-bundled_and_unbundled_ids_differ_test() ->
-    Codec = <<"httpsig@1.0">>,
-    BundledCodec = #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
-    Opts = test_opts(normal),
+bundled_and_unbundled_ids_differ_test(Codec = #{ <<"bundle">> := true }, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"nested">> => #{
             <<"immediate-key-2">> => <<"immediate-value-2">>
         }
     },
-    SignedNoBundle = hb_message:commit(Msg, Opts, Codec),
-    SignedBundled = hb_message:commit(Msg, Opts, BundledCodec),
+    SignedNoBundle =
+        hb_message:commit(
+            Msg,
+            Opts,
+            maps:without([<<"bundle">>], Codec)
+        ),
+    SignedBundled = hb_message:commit(Msg, Opts, Codec),
     {ok, UnbundledID, _} =
         hb_message:commitment(
             #{ <<"type">> => <<"hmac-sha256">> },
@@ -1383,7 +1398,9 @@ bundled_and_unbundled_ids_differ_test() ->
         ),
     ?event(debug, {unbundled_id, UnbundledID}),
     ?event(debug, {bundled_id, BundledID}),
-    ?assertNotEqual(UnbundledID, BundledID).
+    ?assertNotEqual(UnbundledID, BundledID);
+bundled_and_unbundled_ids_differ_test(_Codec, _Opts) ->
+    skip.
 
 id_of_linked_message_test(#{ <<"bundle">> := true }, _Opts) ->
     skip;
@@ -1503,12 +1520,12 @@ find_multiple_commitments_test_disabled() ->
 
 %% @doc Ensure that a httpsig@1.0 message which is bundled and requests an 
 %% invalid ordering of keys is normalized to a valid ordering.
-bundled_ordering_test() ->
-    Opts = #{ priv_wallet => ar_wallet:new() },
-    Codec = #{
-        <<"device">> => <<"httpsig@1.0">>,
-        <<"bundle">> => <<"true">>
-    },
+bundled_ordering_test(Codec = #{ <<"bundle">> := true }, Opts) ->
+    % Opts = (test_opts(normal))#{
+    %     store => [
+    %         #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }
+    %     ]
+    % },
     Msg =
         hb_message:commit(
             #{
@@ -1540,4 +1557,6 @@ bundled_ordering_test() ->
     MatchRes = hb_message:match(Msg, Decoded, primary, Opts),
     ?event({match_result, MatchRes}),
     ?assert(MatchRes),
-    ?assert(hb_message:verify(Decoded, all, Opts)).
+    ?assert(hb_message:verify(Decoded, all, Opts));
+bundled_ordering_test(_Codec, _Opts) ->
+    skip.
