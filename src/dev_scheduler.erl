@@ -1668,26 +1668,26 @@ http_get_schedule_redirect_test() ->
     {N, _Wallet} = http_init(Opts),
     start(),
     ProcID = <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
-    Res = hb_http:get(N, <<"/", ProcID/binary, "/schedule">>, #{}),
+    Res = hb_http:get(N, <<"/", ProcID/binary, "/schedule">>, Opts),
     ?assertMatch({ok, #{ <<"location">> := Location }} when is_binary(Location), Res).
 
 http_post_schedule_test() ->
-    {N, W} = http_init(),
-    PMsg = hb_message:commit(test_process(W), W),
+    {N, Opts} = http_init(),
+    PMsg = hb_message:commit(test_process(Opts), Opts),
     Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
-    }, W),
-    {ok, _Res} = hb_http:post(N, Msg1, #{}),
+    }, Opts),
+    {ok, _Res} = hb_http:post(N, Msg1, Opts),
     {ok, Res2} =
         http_post_schedule_sign(
             N,
             #{ <<"inner">> => <<"test-message">> },
             PMsg,
-            W
+            Opts
         ),
-    ?assertEqual(<<"test-message">>, hb_ao:get(<<"body/inner">>, Res2, #{})),
+    ?assertEqual(<<"test-message">>, hb_ao:get(<<"body/inner">>, Res2, Opts)),
     ?assertMatch({ok, #{ <<"current">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test_() ->
@@ -1804,7 +1804,7 @@ http_get_json_schedule_test_() ->
 			<<"method">> => <<"POST">>,
 			<<"body">> => PMsg
 		}, Opts),
-		{ok, _} = hb_http:post(Node, Msg1, #{}),
+		{ok, _} = hb_http:post(Node, Msg1, Opts),
 		Msg2 = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
