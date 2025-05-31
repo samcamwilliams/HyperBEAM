@@ -258,36 +258,38 @@ resolve_path_links(_StoreOpts, _Path, Depth) when Depth > 10 ->
 resolve_path_links(_StoreOpts, [LastSegment], _Depth) ->
     % Base case: only one segment left, no link resolution needed
     {ok, [LastSegment]};
-resolve_path_links(StoreOpts, [Head | Tail], Depth) ->
-    % Check if the first segment (Head) is a link
-    case lmdb:get(find_env(StoreOpts), Head) of
+resolve_path_links(StoreOpts, Path, Depth) ->
+    resolve_path_links_acc(StoreOpts, Path, [], Depth).
+
+%% Internal helper that accumulates the resolved path
+resolve_path_links_acc(_StoreOpts, [], AccPath, _Depth) ->
+    % No more segments to process
+    {ok, lists:reverse(AccPath)};
+resolve_path_links_acc(StoreOpts, [Head | Tail], AccPath, Depth) ->
+    % Build the accumulated path so far
+    CurrentPath = lists:reverse([Head | AccPath]),
+    CurrentPathBin = hb_util:bin(lists:join(<<"/">>, CurrentPath)),
+    
+    % Check if the accumulated path (not just the segment) is a link
+    case lmdb:get(find_env(StoreOpts), CurrentPathBin) of
         {ok, Value} ->
             LinkPrefixSize = byte_size(<<"link:">>),
             case byte_size(Value) > LinkPrefixSize andalso
                 binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
                 true ->
-                    % This segment is a link, resolve it
+                    % The accumulated path is a link! Resolve it
                     Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
                     LinkSegments = binary:split(Link, <<"/">>, [global]),
-                    % Replace Head with the link target and continue resolving
-                    resolve_path_links(StoreOpts, LinkSegments ++ Tail, Depth + 1);
+                    % Replace the accumulated path with the link target and continue with remaining segments
+                    NewPath = LinkSegments ++ Tail,
+                    resolve_path_links(StoreOpts, NewPath, Depth + 1);
                 false ->
-                    % Not a link, continue with the rest of the path
-                    case resolve_path_links(StoreOpts, Tail, Depth) of
-                        {ok, ResolvedTail} ->
-                            {ok, [Head | ResolvedTail]};
-                        {error, _} = Error ->
-                            Error
-                    end
+                    % Not a link, continue accumulating
+                    resolve_path_links_acc(StoreOpts, Tail, [Head | AccPath], Depth)
             end;
         not_found ->
-            % Segment doesn't exist, continue without resolution
-            case resolve_path_links(StoreOpts, Tail, Depth) of
-                {ok, ResolvedTail} ->
-                    {ok, [Head | ResolvedTail]};
-                {error, _} = Error ->
-                    Error
-            end
+            % Path doesn't exist as a complete link, continue accumulating
+            resolve_path_links_acc(StoreOpts, Tail, [Head | AccPath], Depth)
     end.
 
 %% @doc Return the scope of this storage backend.
