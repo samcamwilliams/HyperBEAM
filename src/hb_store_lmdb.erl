@@ -113,19 +113,9 @@ type(Opts, Key) ->
                                     end
                             end;
                         not_found ->
-                            ?event(debug_type_detection, {still_not_found_after_flush_checking_children, Key}),
-                            % Still not found after flush, check if this is a composite by seeing if it has children
-                            case list(Opts, Key) of
-                                {ok, []} -> 
-                                    ?event(debug_type_detection, {no_children_not_found, Key}),
-                                    not_found;  % No children, doesn't exist
-                                {ok, Children} -> 
-                                    ?event(debug_type_detection, {has_children_composite, Key, Children}),
-                                    composite;  % Has children, it's a composite
-                                {error, Error} -> 
-                                    ?event(debug_type_detection, {list_error_not_found, Key, Error}),
-                                    not_found
-                            end
+                    ?event(debug_type_detection, {still_not_found_after_flush_checking_children, Key}),
+                            % Still not found after flush
+                            not_found
                     end
             after ?CONNECT_TIMEOUT -> 
                 ?event(debug_type_detection, {flush_timeout, Key}),
@@ -341,32 +331,33 @@ scope(_) -> scope().
 list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
     Env = find_env(StoreOpts),
     ?event(debug_lmdb, { path, Path }),
-    PathSize = byte_size(Path),
     try
+       % Ensure the path ends with "/" for proper prefix matching (like directory listing)
+       SearchPath = case Path of
+           <<>> -> <<"">>;  % Root path
+           _ -> <<Path/binary, "/">>
+       end,
+       SearchPathSize = byte_size(SearchPath),
+       
        Children = lmdb:fold(Env, default,
            fun(Key, _Value, Acc) ->
-               % Only match on keys that have the prefix and are longer than it
-               case byte_size(Key) > PathSize andalso 
-                    binary:part(Key, 0, PathSize) =:= Path of
+               % Match keys that start with our search path (like dir listing)
+               case byte_size(Key) > SearchPathSize andalso 
+                    binary:part(Key, 0, SearchPathSize) =:= SearchPath of
                   true -> 
-                      % Return key without the path prefix and separator
-                      KeyWithoutPrefix = binary:part(Key, PathSize, byte_size(Key) - PathSize),
-                      % Remove leading separator if present
-                      CleanKey = case KeyWithoutPrefix of
-                          <<"/", Rest/binary>> -> Rest;
-                          Other -> Other
+                      % Get the part after our search path
+                      Remainder = binary:part(Key, SearchPathSize, byte_size(Key) - SearchPathSize),
+                      
+                      % Extract only the first path segment (immediate child)
+                      ImmediateChild = case binary:split(Remainder, <<"/">>) of
+                          [Child, _] -> Child;  % Has nested path, take first part
+                          [Child] -> Child      % No nested path, take the whole thing
                       end,
-                      % Only include immediate children (no nested paths)
-                      case binary:match(CleanKey, <<"/">>) of
-                          nomatch -> 
-                              % This is an immediate child, add it if not already present
-                              case lists:member(CleanKey, Acc) of
-                                  true -> Acc;
-                                  false -> [CleanKey | Acc]
-                              end;
-                          _ -> 
-                              % This is a nested path, extract only the immediate child part
-                              [ImmediateChild | _] = binary:split(CleanKey, <<"/">>, [global]),
+                      
+                      % Add to results if not empty and not already present
+                      case ImmediateChild of
+                          <<>> -> Acc;  % Skip empty children
+                          _ ->
                               case lists:member(ImmediateChild, Acc) of
                                   true -> Acc;
                                   false -> [ImmediateChild | Acc]
@@ -377,7 +368,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            end,
            []
        ),
-       ?event(debug_lmdb, {children, Children}),
+       ?event(debug_lmdb, {listing_path, Path, search_path, SearchPath, children, Children}),
        Children
     catch
        _:Error -> {error, Error}
@@ -993,23 +984,46 @@ list_test() ->
         <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
+    
+    % Create immediate children under colors/
     write(StoreOpts, <<"colors/red">>, <<"1">>),
     write(StoreOpts, <<"colors/blue">>, <<"2">>),
     write(StoreOpts, <<"colors/green">>, <<"3">>),
-    % write(StoreOpts, <<"colors/multi/foo">>, <<"4">>),
+    
+    % Create nested directories under colors/ - these should show up as immediate children
+    write(StoreOpts, <<"colors/multi/foo">>, <<"4">>),
+    write(StoreOpts, <<"colors/multi/bar">>, <<"5">>),
+    write(StoreOpts, <<"colors/primary/red">>, <<"6">>),
+    write(StoreOpts, <<"colors/primary/blue">>, <<"7">>),
+    write(StoreOpts, <<"colors/nested/deep/value">>, <<"8">>),
+    
+    % Create other top-level directories
     write(StoreOpts, <<"foo/bar">>, <<"baz">>),
     write(StoreOpts, <<"beep/boop">>, <<"bam">>),
-    % Brief delay to ensure writes are flushed
-    timer:sleep(10), 
-    ListResult = list(StoreOpts, <<"colors">>),
+    
+    read(StoreOpts, <<"colors">>), 
+    % Test listing colors/ - should return immediate children only
+    {ok, ListResult} = list(StoreOpts, <<"colors">>),
     ?event({list_result, ListResult}),
-    case ListResult of
-        {ok, Keys} ->
-            ?assertEqual([<<"blue">>, <<"green">>, <<"red">>], lists:sort(Keys));
-        Other ->
-            ?event({unexpected_list_result, Other}),
-            ?assert(false)
-    end,
+    
+    % Expected: red, blue, green (files) + multi, primary, nested (directories)
+    % Should NOT include deeply nested items like foo, bar, deep, value
+    ExpectedChildren = [<<"blue">>, <<"green">>, <<"multi">>, <<"nested">>, <<"primary">>, <<"red">>],
+    ?event({sortedValues, lists:sort(ListResult)}),
+    ?assertEqual(ExpectedChildren, lists:sort(ListResult)),
+    
+    % Test listing a nested directory - should only show immediate children
+    {ok, NestedListResult} = list(StoreOpts, <<"colors/multi">>),
+    ?event({nested_list_result, NestedListResult}),
+    ExpectedNestedChildren = [<<"bar">>, <<"foo">>],
+    ?assertEqual(ExpectedNestedChildren, lists:sort(NestedListResult)),
+    
+    % Test listing a deeper nested directory
+    {ok, DeepListResult} = list(StoreOpts, <<"colors/nested">>),
+    ?event({deep_list_result, DeepListResult}),
+    ExpectedDeepChildren = [<<"deep">>],
+    ?assertEqual(ExpectedDeepChildren, lists:sort(DeepListResult)),
+    
     ok = stop(StoreOpts).
 
 %% @doc Group test - verifies group creation and type detection.
