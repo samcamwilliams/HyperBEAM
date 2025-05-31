@@ -88,7 +88,7 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
     % Ensure that the base message is a normalized before proceeding.
-    IDOpts = NodeOpts#{ linkify_mode => offload },
+    IDOpts = NodeOpts#{ linkify_mode => discard },
     Base =
         ensure_commitments_loaded(
             hb_message:convert(RawBase, tabm, IDOpts),
@@ -285,6 +285,7 @@ verify(Self, Req, Opts) ->
             tabm,
             Opts
         ),
+    ?event(verify, {verify, {base_found, Base}}),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
@@ -297,7 +298,7 @@ verify(Self, Req, Opts) ->
                         maps:get(CommitmentID, Commitments),
                         Opts
                     ),
-                ?event(
+                ?event(verify,
                     {verify_commitment_res,
                         {commitment_id, CommitmentID},
                         {res, Res}
@@ -306,7 +307,7 @@ verify(Self, Req, Opts) ->
             end,
             IDsToVerify
         ),
-    ?event({verify_res, Res}),
+    ?event(verify, {verify, {res, Res}}),
     {ok, Res}.
 
 %% @doc Execute a function for a single commitment in the context of its
