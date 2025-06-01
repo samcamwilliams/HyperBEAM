@@ -980,26 +980,25 @@ ans104_wasm_test() ->
 send_large_signed_request_test() ->
     % Note: If the signature scheme ever changes, we will need to run the 
     % following to get a freshly signed request.
-    %     file:write_file(
-    %         "test/large-message.eterm",
-    %         hb_util:bin(
-    %             io_lib:format(
-    %                "~p.", 
-    %                 [
-    %                 hb_message:commit(
-    %                     hb_message:uncommitted(hd(hb_util:ok(
-    %                         file:consult(<<"test/large-message.eterm">>)
-    %                     )),
-    %                     #{ priv_wallet => hb:wallet() }
-    %                     )
-    %                 ]
-    %             )
-    %         )
-    %     ).
+    %    file:write_file(
+    %        "test/large-message.eterm",
+    %        hb_util:bin(
+    %            io_lib:format(
+    %               "~p.", 
+    %                [
+    %                    hb_cache:ensure_all_loaded(hb_message:commit(
+    %                        hb_message:uncommitted(hd(hb_util:ok(
+    %                            file:consult(<<"test/large-message.eterm">>)
+    %                       ))),
+    %                        #{ priv_wallet => hb:wallet() }
+    %                    ))
+    %                ]
+    %            )
+    %        )
+    %    ).
     {ok, [Req]} = file:consult(<<"test/large-message.eterm">>),
     % Get the short trace length from the node message in the large, stored
     % request. 
-    ?event({request_message, Req}),
     ?assertMatch(
         {ok, 5},
         post(

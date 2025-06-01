@@ -2,7 +2,21 @@
   <<"append">> =>
       <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>,
   <<"commitments">> =>
-      #{<<"19FHZHZD2oomcypO0aD9LrPF6pd5mGrgaqhOlD_GdpM">> =>
+      #{<<"6nWXloEFP1kqslsOCKCLxWvzr5GVJvvWlQAO0Uwv7MM">> =>
+            #{<<"commitment-device">> => <<"httpsig@1.0">>,
+              <<"committed">> =>
+                  #{<<"1">> => <<"address">>,<<"10">> => <<"public-key">>,
+                    <<"11">> => <<"report">>,<<"12">> => <<"vcpu_type">>,
+                    <<"13">> => <<"vcpus">>,<<"14">> => <<"vmm_type">>,
+                    <<"2">> => <<"ao-types">>,<<"3">> => <<"append">>,
+                    <<"4">> => <<"firmware">>,<<"5">> => <<"guest_features">>,
+                    <<"6">> => <<"initrd">>,<<"7">> => <<"kernel">>,
+                    <<"8">> => <<"node-message">>,<<"9">> => <<"nonce">>},
+              <<"keyid">> => <<"YW8">>,
+              <<"signature">> =>
+                  <<"6nWXloEFP1kqslsOCKCLxWvzr5GVJvvWlQAO0Uwv7MM">>,
+              <<"type">> => <<"hmac-sha256">>},
+        <<"uHPsVJP_v7B46__xiMPluCZf_6IXjsMfsUTHHC46uz4">> =>
             #{<<"commitment-device">> => <<"httpsig@1.0">>,
               <<"committed">> =>
                   #{<<"1">> => <<"address">>,<<"10">> => <<"public-key">>,
@@ -17,22 +31,8 @@
               <<"keyid">> =>
                   <<"rh3EGHNtQyto38UnoKwbnEkw3TqlR5b18n_uVySFBdI-t0O7lcrRM0MrL8l09YHb9ZAG5A-cB3ExZpdDCnnCGcvxFesdnapzWhYkPpXZKvgVk7NyZdRFWUJXoSaw3n5fajGShjAiOkiEzDEwHKozZnqJl-DRuuHVGcw4Q1VMk1CtzJJBCrZeNTG1crWynHa-3AfCEQ6Ou8AMs8a7ibHP57Jcmhe8xfVO4MtEvTtuMejAAjLaLIPWtzhct3rJIZmpSvwG7fAfWafqPuAx_hVjLWFv41wwhH1yA_bCU_x61n41Lqg06prUCNPBf8Ypz1EUIqKipV0O69UGHylOvA3cbpLFV6QyF1w8icae3vcKHPmQ-Fni0xD3PXZCCaiBHng4FianlIfms6IB7jXLr4dZ4utq-32wRR2anksxz6tyZ_RFWN8Tb7-qPXb5X0ESsAxAshh4vfYWRYdaMeO79I4IN2vB6EFhRHO_Jo5U-E3KDm2vyABly5x9Aw2gBUEhmEdM0T-fUZx_30UoqcqRYlAKCzpIQ4_irckldfZMGRoIlWxQP2qRTUCrOxR8rtSLWUKQTyOW9GcI0pV04q7lxRRCpZK-B76GKU8ZQnDqQerdvsFro66LXGXOESk1HN2isCV_Pwik9G1SFKftHWzDzrRlRrDWcoyoqzEMjE0wj7ttjJE">>,
               <<"signature">> =>
-                  <<"QWGgemF3CJC8FwCH8ZBl8xJ3-rN1eZ7Sg5Vyd0gVePwPnTzv2KT7kCZZQM9ZC38dT0G4pjdqumpPMmU4Ze0Iikk-G3qw5q0v2ZsNCyLKan7LIdh3WqMbOinT97pfh1h0QfWTYKP1zTqFlT_UqhroXoZUdyngEBh0yIDbNvyptQ6A8uFoZJS0q5cjTiLj1WcZxPgqIAnZLBi8N6ej9BBmIOizrAzAH1k0QvYlQkoKW1n711xGwGmw8wF39JSf2zUDlUOBIxO_ms5YKnXNadcpqfxdJY2Q0KcCEIMml9L8w-_Ow3MJ3Tf0c_8zeEBZVQwKhy15BHhDa4ltxnViBpc1O-2e3cGqKFBJweHd6uteeGXTZPvqg8abD0h5BHmB-bB5A-SqqNaT_aLoApHwOIvhPFvTd9Bf4MGoWXy8LAS26F2VqKEIRr3SGf-JSD1N-FCDwX9n0bcIRvlQLHcB_Q2DNkLZzWaxvQHEmj-bEUIv6GHBayYwXWVfskEMuGJ2z40_uFzg3BXnxiXGk9rEEHwsVkFnAvIkTyITrg8WM3a81t9nh7twUHBJ-OL41ylxxdleQy8BWjsYiwkw0Cw1f86F-6SpLriV1w8_5_Yh9261WGXk-mb9Bj21K0WGbPmPxjQ5I5rz4HDfqEgep30GPe52hU3TCN1HpHZVwSrRrXBgj08">>,
-              <<"type">> => <<"rsa-pss-sha512">>},
-        <<"6nWXloEFP1kqslsOCKCLxWvzr5GVJvvWlQAO0Uwv7MM">> =>
-            #{<<"commitment-device">> => <<"httpsig@1.0">>,
-              <<"committed">> =>
-                  #{<<"1">> => <<"address">>,<<"10">> => <<"public-key">>,
-                    <<"11">> => <<"report">>,<<"12">> => <<"vcpu_type">>,
-                    <<"13">> => <<"vcpus">>,<<"14">> => <<"vmm_type">>,
-                    <<"2">> => <<"ao-types">>,<<"3">> => <<"append">>,
-                    <<"4">> => <<"firmware">>,<<"5">> => <<"guest_features">>,
-                    <<"6">> => <<"initrd">>,<<"7">> => <<"kernel">>,
-                    <<"8">> => <<"node-message">>,<<"9">> => <<"nonce">>},
-              <<"keyid">> => <<"YW8">>,
-              <<"signature">> =>
-                  <<"6nWXloEFP1kqslsOCKCLxWvzr5GVJvvWlQAO0Uwv7MM">>,
-              <<"type">> => <<"hmac-sha256">>}},
+                  <<"YG9aPmui8jvXL_SZz97oyj1HV596j4dKe9gaHQYkqEqwJhgG2_apue9V7_adypNeFlHiQTTU-BgNV1SNSAsSqYXXBPAQCh1Yw8BQ3NhPPhFr-as7tiwrJBwsZUe7QoHZWyBdNOLIY-E7w4QWOszRNZRnmKNWEPutyvP9a_5fxz7c8Z7zIkYvfwZUa9OZwOw4uAoUjSZ8fmv4F6bFdElrkdWpADwsATFFZiaFy4v-qdRpCKwegWAKdu2ClMEY973YoR47zoAcPqX3vX0nlzvZ9EKLVlytPanFM29yTgnDy1LokUq7hxC4I0PEz3dhubVFWhdisKConKbFCJqDX7YoaS3hu6EpeknP9Ru1TqiWSFMKe9IMQppzP7FtQOb6JKE8mvPwPbWp1WPTr9V4_qooUvUcNKPXapIJc5gWaF59aiyN9jNRjKL1XLBhCFf59BDf072oOdI52UVjCRcE58X-5HL1u7m79BWzIeGXCE6KIlqYWuGV3VIt7hE8E4lWiTEBKy8FAoScx7n5JDE1K0x8AYBff7ipzKAHZMo8vOzZYNRl5f9tNJRurKnK0CU-85TNsORCVuDgOuMAWi9MmsduicGYvINOnXSXhht1y4L-AiQExIHVVBf5kGpJi0FV-FNKhwH3Vihgx24lZ2f9HuPZUt8vmjQwoEgCZT0PYTvHi3w">>,
+              <<"type">> => <<"rsa-pss-sha512">>}},
   <<"firmware">> =>
       <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
   <<"guest_features">> => 1,
@@ -41,8 +41,150 @@
   <<"kernel">> =>
       <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
   <<"node-message">> =>
-      {link,<<"Slmlet-wVlF4cF7md9RcFSIdKHksO3wpVOIcAlaDryU">>,
-            #{<<"lazy">> => false,<<"type">> => <<"link">>}},
+      #{<<"debug_metadata">> => true,
+        <<"gateway">> => <<"https://arweave.net">>,
+        <<"process_now_from_cache">> => false,
+        <<"debug_print_map_line_threshold">> => 30,<<"http_client">> => gun,
+        <<"http_keepalive">> => 120000,<<"short_trace_len">> => 5,
+        <<"debug_print_trace">> => short,
+        <<"date">> => <<"Fri, 18 Apr 2025 19:01:31 GMT">>,
+        <<"scheduler_location_ttl">> => 604800000,
+        <<"access_control_allow_origin">> => <<"*">>,
+        <<"compute_mode">> => lazy,<<"preload_devices">> => [],
+        <<"hb_config_location">> => <<"config.flat">>,
+        <<"process_workers">> => false,
+        <<"access_control_allow_methods">> =>
+            <<"GET, POST, PUT, DELETE, OPTIONS">>,
+        <<"initialized">> => permanent,<<"only">> => local,
+        <<"trusted">> =>
+            #{<<"append">> =>
+                  <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>,
+              <<"firmware">> =>
+                  <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+              <<"guest_features">> => 1,
+              <<"initrd">> =>
+                  <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+              <<"kernel">> =>
+                  <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+              <<"vcpu_type">> => 5,<<"vcpus">> => 1,<<"vmm_type">> => 1},
+        <<"snp_hashes">> =>
+            #{<<"append">> =>
+                  <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>,
+              <<"firmware">> =>
+                  <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+              <<"guest_features">> => 1,
+              <<"initrd">> =>
+                  <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+              <<"kernel">> =>
+                  <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+              <<"vcpu_type">> => 5,<<"vcpus">> => 1,<<"vmm_type">> => 1},
+        <<"cache_lookup_hueristics">> => false,
+        <<"address">> => <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU">>,
+        <<"store">> =>
+            [#{<<"prefix">> => <<"cache-mainnet">>,
+               <<"store-module">> => hb_store_fs},
+             #{<<"store">> =>
+                   [#{<<"prefix">> => <<"cache-mainnet">>,
+                      <<"store-module">> => hb_store_fs}],
+               <<"store-module">> => hb_store_gateway}],
+        <<"postprocessor">> => undefined,<<"debug_show_priv">> => false,
+        <<"routes">> =>
+            [#{<<"node">> => #{<<"prefix">> => <<"http://localhost:6363">>},
+               <<"template">> => <<"/result/.*">>},
+             #{<<"nodes">> =>
+                   [#{<<"opts">> =>
+                          #{<<"http_client">> => httpc,
+                            <<"protocol">> => http2},
+                      <<"prefix">> =>
+                          <<"https://arweave-search.goldsky.com">>},
+                    #{<<"opts">> =>
+                          #{<<"http_client">> => gun,<<"protocol">> => http2},
+                      <<"prefix">> => <<"https://arweave.net">>}],
+               <<"template">> => <<"/graphql">>},
+             #{<<"node">> =>
+                   #{<<"opts">> =>
+                         #{<<"http_client">> => gun,<<"protocol">> => http2},
+                     <<"prefix">> => <<"https://arweave.net">>},
+               <<"template">> => <<"/raw">>}],
+        <<"debug_print">> => false,
+        <<"bundler_ans104">> => <<"https://up.arweave.net:443">>,
+        <<"client_error_strategy">> => throw,
+        <<"http_request_send_timeout">> => 60000,
+        <<"http_extra_opts">> =>
+            #{<<"cache_control">> => [<<"always">>],
+              <<"force_message">> => true},
+        <<"force_signed">> => true,
+        <<"server">> => <<"nginx/1.18.0 (Ubuntu)">>,
+        <<"access_remote_cache_for_client">> => false,
+        <<"await_inprogress">> => named,
+        <<"content_type">> =>
+            <<"multipart/form-data; boundary=\"5zd5yKhUfgSnCzBVlt29-Vs4rQQeUBGuVqNJubt07jI\"">>,
+        <<"http_connect_timeout">> => 5000,<<"status">> => 200,
+        <<"body_keys">> =>
+            <<"\"routes\", \"routes\", \"routes\", \"routes\", \"routes\", \"routes\", \"routes\", \"routes\", \"routes\", \"routes\"">>,
+        <<"stack_print_prefixes">> => ["hb","dev","ar"],
+        <<"scheduling_mode">> => disabled,
+        <<"http_server">> => <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU">>,
+        <<"debug_print_binary_max">> => 60,<<"debug_ids">> => false,
+        <<"relay_http_client">> => httpc,<<"debug_stack_depth">> => 40,
+        <<"preloaded_devices">> =>
+            [#{<<"module">> => dev_codec_ans104,
+               <<"name">> => <<"ans104@1.0">>},
+             #{<<"module">> => dev_cu,<<"name">> => <<"compute@1.0">>},
+             #{<<"module">> => dev_cache,<<"name">> => <<"cache@1.0">>},
+             #{<<"module">> => dev_cacheviz,<<"name">> => <<"cacheviz@1.0">>},
+             #{<<"module">> => dev_cron,<<"name">> => <<"cron@1.0">>},
+             #{<<"module">> => dev_dedup,<<"name">> => <<"dedup@1.0">>},
+             #{<<"module">> => dev_delegated_compute,
+               <<"name">> => <<"delegated-compute@1.0">>},
+             #{<<"module">> => dev_faff,<<"name">> => <<"faff@1.0">>},
+             #{<<"module">> => dev_codec_flat,<<"name">> => <<"flat@1.0">>},
+             #{<<"module">> => dev_genesis_wasm,
+               <<"name">> => <<"genesis-wasm@1.0">>},
+             #{<<"module">> => dev_green_zone,
+               <<"name">> => <<"greenzone@1.0">>},
+             #{<<"module">> => dev_codec_httpsig,
+               <<"name">> => <<"httpsig@1.0">>},
+             #{<<"module">> => dev_hyperbuddy,
+               <<"name">> => <<"hyperbuddy@1.0">>},
+             #{<<"module">> => dev_codec_json,<<"name">> => <<"json@1.0">>},
+             #{<<"module">> => dev_json_iface,
+               <<"name">> => <<"json-iface@1.0">>},
+             #{<<"module">> => dev_lookup,<<"name">> => <<"lookup@1.0">>},
+             #{<<"module">> => dev_lua,<<"name">> => <<"lua@5.3a">>},
+             #{<<"module">> => dev_message,<<"name">> => <<"message@1.0">>},
+             #{<<"module">> => dev_meta,<<"name">> => <<"meta@1.0">>},
+             #{<<"module">> => dev_monitor,<<"name">> => <<"monitor@1.0">>},
+             #{<<"module">> => dev_multipass,
+               <<"name">> => <<"multipass@1.0">>},
+             #{<<"module">> => dev_p4,<<"name">> => <<"p4@1.0">>},
+             #{<<"module">> => dev_patch,<<"name">> => <<"patch@1.0">>},
+             #{<<"module">> => dev_poda,<<"name">> => <<"poda@1.0">>},
+             #{<<"module">> => dev_process,<<"name">> => <<"process@1.0">>},
+             #{<<"module">> => dev_push,<<"name">> => <<"push@1.0">>},
+             #{<<"module">> => dev_relay,<<"name">> => <<"relay@1.0">>},
+             #{<<"module">> => dev_router,<<"name">> => <<"router@1.0">>},
+             #{<<"module">> => dev_scheduler,
+               <<"name">> => <<"scheduler@1.0">>},
+             #{<<"module">> => dev_simple_pay,
+               <<"name">> => <<"simple-pay@1.0">>},
+             #{<<"module">> => dev_snp,<<"name">> => <<"snp@1.0">>},
+             #{<<"module">> => dev_stack,<<"name">> => <<"stack@1.0">>},
+             #{<<"module">> => dev_codec_structured,
+               <<"name">> => <<"structured@1.0">>},
+             #{<<"module">> => dev_test,<<"name">> => <<"test-device@1.0">>},
+             #{<<"module">> => dev_wasi,<<"name">> => <<"wasi@1.0">>},
+             #{<<"module">> => dev_wasm,<<"name">> => <<"wasm-64@1.0">>}],
+        <<"cache_writers">> =>
+            [<<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU">>],
+        <<"wasm_allow_aot">> => false,<<"store_all_signed">> => true,
+        <<"ans104_trust_gql">> => true,
+        <<"commitment_device">> => <<"httpsig@1.0">>,
+        <<"preprocessor">> => undefined,<<"debug_committers">> => false,
+        <<"port">> => 10000,<<"load_remote_devices">> => false,
+        <<"node_history">> => [],<<"mode">> => debug,
+        <<"trusted_device_signers">> => [],<<"debug_print_indent">> => 2,
+        <<"host">> => <<"localhost">>},
   <<"nonce">> =>
       <<"XgN1kN-ZyAWtYvdUlPEM3EIIi-budUx81mjcHQ1mSNU4bfGIgeSRG0fgGtFEdPTXAcI6szcsMPvbZmwMWraKxA">>,
   <<"public-key">> =>
