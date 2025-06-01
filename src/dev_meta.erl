@@ -81,10 +81,6 @@ handle_initialize([], _NodeMsg) ->
 %% as-is, aside all keys that are private (according to `hb_private').
 info(_, Request, NodeMsg) ->
     case hb_ao:get(<<"method">>, Request, NodeMsg) of
-        <<"GET">> ->
-            ?event({get_config_req, Request, NodeMsg}),
-            DynamicKeys = add_dynamic_keys(NodeMsg),	
-            embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 permanent ->
@@ -97,7 +93,10 @@ info(_, Request, NodeMsg) ->
                 _ ->
                     update_node_message(Request, NodeMsg)
             end;
-        _ -> embed_status({error, <<"Unsupported Meta/info method.">>})
+        _ ->
+            ?event({get_config_req, Request, NodeMsg}),
+            DynamicKeys = add_dynamic_keys(NodeMsg),	
+            embed_status({ok, filter_node_msg(DynamicKeys)})
     end.
 
 %% @doc Remove items from the node message that are not encodable into a
@@ -113,14 +112,27 @@ filter_node_msg(Other) ->
 
 %% @doc Add dynamic keys to the node message.
 add_dynamic_keys(NodeMsg) ->
-    case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
-        no_viable_wallet ->
-            NodeMsg;
-        Wallet ->
-            %% Create a new map with address and merge it (overwriting existing)
-            Address = hb_util:id(ar_wallet:to_address(Wallet)),
-            NodeMsg#{ address => Address, <<"address">> => Address }
-    end.
+    UpdatedNodeMsg = 
+        case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+            no_viable_wallet ->
+                NodeMsg;
+            Wallet ->
+                %% Create a new map with address and merge it (overwriting existing)
+                Address = hb_util:id(ar_wallet:to_address(Wallet)),
+                NodeMsg#{ address => Address, <<"address">> => Address }
+        end,
+    add_identity_addresses(UpdatedNodeMsg).
+
+add_identity_addresses(NodeMsg) ->
+    Identities = hb_opts:get(identities, #{}, NodeMsg),
+    NewIdentities = maps:map(fun(_, Identity) ->
+        Identity#{
+            <<"address">> => hb_util:human_id(
+                hb_opts:get(priv_wallet, hb:wallet(), Identity)
+            )
+        }
+    end, Identities),
+    NodeMsg#{ <<"identities">> => NewIdentities }.
 
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
@@ -293,7 +305,22 @@ message_to_status(Item) when is_map(Item) ->
     case dev_message:get(<<"status">>, Item) of
         {ok, RawStatus} when is_integer(RawStatus) -> RawStatus;
         {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus);
-        {ok, RawStatus} -> binary_to_integer(RawStatus);
+        {ok, RawStatus} ->
+            % If we can convert the status to an integer, do so.
+            try binary_to_integer(RawStatus)
+            catch
+                error:badarg ->
+                    % We can't convert the status to an integer, but we may be
+                    % able to convert it to an existing atom status code.
+                    try
+                        status_code(binary_to_existing_atom(RawStatus, latin1))
+                    catch
+                        error:badarg ->
+                            % We can't convert the status to an integer or atom,
+                            % so we return the default status code.
+                            default
+                    end
+            end;
         _ -> default
     end;
 message_to_status(Item) when is_atom(Item) ->

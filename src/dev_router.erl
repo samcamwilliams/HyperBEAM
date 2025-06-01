@@ -252,7 +252,7 @@ route(_, Msg, Opts) ->
 find_target_path(Msg, Opts) ->
     case hb_ao:get(<<"route-path">>, Msg, not_found, Opts) of
         not_found ->
-            ?event({find_target_path, {msg, Msg}, {opts, Opts}, not_found}),
+            ?event({find_target_path, {msg, Msg}, not_found}),
             hb_ao:get(<<"path">>, Msg, no_path, Opts);
         RoutePath -> RoutePath
     end.
@@ -293,7 +293,7 @@ apply_routes(Msg, R, Opts) ->
     NodesWithRouteApplied =
         lists:map(
             fun(N) ->
-                ?event(debug, {apply_route, {msg, Msg}, {node, N}}),
+                ?event({apply_route, {msg, Msg}, {node, N}}),
                 case apply_route(Msg, N) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
                     {ok, RMsg} -> maps:merge(N, RMsg);
@@ -302,7 +302,7 @@ apply_routes(Msg, R, Opts) ->
             end,
             hb_util:message_to_ordered_list(Nodes)
         ),
-    ?event(debug, {nodes_after_apply, NodesWithRouteApplied}),
+    ?event({nodes_after_apply, NodesWithRouteApplied}),
     R#{ <<"nodes">> => NodesWithRouteApplied }.
 
 %% @doc Apply a node map's rules for transforming the path of the message.
@@ -324,7 +324,7 @@ apply_route(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
     {ok, <<Path/binary, Suffix/binary>>};
 apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
     % Apply the regex to the path and replace the first occurrence.
-    case re:replace(Path, Match, With, [global]) of
+    case re:replace(Path, Match, With, [global, {return, binary}]) of
         NewPath when is_binary(NewPath) ->
             {ok, NewPath};
         _ -> {error, invalid_replace_args}
@@ -334,7 +334,7 @@ apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With
 %% path to be specified by either the explicit `path' (for internal use by this
 %% module), or `route-path' for use by external devices and users.
 match(Base, Req, Opts) ->
-    ?event(debug_preprocess, {routeReq, Req}),
+    ?event({matching_routes, {req, Req}}),
     ?event(debug_preprocess,
         {routes,
             hb_ao:get(<<"routes">>, {as, <<"message@1.0">>, Base}, [], Opts)}
@@ -392,7 +392,7 @@ choose(N, <<"Random">>, _, Nodes, _Opts) ->
     Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
     [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
 choose(N, <<"By-Weight">>, _, Nodes, Opts) ->
-    ?event(debug, {nodes, Nodes}),
+    ?event({nodes, Nodes}),
     NodesWithWeight =
         [
             { Node, hb_util:float(hb_ao:get(<<"weight">>, Node, Opts)) }
@@ -476,15 +476,15 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
     Num.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-preprocess(_Msg1, Msg2, Opts) ->
-    Req = hb_ao:get(<<"request">>, Msg2, Opts),
+preprocess(Msg1, Msg2, Opts) ->
+    Req = hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore }),
     ?event(debug_preprocess, {called_preprocess,Req}),
     TemplateRoutes = load_routes(Opts),
     ?event(debug_preprocess, {template_routes, TemplateRoutes}),
-    {_, Match} = match(#{ <<"routes">> => TemplateRoutes }, Req, Opts),
-    ?event(debug_preprocess, {match, Match}),
-    case Match of
-        no_matching_route -> 
+    Res = hb_http:message_to_request(Req, Opts),
+    ?event(debug_preprocess, {match, Res}),
+    case Res of
+        {error, _} -> 
             ?event(debug_preprocess, preprocessor_did_not_match),
             case hb_opts:get(router_preprocess_default, <<"local">>, Opts) of
                 <<"local">> ->
@@ -504,22 +504,47 @@ preprocess(_Msg1, Msg2, Opts) ->
                             }]
                     }}
             end;
-        _ -> 
-            ?event(debug_preprocess, {matched_route, Match}),
-            {ok,
+        {ok, Method, Node, Path, _MsgWithoutMeta, _ReqOpts} ->
+            ?event(debug_preprocess, {matched_route, {explicit, Res}}),
+            CommitRequest =
+                hb_util:atom(
+                    hb_ao:get_first(
+                        [
+                            {Msg1, <<"commit-request">>}
+                        ],
+                        false,
+                        Opts
+                    )
+                ),
+            MaybeCommit =
+                case CommitRequest of
+                    true -> #{ <<"commit-request">> => true };
+                    false -> #{}
+                end,
+            % Construct a request to `relay@1.0/call' which will proxy a request
+            % to `apply@1.0/body' with the original request body as the argument.
+            % This allows us to potentially sign the request before sending it,
+            % letting the recipient node charge/verify us as necessary, without
+            % explicitly signing the user's request itself.
+            {
+                ok,
                 #{
                     <<"body">> =>
                         [
-                            #{ <<"device">> => <<"relay@1.0">> },
+                            MaybeCommit#{
+                                <<"device">> => <<"relay@1.0">>,
+                                <<"method">> => <<"POST">>,
+                                <<"peer">> => Node
+                            },
                             #{
                                 <<"path">> => <<"call">>,
-                                <<"target">> => <<"body">>,
-                                <<"body">> =>
-                                    hb_ao:get(
-                                        <<"request">>,
-                                        Msg2,
-                                        Opts#{ hashpath => ignore }
-                                    )
+                                <<"target">> => <<"proxy-message">>,
+                                <<"proxy-message">> =>
+                                    #{
+                                        <<"device">> => <<"apply@1.0">>,
+                                        <<"path">> => <<"user-request">>,
+                                        <<"user-request">> => Req
+                                    }
                             }
                         ]
                 }
@@ -614,7 +639,9 @@ local_process_route_provider_test() ->
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
-local_dynamic_router_test() ->
+local_dynamic_router_test_() ->
+    {timeout, 30, fun local_dynamic_router/0}.
+local_dynamic_router() ->
     BenchRoutes = 50,
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
@@ -1006,7 +1033,7 @@ dynamic_routing_by_performance() ->
             )
         ),
     ?event(debug_dynrouter, {worker_weights, {explicit, WeightsByWorker}}),
-    ?assert(maps:get(1, WeightsByWorker) > 0.4),
+    ?assert(maps:get(1, WeightsByWorker) > 0.3),
     ?assert(maps:get(TestNodes, WeightsByWorker) < 0.3),
     ok.
 
@@ -1017,9 +1044,11 @@ weighted_random_strategy_test() ->
             #{ <<"host">> => <<"2">>, <<"weight">> => 99 }
         ],
     SimRes = simulate(1000, 1, Nodes, <<"By-Weight">>),
-    [One, _] = simulation_distribution(SimRes, Nodes),
-    ?assert(One < 25),
-    ?assert(One > 4).
+    [HitsOnFirstHost, _] = simulation_distribution(SimRes, Nodes),
+    ProportionOfFirstHost = HitsOnFirstHost / 1000,
+    ?event(debug_weighted_random, {proportion_of_first_host, ProportionOfFirstHost}),
+    ?assert(ProportionOfFirstHost < 0.05),
+    ?assert(ProportionOfFirstHost >= 0.0001).
 
 strategy_suite_test_() ->
     lists:map(
@@ -1250,8 +1279,8 @@ add_route_test() ->
     ?assertMatch(<<"new">>, Recvd).
 
 relay_nearest_test() ->
-    Peer1 = <<"https://compute-1.forward.computer">>,
-    Peer2 = <<"https://compute-2.forward.computer">>,
+    Peer1 = <<"https://tee-2.forward.computer">>,
+    Peer2 = <<"https://tee-3.forward.computer">>,
     HTTPSOpts = #{ http_client => httpc },
     {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
     {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),

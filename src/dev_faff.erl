@@ -17,7 +17,7 @@
 %%% do not want to charge for requests, so we return `ok' and do not actually
 %%% debit the user's account. Similarly, we are not interested in taking payments
 %%% from users, so we do not implement `credit/3'.
--export([debit/3]).
+-export([charge/3]).
 -include("include/hb.hrl").
 
 %% @doc Decide whether or not to service a request from a given address.
@@ -40,7 +40,7 @@ is_admissible(Msg, NodeMsg) ->
         Signers
     ).
 
-%% @doc Debit the user's account if the request is allowed.
-debit(_, Req, _NodeMsg) ->
-    ?event(payment, {debit, Req}),
+%% @doc Charge the user's account if the request is allowed.
+charge(_, Req, _NodeMsg) ->
+    ?event(payment, {charge, Req}),
     {ok, true}.

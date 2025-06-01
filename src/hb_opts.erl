@@ -13,8 +13,9 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, load_bin/1]).
--export([default_message/0, mimic_default_types/2, validate_node_history/1, validate_node_history/3]).
+-export([get/1, get/2, get/3, as/2, identities/1, load/1, load_bin/1]).
+-export([default_message/0, mimic_default_types/2]).
+-export([validate_node_history/1, validate_node_history/3]).
 -export([check_required_opts/2]).
 -include("include/hb.hrl").
 
@@ -49,6 +50,7 @@ default_message() ->
         %% Preloaded devices for the node to use. These names override
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
+            #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
@@ -345,8 +347,15 @@ load(Path) ->
         _ -> {error, not_found}
     end.
 load_bin(Bin) ->
-    try dev_codec_flat:deserialize(Bin) of
-        {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
+    % Trim trailing whitespace from each line in the file.
+    Ls =
+        lists:map(
+            fun(Line) -> string:trim(Line, trailing) end,
+            binary:split(Bin, <<"\n">>, [global])
+        ),
+    try dev_codec_flat:deserialize(iolist_to_binary(lists:join(<<"\n">>, Ls))) of
+        {ok, Map} ->
+            {ok, mimic_default_types(Map, new_atoms)}
     catch
         error:B -> {error, B}
     end.
@@ -409,6 +418,69 @@ validate_node_history(Opts, MinLength, MaxLength) ->
                     (integer_to_binary(Length))/binary,
                     "."
                 >>
+            }
+    end.
+
+%% @doc Find a given identity from the `identities' map, and return the options
+%% merged with the sub-options for that identity.
+as(Identity, Opts) ->
+    case identities(Opts) of
+        #{ Identity := SubOpts } ->
+            ?event({found_identity_sub_opts_are, SubOpts}),
+            {ok, maps:merge(Opts, mimic_default_types(SubOpts, new_atoms))};
+        _ ->
+            {error, not_found}
+    end.
+
+%% @doc Find all known IDs and their sub-options from the `priv_ids' map. Allows
+%% the identities to be named, or based on addresses. The results are normalized
+%% such that the map returned by this function contains both mechanisms for 
+%% finding an identity and its sub-options. Additionally, sub-options are also
+%% normalized such that the `address' property is present and accurate for all
+%% given identities.
+identities(Opts) ->
+    identities(hb:wallet(), Opts).
+identities(Default, Opts) ->
+    Named = ?MODULE:get(identities, #{}, Opts),
+    % Generate an address-based map of identities.
+    Addresses =
+        maps:from_list(lists:filtermap(
+            fun({_Name, SubOpts}) ->
+                case maps:find(priv_wallet, SubOpts) of
+                    {ok, Wallet} ->
+                        Addr = hb_util:human_id(ar_wallet:to_address(Wallet)),
+                        {true, {Addr, SubOpts}};
+                    error -> false
+                end
+            end,
+            maps:to_list(Named)
+        )),
+    % Merge the named and address-based maps. Normalize each result to ensure
+    % that the `address' property is present and accurate.
+    Identities =
+        maps:map(
+            fun(_NameOrID, SubOpts) ->
+                case maps:find(priv_wallet, SubOpts) of
+                    {ok, Wallet} ->
+                        SubOpts#{ <<"address">> => hb_util:human_id(Wallet) };
+                    error -> SubOpts
+                end
+            end,
+            maps:merge(Named, Addresses)
+        ),
+    ?event({identities_without_default, Identities}),
+    % Add a default identity if one is not already present.
+    DefaultWallet = ?MODULE:get(priv_wallet, Default, Opts),
+    case maps:find(DefaultID = hb_util:human_id(DefaultWallet), Identities) of
+        {ok, _} -> Identities;
+        error ->
+            Identities#{
+                DefaultID => #{
+                    priv_wallet => DefaultWallet
+                },
+                <<"default">> => #{
+                    priv_wallet => DefaultWallet
+                }
             }
     end.
 
@@ -492,23 +564,89 @@ load_test() ->
     % An atom, where the key contained a header-key `-' rather than a `_'.
     ?assertEqual(false, maps:get(await_inprogress, Conf)).
 
+as_identity_test() ->
+    DefaultWallet = ar_wallet:new(),
+    TestWallet1 = ar_wallet:new(),
+    TestWallet2 = ar_wallet:new(),
+    TestID2 = hb_util:human_id(TestWallet2),
+    Opts = #{
+        test_key => 0,
+        priv_wallet => DefaultWallet,
+        identities => #{
+            <<"testname-1">> => #{
+                priv_wallet => TestWallet1,
+                test_key => 1
+            },
+            TestID2 => #{
+                priv_wallet => TestWallet2,
+                test_key => 2
+            }
+        }
+    },
+    ?event({base_opts, Opts}),
+    Identities = identities(Opts),
+    ?event({identities, Identities}),
+    % The number of identities should be 5: `default`, its ID, `testname-1`,
+    % and its ID, and just the ID of `TestWallet2`.
+    ?assertEqual(5, maps:size(Identities)),
+    % The wallets for each of the names should be the same as the wallets we
+    % provided. We also check that the settings are applied correctly.
+    ?assertMatch(
+        {ok, #{ priv_wallet := DefaultWallet, test_key := 0 }},
+        as(<<"default">>, Opts)
+    ),
+    ?assertMatch(
+        {ok, #{ priv_wallet := DefaultWallet, test_key := 0 }},
+        as(hb_util:human_id(DefaultWallet), Opts)
+    ),
+    ?assertMatch(
+        {ok, #{ priv_wallet := TestWallet1, test_key := 1 }},
+        as(<<"testname-1">>, Opts)
+    ),
+    ?assertMatch(
+        {ok, #{ priv_wallet := TestWallet1, test_key := 1 }},
+        as(hb_util:human_id(TestWallet1), Opts)
+    ),
+    ?assertMatch(
+        {ok, #{ priv_wallet := TestWallet2, test_key := 2 }},
+        as(TestID2, Opts)
+    ).
+    
+
 validate_node_history_test() ->
     % Test default values (min=1, max=1)
     ?assertEqual({ok, 1}, validate_node_history(#{node_history => [entry1]})),
-    ?assertEqual({error, <<"Node history too short. Expected at least 1 entries, got 0.">>}, 
-                 validate_node_history(#{})),
-    ?assertEqual({error, <<"Node history too long. Expected at most 1 entries, got 2.">>}, 
-                 validate_node_history(#{node_history => [entry1, entry2]})),
+    ?assertEqual(
+        {error, <<"Node history too short. Expected at least 1 entries, got 0.">>}, 
+        validate_node_history(#{})
+    ),
+    ?assertEqual(
+        {error, <<"Node history too long. Expected at most 1 entries, got 2.">>}, 
+        validate_node_history(#{node_history => [entry1, entry2]})
+    ),
     % Test with custom range
     ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 2)),
-    ?assertEqual({ok, 1}, validate_node_history(#{node_history => [entry1]}, 0, 2)),
-    ?assertEqual({ok, 2}, validate_node_history(#{node_history => [entry1, entry2]}, 0, 2)),
+    ?assertEqual(
+        {ok, 1},
+        validate_node_history(#{node_history => [entry1]}, 0, 2)
+    ),
+    ?assertEqual(
+        {ok, 2},
+        validate_node_history(#{node_history => [entry1, entry2]}, 0, 2)
+    ),
     % Test range validations
-    ?assertEqual({error, <<"Node history too short. Expected at least 2 entries, got 1.">>}, 
-                 validate_node_history(#{node_history => [entry1]}, 2, 4)),
-    ?assertEqual({error, <<"Node history too long. Expected at most 2 entries, got 3.">>}, 
-                 validate_node_history(#{node_history => [entry1, entry2, entry3]}, 1, 2)),
+    ?assertEqual(
+        {error, <<"Node history too short. Expected at least 2 entries, got 1.">>}, 
+        validate_node_history(#{node_history => [entry1]}, 2, 4)
+    ),
+    ?assertEqual(
+        {error, <<"Node history too long. Expected at most 2 entries, got 3.">>}, 
+        validate_node_history(#{node_history => [entry1, entry2, entry3]}, 1, 2)
+    ),
     % Test edge cases
-    ?assertEqual({ok, 3}, validate_node_history(#{node_history => [entry1, entry2, entry3]}, 3, 3)),
+    ?assertEqual(
+        {ok, 3},
+        validate_node_history(#{node_history => [entry1, entry2, entry3]}, 3, 3)
+    ),
     ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 0)).
 -endif.

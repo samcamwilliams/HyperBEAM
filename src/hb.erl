@@ -82,7 +82,7 @@
 %%% modules of the hyperbeam node.
 -module(hb).
 %%% Configuration and environment:
--export([init/0, now/0, build/0]).
+-export([init/0, now/0, build/0, deploy_scripts/0]).
 %%% Base start configurations:
 -export([start_simple_pay/0, start_simple_pay/1, start_simple_pay/2]).
 -export([topup/3, topup/4]).
@@ -180,6 +180,34 @@ do_start_simple_pay(Opts) ->
         [Port, address()]
     ),
     <<"http://localhost:", (integer_to_binary(Port))/binary>>.
+
+%% @doc Upload all scripts from the `scripts' directory to the node to Arweave,
+%% printing their IDs.
+deploy_scripts() ->
+    deploy_scripts("scripts/").
+deploy_scripts(Dir) ->
+    Files = filelib:wildcard(Dir ++ "*.lua"),
+    lists:foreach(fun(File) ->
+        {ok, Script} = file:read_file(File),
+        Msg =
+            hb_message:commit(
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"name">> => hb_util:bin(File),
+                    <<"body">> => Script
+                },
+                wallet(),
+                <<"ans104@1.0">>
+            ),
+        {Status, _} = hb_client:upload(Msg, #{}, <<"ans104@1.0">>),
+        io:format(
+            "~s: ~s (upload status: ~p)~n",
+            [File, hb_util:id(Msg), Status]
+        )
+    end, Files),
+    ok.
+
 
 %% @doc Helper for topping up a user's balance on a simple-pay node.
 topup(Node, Amount, Recipient) ->

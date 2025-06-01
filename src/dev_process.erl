@@ -118,7 +118,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         }
     ),
     ProcID = hb_message:id(Msg1, all),
-    Slot = hb_ao:get(<<"at-slot">>, Msg1, Opts),
+    Slot = hb_ao:get(<<"at-slot">>, {as, <<"message@1.0">>, Msg1}, Opts),
     {ok,
         hb_private:set(
             hb_ao:set(
@@ -141,7 +141,10 @@ process_id(Msg1, Msg2, Opts) ->
         not_found ->
             process_id(ensure_process_key(Msg1, Opts), Msg2, Opts);
         Process ->
-            hb_message:id(Process, all)
+            hb_message:id(
+                Process,
+                hb_util:atom(maps:get(<<"commitments">>, Msg2, <<"all">>))
+            )
     end.
 
 %% @doc Before computation begins, a boot phase is required. This phase
@@ -412,7 +415,7 @@ push(Msg1, Msg2, Opts) ->
 ensure_loaded(Msg1, Msg2, Opts) ->
     % Get the nonce we are currently on and the inbound nonce.
     TargetSlot = hb_ao:get(<<"slot">>, Msg2, undefined, Opts),
-    ProcID = process_id(Msg1, Msg2, Opts),
+    ProcID = process_id(Msg1, #{}, Opts),
     ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case hb_ao:get(<<"initialized">>, Msg1, Opts) of
         <<"true">> ->
@@ -578,7 +581,7 @@ test_base_process(Opts) ->
     hb_message:commit(#{
         <<"device">> => <<"process@1.0">>,
         <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"scheduler-location">> => Address,
+        <<"scheduler-location">> => hb_opts:get(scheduler, Address, Opts),
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
     }, Wallet).
@@ -632,8 +635,10 @@ test_aos_process(Opts, Stack) ->
                         <<"snapshot">>,
                         <<"normalize">>
                     ],
-                <<"scheduler">> => Address,
-                <<"authority">> => Address
+                <<"scheduler">> =>
+                    hb_opts:get(scheduler, Address, Opts),
+                <<"authority">> =>
+                    hb_opts:get(authority, Address, Opts)
             }),
         Wallet
     ).
@@ -818,6 +823,7 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
+        process_async_cache => false,
         store => #{
             <<"store-module">> => hb_store_fs,
             <<"prefix">> => <<"cache-mainnet">>
@@ -997,7 +1003,7 @@ do_test_restore() ->
     % 1. Set variables in Lua.
     % 2. Return the variable.
     % Execute the first computation, then the second as a disconnected process.
-    Opts = #{ process_cache_frequency => 1 },
+    Opts = #{ process_cache_frequency => 1, process_async_cache => false },
     init(),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
@@ -1034,15 +1040,22 @@ now_results_test_() ->
 prior_results_accessible_test_() ->
 	{timeout, 30, fun() ->
 		init(),
+        Opts = #{
+            process_async_cache => false
+        },
 		Msg1 = test_aos_process(),
 		schedule_aos_call(Msg1, <<"return 1+1">>),
 		schedule_aos_call(Msg1, <<"return 2+2">>),
-		?assertEqual({ok, <<"4">>}, hb_ao:resolve(Msg1, <<"now/results/data">>, #{})),
-		?assertMatch({ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
+		?assertEqual(
+            {ok, <<"4">>},
+            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+        ),
+		?assertMatch(
+            {ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
 			hb_ao:resolve(
 				Msg1,
 				#{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-				#{}
+				Opts
 			)
 		)
 	end}.

@@ -15,7 +15,7 @@
 %%% Library functions. Each exported function is _automatically_ added to the
 %%% Lua environment, except for the `install/3' function, which is used to
 %%% install the library in the first place.
--export([resolve/3, set/3, event/3, install/3]).
+-export([get/3, resolve/3, set/3, event/3, install/3]).
 -include("include/hb.hrl").
 
 %% @doc Install the library into the given Lua environment.
@@ -146,6 +146,13 @@ resolve({many, Msgs}, ExecState, ExecOpts) ->
             ?event(lua_error, {ao_core_resolver_error, Error}),
             {[<<"error">>, Error], ExecState}
     end.
+
+%% @doc A wrapper for `hb_ao''s `get' functionality.
+get([Key, Base], ExecState, ExecOpts) ->
+    ?event({ao_core_get, {base, Base}, {key, Key}}),
+    NewRes = hb_ao:get(convert_as(Key), convert_as(Base), ExecOpts),
+    ?event({ao_core_get_result, {result, NewRes}}),
+    {[NewRes], ExecState}.
 
 %% @doc Converts any `as' terms from Lua to their HyperBEAM equivalents.
 convert_as([<<"as">>, Device, RawMsg]) ->

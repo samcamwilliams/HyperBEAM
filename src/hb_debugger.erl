@@ -69,7 +69,9 @@ start_and_break(Module, Function, Args) ->
     io:format("Invoking function...~n", []),
     apply(Module, Function, Args),
     io:format("Function invoked. Terminating.~n", []),
-    init:stop().
+    init:stop(),
+    % ...and for good measure, if we are still alive:
+    erlang:halt().
 
 %% @doc Await a debugger to be attached to the node.
 await_debugger() -> await_debugger(0).

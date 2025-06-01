@@ -361,9 +361,15 @@ handle_request(RawReq, Body, ServerID) ->
                     ?event(
                         http_error,
                         {http_error,
-                            {type, Type},
-                            {details, Details},
-                            {stacktrace, Stacktrace}
+                            {details,
+                                {explicit,
+                                    #{
+                                        type => Type,
+                                        details => Details,
+                                        stacktrace => Stacktrace
+                                    }
+                                }
+                            }
                         }
                     ),
                     hb_http:reply(

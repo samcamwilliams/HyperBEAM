@@ -351,17 +351,21 @@ env_write(ProcessStr, MsgStr, Base, Req, Opts) ->
     }.
 
 %% @doc Normalize the results of an evaluation.
-normalize_results(
-    Msg = #{ <<"Output">> := #{<<"data">> := Data} }) ->
-    {ok,
-        Data,
-        maps:get(<<"Messages">>, Msg, []),
-        maps:get(<<"patches">>, Msg, [])
-    };
 normalize_results(#{ <<"Error">> := Error }) ->
     {ok, Error, [], []};
-normalize_results(Other) ->
-    throw({invalid_results, Other}).
+normalize_results(Msg) ->
+    try
+        Output = maps:get(<<"Output">>, Msg, #{}),
+        Data = maps:get(<<"data">>, Output, <<>>),
+        {ok,
+            Data,
+            maps:get(<<"Messages">>, Msg, []),
+            maps:get(<<"patches">>, Msg, [])
+        }
+    catch
+        _:_ ->
+            {ok, <<>>, [], []}
+    end.
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that

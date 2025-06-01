@@ -961,12 +961,12 @@ deep_set(_Msg, [], Value, _Opts) ->
     Value;
 deep_set(Msg, [Key], Value, Opts) ->
     DevRes = device_set(Msg, Key, Value, Opts),
-    ?event(debug, {deep_device_set_result, {msg, Msg}, {key, Key}, {res, DevRes}}),
+    ?event({deep_device_set_result, {msg, Msg}, {key, Key}, {res, DevRes}}),
     DevRes;
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 
         {ok, SubMsg} ->
-            ?event(debug,
+            ?event(
                 {traversing_deeper_to_set,
                     {current_key, Key},
                     {current_value, SubMsg},
@@ -974,10 +974,10 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
                 }
             ),
             Res = device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), <<"explicit">>, Opts),
-            ?event(debug, {deep_set_result, {msg, Msg}, {key, Key}, {res, Res}}),
+            ?event({deep_set_result, {msg, Msg}, {key, Key}, {res, Res}}),
             Res;
         _ ->
-            ?event(debug,
+            ?event(
                 {creating_new_map,
                     {current_key, Key},
                     {rest, Rest}
@@ -1008,9 +1008,7 @@ device_set(Msg, Key, Value, Mode, Opts) ->
             <<"deep">> -> ReqWithoutMode;
             <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
         end,
-	?event(
-        debug,
-        {
+	?event({
             calling_device_set,
             {msg, Msg},
             {applying_set, Req}

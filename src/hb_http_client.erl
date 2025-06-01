@@ -335,7 +335,7 @@ handle_info({gun_up, PID, _Protocol}, #state{ status_by_pid = StatusByPID } = St
 			{noreply, State#state{ status_by_pid = StatusByPID2 }};
 		{connected, _MonitorRef, Peer} ->
 			?event(warning,
-                {gun_up_pid_already_exists, {peer, ar_util:format_peer(Peer)}}),
+                {gun_up_pid_already_exists, {peer, Peer}}),
 			{noreply, State}
 	end;
 

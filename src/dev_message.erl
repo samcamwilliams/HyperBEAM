@@ -330,7 +330,10 @@ commitment_ids_from_request(Base, Req, Opts) ->
             X2 when is_list(X2) -> X2;
             Descriptor2 -> hb_ao:normalize_key(Descriptor2)
         end,
-    ?event({commitment_ids_from_request, {req_commitments, ReqCommitments}, {req_committers, ReqCommitters}}),
+    ?event({commitment_ids_from_request,
+        {req_commitments, ReqCommitments},
+        {req_committers, ReqCommitters}
+    }),
     % Get the commitments to verify.
     FromCommitmentIDs =
         case ReqCommitments of
@@ -525,6 +528,8 @@ set(Message1, NewValuesMsg, Opts) ->
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for AO-Core to know the key to evaluate in requests.
+set_path(Message1, #{ <<"value">> := unset }, _Opts) ->
+    {ok, maps:without([<<"path">>], Message1)};
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
 
