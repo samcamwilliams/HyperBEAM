@@ -332,7 +332,15 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
                     % Merge the index message with the original, favoring the 
                     % keys of the original in the event of conflict. Remove the
                     % `priv` message, if present.
-                    Merged = hb_maps:merge(hb_private:reset(IndexTABM), EncOriginal),
+                    Merged =
+                        hb_maps:merge(
+                            hb_private:reset(IndexTABM),
+                            hb_maps:without(
+                                [<<"body">>, <<"content-type">>],
+                                EncOriginal,
+                                Opts
+                            )
+                        ),
                     % Return the merged result.
                     {ok, Merged};
                 Err ->
