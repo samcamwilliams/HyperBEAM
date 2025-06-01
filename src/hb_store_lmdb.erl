@@ -226,7 +226,9 @@ read_direct(StoreOpts, Key) ->
                             ?event(debug_lmdb_read, {refusing_to_read_group_marker, Key}),
                             % Groups should be accessed via list/type, not read directly
                             % This makes LMDB behave like filesystem where directories cannot be read as files
+                            % list(StoreOpts, Key);
                             not_found;
+                            
                         _ ->
                             % Regular value, return as-is
                             {ok, Value}
@@ -323,6 +325,9 @@ scope(_) -> scope().
 %% listing with prefix "colors" will return "colors/red" and "colors/blue"
 %% but not "colors" itself.
 %%
+%% If the Path points to a link, the function resolves the link and lists
+%% the contents of the target directory instead.
+%%
 %% This is particularly useful for implementing hierarchical data organization
 %% and providing tree-like navigation interfaces in applications.
 %%
@@ -333,11 +338,57 @@ scope(_) -> scope().
 list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
     Env = find_env(StoreOpts),
     ?event(debug_lmdb, { path, Path }),
+    
+    % Check if Path is a link and resolve it if necessary
+    ResolvedPath = case lmdb:get(Env, Path) of
+        {ok, Value} ->
+            LinkPrefixSize = byte_size(<<"link:">>),
+            case byte_size(Value) > LinkPrefixSize andalso
+                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
+                true ->
+                    % Path is a link, extract the target
+                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
+                    ?event(debug_lmdb, {resolving_link_for_list, Path, to, Link}),
+                    Link;
+                false ->
+                    % Not a link, use original path
+                    Path
+            end;
+        not_found ->
+            % Path not found in committed data, trigger flush and retry
+            ?event(debug_lmdb, {path_not_found_triggering_flush_for_list, Path}),
+            find_or_spawn_instance(StoreOpts) ! {flush, self(), Ref = make_ref()},
+            receive
+                {flushed, Ref} -> 
+                    case lmdb:get(Env, Path) of
+                        {ok, Value} ->
+                            ?event(debug_lmdb, {found_after_flush_for_list, Path, Value}),
+                            LinkPrefixSize = byte_size(<<"link:">>),
+                            case byte_size(Value) > LinkPrefixSize andalso
+                                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
+                                true ->
+                                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
+                                    ?event(debug_lmdb, {resolving_link_for_list_after_flush, Path, to, Link}),
+                                    Link;
+                                false ->
+                                    Path
+                            end;
+                        not_found ->
+                            % Still not found after flush, use original path
+                            Path
+                    end
+            after ?CONNECT_TIMEOUT -> 
+                ?event(debug_lmdb, {flush_timeout_for_list, Path}),
+                % Timeout, use original path
+                Path
+            end
+    end,
+    
     try
        % Ensure the path ends with "/" for proper prefix matching (like directory listing)
-       SearchPath = case Path of
+       SearchPath = case ResolvedPath of
            <<>> -> <<"">>;  % Root path
-           _ -> <<Path/binary, "/">>
+           _ -> <<ResolvedPath/binary, "/">>
        end,
        SearchPathSize = byte_size(SearchPath),
        
@@ -370,7 +421,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            end,
            []
        ),
-       ?event(debug_lmdb, {listing_path, Path, search_path, SearchPath, children, Children}),
+       ?event(debug_lmdb, {listing_path, Path, resolved_path, ResolvedPath, search_path, SearchPath, children, Children}),
        Children
     catch
        _:Error -> {error, Error}
@@ -551,7 +602,8 @@ resolve(StoreOpts, Path) when is_list(Path) ->
             OrigPath = hb_util:bin(lists:join(<<"/">>, Path)),
             ?event(debug_resolve, {list_resolution_failed, Path, reason, Reason, returning, OrigPath}),
             OrigPath
-    end.
+    end;
+resolve(_,_) -> not_found.
 
 %% @doc Retrieve or create the LMDB environment handle for a database.
 %%
@@ -1434,5 +1486,35 @@ isolated_type_debug_test() ->
     ?event(isolated_debug, {reading_other_key_directly}),
     OtherKeyResult = read(StoreOpts, OtherKeyPath),
     ?event(isolated_debug, {other_key_read_result, OtherKeyResult}),
+    
+    stop(StoreOpts).
+
+%% @doc Test that list function resolves links correctly
+list_with_link_test() ->
+    StoreOpts = #{
+        <<"prefix">> => <<"/tmp/store-list-link">>,
+        <<"max-size">> => ?DEFAULT_SIZE
+    },
+    reset(StoreOpts),
+    
+    % Create a group with some children
+    make_group(StoreOpts, <<"real-group">>),
+    write(StoreOpts, <<"real-group/child1">>, <<"value1">>),
+    write(StoreOpts, <<"real-group/child2">>, <<"value2">>),
+    write(StoreOpts, <<"real-group/child3">>, <<"value3">>),
+    
+    % Create a link to the group
+    make_link(StoreOpts, <<"real-group">>, <<"link-to-group">>),
+    
+    % List the real group to verify expected children
+    {ok, RealGroupChildren} = list(StoreOpts, <<"real-group">>),
+    ?event({real_group_children, RealGroupChildren}),
+    ExpectedChildren = [<<"child1">>, <<"child2">>, <<"child3">>],
+    ?assertEqual(ExpectedChildren, lists:sort(RealGroupChildren)),
+    
+    % List via the link - should return the same children
+    {ok, LinkChildren} = list(StoreOpts, <<"link-to-group">>),
+    ?event({link_children, LinkChildren}),
+    ?assertEqual(ExpectedChildren, lists:sort(LinkChildren)),
     
     stop(StoreOpts).
