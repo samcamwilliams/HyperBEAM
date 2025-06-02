@@ -49,8 +49,28 @@
 %% @param StoreOpts A map containing database configuration options
 %% @returns {ok, ServerPid} on success, {error, Reason} on failure
 -spec start(map()) -> {ok, pid()} | {error, term()}.
-start(StoreOpts) when is_map(StoreOpts) ->
-    {ok, find_or_spawn_instance(StoreOpts)};
+start(StoreOpts = #{ <<"name">> := DataDir }) ->
+    % Ensure the database directory exists
+    filelib:ensure_dir(hb_util:list(DataDir) ++ "/mbd.data"),
+    % Create the LMDB environment with specified size limit
+    {ok, Env} =
+        lmdb:env_create(
+            DataDir,
+            #{
+                max_mapsize => maps:get(<<"max-size">>, StoreOpts, ?DEFAULT_SIZE)
+            }
+        ),
+    % Prepare server state with environment handle
+    ServerOpts = StoreOpts#{ <<"env">> => Env },
+    % Spawn the main server process with linked commit manager
+    Server = 
+        spawn(
+            fun() ->
+                spawn_link(fun() -> commit_manager(ServerOpts, self()) end),
+                server(ServerOpts)
+            end
+        ),
+    {ok, #{ <<"pid">> => Server, <<"env">> => Env }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
 
@@ -94,7 +114,7 @@ type(Opts, Key) ->
         not_found ->
             ?event(debug_type_detection, {key_not_found_triggering_flush, Key}),
             % Key not found in committed data, trigger flush and retry
-            find_or_spawn_instance(Opts) ! {flush, self(), Ref = make_ref()},
+            find_pid(Opts) ! {flush, self(), Ref = make_ref()},
             receive
                 {flushed, Ref} -> 
                     case lmdb:get(find_env(Opts), Key) of
@@ -144,7 +164,7 @@ write(StoreOpts, Key, Value) when is_list(Key) ->
     KeyBin = hb_util:bin(lists:join(<<"/">>, Key)),
     write(StoreOpts, KeyBin, Value);
 write(StoreOpts, Key, Value) ->
-    PID = find_or_spawn_instance(StoreOpts),
+    PID = find_pid(StoreOpts),
     PID ! {write, Key, Value},
     ok.
 
@@ -209,7 +229,7 @@ read(StoreOpts, Key) ->
 %% This is the internal implementation that handles actual database reads.
 read_direct(StoreOpts, Key) ->
     LinkPrefixSize = byte_size(<<"link:">>),
-    case lmdb:get(find_env(StoreOpts), Key) of
+    case lmdb:get(Env = find_env(StoreOpts), Key) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
             case byte_size(Value) > LinkPrefixSize andalso
@@ -236,10 +256,10 @@ read_direct(StoreOpts, Key) ->
         not_found ->
             % Key not found in committed data, trigger flush and retry
             ?event(read_miss, {miss, Key}),
-            find_or_spawn_instance(StoreOpts) ! {flush, self(), Ref = make_ref()},
+            find_pid(StoreOpts) ! {flush, self(), Ref = make_ref()},
             receive
                 {flushed, Ref} ->
-                    case lmdb:get(find_env(StoreOpts), Key) of
+                    case lmdb:get(Env, Key) of
                         {ok, _} -> read_direct(StoreOpts, Key);
                         not_found -> not_found
                     end 
@@ -335,11 +355,11 @@ scope(_) -> scope().
 -spec list(map(), binary()) -> {ok, [binary()]} | {error, term()}.
 list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
     Env = find_env(StoreOpts),
-    ?event(debug_lmdb, { path, Path }),
-    
+    ?event(debug_lmdb, {listing, Path}),
     % Check if Path is a link and resolve it if necessary
     ResolvedPath = case lmdb:get(Env, Path) of
         {ok, Value} ->
+            ?event(debug_lmdb, {found_value, Value}),
             LinkPrefixSize = byte_size(<<"link:">>),
             case byte_size(Value) > LinkPrefixSize andalso
                 binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
@@ -355,7 +375,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
         not_found ->
             % Path not found in committed data, trigger flush and retry
             ?event(debug_lmdb, {path_not_found_triggering_flush_for_list, Path}),
-            find_or_spawn_instance(StoreOpts) ! {flush, self(), Ref = make_ref()},
+            find_pid(StoreOpts) ! {flush, self(), Ref = make_ref()},
             receive
                 {flushed, Ref} -> 
                     case lmdb:get(Env, Path) of
@@ -381,7 +401,8 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
                 Path
             end
     end,
-    
+    % List the children of the resolved path.
+    ?event(debug_lmdb, {listing_children, {resolved_path, ResolvedPath}}),
     try
        % Ensure the path ends with "/" for proper prefix matching (like directory listing)
        SearchPath = case ResolvedPath of
@@ -558,7 +579,7 @@ add_path(StoreOpts, Path1, Path2) when is_binary(Path1), is_list(Path2) ->
 %% @returns 'ok' when flush is complete, {error, Reason} on failure
 -spec sync(map()) -> ok | {error, term()}.
 sync(StoreOpts) ->
-    PID = find_or_spawn_instance(StoreOpts),
+    PID = find_pid(StoreOpts),
     PID ! {flush, self(), Ref = make_ref()},
     receive
         {flushed, Ref} -> ok
@@ -621,22 +642,9 @@ resolve(_,_) -> not_found.
 %%
 %% @param StoreOpts Database configuration map containing the directory prefix
 %% @returns LMDB environment handle or 'timeout' on communication failure
-find_env(StoreOpts = #{ <<"name">> := DataDir }) ->
-    case get({?MODULE, DataDir}) of
-        undefined ->
-            % Not cached locally, request from server
-            ?event(debug_process_cache, {not_in_env_cache, {?MODULE, DataDir}}),
-            PID = find_or_spawn_instance(StoreOpts),
-            PID ! {get_env, self(), Ref = make_ref()},
-            receive
-                {env, Env, Ref} ->
-                    % Cache the environment handle in process dictionary
-                    put({?MODULE, DataDir}, Env),
-                    Env
-            after ?CONNECT_TIMEOUT -> timeout
-            end;
-        Env -> Env
-    end.
+find_env(StoreOpts) ->
+    #{ <<"env">> := Env } = hb_store:find(StoreOpts),
+    Env.
 
 %% @doc Locate an existing server process or spawn a new one if needed.
 %%
@@ -655,21 +663,9 @@ find_env(StoreOpts = #{ <<"name">> := DataDir }) ->
 %%
 %% @param StoreOpts Database configuration map containing the directory prefix
 %% @returns PID of the server process (existing or newly created)
-find_or_spawn_instance(StoreOpts = #{ <<"name">> := DataDir }) ->
-    case get({?MODULE, {server, DataDir}}) of
-        undefined ->
-            % Not cached locally, check global registry
-            ?event(debug_process_cache, {not_in_process_cache, {?MODULE, DataDir}}),
-            case hb_name:lookup({?MODULE, DataDir}) of
-                undefined ->
-                    % No server exists anywhere, create a new one
-                    Pid = start_server(StoreOpts),
-                    Pid;
-                Pid -> Pid
-            end;
-        Pid ->
-            Pid
-    end.
+find_pid(StoreOpts) ->
+    #{ <<"pid">> := Pid } = hb_store:find(StoreOpts),
+    Pid.
 
 %% @doc Gracefully shut down the database server and close the environment.
 %%
@@ -684,19 +680,11 @@ find_or_spawn_instance(StoreOpts = #{ <<"name">> := DataDir }) ->
 %% @param StoreOpts Database configuration map
 %% @returns 'ok' when shutdown is complete
 stop(StoreOpts) when is_map(StoreOpts) ->
-    case maps:get(<<"name">>, StoreOpts, undefined) of
-        undefined ->
-            % No prefix specified, nothing to stop
-            ok;
-        DataDir ->
-            PID = find_or_spawn_instance(StoreOpts),
-            Env = find_env(StoreOpts),
-            PID ! stop,
-            % Clean up process dictionary entries for this database
-            erase({?MODULE, DataDir}),
-            erase({?MODULE, {server, DataDir}}),
-            lmdb:env_close(Env),
-            ok
+    PID = find_pid(StoreOpts),
+    PID ! {stop, self(), Ref = make_ref()},
+    receive
+        {stopped, Ref} -> ok
+    after ?CONNECT_TIMEOUT -> ok
     end;
 stop(_) ->
     % Invalid argument, ignore
@@ -721,72 +709,14 @@ reset(StoreOpts) when is_map(StoreOpts) ->
             % No prefix specified, nothing to reset
             ok;
         DataDir ->
-            % Only stop the store if it's actually running
-            case get({?MODULE, DataDir}) of
-                undefined ->
-                    % Check if there's a server running without env cached
-                    case hb_name:lookup({?MODULE, DataDir}) of
-                        undefined -> 
-                            % No server running, just remove the directory
-                            ok;
-                        _Pid -> 
-                            % Server exists, stop it properly
-                            stop(StoreOpts)
-                    end;
-                _Env ->
-                    % Environment is cached, stop normally
-                    stop(StoreOpts)
-            end,
+            % Stop the store and remove the database.
+            stop(StoreOpts),
             os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
             ok
     end;
 reset(_) ->
     % Invalid argument, ignore
     ok.
-
-%% @doc Initialize a new server process for managing database operations.
-%%
-%% This function creates the complete server infrastructure for a database
-%% instance. It first ensures the database directory exists, then creates
-%% the LMDB environment with the specified configuration parameters.
-%%
-%% The server architecture consists of two linked processes: the main server
-%% that handles database operations and a commit manager that enforces maximum
-%% flush intervals. This dual-process design ensures that data is regularly
-%% committed to disk even during periods of continuous write activity.
-%%
-%% The server process is registered both in the local process dictionary and
-%% the global process registry to enable the singleton pattern used throughout
-%% the module.
-%%
-%% @param StoreOpts Database configuration map containing directory and options
-%% @returns PID of the newly created server process
-start_server(StoreOpts = #{ <<"name">> := DataDir }) ->
-    % Ensure the database directory exists
-    filelib:ensure_dir(
-        binary_to_list(hb_util:bin(DataDir)) ++ "/mbd.data"
-    ),
-    % Create the LMDB environment with specified size limit
-    {ok, Env} =
-        lmdb:env_create(
-            DataDir,
-            #{
-                max_mapsize => maps:get(<<"max-size">>, StoreOpts, ?DEFAULT_SIZE)
-            }
-        ),
-    % Prepare server state with environment handle
-    ServerOpts = StoreOpts#{ <<"env">> => Env },
-    % Spawn the main server process with linked commit manager
-    Server = 
-        spawn(
-            fun() ->
-                spawn_link(fun() -> commit_manager(ServerOpts, self()) end),
-                server(ServerOpts)
-            end
-        ),
-    % Register the server in process dictionary for caching
-    put({?MODULE, {server, DataDir}}, Server),
-    Server.
 
 %% @doc Main server loop that handles database operations and manages transactions.
 %%
@@ -820,9 +750,11 @@ server(State) ->
             NewState = server_flush(State),
             From ! {flushed, Ref},
             server(NewState);
-        stop ->
+        {stop, From, Ref} ->
             % Shutdown request, flush final data and terminate
             server_flush(State),
+            lmdb:env_close(maps:get(<<"env">>, State)),
+            From ! {stopped, Ref},
             ok
     after
         % Auto-flush after idle timeout to ensure data safety
@@ -1013,6 +945,7 @@ ensure_transaction(State) ->
 %% serves as a sanity check that the basic storage mechanism is working.
 basic_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-1">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
@@ -1030,6 +963,7 @@ basic_test() ->
 %% It demonstrates the directory-like navigation capabilities of the store.
 list_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-2">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
@@ -1082,8 +1016,9 @@ list_test() ->
 %% as a composite type and cannot be read directly (like filesystem directories).
 group_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store3">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store3">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     make_group(StoreOpts, <<"colors">>),
@@ -1099,8 +1034,9 @@ group_test() ->
 %% This demonstrates the transparent link resolution mechanism.
 link_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store3">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store3">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, <<"foo/bar/baz">>, <<"Bam">>),
@@ -1111,8 +1047,9 @@ link_test() ->
 
 link_fragment_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store3">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store3">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, [<<"data">>, <<"bar">>, <<"baz">>], <<"Bam">>),
@@ -1128,8 +1065,9 @@ link_fragment_test() ->
 %% This demonstrates the semantic classification system used by the store.
 type_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store-6">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-6">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     make_group(StoreOpts, <<"assets">>),
@@ -1158,8 +1096,9 @@ type_test() ->
 %% and need to create shortcuts or aliases to deeply nested data.
 link_key_list_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store-7">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-7">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, [ <<"parent">>, <<"key">> ], <<"value">>),
@@ -1180,8 +1119,9 @@ link_key_list_test() ->
 %% access patterns.
 path_traversal_link_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store-8">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-8">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     % Create the actual data at group/key
@@ -1197,8 +1137,9 @@ path_traversal_link_test() ->
 %% @doc Test that matches the exact hb_store hierarchical test pattern
 exact_hb_store_test() ->
     StoreOpts = #{
-      <<"name">> => <<"/tmp/store-exact">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-exact">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     
     % Follow exact same pattern as hb_store test
@@ -1235,9 +1176,9 @@ exact_hb_store_test() ->
 cache_style_test() ->
     hb:init(),
     StoreOpts = #{
-      <<"store-module">> => hb_store_lmdb,
-      <<"name">> => <<"/tmp/store-cache-style">>,
-      <<"max-size">> => ?DEFAULT_SIZE
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-cache-style">>,
+        <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     % Start the store
@@ -1261,6 +1202,7 @@ cache_style_test() ->
 %% 3. Reading the composed structure reconstructs the original nested map
 nested_map_cache_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-nested-cache">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
@@ -1391,6 +1333,7 @@ reconstruct_map(StoreOpts, Path) ->
 %% @doc Debug test to understand cache linking behavior
 cache_debug_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/cache-debug">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
@@ -1438,6 +1381,7 @@ cache_debug_test() ->
 %% @doc Isolated test focusing on the exact cache issue
 isolated_type_debug_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/isolated-debug">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
@@ -1488,6 +1432,7 @@ isolated_type_debug_test() ->
 %% @doc Test that list function resolves links correctly
 list_with_link_test() ->
     StoreOpts = #{
+        <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-list-link">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },

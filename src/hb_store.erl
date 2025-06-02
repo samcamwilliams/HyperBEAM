@@ -73,11 +73,13 @@ behavior_info(callbacks) ->
 find(StoreOpts = #{ <<"store-module">> := Mod }) ->
     Name = maps:get(<<"name">>, StoreOpts, Mod),
     LookupName = {store, Mod, Name},
-    case erlang:get(LookupName) of
+    case get(LookupName) of
         undefined ->
             try persistent_term:get(LookupName) of
-                InstanceMessage ->
-                    ensure_instance_alive(StoreOpts, InstanceMessage)
+                Instance1 ->
+                    EnsuredInstance = ensure_instance_alive(StoreOpts, Instance1),
+                    put(LookupName, EnsuredInstance),
+                    EnsuredInstance
             catch
                 error:badarg -> spawn_instance(StoreOpts)
             end;
@@ -91,8 +93,8 @@ spawn_instance(StoreOpts = #{ <<"store-module">> := Mod }) ->
     try Mod:start(StoreOpts) of
         ok -> ok;
         {ok, InstanceMessage} ->
-            persistent_term:put({store, Mod, Name}, InstanceMessage),
             put({store, Mod, Name}, InstanceMessage),
+            persistent_term:put({store, Mod, Name}, InstanceMessage),
             InstanceMessage;
         {error, Reason} ->
             ?event(error, {store_start_failed, {Mod, Name, Reason}}),
@@ -281,10 +283,10 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 %% default into all HyperBEAM distributions.
 test_stores() ->
     [
-        % #{
-        %     <<"store-module">> => hb_store_fs,
-        %     <<"name">> => <<"cache-TEST/fs">>
-        % },
+        #{
+            <<"store-module">> => hb_store_fs,
+            <<"name">> => <<"cache-TEST/fs">>
+        },
         #{
             <<"store-module">> => hb_store_lmdb,
             <<"name">> => <<"cache-TEST/lmdb">>,
