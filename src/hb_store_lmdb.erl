@@ -52,7 +52,7 @@
 start(StoreOpts) when is_map(StoreOpts) ->
     {ok, find_or_spawn_instance(StoreOpts)};
 start(_) ->
-    {error, {badarg, "StoreOpts must be a map"}}.
+    {error, {badarg, <<"StoreOpts must be a map">>}}.
 
 %% @doc Determine whether a key represents a simple value or composite group.
 %%
@@ -174,7 +174,6 @@ write(StoreOpts, Key, Value) ->
 read(StoreOpts, Key) when is_list(Key) ->
     % Try direct read first (fast path for non-link paths)
     DirectKeyBin = hb_util:bin(lists:join(<<"/">>, Key)),
-    ?event(debug_nested_read, {path_list, Key, direct_key, DirectKeyBin}),
     case read_direct(StoreOpts, DirectKeyBin) of
         {ok, Value} -> 
             ?event(debug_nested_read_direct_success, {key, DirectKeyBin, value_size, byte_size(Value)}),
@@ -203,6 +202,7 @@ read(StoreOpts, Key) when is_list(Key) ->
             Error
     end;
 read(StoreOpts, Key) ->
+    ?event(debug_nested_test, {key, Key}),
     read_direct(StoreOpts, Key).
 
 %% @doc Read a value directly from the database with link resolution.
@@ -427,7 +427,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
        _:Error -> {error, Error}
     end;
 list(_, _) ->
-    {error, {badarg, "StoreOpts must be a map and Path must be an binary"}}.
+    {error, {badarg, <<"StoreOpts must be a map and Path must be an binary">>}}.
 
 %% @doc Create a group entry that can contain other keys hierarchically.
 %%
@@ -449,7 +449,7 @@ list(_, _) ->
 make_group(StoreOpts, GroupName) when is_map(StoreOpts), is_binary(GroupName) ->
     write(StoreOpts, GroupName, hb_util:bin(group));
 make_group(_,_) ->
-    {error, {badarg, "StoreOps must be map and GroupName must be a binary"}}.
+    {error, {badarg, <<"StoreOps must be map and GroupName must be a binary">>}}.
 
 %% @doc Ensure all parent groups exist for a given path.
 %%
@@ -522,8 +522,10 @@ make_link(StoreOpts, Existing, New) ->
 %% @doc Transform a path into the store's canonical form.
 %% For LMDB, paths are simply joined with "/" separators.
 path(_StoreOpts, Path) when is_list(Path) ->
+    ?event(debug_nested_test, { hb_store_path, Path }),
     hb_util:bin(lists:join(<<"/">>, Path));
 path(_StoreOpts, Path) when is_binary(Path) ->
+    ?event(debug_nested_test, { hb_store_path, Path }),
     Path.
 
 %% @doc Add two path components together.
