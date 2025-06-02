@@ -34,6 +34,7 @@
 -define(CONNECT_TIMEOUT, 3000).                   % 3 second timeout for server communication
 -define(DEFAULT_IDLE_FLUSH_TIME, 5).              % 5ms idle time before auto-flush
 -define(DEFAULT_MAX_FLUSH_TIME, 50).              % 50ms maximum time between flushes
+-define(MAX_RETRIES, 1).                          % 1 retry for read operations
 
 %% @doc Start the LMDB storage system for a given database configuration.
 %%
@@ -191,24 +192,26 @@ write(StoreOpts, Key, Value) ->
 %% @param Key Binary key or list of path segments to read
 %% @returns {ok, Value} on success, {error, Reason} on failure
 -spec read(map(), binary() | list()) -> {ok, binary()} | {error, term()}.
-read(StoreOpts, Key) when is_list(Key) ->
+read(StoreOpts, Path) when is_list(Path) ->
+    read(StoreOpts, hb_util:bin(lists:join(<<"/">>, Path)));
+read(StoreOpts, Path) ->
     % Try direct read first (fast path for non-link paths)
-    DirectKeyBin = hb_util:bin(lists:join(<<"/">>, Key)),
-    case read_direct(StoreOpts, DirectKeyBin) of
+    case read_direct(StoreOpts, Path) of
         {ok, Value} -> 
-            ?event(debug_nested_read_direct_success, {key, DirectKeyBin, value_size, byte_size(Value)}),
+            ?event({key, Path, value_size, byte_size(Value)}),
             {ok, Value};
         not_found ->
             % Direct read failed, try link resolution (slow path)
-            ?event(debug_nested_read_trying_link_resolution, {path, Key}),
+            ?event({path, Path}),
             try
-                case resolve_path_links(StoreOpts, Key) of
-                    {ok, ResolvedPath} ->
-                        ResolvedKeyBin = hb_util:bin(lists:join(<<"/">>, ResolvedPath)),
-                        ?event(debug_nested_read_link_resolved, {original, Key, resolved, ResolvedPath, resolved_key, ResolvedKeyBin}),
-                        read_direct(StoreOpts, ResolvedKeyBin);
+                PathParts = binary:split(Path, <<"/">>, [global]),
+                case resolve_path_links(StoreOpts, PathParts) of
+                    {ok, ResolvedPathParts} ->
+                        ResolvedPathBin = hb_util:bin(lists:join(<<"/">>, ResolvedPathParts)),
+                        ?event({original, Path, resolved, ResolvedPathBin}),
+                        read_direct(StoreOpts, ResolvedPathBin);
                     {error, _} ->
-                        ?event(debug_nested_read_link_resolution_failed, {path, Key}),
+                        ?event({path, Path}),
                         % Convert errors to not_found for hb_store compatibility
                         not_found
                 end
@@ -228,6 +231,10 @@ read(StoreOpts, Key) ->
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
 read_direct(StoreOpts, Key) ->
+    read_direct(StoreOpts, Key, ?MAX_RETRIES).
+read_direct(StoreOpts, Key, 0) ->
+    not_found;
+read_direct(StoreOpts, Key, RetriesRemaining) ->
     LinkPrefixSize = byte_size(<<"link:">>),
     case lmdb:get(Env = find_env(StoreOpts), Key) of
         {ok, Value} ->
@@ -256,15 +263,8 @@ read_direct(StoreOpts, Key) ->
         not_found ->
             % Key not found in committed data, trigger flush and retry
             ?event(read_miss, {miss, Key}),
-            find_pid(StoreOpts) ! {flush, self(), Ref = make_ref()},
-            receive
-                {flushed, Ref} ->
-                    case lmdb:get(Env, Key) of
-                        {ok, _} -> read_direct(StoreOpts, Key);
-                        not_found -> not_found
-                    end 
-            after ?CONNECT_TIMEOUT -> {error, timeout}
-            end
+            sync(StoreOpts),
+            read_direct(StoreOpts, Key, RetriesRemaining - 1)
     end.
 
 %% @doc Resolve links in a path, checking each segment except the last.
@@ -410,7 +410,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            _ -> <<ResolvedPath/binary, "/">>
        end,
        SearchPathSize = byte_size(SearchPath),
-       
+       sync(StoreOpts),
        Children = lmdb:fold(Env, default,
            fun(Key, _Value, Acc) ->
                % Match keys that start with our search path (like dir listing)
