@@ -101,7 +101,6 @@ to(Messages) ->
             end,
             {#{}, 0, #{}},
             Messages),
-
     MessageWithTypeAndScopes =
         hb_maps:fold(
             fun
@@ -186,6 +185,7 @@ path_messages(RawBin, Opts) when is_binary(RawBin) ->
 normalize_base([]) -> [];
 normalize_base([First|Rest]) when ?IS_ID(First) -> [First|Rest];
 normalize_base([{as, DevID, First}|Rest]) -> [{as, DevID, First}|Rest];
+normalize_base([Subres = {resolve, _}|Rest]) -> [Subres|Rest];
 normalize_base(Rest) -> [#{}|Rest].
 
 %% @doc Split the path into segments, filtering out empty segments and

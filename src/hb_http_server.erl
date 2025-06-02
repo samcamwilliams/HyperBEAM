@@ -11,7 +11,7 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2]).
--export([set_opts/1, get_opts/0, get_opts/1, set_default_opts/1, set_proc_server_id/1]).
+-export([set_opts/1, set_opts/2, get_opts/0, get_opts/1, set_default_opts/1, set_proc_server_id/1]).
 -export([start_node/0, start_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -87,7 +87,6 @@ start() ->
             FormattedConfig
         ]
     ),
-    
     start(
         Loaded#{
             priv_wallet => PrivWallet,
@@ -112,12 +111,34 @@ start(Opts) ->
     {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
+%% @doc Trigger the creation of a new HTTP server node. Accepts a `NodeMsg'
+%% message, which is used to configure the server. This function executed the
+%% `start' hook on the node, giving it the opportunity to modify the `NodeMsg'
+%% before it is used to configure the server. The `start' hook expects gives and
+%% expects the node message to be in the `body' key.
 new_server(RawNodeMsg) ->
-    NodeMsg =
+    RawNodeMsgWithDefaults =
         hb_maps:merge(
             hb_opts:default_message(),
             RawNodeMsg#{ only => local }
         ),
+    HookMsg = #{ <<"body">> => RawNodeMsgWithDefaults },
+    NodeMsg =
+        case dev_hook:on(<<"start">>, HookMsg, RawNodeMsgWithDefaults) of
+            {ok, #{ <<"body">> := NodeMsgAfterHook }} -> NodeMsgAfterHook;
+            Unexpected ->
+                ?event(http,
+                    {failed_to_start_server,
+                        {unexpected_hook_result, Unexpected}
+                    }
+                ),
+                throw(
+                    {failed_to_start_server,
+                        {unexpected_hook_result, Unexpected}
+                    }
+                )
+        end,
+    % Put server ID into node message so it's possible to update current server
     hb_http:start(),
     ServerID =
         hb_util:human_id(
@@ -293,8 +314,8 @@ handle_request(RawReq, Body, ServerID) ->
     Req = RawReq#{ start_time => StartTime },
     NodeMsg = get_opts(#{ http_server => ServerID }),
     put(server_id, ServerID),
-    case cowboy_req:path(RawReq) of
-        <<"/">> ->
+    case {cowboy_req:path(RawReq), cowboy_req:qs(RawReq)} of
+        {<<"/">>, <<>>} ->
             % If the request is for the root path, serve a redirect to the default 
             % request of the node.
             cowboy_req:reply(
@@ -313,32 +334,32 @@ handle_request(RawReq, Body, ServerID) ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
             ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
-			TracePID = hb_tracer:start_trace(),
+            TracePID = hb_tracer:start_trace(),
             % Parse the HTTP request into HyerBEAM's message format.
-			try 
-				ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-				CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-				?event(http,
+            try 
+                ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+                CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+                ?event(http,
                     {parsed_singleton,
                         {req_singleton, ReqSingleton},
                         {accept_codec, CommitmentCodec}},
                     #{trace => TracePID}
                 ),
-				% hb_tracer:record_step(TracePID, request_parsing),
-				% Invoke the meta@1.0 device to handle the request.
-				{ok, Res} =
-					dev_meta:handle(
-						NodeMsg#{
+                % hb_tracer:record_step(TracePID, request_parsing),
+                % Invoke the meta@1.0 device to handle the request.
+                {ok, Res} =
+                    dev_meta:handle(
+                        NodeMsg#{
                             commitment_device => CommitmentCodec,
                             trace => TracePID
                         },
-						ReqSingleton
-					),
-				hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
-			catch
+                        ReqSingleton
+                    ),
+                hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
+            catch
                 Type:Details:Stacktrace ->
-					Trace = hb_tracer:get_trace(TracePID),
-					TraceString = hb_tracer:format_error_trace(Trace),
+                    Trace = hb_tracer:get_trace(TracePID),
+                    TraceString = hb_tracer:format_error_trace(Trace),
                     ?event(
                         http_error,
                         {http_error,
@@ -347,16 +368,16 @@ handle_request(RawReq, Body, ServerID) ->
                             {stacktrace, Stacktrace}
                         }
                     ),
-					hb_http:reply(
+                    hb_http:reply(
                         Req,
                         #{},
                         #{
                             <<"status">> => 500,
-                            <<"body">> => list_to_binary(TraceString)
+                            <<"body">> => TraceString
                         },
                         NodeMsg
                     )
-			end
+            end
 end.
 
 %% @doc Return the list of allowed methods for the HTTP server.
@@ -367,8 +388,10 @@ allowed_methods(Req, State) ->
         State
     }.
 
-%% @doc Update the `Opts' map that the HTTP server uses for all future
-%% requests.
+%% @doc Merges the provided `Opts' with uncommitted values from `Request',
+%% preserves the http_server value, and updates node_history by prepending
+%% the `Request'. If a server reference exists, updates the Cowboy environment
+%% variable 'node_msg' with the resulting options map.
 set_opts(Opts) ->
     case hb_opts:get(http_server, no_server_ref, Opts) of
         no_server_ref ->
@@ -376,6 +399,21 @@ set_opts(Opts) ->
         ServerRef ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
+set_opts(Request, Opts) ->
+    MergedOpts =
+        maps:merge(
+            Opts,
+            hb_opts:mimic_default_types(
+                hb_message:uncommitted(Request),
+                new_atoms,
+                Opts
+            )
+        ),
+    FinalOpts = MergedOpts#{
+        http_server => hb_opts:get(http_server, no_server, Opts),
+        node_history => [Request | hb_opts:get(node_history, [], Opts)]
+    },
+    {set_opts(FinalOpts), FinalOpts}.
 
 %% @doc Get the node message for the current process.
 get_opts() ->
@@ -447,3 +485,33 @@ start_node(Opts) ->
     ServerOpts = set_default_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
+
+%%% Tests
+%%% The following only covering the HTTP server initialization process. For tests
+%%% of HTTP server requests/responses, see `hb_http.erl'.
+
+%% @doc Ensure that the `start' hook can be used to modify the node options. We
+%% do this by creating a message with a device that has a `start' key. This 
+%% key takes the message's body (the anticipated node options) and returns a
+%% modified version of that body, which will be used to configure the node. We
+%% then check that the node options were modified as we expected.
+set_node_opts_test() ->
+    Node =
+        start_node(#{
+            on => #{
+                <<"start">> => #{
+                    <<"device">> =>
+                        #{
+                            <<"start">> =>
+                                fun(_, #{ <<"body">> := NodeMsg }, _) ->
+                                    {ok, #{
+                                        <<"body">> =>
+                                            NodeMsg#{ <<"test-success">> => true }
+                                    }}
+                                end
+                        }
+                }
+            }
+        }),
+    {ok, LiveOpts} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+    ?assert(hb_ao:get(<<"test-success">>, LiveOpts, false, #{})).

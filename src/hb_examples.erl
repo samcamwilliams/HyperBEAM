@@ -21,15 +21,17 @@ relay_with_payments_test() ->
     ProcessorMsg =
         #{
             <<"device">> => <<"p4@1.0">>,
-            <<"ledger_device">> => <<"simple-pay@1.0">>,
-            <<"pricing_device">> => <<"simple-pay@1.0">>
+            <<"ledger-device">> => <<"simple-pay@1.0">>,
+            <<"pricing-device">> => <<"simple-pay@1.0">>
         },
     HostNode =
         hb_http_server:start_node(
             #{
                 operator => ar_wallet:to_address(HostWallet),
-                preprocessor => ProcessorMsg,
-                postprocessor => ProcessorMsg
+                on => #{
+                    <<"request">> => ProcessorMsg,
+                    <<"response">> => ProcessorMsg
+                }
             }
         ),
     % Create a message for the client to relay.
@@ -72,8 +74,8 @@ paid_wasm_test() ->
     ProcessorMsg =
         #{
             <<"device">> => <<"p4@1.0">>,
-            <<"ledger_device">> => <<"simple-pay@1.0">>,
-            <<"pricing_device">> => <<"simple-pay@1.0">>
+            <<"ledger-device">> => <<"simple-pay@1.0">>,
+            <<"pricing-device">> => <<"simple-pay@1.0">>
         },
     HostNode =
         hb_http_server:start_node(
@@ -87,8 +89,10 @@ paid_wasm_test() ->
                 simple_pay_ledger => #{ ClientAddress => 100 },
                 simple_pay_price => 10,
                 operator => ar_wallet:to_address(HostWallet),
-                preprocessor => ProcessorMsg,
-                postprocessor => ProcessorMsg
+                on => #{
+                    <<"request">> => ProcessorMsg,
+                    <<"response">> => ProcessorMsg
+                }
             }
         ),
     % Read the WASM file from disk, post it to the host and execute it.

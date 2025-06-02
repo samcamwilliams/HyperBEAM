@@ -17,7 +17,7 @@
 -export([call/3, cast/3]).
 %%% Re-route requests that would be executed locally to other peers, according
 %%% to the node's routing table.
--export([preprocess/3]).
+-export([request/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -89,18 +89,22 @@ cast(M1, M2, Opts) ->
     {ok, <<"OK">>}.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-preprocess(_M1, M2, Opts) ->
+request(_Msg1, Msg2, Opts) ->
     {ok,
-        [
-            #{ <<"device">> => <<"relay@1.0">> },
-            #{
-                <<"path">> => <<"call">>,
-                <<"target">> => <<"body">>,
-                <<"body">> =>
-                    hb_ao:get(<<"request">>, M2, Opts#{ hashpath => ignore })
-            }
-        ]
+        #{
+            <<"body">> =>
+                [
+                    #{ <<"device">> => <<"relay@1.0">> },
+                    #{
+                        <<"path">> => <<"call">>,
+                        <<"target">> => <<"body">>,
+                        <<"body">> =>
+                            hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore })
+                    }
+                ]
+        }
     }.
+
 
 %%% Tests
 
@@ -157,9 +161,7 @@ preprocessor_reroute_to_nearest() ->
                             )
                     }
                 ],
-            preprocessor => #{
-                <<"device">> => <<"relay@1.0">>
-            }
+            on => #{ <<"request">> => #{ <<"device">> => <<"relay@1.0">> } }
         }),
     Res =
         lists:map(

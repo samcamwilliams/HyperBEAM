@@ -5,6 +5,7 @@
 % Preparing data for testing
 -export([prepare_unsigned_data/0, prepare_signed_data/0,
     prepare_deeply_nested_complex_message/0]).
+-export([cache_path_to_graph/3,get_graph_data/3]).
 -include("include/hb.hrl").
 
 %% @doc Render the given Key into svg

@@ -143,7 +143,7 @@ list_numbered(Path, Opts) ->
     [ to_integer(Name) || Name <- list(SlotDir, Opts) ].
 
 %% @doc List all items under a given path.
-list(Path, Opts) when is_map(Opts)->
+list(Path, Opts) when is_map(Opts) and not is_map_key(<<"store-module">>, Opts) ->
     case hb_opts:get(store, no_viable_store, Opts) of
         no_viable_store -> [];
         Store ->
@@ -642,7 +642,7 @@ test_deeply_nested_complex_message(Store) ->
     Wallet = ar_wallet:new(),
     Opts = #{ store => Store, priv_wallet => Wallet },
     %% Create nested data
-    Level3SignedSubmessage = test_signed([1,2,3], Wallet),
+    Level3SignedSubmessage = test_signed([1,2,3], Opts#{priv_wallet => Wallet}),
     Outer =
         hb_message:commit(
             #{
@@ -705,7 +705,6 @@ test_deeply_nested_complex_message(Store) ->
     ).
 
 test_message_with_list(Store) ->
-    ?event(debug_store_test, {store, Store}),
     hb_store:reset(Store),
     Opts = #{ store => Store },
     Msg = test_unsigned([<<"a">>, <<"b">>, <<"c">>]),

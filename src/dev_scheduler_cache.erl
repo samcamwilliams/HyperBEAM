@@ -126,7 +126,7 @@ write_location(LocationMsg, Opts) ->
         {signers, Signers},
         {location_msg, LocationMsg}
     }),
-    case hb_cache:write(LocationMsg, Opts) of
+    case hb_message:verify(LocationMsg, all) andalso hb_cache:write(LocationMsg, Opts) of
         {ok, RootPath} ->
             lists:foreach(
                 fun(Signer) ->
@@ -145,6 +145,9 @@ write_location(LocationMsg, Opts) ->
                 Signers
             ),
             ok;
+        false ->
+            % The message is not valid, so we don't cache it.
+            {error, <<"Invalid scheduler location message. Not caching.">>};
         {error, Reason} ->
             ?event(warning, {failed_to_cache_location_msg, {reason, Reason}}),
             {error, Reason}

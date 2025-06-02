@@ -88,7 +88,7 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
     % Ensure that the base message is a normalized before proceeding.
-    IDOpts = NodeOpts#{ linkify_mode => offload },
+    IDOpts = NodeOpts#{ linkify_mode => discard },
     Base =
         ensure_commitments_loaded(
             hb_message:convert(RawBase, tabm, IDOpts),
@@ -285,6 +285,7 @@ verify(Self, Req, Opts) ->
             tabm,
             Opts
         ),
+    ?event(verify, {verify, {base_found, Base}}),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
@@ -297,7 +298,7 @@ verify(Self, Req, Opts) ->
                         maps:get(CommitmentID, Commitments),
                         Opts
                     ),
-                ?event(
+                ?event(verify,
                     {verify_commitment_res,
                         {commitment_id, CommitmentID},
                         {res, Res}
@@ -306,7 +307,7 @@ verify(Self, Req, Opts) ->
             end,
             IDsToVerify
         ),
-    ?event({verify_res, Res}),
+    ?event(verify, {verify, {res, Res}}),
     {ok, Res}.
 
 %% @doc Execute a function for a single commitment in the context of its
@@ -573,7 +574,7 @@ set(Message1, NewValuesMsg, Opts) ->
 	KeysToSet =
 		lists:filter(
 			fun(Key) ->
-				not lists:member(Key, ?DEVICE_KEYS) andalso
+				not lists:member(Key, ?DEVICE_KEYS ++ [<<"set-mode">>]) andalso
 					(hb_maps:get(Key, NewValuesMsg, undefined, Opts) =/= undefined)
 			end,
 			NewValuesKeys
@@ -646,8 +647,15 @@ set(Message1, NewValuesMsg, Opts) ->
             CommittedKeys
         ),
     ?event({setting, {overwritten_committed_keys, OverwrittenCommittedKeys}}),
-    % Combine with deep merge
-    Merged = hb_private:set_priv(hb_util:deep_merge(BaseValues, NewValues, Opts), OriginalPriv),
+    % Combine with deep merge or if `set-mode` is `explicit' then just merge.
+    Merged =
+        hb_private:set_priv(
+            case maps:get(<<"set-mode">>, NewValuesMsg, <<"deep">>) of
+                <<"explicit">> -> maps:merge(BaseValues, NewValues);
+                _ -> hb_util:deep_merge(BaseValues, NewValues, Opts)
+            end,
+            OriginalPriv
+        ),
     case OverwrittenCommittedKeys of
         [] -> {ok, Merged};
         _ ->
@@ -790,6 +798,32 @@ unset_with_set_test() ->
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
 	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
 		hb_ao:resolve(Msg1, Msg2, #{ hashpath => ignore })).
+
+deep_unset_test() ->
+    Opts = #{ hashpath => ignore },
+    Msg1 = #{
+        <<"test-key1">> => <<"Value1">>,
+        <<"deep">> => #{
+            <<"test-key2">> => <<"Value2">>,
+            <<"test-key3">> => <<"Value3">>
+        }
+    },
+    Msg2 = hb_ao:set(Msg1, #{ <<"deep/test-key2">> => unset }, Opts),
+    ?assertEqual(#{
+            <<"test-key1">> => <<"Value1">>,
+            <<"deep">> => #{ <<"test-key3">> => <<"Value3">> }
+        },
+        Msg2
+    ),
+    Msg3 = hb_ao:set(Msg2, <<"deep/test-key3">>, unset, Opts),
+    ?assertEqual(#{
+            <<"test-key1">> => <<"Value1">>,
+            <<"deep">> => #{}
+        },
+        Msg3
+    ),
+    Msg4 = hb_ao:set(Msg3, #{ <<"deep">> => unset }, Opts),
+    ?assertEqual(#{ <<"test-key1">> => <<"Value1">> }, Msg4).
 
 set_ignore_undefined_test() ->
 	Msg1 = #{ <<"test-key">> => <<"Value1">> },

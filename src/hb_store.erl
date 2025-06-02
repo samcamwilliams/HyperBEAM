@@ -274,8 +274,7 @@ generate_test_suite(Suite, Stores) ->
                 fun() ->
                     % Create and set a random server ID for the test process.
                     hb_http_server:set_proc_server_id(ServerID),
-                    hb_store:start(Store),
-                    timer:sleep(100)
+                    hb_store:start(Store)
                 end,
                 fun(_) ->
                     % Clear the server ID from the process dictionary for the

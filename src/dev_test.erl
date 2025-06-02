@@ -40,7 +40,7 @@ info(_Msg1, _Msg2, _Opts) ->
 			<<"restore">> => <<"Restore function">>,
 			<<"mul">> => <<"Multiply function">>,
 			<<"snapshot">> => <<"Snapshot function">>,
-			<<"postprocess">> => <<"Postprocess function">>,
+			<<"response">> => <<"Response function">>,
 			<<"update_state">> => <<"Update state function">>
 		}
 	},
@@ -161,7 +161,7 @@ increment_counter(_Msg1, Msg2, _Opts) ->
     end.
 
 %% @doc Does nothing, just sleeps `Req/duration or 750' ms and returns the 
-%% appropriate form in order to be used as preprocessor.
+%% appropriate form in order to be used as a hook.
 delay(Msg1, Req, Opts) ->
     Duration =
         hb_ao:get_first(

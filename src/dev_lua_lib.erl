@@ -140,7 +140,7 @@ resolve({many, Msgs}, ExecState, ExecOpts) ->
     MaybeAsMsgs = lists:map(fun convert_as/1, Msgs),
     try hb_ao:resolve_many(MaybeAsMsgs, ExecOpts) of
         {Status, Res} ->
-            ?event({resolved_msgs, {status, Status}, {res, Res}}),
+            ?event({resolved_msgs, {status, Status}, {res, Res}, {exec_opts, ExecOpts}}),
             {[Status, Res], ExecState}
     catch
         Error ->
@@ -154,7 +154,7 @@ convert_as([<<"as">>, Device, RawMsg]) ->
 convert_as(Other) ->
     Other.
 
-%% @doc Wrapper for `hb_ao`'s `set' functionality.
+%% @doc Wrapper for `hb_ao''s `set' functionality.
 set([Base, Key, Value], ExecState, ExecOpts) ->
     ?event({ao_core_set, {base, Base}, {key, Key}, {value, Value}}),
     NewRes = hb_ao:set(Base, Key, Value, ExecOpts),

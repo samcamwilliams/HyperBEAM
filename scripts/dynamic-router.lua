@@ -27,8 +27,8 @@ local function ensure_defaults(state)
     state.routes = state.routes or {}
     state["is-admissible"] =
         state["is-admissible"] or {
-            path = "/default",
-            default = true
+			path = "/default",
+            default = "true"
         }
     state["sampling-rate"] = state["sampling-rate"] or 0.1
     state["pricing-weight"] = state["pricing-weight"] or 1
@@ -204,9 +204,11 @@ end
 function register(state, assignment, opts)
     state = ensure_defaults(state)
     local req = assignment.body
+    req.path = state["is-admissible"].path or "is-admissible"
+    local status, is_admissible = ao.resolve(state["is-admissible"], req)
 
-    local status, is_admissible = ao.resolve(state["is-admissible"])
-    if status == "ok" and is_admissible ~= false then
+    ao.event("is-admissible result:", { status, is_admissible })
+    if status == "ok" and is_admissible == "true" then
         state = add_node(state, req)
         return recalculate(state, assignment, opts)
     else
@@ -224,7 +226,12 @@ function duration(state, assignment, opts)
     local req = assignment.body
     local reference = req.reference
     if reference == nil then
-        ao.event("debug_dynrouter", {"ignoring", req["request-path"]})
+        ao.event("debug_dynrouter", 
+            {
+                "ignoring duration update for request without reference: ",
+                req["request-path"]
+            }
+        )
         return state
     end
     ao.event("debug_dynrouter", {"applying_duration", req.reference})
@@ -280,7 +287,6 @@ end
 --- Tests
 function register_test()
     local state = {}
-  
     -- Simulate a register call upon a default state.
     local req = {
         path = "register",

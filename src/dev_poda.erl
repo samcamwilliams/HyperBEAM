@@ -1,10 +1,4 @@
--module(dev_poda).
--export([init/2, execute/3]).
--export([is_user_signed/1]).
--export([push/3]).
--include("include/hb.hrl").
--hb_debug(print).
-
+%%% @doc A simple exemplar decentralized proof of authority consensus algorithm
 %%% A simple exemplar decentralized proof of authority consensus algorithm
 %%% for AO processes. This device is split into two flows, spanning three
 %%% actions.
@@ -14,6 +8,12 @@
 %%% 2. Validation of incoming messages before execution.
 %%% Commitment flow:
 %%% 1. Adding commitments to results, either on a CU or MU.
+-module(dev_poda).
+-export([init/2, execute/3]).
+-export([is_user_signed/1]).
+-export([push/3]).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 %%% Execution flow: Initialization.
 
@@ -170,6 +170,7 @@ return_error(S = #{ <<"wallet">> := Wallet }, Reason) ->
         }
     }}.
 
+%%% @doc Determines if a user committed
 is_user_signed(#tx { data = #{ <<"body">> := Msg } }) ->
     ?no_prod(use_real_commitment_detection),
     lists:keyfind(<<"from-process">>, 1, Msg#tx.tags) == false;
@@ -224,7 +225,7 @@ add_commitments(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _S
                     case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address, Opts) of
                         {ok, ComputeNode} ->
                             ?event({poda_asking_peer_for_commitment, ComputeNode, <<"commit-to">>, MsgID}),
-                            Res = hb_client:compute(
+                            Res = hb_client:resolve(
                                 ComputeNode,
                                 ar_bundles:id(Process, signed),
                                 ar_bundles:id(Assignment, signed),
@@ -316,7 +317,7 @@ find_process(Item, #{ <<"logger">> := _Logger, <<"store">> := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
             ?event({poda_find_process, hb_util:id(Item#tx.target)}),
-            {ok, Proc} = hb_cache:read_message(Store, hb_util:id(Item#tx.target)),
+            {ok, Proc} = hb_cache:read(Store, hb_util:id(Item#tx.target)),
             Proc;
         _ ->
             case lists:keyfind(<<"type">>, 1, Item#tx.tags) of
