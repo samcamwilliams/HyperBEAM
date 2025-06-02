@@ -189,32 +189,42 @@ request_hook_reroute_to_nearest_test() ->
             routes =>
                 [
                     #{
-                        <<"template">> => <<"/.*~process@1.0/.*">>,
+                        <<"template">> => <<"/.*/.*/.*">>,
                         <<"strategy">> => <<"Nearest">>,
-                        <<"nodes">> => [
-                            #{
-                                <<"prefix">> => Peer1,
-                                <<"wallet">> => Address1
-                            },
-                            #{
-                                <<"prefix">> => Peer2,
-                                <<"wallet">> => Address2
-                            }
-                        ]
+                        <<"nodes">> =>
+                            lists:map(
+                                fun({Address, Node}) ->
+                                    #{
+                                        <<"prefix">> => Node,
+                                        <<"wallet">> => Address
+                                    }
+                                end,
+                                [
+                                    {Address1, Peer1},
+                                    {Address2, Peer2}
+                                ]
+                            )
                     }
                 ],
             on => #{ <<"request">> => #{ <<"device">> => <<"relay@1.0">> } }
         }),
-    {ok, Res} =
-        hb_http:get(
-            Node,
-            <<"/CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM~process@1.0/slot">>,
-            #{}
+    Res =
+        lists:map(
+            fun(_) ->
+                hb_util:ok(
+                    hb_http:get(
+                        Node,
+                        <<"/~meta@1.0/info/address">>,
+                        #{}
+                    )
+                )
+            end,
+            lists:seq(1, 3)
         ),
     ?event({res, Res}),
     HasValidSigner = lists:any(
         fun(Peer) ->
-            lists:member(Peer, hb_message:signers(Res))
+            lists:member(Peer, hb_message:signers(Res, HTTPSOpts))
         end,
         Peers
     ),

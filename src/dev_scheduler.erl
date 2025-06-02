@@ -394,12 +394,12 @@ post_location(Msg1, RawReq, Opts) ->
             <<"request">> -> RawReq;
             Target -> hb_ao:get(Target, RawReq, not_found, Opts)
         end,
-    {ok, OnlyCommitted} = hb_message:with_only_committed(Req),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Req, Opts),
     ?event(scheduler_location,
         {scheduler_location_registration_request, OnlyCommitted}
     ),
     % Gather metadata for request validation.
-    Signers = hb_message:signers(OnlyCommitted),
+    Signers = hb_message:signers(OnlyCommitted, Opts),
     Self =
         hb_util:human_id(
             ar_wallet:to_address(
@@ -502,7 +502,12 @@ post_location(Msg1, RawReq, Opts) ->
             ?event(scheduler_location,
                 {uploading_signed_scheduler_location, Signed}
             ),
-            {UploadStatus, _} = hb_client:upload(Signed, Opts),
+            % Asynchronously upload the location record to Arweave.
+            spawn(
+                fun() ->
+                    hb_client:upload(Signed, Opts)
+                end
+            ),
             % Post the new scheduler location to the peers specified in the
             % `scheduler_location_notify_peers' option.
             Results =
@@ -522,7 +527,7 @@ post_location(Msg1, RawReq, Opts) ->
                 ),
             ?event(scheduler_location,
                 {scheduler_location_registration_success,
-                    {arweave_publication_status, UploadStatus},
+                    {arweave_publication, async_upload_initiated},
                     {foreign_peers_notified, length(Results)}
                 }
             ),
@@ -551,16 +556,16 @@ post_schedule(Msg1, Msg2, Opts) ->
     % - If not, use the target as the ProcessID.
     ProcID =
         case hb_ao:get(<<"type">>, ToSched, not_found, Opts) of
-            <<"Process">> -> hb_message:id(ToSched, all);
+            <<"Process">> -> hb_message:id(ToSched, all, Opts);
             _ ->
                 case hb_ao:get(<<"target">>, ToSched, not_found, Opts) of
                     not_found -> find_target_id(Msg1, Msg2, Opts);
-                    Target -> Target
+                    Target -> hb_util:human_id(Target)
                 end
         end,
     ?event({proc_id, ProcID}),
     % Filter all unsigned keys from the source message.
-    case hb_message:with_only_committed(ToSched) of
+    case hb_message:with_only_committed(ToSched, Opts) of
         {ok, OnlyCommitted} ->
             ?event(
                 {post_schedule,
@@ -615,9 +620,10 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
                 ?event({verifying_message_before_scheduling, Msg2}),
-                hb_message:verify(Msg2, signers);
+                hb_message:verify(Msg2, signers, Opts);
             false -> true
         end,
+    ?event({verified, Verified}),
     % Handle scheduling of the message if the message is valid.
     case {Verified, hb_ao:get(<<"type">>, Msg2, Opts)} of
         {false, _} ->
@@ -773,8 +779,8 @@ get_hint(Str, Opts) when is_binary(Str) ->
         true ->
             case binary:split(Str, <<"?">>, [global]) of
                 [_, QS] ->
-                    QueryMap = maps:from_list(uri_string:dissect_query(QS)),
-                    case maps:get(<<"hint">>, QueryMap, not_found) of
+                    QueryMap = hb_maps:from_list(uri_string:dissect_query(QS)),
+                    case hb_maps:get(<<"hint">>, QueryMap, not_found, Opts) of
                         not_found -> not_found;
                         Hint -> {ok, Hint}
                     end;
@@ -933,9 +939,9 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
                     ?event({got_slot_response, {assignment, A}}),
                     {ok, #{
                         <<"process">> => ProcID,
-                        <<"current">> => maps:get(<<"slot">>, A),
-                        <<"timestamp">> => maps:get(<<"timestamp">>, A),
-                        <<"block-height">> => maps:get(<<"block-height">>, A),
+                        <<"current">> => hb_maps:get(<<"slot">>, A, undefined, Opts),
+                        <<"timestamp">> => hb_maps:get(<<"timestamp">>, A, undefined, Opts),
+                        <<"block-height">> => hb_maps:get(<<"block-height">>, A, undefined, Opts),
                         <<"block-hash">> => hb_util:encode(<<0:256>>),
                         <<"cache-control">> => <<"no-store">>
                     }};
@@ -963,7 +969,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
 %% two slots -- labelled as `from' and `to'. If the schedule is not local,
 %% we redirect to the remote scheduler or proxy based on the node opts.
 get_schedule(Msg1, Msg2, Opts) ->
-    ProcID = find_target_id(Msg1, Msg2, Opts),
+    ProcID = hb_util:human_id(find_target_id(Msg1, Msg2, Opts)),
     From =
         case hb_ao:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
@@ -1135,7 +1141,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                             Opts#{ hashpath => ignore }
                                         )
                                     ),
-                                Filtered = filter_json_assignments(JSONRes, To, From),
+                                Filtered = filter_json_assignments(JSONRes, To, From, Opts),
                                 dev_scheduler_formats:aos2_to_assignments(
                                     ProcID,
                                     Filtered,
@@ -1153,7 +1159,8 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                     <<"assignments">>,
                                     NormSched,
                                     Opts
-                                )
+                                ),
+								Opts
                             )
                         ),
                     % Merge the local assignments with the remote assignments,
@@ -1209,14 +1216,14 @@ cache_remote_schedule(Schedule, Opts) ->
                     % an additional cache.
                     ?event(debug_sched,
                         {writing_assignment,
-                            {assignment, maps:get(<<"slot">>, Assignment)}
+                            {assignment, hb_maps:get(<<"slot">>, Assignment, undefined, Opts)}
                         }
                     ),
                     dev_scheduler_cache:write(Assignment, Opts)
                 end,
                 AssignmentList =
                     hb_util:message_to_ordered_list(
-                        maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments))
+                        hb_maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments, Opts), Opts)
                     )
             ),
             ?event(debug_sched,
@@ -1232,24 +1239,25 @@ cache_remote_schedule(Schedule, Opts) ->
 node_from_redirect(Redirect, Opts) ->
     uri_string:recompose(
         (
-            maps:remove(
+            hb_maps:remove(
                 query,
                 uri_string:parse(
                     hb_ao:get(<<"location">>, Redirect, Opts)
-                )
+                ),
+				Opts
             )
         )#{path => <<"/">>}
     ).
 
 %% @doc Filter JSON assignment results from a remote legacy scheduler.
-filter_json_assignments(JSONRes, To, From) ->
-    Edges = maps:get(<<"edges">>, JSONRes, []),
+filter_json_assignments(JSONRes, To, From, Opts) ->
+    Edges = hb_maps:get(<<"edges">>, JSONRes, [], Opts),
     Filtered =
         lists:filter(
             fun(Edge) ->
-                Node = maps:get(<<"node">>, Edge),
-                Assignment = maps:get(<<"assignment">>, Node),
-                Tags = maps:get(<<"tags">>, Assignment),
+                Node = hb_maps:get(<<"node">>, Edge, undefined, Opts),
+                Assignment = hb_maps:get(<<"assignment">>, Node, undefined, Opts),
+                Tags = hb_maps:get(<<"tags">>, Assignment, undefined, Opts),
                 Nonces = 
                     lists:filtermap(
                         fun(#{ <<"name">> := <<"Nonce">>, <<"value">> := Nonce }) ->
@@ -1272,7 +1280,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
     ProcID = without_hint(RawProcID),
     Location = hb_ao:get(<<"location">>, Redirect, Opts),
     Parsed = uri_string:parse(Location),
-    Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
+    Node = uri_string:recompose((hb_maps:remove(query, Parsed, Opts))#{path => <<"/">>}),
     Variant = hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     case Variant of
         <<"ao.N.1">> ->
@@ -1290,7 +1298,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
                     OnlyCommitted,
                     Opts
                 ),
-            case hb_message:signers(WithANS104Comms) of
+            case hb_message:signers(WithANS104Comms, Opts) of
                 [] ->
                     {error, #{
                         <<"status">> => 422,
@@ -1372,7 +1380,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
-                    ID = maps:get(<<"id">>, JSONRes),
+                    ID = hb_maps:get(<<"id">>, JSONRes, undefined, Opts),
                     ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
                     LegacyPath = << ID/binary, "?process-id=", ProcID/binary>>,
                     case hb_http:get(Node, LegacyPath, LegacyOpts) of
@@ -1424,21 +1432,21 @@ find_target_id(Msg1, Msg2, Opts) ->
             case hb_ao:resolve(Msg2, <<"type">>, TempOpts) of
                 {ok, <<"Process">>} ->
                     % Msg2 is a Process, so the ID is at Msg2/id
-                    hb_message:id(Msg2, all);
+                    hb_message:id(Msg2, all, Opts);
                 _ ->
                     case hb_ao:resolve(Msg1, <<"process">>, TempOpts) of
                         {ok, Process} ->
                             % ID found at Msg1/process/id
-                            hb_message:id(Process, all);
+                            hb_message:id(Process, all, Opts);
                         _ ->
                             % Does the message have a type of Process?
                             case hb_ao:get(<<"type">>, Msg1, TempOpts) of
                                 <<"Process">> ->
                                     % Yes, so try Msg1/id
-                                    hb_message:id(Msg1, all);
+                                    hb_message:id(Msg1, all, Opts);
                                 _ ->
                                     % No, so the ID is at Msg2/id
-                                    hb_message:id(Msg2, all)
+                                    hb_message:id(Msg2, all, Opts)
                             end
                 end
             end
@@ -1530,8 +1538,8 @@ checkpoint(State) -> {ok, State}.
 
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process' for examples of AO process messages.
-test_process() -> test_process(hb:wallet()).
-test_process(Wallet) when not is_binary(Wallet) ->
+test_process() -> test_process(#{ priv_wallet => hb:wallet()}).
+test_process(#{ priv_wallet := Wallet})  ->
     test_process(hb_util:human_id(ar_wallet:to_address(Wallet)));
 test_process(Address) ->
     #{
@@ -1680,7 +1688,9 @@ redirect_to_hint_test() ->
         )
     ).
 
-redirect_from_graphql_test() ->
+redirect_from_graphql_test_() ->
+    {timeout, 60, fun redirect_from_graphql/0}.
+redirect_from_graphql() ->
     start(),
     Opts =
         #{ store =>
@@ -1752,15 +1762,23 @@ http_init() -> http_init(#{}).
 http_init(Opts) ->
     start(),
     Wallet = ar_wallet:new(),
-    Node = hb_http_server:start_node(
-        Opts#{
-            priv_wallet => Wallet,
-            store => [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
-                #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
-            ]
-        }),
-    {Node, Wallet}.
+	ExtendedOpts = Opts#{
+		priv_wallet => Wallet,
+		store => [
+			#{
+                <<"store-module">> => hb_store_lru,
+                <<"persistent-store">> => [
+                    #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-mainnet">>
+                    }
+                ]
+            },
+			#{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
+		]
+	},
+    Node = hb_http_server:start_node(ExtendedOpts),
+    {Node, ExtendedOpts}.
 
 register_scheduler_test() ->
     start(),
@@ -1815,7 +1833,9 @@ http_get_schedule(N, PMsg, From, To, Format) ->
         <<"accept">> => Format
     }, Wallet), #{}).
 
-http_get_schedule_redirect_test() ->
+http_get_schedule_redirect_test_() ->
+    {timeout, 60, fun http_get_schedule_redirect/0}.
+http_get_schedule_redirect() ->
     Opts =
         #{
             store =>
@@ -1828,53 +1848,70 @@ http_get_schedule_redirect_test() ->
     {N, _Wallet} = http_init(Opts),
     start(),
     ProcID = <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
-    Res = hb_http:get(N, <<"/", ProcID/binary, "/schedule">>, #{}),
+    Res = hb_http:get(N, <<"/", ProcID/binary, "/schedule">>, Opts),
     ?assertMatch({ok, #{ <<"location">> := Location }} when is_binary(Location), Res).
 
-http_post_schedule_test() ->
-    {N, W} = http_init(),
-    PMsg = hb_message:commit(test_process(W), W),
+http_post_schedule_test_() ->
+    {timeout, 60, fun http_post_schedule/0}.
+http_post_schedule() ->
+    {N, Opts} = http_init(),
+    PMsg = hb_message:commit(test_process(Opts), Opts),
     Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
-    }, W),
-    {ok, _Res} = hb_http:post(N, Msg1, #{}),
+    }, Opts),
+    {ok, _Res} = hb_http:post(N, Msg1, Opts),
     {ok, Res2} =
         http_post_schedule_sign(
             N,
             #{ <<"inner">> => <<"test-message">> },
             PMsg,
-            W
+            Opts
         ),
-    ?assertEqual(<<"test-message">>, hb_ao:get(<<"body/inner">>, Res2, #{})),
+    ?assertEqual(<<"test-message">>, hb_ao:get(<<"body/inner">>, Res2, Opts)),
     ?assertMatch({ok, #{ <<"current">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test_() ->
 	{timeout, 20, fun() ->
-		{Node, Wallet} = http_init(),
-		PMsg = hb_message:commit(test_process(Wallet), Wallet),
+		{Node, Opts} = http_init(),
+		PMsg = hb_message:commit(test_process(Opts), Opts),
 		Msg1 = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
 			<<"body">> => PMsg
-		}, Wallet),
+		}, Opts),
 		Msg2 = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
-			<<"body">> => PMsg
-		}, Wallet),
-		{ok, _} = hb_http:post(Node, Msg1, #{}),
+			<<"body">> =>
+                hb_message:commit(
+                    #{
+                        <<"target">> =>
+                            hb_util:human_id(
+                                hb_message:id(PMsg, all, Opts)
+                            ),
+                        <<"body">> => <<"test-message">>,
+                        <<"type">> => <<"Message">>
+                    },
+                    Opts
+                )
+		}, Opts),
+		{ok, _} = hb_http:post(Node, Msg1, Opts),
 		lists:foreach(
-			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
+			fun(_) ->
+                {ok, Res} = hb_http:post(Node, Msg2, Opts),
+                ?event(debug_scheduler_test, {res, Res})
+            end,
 			lists:seq(1, 10)
 		),
 		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
+        ?debug_wait(5000),
 		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
-		Assignments = hb_ao:get(<<"assignments">>, Schedule, #{}),
+		Assignments = hb_ao:get(<<"assignments">>, Schedule, Opts),
 		?assertEqual(
 			12, % +1 for the hashpath
-			length(maps:values(Assignments))
+			hb_maps:size(Assignments, Opts)
 		)
 	end}.
     
@@ -1882,33 +1919,35 @@ http_get_schedule_test_() ->
 http_get_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
-        {Node, _Wallet} = http_init(),
-        Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary>>, #{}),
-        ?assertMatch({ok, #{ <<"assignments">> := As }} when map_size(As) > 0, Res)
+        {Node, Opts} = http_init(),
+        {ok, Res} = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary>>, Opts),
+		LoadedRes = hb_cache:ensure_all_loaded(Res, Opts),
+        ?assertMatch(#{ <<"assignments">> := As } when map_size(As) > 0, LoadedRes)
     end}.
 
 http_get_legacy_slot_test_() ->
     {timeout, 10, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
-        {Node, _Wallet} = http_init(),
-        Res = hb_http:get(Node, <<"/~scheduler@1.0/slot&target=", Target/binary>>, #{}),
+        {Node, Opts} = http_init(),
+        Res = hb_http:get(Node, <<"/~scheduler@1.0/slot&target=", Target/binary>>, Opts),
         ?assertMatch({ok, #{ <<"current">> := Slot }} when Slot > 0, Res)
     end}.
 
 http_get_legacy_schedule_slot_range_test_() ->
     {timeout, 10, fun() ->
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
-        {Node, _Wallet} = http_init(),
-        Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary,
-            "&from=0&to=10">>, #{}),
-        ?event({res, Res}),
-        ?assertMatch({ok, #{ <<"assignments">> := As }} when map_size(As) == 11, Res)
+        {Node, Opts} = http_init(),
+        {ok, Res} = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary,
+            "&from=0&to=10">>, Opts),
+		LoadedRes = hb_cache:ensure_all_loaded(Res, Opts),
+        ?event({res, LoadedRes}),
+        ?assertMatch(#{ <<"assignments">> := As } when map_size(As) == 11, LoadedRes)
     end}.
 
 http_get_legacy_schedule_as_aos2_test_() ->
     {timeout, 10, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
-        {Node, _Wallet} = http_init(),
+        {Node, Opts} = http_init(),
         {ok, Res} =
             hb_http:get(
                 Node,
@@ -1919,13 +1958,13 @@ http_get_legacy_schedule_as_aos2_test_() ->
                 },
                 #{}
             ),
-        Decoded = hb_json:decode(hb_ao:get(<<"body">>, Res, #{})),
+        Decoded = hb_json:decode(hb_ao:get(<<"body">>, Res, Opts)),
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
     end}.
 
 http_post_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
-        {Node, Wallet} = http_init(),
+        {Node, Opts} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
         Msg1 = hb_message:commit(#{
             <<"path">> => <<"/~scheduler@1.0/schedule">>,
@@ -1940,11 +1979,11 @@ http_post_legacy_schedule_test_() ->
                         <<"target">> => Target,
                         <<"test-from">> => hb_util:human_id(hb:address())
                     },
-                    Wallet,
+                    Opts,
                     <<"ans104@1.0">>
                 )
-        }, Wallet),
-        {Status, Res} = hb_http:post(Node, Msg1, #{}),
+        }, Opts),
+        {Status, Res} = hb_http:post(Node, Msg1, Opts),
         ?event({status, Status}),
         ?event({res, Res}),
         ?assertMatch(
@@ -1955,14 +1994,14 @@ http_post_legacy_schedule_test_() ->
 
 http_get_json_schedule_test_() ->
 	{timeout, 20, fun() ->
-		{Node, Wallet} = http_init(),
-		PMsg = hb_message:commit(test_process(Wallet), Wallet),
+		{Node, Opts} = http_init(),
+		PMsg = hb_message:commit(test_process(Opts), Opts),
 		Msg1 = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
 			<<"body">> => PMsg
-		}, Wallet),
-		{ok, _} = hb_http:post(Node, Msg1, #{}),
+		}, Opts),
+		{ok, _} = hb_http:post(Node, Msg1, Opts),
 		Msg2 = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
@@ -1972,23 +2011,23 @@ http_get_json_schedule_test_() ->
 						<<"inner">> => <<"test">>,
 						<<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
 					},
-					Wallet
+					Opts
 				)
 			},
-			Wallet
+			Opts
 		),
 		lists:foreach(
-			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
+			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, Opts) end,
 			lists:seq(1, 10)
 		),
 		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
 		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
 		?event({schedule, Schedule}),
-		JSON = hb_ao:get(<<"body">>, Schedule, #{}),
+		JSON = hb_ao:get(<<"body">>, Schedule, Opts),
 		Assignments = hb_json:decode(JSON),
 		?assertEqual(
 			11, % +1 for the hashpath
-			length(maps:get(<<"edges">>, Assignments))
+			length(hb_maps:get(<<"edges">>, Assignments))
 		)
 	end}.
 
@@ -1998,12 +2037,12 @@ single_resolution(Opts) ->
     start(),
     BenchTime = 1,
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
-    Msg1 = test_process(Wallet),
+    Msg1 = test_process(Opts#{ priv_wallet => Wallet }),
     ?event({benchmark_start, ?MODULE}),
     MsgToSchedule = hb_message:commit(#{
         <<"type">> => <<"Message">>,
         <<"test-key">> => <<"test-val">>
-    }, Wallet),
+    }, Opts),
     Iterations = hb:benchmark(
         fun(_) ->
             MsgX = #{
@@ -2019,7 +2058,7 @@ single_resolution(Opts) ->
     Msg3 = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
-        <<"process">> => hb_util:human_id(hb_message:id(Msg1, all))
+        <<"process">> => hb_util:human_id(hb_message:id(Msg1, all, Opts))
     },
     ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
@@ -2034,14 +2073,14 @@ single_resolution(Opts) ->
 many_clients(Opts) ->
     BenchTime = 1,
     Processes = hb_opts:get(workers, 25, Opts),
-    {Node, Wallet} = http_init(Opts),
-    PMsg = hb_message:commit(test_process(Wallet), Wallet),
+    {Node, Opts} = http_init(Opts),
+    PMsg = hb_message:commit(test_process(Opts), Opts),
     Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => PMsg,
-        <<"body">> => hb_message:commit(#{ <<"inner">> => <<"test">> }, Wallet)
-    }, Wallet),
+        <<"body">> => hb_message:commit(#{ <<"inner">> => <<"test">> }, Opts)
+    }, Opts),
     {ok, _} = hb_http:post(Node, Msg1, Opts),
 	    Iterations = hb:benchmark(
         fun(X) ->

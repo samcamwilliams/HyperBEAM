@@ -141,9 +141,14 @@ do_assign(State, Message, ReplyPID) ->
     {ok, OnlyAttested} =
         hb_message:with_only_committed(
             Message,
-            maps:get(opts, State)
+            Opts = maps:get(opts, State)
         ),
-    HashChain = next_hashchain(maps:get(hash_chain, State), OnlyAttested),
+    HashChain =
+        next_hashchain(
+            maps:get(hash_chain, State),
+            OnlyAttested,
+            Opts
+        ),
     NextSlot = maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
     % process.
@@ -154,7 +159,7 @@ do_assign(State, Message, ReplyPID) ->
                 commit_assignment(
                     #{
                         <<"path">> =>
-                            case hb_path:from_message(request, Message) of
+                            case hb_path:from_message(request, Message, Opts) of
                                 undefined -> <<"compute">>;
                                 Path -> Path
                             end,
@@ -189,7 +194,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             ),
             ?event(starting_message_write),
-            ok = dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
+            ok = dev_scheduler_cache:write(Assignment, Opts),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
@@ -199,7 +204,7 @@ do_assign(State, Message, ReplyPID) ->
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
-            hb_client:upload(Assignment, maps:get(opts, State)),
+            hb_client:upload(Assignment, Opts),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
@@ -209,7 +214,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             )
         end,
-    case hb_opts:get(scheduling_mode, sync, maps:get(opts, State)) of
+    case hb_opts:get(scheduling_mode, sync, Opts) of
         aggressive ->
             spawn(AssignFun);
         Other ->
@@ -244,9 +249,9 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
 
 %% @doc Create the next element in a chain of hashes that links this and prior
 %% assignments.
-next_hashchain(HashChain, Message) ->
+next_hashchain(HashChain, Message, Opts) ->
     ?event({creating_next_hashchain, {hash_chain, HashChain}, {message, Message}}),
-    ID = hb_message:id(Message, all),
+    ID = hb_message:id(Message, all, Opts),
     crypto:hash(
         sha256,
         << HashChain/binary, ID/binary >>

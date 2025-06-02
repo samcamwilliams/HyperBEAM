@@ -24,7 +24,8 @@ estimate(_, EstimateReq, NodeMsg) ->
         false ->
             Messages =
                 hb_singleton:from(
-                    hb_ao:get(<<"request">>, EstimateReq, NodeMsg)
+                    hb_ao:get(<<"request">>, EstimateReq, NodeMsg),
+                    NodeMsg
                 ),
             {ok, length(Messages) * hb_opts:get(simple_pay_price, 1, NodeMsg)}
     end.
@@ -35,7 +36,7 @@ estimate(_, EstimateReq, NodeMsg) ->
 charge(_, RawReq, NodeMsg) ->
     ?event(payment, {charge, RawReq}),
     Req = hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
-    case hb_message:signers(Req) of
+    case hb_message:signers(Req, NodeMsg) of
         [] ->
             ?event(payment, {charge, {error, <<"No signers">>}}),
             {ok, false};
@@ -84,11 +85,11 @@ balance(_, RawReq, NodeMsg) ->
     Target =
         case hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }) of
             not_found ->
-                case hb_message:signers(RawReq) of
+                case hb_message:signers(RawReq, NodeMsg) of
                     [] -> hb_ao:get(<<"target">>, RawReq, undefined, NodeMsg);
                     [Signer] -> Signer
                 end;
-            Req -> hd(hb_message:signers(Req))
+            Req -> hd(hb_message:signers(Req, NodeMsg))
         end,
     {ok, get_balance(Target, NodeMsg)}.
 
@@ -203,11 +204,11 @@ get_balance_and_top_up_test() ->
             Node,
             Req = hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                ClientWallet
+                Opts#{ priv_wallet => ClientWallet }
             ),
-            #{}
+            Opts
         ),
-    ?event({req_signers, hb_message:signers(Req)}),
+    ?event({req_signers, hb_message:signers(Req, Opts)}),
     % Balance is given during the request, before the charge is made, so we 
     % should expect to see the original balance.
     ?assertEqual(100, Res),
@@ -221,9 +222,9 @@ get_balance_and_top_up_test() ->
                     <<"amount">> => 100,
                     <<"recipient">> => ClientAddress
                 },
-                HostWallet
+                Opts#{ priv_wallet => HostWallet }
             ),
-            #{}
+            Opts
         ),
     % The balance should now be 180, as the topup will have been added and will
     % not have generated a charge in itself. The top-up did not generate a charge
@@ -234,8 +235,8 @@ get_balance_and_top_up_test() ->
             Node,
             hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                ClientWallet
+                Opts#{ priv_wallet => ClientWallet }
             ),
-            #{}
+            Opts
         ),
     ?assertEqual(180, Res2).

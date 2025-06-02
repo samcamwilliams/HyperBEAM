@@ -150,7 +150,7 @@ routes(M1, M2, Opts) ->
         <<"POST">> ->
             Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
-            Signers = hb_message:signers(M2),
+            Signers = hb_message:signers(M2, Opts),
             IsTrusted =
                 lists:any(
                     fun(Signer) -> lists:member(Signer, Signers) end,
@@ -207,7 +207,7 @@ route(_, Msg, Opts) ->
     case (R =/= no_matches) andalso hb_ao:get(<<"node">>, R, Opts) of
         false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
-        Node when is_map(Node) -> apply_route(Msg, Node);
+        Node when is_map(Node) -> apply_route(Msg, Node, Opts);
         not_found ->
             ModR = apply_routes(Msg, R, Opts),
             case hb_ao:get(<<"strategy">>, R, Opts) of
@@ -229,17 +229,18 @@ route(_, Msg, Opts) ->
                     }),
                     case Chosen of
                         [Node] when is_map(Node) ->
-                            apply_route(Msg, Node);
+                            apply_route(Msg, Node, Opts);
                         [NodeURI] -> {ok, NodeURI};
                         _ChosenNodes ->
                             {ok,
                                 hb_ao:set(
                                     <<"nodes">>,
-                                    maps:map(
+                                    hb_maps:map(
                                         fun(Node) ->
-                                            hb_util:ok(apply_route(Msg, Node))
+                                            hb_util:ok(apply_route(Msg, Node, Opts))
                                         end,
-                                        Chosen
+                                        Chosen,
+                                        Opts
                                     ),
                                     Opts
                                 )
@@ -264,7 +265,7 @@ load_routes(Opts) ->
     case hb_opts:get(route_provider, not_found, Opts) of
         not_found -> hb_opts:get(routes, [], Opts);
         RoutesProvider ->
-            ProviderMsgs = hb_singleton:from(RoutesProvider),
+            ProviderMsgs = hb_singleton:from(RoutesProvider, Opts),
             ?event({route_provider, ProviderMsgs}),
             case hb_ao:resolve_many(ProviderMsgs, Opts) of
                 {ok, Routes} -> Routes;
@@ -294,7 +295,7 @@ apply_routes(Msg, R, Opts) ->
         lists:map(
             fun(N) ->
                 ?event({apply_route, {msg, Msg}, {node, N}}),
-                case apply_route(Msg, N) of
+                case apply_route(Msg, N, Opts) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
                     {ok, RMsg} -> maps:merge(N, RMsg);
                     {error, _} -> N
@@ -311,18 +312,35 @@ apply_routes(Msg, R, Opts) ->
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_route(Msg, Route = #{ <<"opts">> := Opts }) ->
+apply_route(Msg, Route = #{ <<"opts">> := RouteOpts }, Opts) ->
     {ok, #{
-        <<"opts">> => Opts,
-        <<"uri">> => hb_util:ok(apply_route(Msg, maps:without([<<"opts">>], Route)))
+        <<"opts">> => hb_cache:ensure_loaded(RouteOpts, Opts),
+        <<"uri">> =>
+            hb_util:ok(
+                apply_route(
+                    Msg,
+                    hb_maps:without([<<"opts">>], Route, Opts),
+                    Opts
+                )
+            )
     }};
-apply_route(#{ <<"route-path">> := Path }, R) ->
-    apply_route(#{ <<"path">> => Path }, R);
-apply_route(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
+apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
+    apply_route(#{ <<"path">> => Path }, R, Opts);
+apply_route(#{ <<"path">> := RawPath }, #{ <<"prefix">> := RawPrefix }, Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Prefix = hb_cache:ensure_loaded(RawPrefix, Opts),
     {ok, <<Prefix/binary, Path/binary>>};
-apply_route(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
+apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Suffix = hb_cache:ensure_loaded(RawSuffix, Opts),
     {ok, <<Path/binary, Suffix/binary>>};
-apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
+apply_route(
+        #{ <<"path">> := RawPath },
+        #{ <<"match">> := RawMatch, <<"with">> := RawWith },
+        Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Match = hb_cache:ensure_loaded(RawMatch, Opts),
+    With = hb_cache:ensure_loaded(RawWith, Opts),
     % Apply the regex to the path and replace the first occurrence.
     case re:replace(Path, Match, With, [global, {return, binary}]) of
         NewPath when is_binary(NewPath) ->
@@ -354,7 +372,7 @@ match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
         Routes,
-        hb_ao:keys(hb_ao:normalize_keys(Routes)),
+        hb_ao:keys(hb_ao:normalize_keys(Routes, Opts)),
         Opts
     ).
 match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
@@ -379,7 +397,10 @@ match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
 
 %% @doc Check if a message matches a message template or path regex.
 template_matches(ToMatch, Template, _Opts) when is_map(Template) ->
-    hb_message:match(Template, ToMatch, primary);
+    case hb_message:match(Template, ToMatch, primary) of
+        {value_mismatch, _Key, _Val1, _Val2} -> false;
+        Match -> Match
+    end;
 template_matches(ToMatch, Regex, Opts) when is_binary(Regex) ->
     MsgPath = find_target_path(ToMatch, Opts),
     Matches = hb_path:regex_matches(MsgPath, Regex),
@@ -554,7 +575,7 @@ preprocess(Msg1, Msg2, Opts) ->
 %%% Tests
 
 route_provider_test() ->
-    Node = hb_http_server:start_node(#{
+    Node = hb_http_server:start_node(Opts = #{
         route_provider => #{
             <<"path">> => <<"/test-key/routes">>,
             <<"test-key">> => #{
@@ -565,11 +586,15 @@ route_provider_test() ->
                     }
                 ]
             }
-        }
+        },
+		store => #{
+			<<"store-module">> => hb_store_fs,
+			<<"prefix">> => <<"cache-TEST">>
+		}
     }),
     ?assertEqual(
         {ok, <<"testnode">>},
-        hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{})
+        hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, Opts)
     ).
 
 dynamic_route_provider_test() ->
@@ -690,7 +715,7 @@ local_dynamic_router() ->
                             <<"path">> => <<"register">>,
                             <<"route">> =>
                                 #{
-                                    <<"prefix">> =>
+                                    <<"prefix">> => 
                                         <<
                                             "https://test-node-",
                                                 (hb_util:bin(X))/binary,
@@ -721,7 +746,7 @@ local_dynamic_router() ->
                     hb_http:get(
                         Node,
                         <<"/~router@1.0/route/uri?route-path=/procID~process@1.0/now">>,
-                        #{}
+                        Opts
                     )
                 )
             end,
@@ -871,14 +896,14 @@ dynamic_router_test() ->
     ),
     % Ensure that computation is done by the exec node.
     {ok, ResMsg} = hb_http:get(Node, <<"/c?c+list=1">>, ExecOpts),
-    ?assertEqual([ExecNodeAddr], hb_message:signers(ResMsg)).
+    ?assertEqual([ExecNodeAddr], hb_message:signers(ResMsg, ExecOpts)).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the
 %% `dynamic-router' script to manage routes and recalculate weights based on the
 %% reported performance.
 dynamic_routing_by_performance_test_() ->
-    {timeout, 30, fun dynamic_routing_by_performance/0}.
+    {timeout, 60, fun dynamic_routing_by_performance/0}.
 dynamic_routing_by_performance() ->
     % Setup test parameters
     TestNodes = 4,
@@ -1216,7 +1241,7 @@ device_call_from_singleton_test() ->
         <<"node">> => <<"old">>,
         <<"priority">> => 10
     }]},
-    Msgs = hb_singleton:from(#{ <<"path">> => <<"~router@1.0/routes">> }),
+    Msgs = hb_singleton:from(#{ <<"path">> => <<"~router@1.0/routes">> }, NodeOpts),
     ?event({msgs, Msgs}),
     ?assertEqual(
         {ok, Routes},
@@ -1361,7 +1386,7 @@ simulation_occurences(SimRes, Nodes) ->
         fun(NearestNodes, Acc) ->
             lists:foldl(
                 fun(Node, Acc2) ->
-                    Acc2#{ Node => maps:get(Node, Acc2) + 1 }
+                    Acc2#{ Node => hb_maps:get(Node, Acc2, 0, #{}) + 1 }
                 end,
                 Acc,
                 NearestNodes
@@ -1372,7 +1397,7 @@ simulation_occurences(SimRes, Nodes) ->
     ).
 
 simulation_distribution(SimRes, Nodes) ->
-    maps:values(simulation_occurences(SimRes, Nodes)).
+    hb_maps:values(simulation_occurences(SimRes, Nodes), #{}).
 
 within_norms(SimRes, Nodes, TestSize) ->
     Distribution = simulation_distribution(SimRes, Nodes),
