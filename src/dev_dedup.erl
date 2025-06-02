@@ -96,10 +96,12 @@ handle(Key, M1, M2, Opts) ->
                     {skip, M1};
                 false ->
                     ?event({not_seen, SubjectID}),
-                    M3 = hb_ao:set(
-                        M1,
-                        #{ <<"dedup">> => [SubjectID|DedupList] }
-                    ),
+                    M3 =
+                        hb_ao:set(
+                            M1,
+                            #{ <<"dedup">> => [SubjectID|DedupList] },
+                            Opts
+                        ),
                     ?event({dedup_updated, M3}),
                     {ok, M3}
             end
