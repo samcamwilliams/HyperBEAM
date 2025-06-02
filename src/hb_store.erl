@@ -290,6 +290,7 @@ generate_test_suite(Suite, Stores) ->
                             timeout,
                             60,
                             fun() ->
+                                hb_http_server:set_proc_server_id(ServerID),
                                 TestResult = Test(Store),
                                 TestResult
                             end
@@ -389,20 +390,19 @@ benchmark_store(Store, WriteOps, ReadOps) ->
             lists:seq(1, ReadOps)
         ),
     % Time random reads.
-    {ReadTime, ok} =
+    {ReadTime, NotFoundCount} =
         timer:tc(
             fun() ->
-                lists:foreach(fun(Key) -> 
-                    case read(Store, Key) of
-                        {ok, Value} -> 
-                            ?event({read, {key, Key}, {value, Value}}),
-                            {ok, Value};
-                        Response ->
-                            ?event({read, {key, Key}, {value, Response}}),
-                            ?assert(false, "key not found in store."),
-                            {ok, true}
-                    end
-                end, ReadKeys)
+                lists:foldl(
+                    fun(Key, Count) -> 
+                        case read(Store, Key) of
+                            {ok, _} -> Count;
+                            _ -> Count + 1
+                        end
+                    end,
+                    0,
+                    ReadKeys
+                )
             end
         ),
     % Calculate read rate.
@@ -414,4 +414,5 @@ benchmark_store(Store, WriteOps, ReadOps) ->
             ReadTime/1000,
             hb_util:human_int(ReadRate)
         ]
-    ).
+    ),
+    ?assertEqual(0, NotFoundCount, "Written keys not found in store.").
