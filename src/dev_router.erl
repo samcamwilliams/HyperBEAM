@@ -297,11 +297,11 @@ apply_routes(Msg, R, Opts) ->
                 ?event({apply_route, {msg, Msg}, {node, N}}),
                 case apply_route(Msg, N, Opts) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
-                    {ok, RMsg} -> maps:merge(N, RMsg);
+                    {ok, RMsg} -> hb_maps:merge(N, RMsg);
                     {error, _} -> N
                 end
             end,
-            hb_util:message_to_ordered_list(Nodes)
+            hb_util:message_to_ordered_list(Nodes, Opts)
         ),
     ?event({nodes_after_apply, NodesWithRouteApplied}),
     R#{ <<"nodes">> => NodesWithRouteApplied }.
@@ -312,14 +312,19 @@ apply_routes(Msg, R, Opts) ->
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_route(Msg, Route = #{ <<"opts">> := RouteOpts }, Opts) ->
+apply_route(Msg, RouteLink, Opts) when ?IS_LINK(RouteLink) ->
+    apply_route(Msg, hb_cache:ensure_loaded(RouteLink, Opts), Opts);
+apply_route(Msg, Route = #{ <<"opts">> := RawRouteOpts }, Opts) ->
+    LoadedRoute = hb_cache:ensure_all_loaded(Route, Opts),
+    RouteOpts = hb_cache:ensure_all_loaded(RawRouteOpts, Opts),
+    LoadedMsg = hb_cache:ensure_all_loaded(Msg, Opts),
     {ok, #{
-        <<"opts">> => hb_cache:ensure_loaded(RouteOpts, Opts),
+        <<"opts">> => RouteOpts,
         <<"uri">> =>
             hb_util:ok(
                 apply_route(
-                    Msg,
-                    hb_maps:without([<<"opts">>], Route, Opts),
+                    LoadedMsg,
+                    hb_maps:without([<<"opts">>], LoadedRoute, Opts),
                     Opts
                 )
             )
@@ -616,7 +621,9 @@ dynamic_route_provider_test() ->
         hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{})
     ).
 
-local_process_route_provider_test() ->
+local_process_route_provider_test_() ->
+    {timeout, 30, fun local_process_route_provider/0}.
+local_process_route_provider() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Node = hb_http_server:start_node(#{
         priv_wallet => ar_wallet:new(),
@@ -779,7 +786,9 @@ local_dynamic_router() ->
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
 %% also include preprocessing support for routing
-dynamic_router_test() ->
+dynamic_router_test_() ->
+    {timeout, 30, fun dynamic_router/0}.
+dynamic_router() ->
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
     ExecWallet = hb:wallet(<<"test/admissible-report-wallet.json">>),
