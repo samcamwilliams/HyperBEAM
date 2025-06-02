@@ -235,11 +235,11 @@ test_stores() ->
             <<"store-module">> => hb_store_fs,
             <<"prefix">> => <<"cache-TEST/fs">>
         },
-        % #{
-        %     <<"store-module">> => hb_store_lmdb,
-        %     <<"prefix">> => <<"cache-TEST/lmdb">>,
-        %     <<"max-size">> => 600 * 1024 * 1024
-        % },
+        #{
+            <<"store-module">> => hb_store_lmdb,
+            <<"prefix">> => <<"cache-TEST/lmdb">>,
+            <<"max-size">> => 600 * 1024 * 1024
+        },
         #{
             <<"store-module">> => hb_store_lru,
             <<"persistent-store">> => [
@@ -356,8 +356,8 @@ benchmark_store(Store, WriteOps, ReadOps) ->
     RandomData = hb_util:human_id(crypto:strong_rand_bytes(32)),
     Keys =
         lists:map(
-            fun(_) ->
-                << "key-", (integer_to_binary(rand:uniform(ReadOps)))/binary >>
+            fun(N) ->
+                << "key-", (integer_to_binary(N))/binary >>
             end,
             lists:seq(1, ReadOps)
         ),
@@ -384,7 +384,7 @@ benchmark_store(Store, WriteOps, ReadOps) ->
     ReadKeys =
         lists:map(
             fun(_) ->
-                << "key", (rand:uniform(ReadOps)):256/integer >>
+                << "key-", (integer_to_binary(rand:uniform(ReadOps)))/binary >>
             end,
             lists:seq(1, ReadOps)
         ),
@@ -392,7 +392,17 @@ benchmark_store(Store, WriteOps, ReadOps) ->
     {ReadTime, ok} =
         timer:tc(
             fun() ->
-                lists:foreach(fun(Key) -> read(Store, Key) end, ReadKeys)
+                lists:foreach(fun(Key) -> 
+                    case read(Store, Key) of
+                        {ok, Value} -> 
+                            ?event({read, {key, Key}, {value, Value}}),
+                            {ok, Value};
+                        Response ->
+                            ?event({read, {key, Key}, {value, Response}}),
+                            ?assert(false, "key not found in store."),
+                            {ok, true}
+                    end
+                end, ReadKeys)
             end
         ),
     % Calculate read rate.
