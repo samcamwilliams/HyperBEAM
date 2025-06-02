@@ -1311,7 +1311,7 @@ relay_nearest_test() ->
     {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
     Peers = [Address1, Address2],
     Node =
-        hb_http_server:start_node(#{
+        hb_http_server:start_node(Opts = #{
             priv_wallet => ar_wallet:new(),
             routes => [
                 #{
@@ -1342,7 +1342,7 @@ relay_nearest_test() ->
         ),
     HasValidSigner =
         lists:any(
-            fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes)) end,
+            fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes, Opts)) end,
             Peers
         ),
     ?assert(HasValidSigner).

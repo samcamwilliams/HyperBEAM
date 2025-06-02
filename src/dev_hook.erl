@@ -168,7 +168,7 @@ execute_handler(HookName, Handler, Req, Opts) ->
             case CommitReqBin of
                 <<"true">> ->
                     {
-                        case hb_message:signers(Handler) of
+                        case hb_message:signers(Handler, Opts) of
                             [] -> hb_message:commit(Handler, Opts);
                             _ -> Handler
                         end,

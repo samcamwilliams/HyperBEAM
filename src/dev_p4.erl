@@ -94,7 +94,7 @@ request(State, Raw, NodeMsg) ->
                     LedgerReq = #{
                         <<"path">> => <<"balance">>,
                         <<"target">> =>
-                            case hb_message:signers(Request) of
+                            case hb_message:signers(Request, NodeMsg) of
                                 [Signer] -> Signer;
                                 [] -> <<"unknown">>;
                                 Multiple -> Multiple
@@ -215,7 +215,7 @@ response(State, RawResponse, NodeMsg) ->
                                 <<"path">> => <<"charge">>,
                                 <<"quantity">> => Price,
                                 <<"account">> =>
-                                    case hb_message:signers(Request) of
+                                    case hb_message:signers(Request, NodeMsg) of
                                         [Signer] -> Signer;
                                         Multiple -> Multiple
                                     end,

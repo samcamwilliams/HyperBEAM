@@ -367,8 +367,8 @@ resolve_stage(3, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
 resolve_stage(3, Msg1, Msg2, Opts) ->
     ?event(ao_core, {stage, 3, validation_check}, Opts),
     % Validation check: Check if the message is valid.
-    %Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
-    %Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
+    %Msg1Valid = (hb_message:signers(Msg1, Opts) == []) orelse hb_message:verify(Msg1, Opts),
+    %Msg2Valid = (hb_message:signers(Msg2, Opts) == []) orelse hb_message:verify(Msg2, Opts),
     ?no_prod("Enable message validity checks!"),
     case {true, true} of
         _ -> resolve_stage(4, Msg1, Msg2, Opts);

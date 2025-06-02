@@ -155,8 +155,8 @@ topup(_, Req, NodeMsg) ->
 is_operator(Req, NodeMsg) ->
     is_operator(Req, NodeMsg, hb_opts:get(operator, undefined, NodeMsg)).
 
-is_operator(Req, _NodeMsg, OperatorAddr) when ?IS_ID(OperatorAddr) ->
-    Signers = hb_message:signers(Req),
+is_operator(Req, NodeMsg, OperatorAddr) when ?IS_ID(OperatorAddr) ->
+    Signers = hb_message:signers(Req, NodeMsg),
     HumanOperatorAddr = hb_util:human_id(OperatorAddr),
     lists:any(
         fun(Signer) ->
