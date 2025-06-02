@@ -52,7 +52,7 @@
 start(StoreOpts) when is_map(StoreOpts) ->
     {ok, find_or_spawn_instance(StoreOpts)};
 start(_) ->
-    {error, {badarg, "StoreOpts must be a map"}}.
+    {error, {badarg, <<"StoreOpts must be a map">>}}.
 
 %% @doc Determine whether a key represents a simple value or composite group.
 %%
