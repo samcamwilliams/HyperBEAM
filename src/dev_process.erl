@@ -833,7 +833,7 @@ http_wasm_process_by_id_test() ->
         process_async_cache => false,
         store => #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-mainnet">>
+            <<"name">> => <<"cache-mainnet">>
         }
     }),
     Wallet = ar_wallet:new(),
@@ -920,7 +920,7 @@ aos_state_access_via_http_test_() ->
             cache_control => <<"always">>,
             store => #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-mainnet">>
+                <<"name">> => <<"cache-mainnet">>
             },
             force_signed_requests => true
         }),

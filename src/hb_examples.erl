@@ -83,7 +83,7 @@ paid_wasm_test() ->
 				store => [
 					#{
 						<<"store-module">> => hb_store_fs,
-						<<"prefix">> => <<"cache-TEST">>
+						<<"name">> => <<"cache-TEST">>
 					}
 				],
                 simple_pay_ledger => #{ ClientAddress => 100 },

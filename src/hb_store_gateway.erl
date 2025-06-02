@@ -107,7 +107,7 @@ graphql_from_cache_test() ->
 
 manual_local_cache_test() ->
     hb_http_server:start_node(#{}),
-    Local = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+    Local = #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
     hb_store:reset(Local),
     Gateway = #{ <<"store-module">> => hb_store_gateway, <<"store">> => false },
     {ok, FromRemote} =
@@ -128,7 +128,7 @@ manual_local_cache_test() ->
 %% @doc Ensure that saving to the gateway store works.
 cache_read_message_test() ->
     hb_http_server:start_node(#{}),
-    Local = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+    Local = #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
     hb_store:reset(Local),
     WriteOpts = #{ store =>
         [
@@ -180,7 +180,7 @@ external_http_access_test() ->
             cache_control => <<"cache">>,
             store =>
                 [
-                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                    #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
                     #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
                 ]
         }
@@ -200,7 +200,7 @@ external_http_access_test() ->
 %         TestProc = <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
 %         EmptyStore = #{
 %             <<"store-module">> => hb_store_fs,
-%             <<"prefix">> => <<"cache-TEST">>
+%             <<"name">> => <<"cache-TEST">>
 %         },
 %         hb_store:reset(EmptyStore),
 %         hb_http_server:start_node(#{}),
@@ -244,7 +244,7 @@ store_opts_test() ->
             [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST">>
+                    <<"name">> => <<"cache-TEST">>
                 },
                 #{ <<"store-module">> => hb_store_gateway, 
                         <<"store">> => false,

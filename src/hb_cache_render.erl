@@ -297,7 +297,7 @@ prepare_unsigned_data() ->
     Opts = #{
         store => #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/render-fs">>
+            <<"name">> => <<"cache-TEST/render-fs">>
         }
     },
     Item = test_unsigned(#{ <<"key">> => <<"Simple unsigned data item">> }),
@@ -307,7 +307,7 @@ prepare_signed_data() ->
     Opts = #{
         store => #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/render-fs">>
+            <<"name">> => <<"cache-TEST/render-fs">>
         }
     },
     Wallet = ar_wallet:new(),
@@ -319,7 +319,7 @@ prepare_deeply_nested_complex_message() ->
     Opts = #{
         store => #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/render-fs">>
+            <<"name">> => <<"cache-TEST/render-fs">>
         }
     },
     Wallet = ar_wallet:new(),

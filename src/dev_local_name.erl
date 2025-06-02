@@ -118,7 +118,7 @@ generate_test_opts() ->
             [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => "cache-TEST/"
+                    <<"name">> => "cache-TEST/"
                 }
             ],
         priv_wallet => ar_wallet:new()

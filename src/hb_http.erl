@@ -799,7 +799,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                                 store =>
                                     #{
                                         <<"store-module">> => hb_store_fs,
-                                        <<"prefix">> => <<"cache-http">>
+                                        <<"name">> => <<"cache-http">>
                                     }
                             }
                         );

@@ -221,7 +221,7 @@ setup_test_env() ->
     application:ensure_all_started(hb),
     ?event(dev_cache, {setup_test_env, {hb_started}}),
     LocalStore = 
-		#{ <<"store-module">> => hb_store_fs, <<"prefix">> => StorePrefix },
+		#{ <<"store-module">> => hb_store_fs, <<"name">> => StorePrefix },
     ?event(dev_cache, {setup_test_env, {local_store_configured, LocalStore}}),
     hb_store:reset(LocalStore),
     ?event(dev_cache, {setup_test_env, {store_reset}}),

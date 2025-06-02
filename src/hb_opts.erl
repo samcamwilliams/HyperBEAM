@@ -141,7 +141,7 @@ default_message() ->
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
                 <<"template">> => <<"/result/.*">>,
-                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+                <<"node">> => #{ <<"name">> => <<"http://localhost:6363">> }
             },
             #{
                 % Routes for GraphQL requests to use a remote GraphQL API.
@@ -149,11 +149,11 @@ default_message() ->
                 <<"nodes">> =>
                     [
                         #{
-                            <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
+                            <<"name">> => <<"https://arweave-search.goldsky.com">>,
                             <<"opts">> => #{ http_client => httpc, protocol => http2 }
                         },
                         #{
-                            <<"prefix">> => <<"https://arweave.net">>,
+                            <<"name">> => <<"https://arweave.net">>,
                             <<"opts">> => #{ http_client => gun, protocol => http2 }
                         }
                     ]
@@ -163,7 +163,7 @@ default_message() ->
                 <<"template">> => <<"/raw">>,
                 <<"node">> =>
                     #{
-                        <<"prefix">> => <<"https://arweave.net">>,
+                        <<"name">> => <<"https://arweave.net">>,
                         <<"opts">> => #{ http_client => gun, protocol => http2 }
                     }
             }
@@ -171,15 +171,16 @@ default_message() ->
         store =>
             [
                 #{
+                    <<"name">> => <<"cache-mainnet">>,
                     <<"store-module">> => hb_store_lru,
                     <<"persistent-store">> => #{
                         <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-mainnet">>
+                        <<"name">> => <<"cache-mainnet">>
                     }
                 },
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-mainnet">>
+                    <<"name">> => <<"cache-mainnet">>
                 },
                 #{
                     <<"store-module">> => hb_store_gateway,
@@ -193,7 +194,7 @@ default_message() ->
                     [
                         #{
                             <<"store-module">> => hb_store_fs,
-                            <<"prefix">> => <<"cache-mainnet">>
+                            <<"name">> => <<"cache-mainnet">>
                         }
                     ]
                 },
@@ -203,7 +204,7 @@ default_message() ->
                         [
                             #{
                                 <<"store-module">> => hb_store_fs,
-                                <<"prefix">> => <<"cache-mainnet">>
+                                <<"name">> => <<"cache-mainnet">>
                             }
                         ]
                 }

@@ -1596,7 +1596,7 @@ register_location_on_boot_test() ->
             store => [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/scheduler-location-notified">>
+                    <<"name">> => <<"cache-TEST/scheduler-location-notified">>
                 }
             ]
         }),
@@ -1695,7 +1695,7 @@ redirect_from_graphql() ->
     Opts =
         #{ store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-mainnet">> },
                 #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
             ]
         },
@@ -1770,7 +1770,7 @@ http_init(Opts) ->
                 <<"persistent-store">> => [
                     #{
                         <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-mainnet">>
+                        <<"name">> => <<"cache-mainnet">>
                     }
                 ]
             },
@@ -1840,7 +1840,7 @@ http_get_schedule_redirect() ->
         #{
             store =>
                 [
-                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                    #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-mainnet">> },
                     #{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }
                 ],
                 scheduler_follow_redirects => false
@@ -2121,7 +2121,7 @@ benchmark_suite(Port, Base) ->
             requires => [hb_store_fs],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
-                    <<"prefix">> => <<Base/binary, PortBin/binary, "-A">>
+                    <<"name">> => <<Base/binary, PortBin/binary, "-A">>
                 },
                 scheduling_mode => local_confirmation,
                 port => Port
@@ -2133,7 +2133,7 @@ benchmark_suite(Port, Base) ->
             requires => [hb_store_fs],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
-                    <<"prefix">> => <<Base/binary, PortBin/binary, "-B">>
+                    <<"name">> => <<Base/binary, PortBin/binary, "-B">>
                 },
                 scheduling_mode => aggressive,
                 port => Port + 1
@@ -2145,7 +2145,7 @@ benchmark_suite(Port, Base) ->
             requires => [hb_store_rocksdb],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
-                    <<"prefix">> => <<Base/binary, PortBin/binary, "-C">>
+                    <<"name">> => <<Base/binary, PortBin/binary, "-C">>
                 },
                 scheduling_mode => local_confirmation,
                 port => Port + 2
@@ -2157,7 +2157,7 @@ benchmark_suite(Port, Base) ->
             requires => [hb_store_rocksdb],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
-                    <<"prefix">> => <<Base/binary, PortBin/binary, "-D">>
+                    <<"name">> => <<Base/binary, PortBin/binary, "-D">>
                 },
                 scheduling_mode => aggressive,
                 port => Port + 3
@@ -2169,7 +2169,7 @@ benchmark_suite(Port, Base) ->
             requires => [http3],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
-                    <<"prefix">> =>
+                    <<"name">> =>
                           <<
                               Base/binary,
                               "run-",

@@ -591,11 +591,11 @@ full_push_test_() ->
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>,
             store => [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> => #{
                         <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-TEST">>
+                        <<"name">> => <<"cache-TEST">>
                     }
                 }
             ]
@@ -648,7 +648,7 @@ push_as_identity_test_() ->
                     store => [
                         #{
                             <<"store-module">> => hb_store_fs,
-                            <<"prefix">> => <<"cache-TEST/scheduler">>
+                            <<"name">> => <<"cache-TEST/scheduler">>
                         }
                     ]
                 },
@@ -776,7 +776,7 @@ push_with_redirect_hint_test_disabled() ->
             [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST">>
+                    <<"name">> => <<"cache-TEST">>
                 }
             ],
         ExtOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
@@ -861,13 +861,13 @@ push_prompts_encoding_change() ->
         cache_control => <<"always">>,
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
                 % Include a gateway store so that we can get the legacynet 
                 % process when needed.
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> => #{
                         <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-TEST">>
+                        <<"name">> => <<"cache-TEST">>
                     }
                 }
             ]
@@ -905,13 +905,13 @@ nested_push_prompts_encoding_change() ->
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-mainnet">>
+                <<"name">> => <<"cache-mainnet">>
             },
             #{
                 <<"store-module">> => hb_store_gateway,
                 <<"store">> => #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-mainnet">>
+                    <<"name">> => <<"cache-mainnet">>
                 }
             }
         ]

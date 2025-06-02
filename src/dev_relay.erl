@@ -195,7 +195,7 @@ request_hook_reroute_to_nearest_test() ->
                             lists:map(
                                 fun({Address, Node}) ->
                                     #{
-                                        <<"prefix">> => Node,
+                                        <<"name">> => Node,
                                         <<"wallet">> => Address
                                     }
                                 end,
@@ -258,7 +258,7 @@ commit_request_test() ->
                         <<"nodes">> => [
                             #{
                                 <<"wallet">> => hb_util:human_id(Wallet),
-                                <<"prefix">> => Executor
+                                <<"name">> => Executor
                             }
                         ]
                     }

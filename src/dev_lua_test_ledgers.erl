@@ -409,7 +409,7 @@ test_opts() ->
         store => Store = [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST">>
+                <<"name">> => <<"cache-TEST">>
             }
         ]
     },

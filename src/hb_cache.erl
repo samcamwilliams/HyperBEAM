@@ -731,7 +731,7 @@ cache_suite_test_() ->
 test_device_map_cannot_be_written_test() ->
     try
         Opts = #{ store => StoreOpts =
-            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }] },
+            [#{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> }] },
         hb_store:reset(StoreOpts),
         Danger = #{ <<"device">> => #{}},
         write(Danger, Opts),
@@ -743,6 +743,6 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Store =
         [
-            #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }
+            #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> }
         ],
     test_deeply_nested_complex_message(Store).

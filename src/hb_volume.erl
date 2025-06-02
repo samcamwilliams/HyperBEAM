@@ -408,10 +408,10 @@ update_store_config(#{<<"store-module">> := Module} = StoreConfig, NewPath)
     case Module of
         hb_store_fs ->
             % For filesystem store, replace prefix with the new path
-            StoreConfig#{<<"prefix">> => NewPath};
+            StoreConfig#{<<"name">> => NewPath};
         hb_store_rocksdb ->
             % For RocksDB store, replace prefix with the new path
-            % StoreConfig#{<<"prefix">> => NewPath};
+            % StoreConfig#{<<"name">> => NewPath};
             StoreConfig;
         hb_store_gateway ->
             % For gateway store, recursively update nested store configurations
@@ -422,7 +422,7 @@ update_store_config(#{<<"store-module">> := Module} = StoreConfig, NewPath)
             StoreConfig;
         _ ->
             % For any other store type, update the prefix
-            % StoreConfig#{<<"prefix">> => NewPath}
+            % StoreConfig#{<<"name">> => NewPath}
             StoreConfig
     end;
 update_store_config({Type, _OldPath, Opts}, NewPath) ->

@@ -51,7 +51,7 @@ test_opts(normal) ->
                     <<"store-module">> => hb_store_lru,
                     <<"persistent-store">> => #{
                         <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-TEST">>
+                        <<"name">> => <<"cache-TEST">>
                     }
                 }
             ],
@@ -1109,7 +1109,7 @@ deeply_nested_committed_keys_test() ->
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST">>
+                <<"name">> => <<"cache-TEST">>
             }
         ]
     },
@@ -1523,7 +1523,7 @@ find_multiple_commitments_test_disabled() ->
 bundled_ordering_test(Codec = #{ <<"bundle">> := true }, Opts) ->
     % Opts = (test_opts(normal))#{
     %     store => [
-    %         #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }
+    %         #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> }
     %     ]
     % },
     Msg =

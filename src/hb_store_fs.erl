@@ -25,11 +25,11 @@
 -include("include/hb.hrl").
 
 %% @doc Initialize the file system store with the given data directory.
-start(#{ <<"prefix">> := DataDir }) ->
+start(#{ <<"name">> := DataDir }) ->
     ok = filelib:ensure_dir(DataDir).
 
 %% @doc Stop the file system store. Currently a no-op.
-stop(#{ <<"prefix">> := _DataDir }) ->
+stop(#{ <<"name">> := _DataDir }) ->
     ok.
 
 %% @doc The file-based store is always local, for now. In the future, we may
@@ -39,7 +39,7 @@ scope(#{ <<"scope">> := Scope }) -> Scope;
 scope(_) -> scope().
 
 %% @doc Reset the store by completely removing its directory and recreating it.
-reset(#{ <<"prefix">> := DataDir }) ->
+reset(#{ <<"name">> := DataDir }) ->
     % Use pattern that completely removes directory then recreates it
     os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
     ?event({reset_store, {path, DataDir}}).
@@ -124,7 +124,7 @@ type(Path) ->
     end.
 
 %% @doc Create a directory (group) in the store.
-make_group(Opts = #{ <<"prefix">> := _DataDir }, Path) ->
+make_group(Opts = #{ <<"name">> := _DataDir }, Path) ->
     P = add_prefix(Opts, Path),
     ?event({making_group, P}),
     % We need to ensure that the parent directory exists, so that we can
@@ -158,7 +158,7 @@ make_link(Opts, Existing, New) ->
     end.
 
 %% @doc Add the directory prefix to a path.
-add_prefix(#{ <<"prefix">> := Prefix }, Path) ->
+add_prefix(#{ <<"name">> := Prefix }, Path) ->
 	?event({add_prefix, Prefix, Path}),
     % Check if the prefix is an absolute path
     IsAbsolute = is_binary(Prefix) andalso binary:first(Prefix) =:= $/ orelse
@@ -185,5 +185,5 @@ add_prefix(#{ <<"prefix">> := Prefix }, Path) ->
     end.
 
 %% @doc Remove the directory prefix from a path.
-remove_prefix(#{ <<"prefix">> := Prefix }, Path) ->
+remove_prefix(#{ <<"name">> := Prefix }, Path) ->
     hb_util:remove_common(Path, Prefix).

@@ -136,7 +136,7 @@ read_test() ->
     rand:seed(default),
     LocalStore = #{ 
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-mainnet">>
+		<<"name">> => <<"cache-mainnet">>
 	},
     hb_store:reset(LocalStore),
     M = #{ <<"test-key">> => Rand = rand:uniform(1337) },

@@ -451,7 +451,7 @@ is(initiator, Request, NodeMsg) ->
 config_test() ->
 	StoreOpts = #{
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-TEST">>
+		<<"name">> => <<"cache-TEST">>
 	},
     Node = hb_http_server:start_node(Opts = #{ test_config_item => <<"test">>, store => StoreOpts }),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, Opts),
@@ -475,7 +475,7 @@ priv_inaccessible_test() ->
 unauthorized_set_node_msg_fails_test() ->
 	StoreOpts = #{
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-TEST">>
+		<<"name">> => <<"cache-TEST">>
 	},
     Node = hb_http_server:start_node(Opts = #{ store => StoreOpts, priv_wallet => ar_wallet:new() }),
     {error, _} =
@@ -499,7 +499,7 @@ unauthorized_set_node_msg_fails_test() ->
 authorized_set_node_msg_succeeds_test() ->
 	StoreOpts = #{
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-TEST">>
+		<<"name">> => <<"cache-TEST">>
 	},
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
@@ -538,7 +538,7 @@ uninitialized_node_test() ->
 permanent_node_message_test() ->
 	StoreOpts = #{
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-TEST">>
+		<<"name">> => <<"cache-TEST">>
 	},
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
@@ -588,7 +588,7 @@ permanent_node_message_test() ->
 claim_node_test() ->
 	StoreOpts = #{
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-TEST">>
+		<<"name">> => <<"cache-TEST">>
 	},
     Owner = ar_wallet:new(),
     Address = ar_wallet:to_address(Owner),

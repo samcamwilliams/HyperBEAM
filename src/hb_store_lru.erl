@@ -21,79 +21,31 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% @doc The default server ID is used when no server ID is provided in the
-%%% store options or in the process dictionary. In such cases, every LRU cache
-%%% will be shared across non-ID-specific LRU stores.
--define(DEFAULT_LRU_ID, <<"global">>).
-
 %%% @doc The default capacity is used when no capacity is provided in the store
 %%% options.
 -define(DEFAULT_LRU_CAPACITY, 4_000_000_000).
 
-%% @doc The server ID is either found in the `StoreOpts` or in the process
-%% dictionary, using the `server_id' key. This is typically set by the HTTP 
-%% server when a worker is spawned for a request, but can be overridden by 
-%% explicitly setting the `server_id` in the store definition. It is expected
-%% to be a binary.
-find_id(StoreOpts) ->
-    case hb_maps:get(<<"server-id">>, StoreOpts, get(server_id)) of
-        undefined ->
-            ?DEFAULT_LRU_ID;
-        ServerID ->
-            ServerID
-    end.
-
-%% @doc Find the Process ID of the LRU cache server.
-find_pid(StoreOpts) ->
-    ?event(debug_store, {find_pid, StoreOpts}),
-    ServerID = find_id(StoreOpts),
-    PID =
-        case erlang:get({cache_lru, ServerID}) of
-            undefined ->
-                case hb_name:lookup({in_memory, ServerID}) of
-                    undefined ->
-                        {ok, ServerPID} = start(StoreOpts),
-                        ServerPID;
-                    FoundPID ->
-                        FoundPID
-                end;
-            FoundPID ->
-                FoundPID
-        end,
-    cache_pid(ServerID, PID),
-    PID.
-
-%% @doc Store the PID in the process dictionary for rapid lookup.
-cache_pid(ServerID, PID) ->
-    erlang:put({cache_lru, ServerID}, PID).
-
-clean_cache_pid(ServerPID) ->
-    erlang:erase({cache_lru, ServerPID}).
-
 %% @doc Start the LRU cache.
-start(Opts) ->
-    ServerID = find_id(Opts),
-    NormOpts = Opts#{ <<"server-id">> => ServerID },
-    ?event(cache_lru, {starting_lru_server, ServerID}),
+start(StoreOpts = #{ <<"name">> := Name }) ->
+    ?event(cache_lru, {starting_lru_server, Name}),
     From = self(),
     spawn(
         fun() ->
-            State = init(From, NormOpts),
-            server_loop(State, NormOpts)
+            State = init(From, StoreOpts),
+            server_loop(State, StoreOpts)
         end
     ),
     receive
-        {ok, PID} -> {ok, PID}
+        {ok, InstanceMessage} -> {ok, InstanceMessage}
     end.
 
 %% @doc Create the `ets' tables for the LRU cache:
 %% - The cache of data itself (public, with read concurrency enabled)
 %% - A set for the LRU's stats.
 %% - An ordered set for the cache's index.
-init(From, Opts) ->
-    ServerID = find_id(Opts),
+init(From, StoreOpts) ->
     % Start the persistent store.
-    case hb_maps:get(<<"persistent-store">>, Opts, no_store) of
+    case hb_maps:get(<<"persistent-store">>, StoreOpts, no_store) of
         no_store -> ok;
         Store -> hb_store:start(Store)
     end,
@@ -105,12 +57,7 @@ init(From, Opts) ->
     ]),
     CacheStatsTable = ets:new(hb_cache_lru_stats, [set]),
     CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
-    hb_name:register({in_memory, ServerID}),
-    persistent_term:put(
-        {in_memory_lru_cache, ServerID},
-        #{cache_table => CacheTable}
-    ),
-    From ! {ok, self()},
+    From ! {ok, #{ <<"pid">> => self(), <<"cache-table">> => CacheTable }},
     #{
         cache_table => CacheTable,
         stats_table => CacheStatsTable,
@@ -121,12 +68,10 @@ init(From, Opts) ->
 %% before exiting the process.
 stop(Opts) ->
     ?event(cache_lru, {stopping_lru_server, Opts}),
-    CacheServer = find_pid(Opts),
-    CacheServer ! {stop, self()},
+    #{ <<"pid">> := CacheServer } = hb_store:find(Opts),
+    CacheServer ! {stop, self(), Ref = make_ref()},
     receive
-      ok ->
-        clean_cache_pid(find_id(Opts)),
-        ok
+        {ok, Ref} -> ok
     end.
 
 %% @doc The LRU store is always local, for now.
@@ -135,7 +80,7 @@ scope(_) -> local.
 %% @doc Reset the store by completely cleaning the ETS tables and
 %% delegate the reset to the underlying offloading store.
 reset(Opts) ->
-    CacheServer = find_pid(Opts),
+    #{ <<"pid">> := CacheServer } = hb_store:find(Opts),
     CacheServer ! {reset, self(), Ref = make_ref()},
     receive
         {ok, Ref} ->
@@ -175,12 +120,9 @@ server_loop(State =
             ets:delete_all_objects(StatsTable),
             ets:delete_all_objects(IndexTable),
             From ! {ok, Ref};
-        {stop, From} ->
+        {stop, From, Ref} ->
             evict_all_entries(State, Opts),
-            persistent_term:erase(
-                {in_memory_lru_cache, find_id(Opts)}
-            ),
-            From ! ok,
+            From ! {ok, Ref},
             exit(self(), ok)
     end,
     server_loop(State, Opts).
@@ -191,7 +133,7 @@ server_loop(State =
 %% key to cycle and re-prioritize cache entry.
 write(Opts, RawKey, Value) ->
     Key = hb_store:join(RawKey),
-    CacheServer = find_pid(Opts),
+    #{ <<"pid">> := CacheServer } = hb_store:find(Opts),
     CacheServer ! {put, Key, Value, self(), Ref = make_ref()},
     receive
         {ok, Ref} -> ok
@@ -201,10 +143,9 @@ write(Opts, RawKey, Value) ->
 %% Because the cache uses LRU, the key is moved on the most recent used key to
 %% cycle and re-prioritize cache entry.
 read(Opts, RawKey) ->
-    ServerID = find_id(Opts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    Key = resolve(CacheTables, RawKey),
-    case get_cache_entry(CacheTables, Key) of
+    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    Key = resolve(Opts, RawKey),
+    case get_cache_entry(Table, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -213,8 +154,7 @@ read(Opts, RawKey) ->
                     hb_cache:read(Key, #{ store => PersistentStore })
             end;
         {raw, Entry = #{value := Value}} ->
-            CacheServer = find_pid(Opts),
-            CacheServer ! {update_recent, Key, Entry, self(), Ref = make_ref()},
+            Server ! {update_recent, Key, Entry, self(), Ref = make_ref()},
             receive
                 {ok, Ref} -> {ok, Value}
             end;
@@ -240,9 +180,8 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
             {generated_partial_path_to_test, PathPart}
         }
     ),
-    ServerID = find_id(Opts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    case get_cache_entry(CacheTables, PathPart) of
+    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    case get_cache_entry(Table, PathPart) of
         {link, Link} ->
             resolve(Opts, Link, Rest);
         _ ->
@@ -254,11 +193,10 @@ make_link(_, Link, Link) ->
     ok;
 make_link(Opts, RawExisting, New) ->
     Existing = hb_store:join(RawExisting),
-    ServerID = find_id(Opts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
     ExistingKeyBin = convert_if_list(RawExisting),
     NewKeyBin = convert_if_list(New),
-    case get_cache_entry(CacheTables, ExistingKeyBin) of
+    case get_cache_entry(Table, ExistingKeyBin) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -267,8 +205,7 @@ make_link(Opts, RawExisting, New) ->
                     hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
         _ ->
-            CacheServer = find_pid(Opts),
-            CacheServer ! {link, Existing, New, self(), Ref = make_ref()},
+            Server ! {link, Existing, New, self(), Ref = make_ref()},
             receive
                 {ok, Ref} ->
                     ok
@@ -277,10 +214,9 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    ServerID = find_id(Opts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
+    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
     InMemoryKeys =
-        case get_cache_entry(CacheTables, Path) of
+        case get_cache_entry(Table, Path) of
             {group, Set} ->
                 sets:to_list(Set);
             {link, Link} ->
@@ -310,9 +246,8 @@ list(Opts, Path) ->
 
 %% @doc Determine the type of a key in the store.
 type(Opts, Key) ->
-    ServerID = find_id(Opts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    case get_cache_entry(CacheTables, Key) of
+    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    case get_cache_entry(Table, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -330,8 +265,8 @@ type(Opts, Key) ->
 
 %% @doc Create a directory inside the store.
 make_group(Opts, Key) ->
-    CacheServer = find_pid(Opts),
-    CacheServer ! {make_group, Key, self(), Ref = make_ref()},
+    #{ <<"pid">> := Server } = hb_store:find(Opts),
+    Server ! {make_group, Key, self(), Ref = make_ref()},
     receive
         {ok, Ref} ->
             ok
@@ -369,6 +304,8 @@ table_keys(TableName, CurrentKey, Prefix, Acc) ->
     end.
 
 get_cache_entry(#{cache_table := Table}, Key) ->
+    get_cache_entry(Table, Key);
+get_cache_entry(Table, Key) ->
     case ets:lookup(Table, Key) of
         [] ->
             nil;
@@ -719,50 +656,38 @@ test_opts(PersistentStore) ->
     test_opts(PersistentStore, 1000000).
 test_opts(PersistentStore, Capacity) ->
     % Set the server ID to a random address.
-    ServerID = hb_util:human_id(crypto:strong_rand_bytes(32)),
-    put(server_id, ServerID),
     BaseStore = #{
+        <<"name">> => hb_util:human_id(crypto:strong_rand_bytes(32)),
         <<"capacity">> => Capacity,
-        <<"store-module">> => hb_store_lru,
-        <<"server-id">> => ServerID
+        <<"store-module">> => hb_store_lru
     },
-    StoreOpts = 
-        case PersistentStore of
-            no_store ->
-                BaseStore#{<<"persistent-store">> => no_store};
-            default ->
-                DefaultStore = [
-                    #{
-                        <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-TEST/lru">>
-                    }
-                ],
-                hb_store:reset(DefaultStore),
-                BaseStore#{<<"persistent-store">> => DefaultStore};
-            _ ->
-                hb_store:reset(PersistentStore),
-                BaseStore#{<<"persistent-store">> => PersistentStore}
-        end,
-    % Add the default HTTP server options.
-    hb_http_server:set_default_opts(#{ store => StoreOpts }).
+    case PersistentStore of
+        no_store ->
+            BaseStore#{ <<"persistent-store">> => no_store };
+        default ->
+            DefaultStore = [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"name">> => <<"cache-TEST/lru">>
+                }
+            ],
+            hb_store:reset(DefaultStore),
+            BaseStore#{ <<"persistent-store">> => DefaultStore };
+        _ ->
+            hb_store:reset(PersistentStore),
+            BaseStore#{ <<"persistent-store">> => PersistentStore }
+    end.
 
 unknown_value_test() ->
-    DefaultOpts = test_opts(default),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
-    ?assertEqual(not_found, read(StoreOpts, <<"key1">>)).
+    ?assertEqual(not_found, read(test_opts(default), <<"key1">>)).
 
 cache_term_test() ->
-    DefaultOpts = test_opts(default),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"key1">>)).
 
 evict_oldest_items_test() ->
-    DefaultOpts = test_opts(no_store, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(no_store, 500),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -772,9 +697,7 @@ evict_oldest_items_test() ->
     ?assertEqual(not_found, read(StoreOpts, <<"key2">>)).
 
 evict_items_with_insufficient_space_test() ->
-    DefaultOpts = test_opts(no_store, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(no_store, 500),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -783,9 +706,7 @@ evict_items_with_insufficient_space_test() ->
     ?assertEqual(not_found, read(StoreOpts, <<"key2">>)).
 
 evict_but_able_to_read_from_fs_store_test() ->
-    DefaultOpts = test_opts(default, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default, 500),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
@@ -798,12 +719,11 @@ evict_but_able_to_read_from_fs_store_test() ->
     ?assertMatch({ok, _}, read(StoreOpts, <<"sub">>)).
 
 stop_test() ->
-    Opts = test_opts(default, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, Opts),
-    {ok, ServerPID} = start(StoreOpts),
+    StoreOpts = test_opts(default, 500),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     write(StoreOpts, <<"key2">>, Binary),
+    #{ <<"pid">> := ServerPID } = hb_store:find(StoreOpts),
     ok = stop(StoreOpts),
     ?assertEqual(false, is_process_alive(ServerPID)),
     PersistentStore = hb_maps:get(<<"persistent-store">>, StoreOpts),
@@ -811,21 +731,16 @@ stop_test() ->
     ?assertEqual({ok, Binary}, hb_store:read(PersistentStore, <<"key2">>)).
 
 reset_test() ->
-    DefaultOpts = test_opts(default),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     write(StoreOpts, <<"key2">>, <<"Hi">>),
     reset(StoreOpts),
     ?assertEqual(not_found, read(StoreOpts, <<"key1">>)),
-    #{cache_table := CacheTable} =
-        persistent_term:get({in_memory_lru_cache, get(server_id)}),
-    ?assertEqual([], ets:tab2list(CacheTable)).
+    #{ <<"cache-table">> := Table } = hb_store:find(StoreOpts),
+    ?assertEqual([], ets:tab2list(Table)).
 
 list_test() ->
-    DefaultOpts = test_opts(default, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default, 500),
     Binary = crypto:strong_rand_bytes(200),
     make_group(StoreOpts, <<"sub">>),
     write(StoreOpts, <<"hello">>, <<"world">>),
@@ -847,9 +762,7 @@ list_test() ->
     ?assertEqual({ok, [<<"a">>, <<"b">>]}, list(StoreOpts, <<"complex">>)).
 
 type_test() ->
-    DefaultOpts = test_opts(default, 500),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default, 500),
     Binary = crypto:strong_rand_bytes(200),
     write(StoreOpts, <<"key1">>, Binary),
     ?assertEqual(simple, type(StoreOpts, <<"key1">>)),
@@ -859,16 +772,13 @@ type_test() ->
     ?assertEqual(simple, type(StoreOpts, <<"keylink">>)).
 
 replace_link_test() ->
-    DefaultOpts = test_opts(default),
-    StoreOpts = hb_opts:get(store, {error, store_not_found}, DefaultOpts),
-    start(StoreOpts),
+    StoreOpts = test_opts(default),
     write(StoreOpts, <<"key1">>, <<"Hello">>),
     make_link(StoreOpts, <<"key1">>, <<"keylink">>),
     ?assertEqual({ok, <<"Hello">>}, read(StoreOpts, <<"keylink">>)),
     write(StoreOpts, <<"key2">>, <<"Hello2">>),
     make_link(StoreOpts, <<"key2">>, <<"keylink">>),
     ?assertEqual({ok, <<"Hello2">>}, read(StoreOpts, <<"keylink">>)),
-    ServerID = find_id(StoreOpts),
-    CacheTables = persistent_term:get({in_memory_lru_cache, ServerID}),
-    {raw, #{links := Links }}= get_cache_entry(CacheTables, <<"key1">>),
+    #{ <<"cache-table">> := Table } = hb_store:find(StoreOpts),
+    {raw, #{links := Links }}= get_cache_entry(Table, <<"key1">>),
     ?assertEqual([], Links).

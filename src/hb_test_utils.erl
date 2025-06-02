@@ -12,7 +12,7 @@ test_store() ->
             (integer_to_binary(erlang:system_time(millisecond)))/binary
         >>,
     filelib:ensure_dir(binary_to_list(TestDir)),
-    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => TestDir }.
+    #{ <<"store-module">> => hb_store_fs, <<"name">> => TestDir }.
 
 %% @doc Run each test in a suite with each set of options. Start and reset
 %% the store(s) for each test. Expects suites to be a list of tuples with

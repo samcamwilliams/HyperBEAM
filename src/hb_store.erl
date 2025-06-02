@@ -49,6 +49,7 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
+-export([find/1]).
 -export([generate_test_suite/1, generate_test_suite/2, test_stores/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -66,9 +67,58 @@ behavior_info(callbacks) ->
 
 -define(DEFAULT_SCOPE, local).
 
+%%% Store named terms registry functions.
+
+%% @doc Find or spawn a store instance by its store opts.
+find(StoreOpts = #{ <<"store-module">> := Mod }) ->
+    Name = maps:get(<<"name">>, StoreOpts, Mod),
+    LookupName = {store, Mod, Name},
+    case erlang:get(LookupName) of
+        undefined ->
+            try persistent_term:get(LookupName) of
+                InstanceMessage ->
+                    ensure_instance_alive(StoreOpts, InstanceMessage)
+            catch
+                error:badarg -> spawn_instance(StoreOpts)
+            end;
+        InstanceMessage ->
+            ensure_instance_alive(StoreOpts, InstanceMessage)
+    end.
+
+%% @doc Create a new instance of a store and return its term.
+spawn_instance(StoreOpts = #{ <<"store-module">> := Mod }) ->
+    Name = maps:get(<<"name">>, StoreOpts, Mod),
+    try Mod:start(StoreOpts) of
+        ok -> ok;
+        {ok, InstanceMessage} ->
+            persistent_term:put({store, Mod, Name}, InstanceMessage),
+            put({store, Mod, Name}, InstanceMessage),
+            InstanceMessage;
+        {error, Reason} ->
+            ?event(error, {store_start_failed, {Mod, Name, Reason}}),
+            throw({store_start_failed, {Mod, Name, Reason}})
+    catch error:undef ->
+        ok
+    end.
+
+%% @doc Handle a found instance message. If it contains a PID, we check if it
+%% is alive. If it does not, we return it as is.
+ensure_instance_alive(StoreOpts, InstanceMessage = #{ <<"pid">> := Pid }) ->
+    case is_process_alive(Pid) of
+        true -> InstanceMessage;
+        false -> spawn_instance(StoreOpts)
+    end;
+ensure_instance_alive(_, InstanceMessage) ->
+    InstanceMessage.
+
 %%% Library wrapper implementations.
 
-start(Modules) -> call_all(Modules, start, []).
+%% @doc Ensure that a store, or list of stores, have all been started.
+start(StoreOpts) when not is_list(StoreOpts) -> start([StoreOpts]);
+start([]) -> ok;
+start([StoreOpts | Rest]) ->
+    find(StoreOpts),
+    start(Rest).
 
 stop(Modules) -> call_function(Modules, stop, []).
 
@@ -231,21 +281,22 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 %% default into all HyperBEAM distributions.
 test_stores() ->
     [
-        #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/fs">>
-        },
+        % #{
+        %     <<"store-module">> => hb_store_fs,
+        %     <<"name">> => <<"cache-TEST/fs">>
+        % },
         #{
             <<"store-module">> => hb_store_lmdb,
-            <<"prefix">> => <<"cache-TEST/lmdb">>,
+            <<"name">> => <<"cache-TEST/lmdb">>,
             <<"max-size">> => 600 * 1024 * 1024
         },
         #{
             <<"store-module">> => hb_store_lru,
+            <<"name">> => <<"cache-TEST/lru">>,
             <<"persistent-store">> => [
                 #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/lru">>
+                    <<"name">> => <<"cache-TEST/lru">>
                 }
             ]
         }
@@ -256,7 +307,7 @@ rocks_stores() ->
     [
         #{
             <<"store-module">> => hb_store_rocksdb,
-            <<"prefix">> => <<"cache-TEST/rocksdb">>
+            <<"name">> => <<"cache-TEST/rocksdb">>
         }
     ].
 -else.
@@ -269,19 +320,13 @@ generate_test_suite(Suite, Stores) ->
     hb:init(),
     lists:map(
         fun(Store = #{<<"store-module">> := Mod}) ->
-            ServerID = hb_util:human_id(crypto:strong_rand_bytes(32)),
             {foreach,
                 fun() ->
-                    % Create and set a random server ID for the test process.
-                    hb_http_server:set_proc_server_id(ServerID),
                     hb_store:start(Store)
                 end,
                 fun(_) ->
-                    % Clear the server ID from the process dictionary for the
-                    % next test.
                     hb_store:reset(Store),
-                    hb_store:stop(Store),
-                    hb_http_server:set_proc_server_id(undefined)
+                    hb_store:stop(Store)
                 end,
                 [
                     {
@@ -290,7 +335,6 @@ generate_test_suite(Suite, Stores) ->
                             timeout,
                             60,
                             fun() ->
-                                hb_http_server:set_proc_server_id(ServerID),
                                 TestResult = Test(Store),
                                 TestResult
                             end
@@ -327,14 +371,14 @@ hierarchical_path_resolution_test(Store) ->
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, [<<"test-link">>, <<"test-file">>])).
 
 store_suite_test_() ->
-    hb_store:generate_test_suite([
+    generate_test_suite([
         {"simple path resolution", fun simple_path_resolution_test/1},
         {"resursive path resolution", fun resursive_path_resolution_test/1},
         {"hierarchical path resolution", fun hierarchical_path_resolution_test/1}
     ]).
 
 benchmark_suite_test_() ->
-    hb_store:generate_test_suite([
+    generate_test_suite([
         {"benchmark store", fun benchmark_store/1}
     ]).
 

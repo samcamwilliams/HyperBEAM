@@ -89,7 +89,7 @@ test_opts() ->
                 spawn_worker => false,
                 store => #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/fs">>
+                    <<"name">> => <<"cache-TEST/fs">>
                 }
             },
             skip => [load_as]
@@ -103,7 +103,7 @@ test_opts() ->
                 spawn_worker => false,
                 store => #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/fs">>
+                    <<"name">> => <<"cache-TEST/fs">>
                 }
             },
             skip => [
@@ -122,7 +122,7 @@ test_opts() ->
                 spawn_worker => false,
                 store => #{
                     <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST/fs">>
+                    <<"name">> => <<"cache-TEST/fs">>
                 }
             },
             skip => [
@@ -195,7 +195,7 @@ load_device_test() ->
         trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(Wallet))],
         store => Store = #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/fs">>
+            <<"name">> => <<"cache-TEST/fs">>
         },
         priv_wallet => Wallet
     },
@@ -211,7 +211,7 @@ untrusted_load_device_test() ->
         trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(TrustedWallet))],
         store => Store = #{
             <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/fs">>
+            <<"name">> => <<"cache-TEST/fs">>
         },
         priv_wallet => UntrustedWallet
     },

@@ -209,7 +209,6 @@ read(StoreOpts, Key) ->
 %% This is the internal implementation that handles actual database reads.
 read_direct(StoreOpts, Key) ->
     LinkPrefixSize = byte_size(<<"link:">>),
-
     case lmdb:get(find_env(StoreOpts), Key) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
@@ -271,7 +270,6 @@ resolve_path_links_acc(StoreOpts, [Head | Tail], AccPath, Depth) ->
     % Build the accumulated path so far
     CurrentPath = lists:reverse([Head | AccPath]),
     CurrentPathBin = hb_util:bin(lists:join(<<"/">>, CurrentPath)),
-    
     % Check if the accumulated path (not just the segment) is a link
     case lmdb:get(find_env(StoreOpts), CurrentPathBin) of
         {ok, Value} ->
@@ -621,7 +619,7 @@ resolve(_,_) -> not_found.
 %%
 %% @param StoreOpts Database configuration map containing the directory prefix
 %% @returns LMDB environment handle or 'timeout' on communication failure
-find_env(StoreOpts = #{ <<"prefix">> := DataDir }) ->
+find_env(StoreOpts = #{ <<"name">> := DataDir }) ->
     case get({?MODULE, DataDir}) of
         undefined ->
             % Not cached locally, request from server
@@ -655,7 +653,7 @@ find_env(StoreOpts = #{ <<"prefix">> := DataDir }) ->
 %%
 %% @param StoreOpts Database configuration map containing the directory prefix
 %% @returns PID of the server process (existing or newly created)
-find_or_spawn_instance(StoreOpts = #{ <<"prefix">> := DataDir }) ->
+find_or_spawn_instance(StoreOpts = #{ <<"name">> := DataDir }) ->
     case get({?MODULE, {server, DataDir}}) of
         undefined ->
             % Not cached locally, check global registry
@@ -684,7 +682,7 @@ find_or_spawn_instance(StoreOpts = #{ <<"prefix">> := DataDir }) ->
 %% @param StoreOpts Database configuration map
 %% @returns 'ok' when shutdown is complete
 stop(StoreOpts) when is_map(StoreOpts) ->
-    case maps:get(<<"prefix">>, StoreOpts, undefined) of
+    case maps:get(<<"name">>, StoreOpts, undefined) of
         undefined ->
             % No prefix specified, nothing to stop
             ok;
@@ -716,7 +714,7 @@ stop(_) ->
 %% @param StoreOpts Database configuration map containing the directory prefix
 %% @returns 'ok' when deletion is complete
 reset(StoreOpts) when is_map(StoreOpts) ->
-    case maps:get(<<"prefix">>, StoreOpts, undefined) of
+    case maps:get(<<"name">>, StoreOpts, undefined) of
         undefined ->
             % No prefix specified, nothing to reset
             ok;
@@ -761,12 +759,11 @@ reset(_) ->
 %%
 %% @param StoreOpts Database configuration map containing directory and options
 %% @returns PID of the newly created server process
-start_server(StoreOpts = #{ <<"prefix">> := DataDir }) ->
+start_server(StoreOpts = #{ <<"name">> := DataDir }) ->
     % Ensure the database directory exists
     filelib:ensure_dir(
         binary_to_list(hb_util:bin(DataDir)) ++ "/mbd.data"
     ),
-    
     % Create the LMDB environment with specified size limit
     {ok, Env} =
         lmdb:env_create(
@@ -775,10 +772,8 @@ start_server(StoreOpts = #{ <<"prefix">> := DataDir }) ->
                 max_mapsize => maps:get(<<"max-size">>, StoreOpts, ?DEFAULT_SIZE)
             }
         ),
-    
     % Prepare server state with environment handle
     ServerOpts = StoreOpts#{ <<"env">> => Env },
-    
     % Spawn the main server process with linked commit manager
     Server = 
         spawn(
@@ -787,7 +782,6 @@ start_server(StoreOpts = #{ <<"prefix">> := DataDir }) ->
                 server(ServerOpts)
             end
         ),
-    
     % Register the server in process dictionary for caching
     put({?MODULE, {server, DataDir}}, Server),
     Server.
@@ -1017,7 +1011,7 @@ ensure_transaction(State) ->
 %% serves as a sanity check that the basic storage mechanism is working.
 basic_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/store-1">>,
+        <<"name">> => <<"/tmp/store-1">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1034,7 +1028,7 @@ basic_test() ->
 %% It demonstrates the directory-like navigation capabilities of the store.
 list_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/store-2">>,
+        <<"name">> => <<"/tmp/store-2">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1086,7 +1080,7 @@ list_test() ->
 %% as a composite type and cannot be read directly (like filesystem directories).
 group_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store3">>,
+      <<"name">> => <<"/tmp/store3">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1103,7 +1097,7 @@ group_test() ->
 %% This demonstrates the transparent link resolution mechanism.
 link_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store3">>,
+      <<"name">> => <<"/tmp/store3">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1115,7 +1109,7 @@ link_test() ->
 
 link_fragment_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store3">>,
+      <<"name">> => <<"/tmp/store3">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1132,7 +1126,7 @@ link_fragment_test() ->
 %% This demonstrates the semantic classification system used by the store.
 type_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store-6">>,
+      <<"name">> => <<"/tmp/store-6">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1162,7 +1156,7 @@ type_test() ->
 %% and need to create shortcuts or aliases to deeply nested data.
 link_key_list_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store-7">>,
+      <<"name">> => <<"/tmp/store-7">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1184,7 +1178,7 @@ link_key_list_test() ->
 %% access patterns.
 path_traversal_link_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store-8">>,
+      <<"name">> => <<"/tmp/store-8">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1201,7 +1195,7 @@ path_traversal_link_test() ->
 %% @doc Test that matches the exact hb_store hierarchical test pattern
 exact_hb_store_test() ->
     StoreOpts = #{
-      <<"prefix">> => <<"/tmp/store-exact">>,
+      <<"name">> => <<"/tmp/store-exact">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     
@@ -1240,7 +1234,7 @@ cache_style_test() ->
     hb:init(),
     StoreOpts = #{
       <<"store-module">> => hb_store_lmdb,
-      <<"prefix">> => <<"/tmp/store-cache-style">>,
+      <<"name">> => <<"/tmp/store-cache-style">>,
       <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
@@ -1265,7 +1259,7 @@ cache_style_test() ->
 %% 3. Reading the composed structure reconstructs the original nested map
 nested_map_cache_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/store-nested-cache">>,
+        <<"name">> => <<"/tmp/store-nested-cache">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     
@@ -1395,7 +1389,7 @@ reconstruct_map(StoreOpts, Path) ->
 %% @doc Debug test to understand cache linking behavior
 cache_debug_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/cache-debug">>,
+        <<"name">> => <<"/tmp/cache-debug">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     
@@ -1442,7 +1436,7 @@ cache_debug_test() ->
 %% @doc Isolated test focusing on the exact cache issue
 isolated_type_debug_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/isolated-debug">>,
+        <<"name">> => <<"/tmp/isolated-debug">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     
@@ -1492,7 +1486,7 @@ isolated_type_debug_test() ->
 %% @doc Test that list function resolves links correctly
 list_with_link_test() ->
     StoreOpts = #{
-        <<"prefix">> => <<"/tmp/store-list-link">>,
+        <<"name">> => <<"/tmp/store-list-link">>,
         <<"max-size">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),

@@ -115,7 +115,7 @@ register(_M1, _M2, Opts) ->
                                             <<"path">> => <<"register">>,
                                             <<"route">> =>
                                                 #{
-                                                    <<"prefix">> => Prefix,
+                                                    <<"name">> => Prefix,
                                                     <<"template">> => Template,
                                                     <<"price">> => Price
                                                 },
@@ -326,7 +326,7 @@ apply_route(Msg, Route = #{ <<"opts">> := RouteOpts }, Opts) ->
     }};
 apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
     apply_route(#{ <<"path">> => Path }, R, Opts);
-apply_route(#{ <<"path">> := RawPath }, #{ <<"prefix">> := RawPrefix }, Opts) ->
+apply_route(#{ <<"path">> := RawPath }, #{ <<"name">> := RawPrefix }, Opts) ->
     Path = hb_cache:ensure_loaded(RawPath, Opts),
     Prefix = hb_cache:ensure_loaded(RawPrefix, Opts),
     {ok, <<Prefix/binary, Path/binary>>};
@@ -589,7 +589,7 @@ route_provider_test() ->
         },
 		store => #{
 			<<"store-module">> => hb_store_fs,
-			<<"prefix">> => <<"cache-TEST">>
+			<<"name">> => <<"cache-TEST">>
 		}
     }),
     ?assertEqual(
@@ -674,7 +674,7 @@ local_dynamic_router() ->
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
             }
         ],
         priv_wallet => ar_wallet:new(),
@@ -715,7 +715,7 @@ local_dynamic_router() ->
                             <<"path">> => <<"register">>,
                             <<"route">> =>
                                 #{
-                                    <<"prefix">> => 
+                                    <<"name">> => 
                                         <<
                                             "https://test-node-",
                                                 (hb_util:bin(X))/binary,
@@ -808,7 +808,7 @@ dynamic_router_test() ->
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
             }
         ],
         priv_wallet => ProxyWallet,
@@ -862,7 +862,7 @@ dynamic_router_test() ->
                                 <<"path">> => <<"register">>,
                                 <<"route">> =>
                                     #{
-                                        <<"prefix">> => ExecNode,
+                                        <<"name">> => ExecNode,
                                         <<"template">> => <<"/c">>,
                                         <<"price">> => X * 250
                                     },
@@ -918,7 +918,7 @@ dynamic_routing_by_performance() ->
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
             }
         ],
         priv_wallet => ar_wallet:new(),
@@ -990,7 +990,7 @@ dynamic_routing_by_performance() ->
                                     <<"path">> => <<"register">>,
                                     <<"route">> =>
                                         #{
-                                            <<"prefix">> => XNode,
+                                            <<"name">> => XNode,
                                             <<"template">> => TestPath,
                                             <<"price">> => 1000 + X
                                         }
@@ -1319,11 +1319,11 @@ relay_nearest_test() ->
                     <<"strategy">> => <<"Nearest">>,
                     <<"nodes">> => [
                         #{
-                            <<"prefix">> => Peer1,
+                            <<"name">> => Peer1,
                             <<"wallet">> => Address1
                         },
                         #{
-                            <<"prefix">> => Peer2,
+                            <<"name">> => Peer2,
                             <<"wallet">> => Address2
                         }    
                     ]
