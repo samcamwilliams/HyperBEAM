@@ -13,9 +13,10 @@
 	--accent-color: #e9ffc5;
 	--link-color: #1A73E8;
 	--link-hover-color: #0C47A1;
-	--indicator-color: #f17100;
 	--pulse-color: #17a923;
-	--indicator-color-active: #23BE30;
+	--pulse-color-active: #17a923;
+    --indicator-color: #f17100;
+	--indicator-color-active: #f17100;
 	--border-radius: 7.5px;
 }
 
@@ -30,7 +31,6 @@
 }
 
 @keyframes pulse {
-
 	0%,
 	100% {
 		background: var(--pulse-color);
@@ -38,7 +38,7 @@
 	}
 
 	50% {
-		background: var(--indicator-color-active);
+		background: var(--pulse-color-active);
 		transform: scale(1.15);
 	}
 }
@@ -183,28 +183,18 @@ footer {
 
 .header-inner {
 	width: 100%;
-
+	max-width: 2000px;
+	padding: 10px 40px;
+	margin: 0 auto;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	overflow: hidden;
-	gap: 10px;
-	padding: 8px 24px;
-}
-
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	overflow: hidden;
-	gap: 10px;
-	padding: 8px 24px;
 }
 
 .logo {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	height: 18px;
+	height: 25px;
 }
 
 .logo p {
@@ -386,6 +376,12 @@ footer {
     background: var(--bg-color);
 }
 
+.loading-info-line p {
+    font-size: 14px;
+    font-weight: 500;
+	padding: 0 10px 10px 5px;
+}
+
 .section-line:last-child {
 	border-bottom: none;
 	border-bottom-left-radius: var(--border-radius);
@@ -475,21 +471,6 @@ footer {
 .tab-content.active {
     display: block;
 }
-
-@keyframes pulse {
-
-	0%,
-	100% {
-		background: var(--pulse-color);
-		transform: scale(1);
-	}
-
-	50% {
-		background: var(--indicator-color-active);
-		transform: scale(1.15);
-	}
-}
-
 
 @media (max-width: 1024px) {
 	.view-wrapper {
@@ -698,9 +679,9 @@ footer {
 
 .view-wrapper {
 	width: 100%;
-	max-width: 3000px;
-	padding: 0 75px;
-	margin: 18vh auto 50px auto;
+	max-width: 2000px;
+	padding: 40px 40px 80px 40px;
+	margin: 33.5px auto 0 auto;
 	display: flex;
 	flex-direction: column;
 	gap: 25px;
@@ -729,8 +710,7 @@ footer {
 }
 
 .signature-wrapper,
-.explorer-wrapper,
-.visual-wrapper {
+.explorer-wrapper {
 	box-shadow: 0px 4px 4px 0px rgba(0, 0, 0, 0.04);
 	border-radius: var(--border-radius);
 
@@ -814,7 +794,7 @@ footer {
 .visual-body {
 	min-height: calc(600px + 56px);
 	width: 100%;
-	background: var(--section-bg-color-alt2);
+	background: var(--bg-color);
 }
 
 .visual-body iframe {
