@@ -18,6 +18,11 @@
 -export([get/3, resolve/3, set/3, event/3, install/3]).
 -include("include/hb.hrl").
 
+%%% The set of devices that must be included in the device sandbox for an
+%%% execution that is able to perform AO-Core resolutions. Without the following
+%%% devices, all resolutions will fail.
+-define(MINIMAL_AO_CORE_DEVICES, [<<"structured@1.0">>]).
+
 %% @doc Install the library into the given Lua environment.
 install(Base, State, Opts) ->
     % Calculate and set the new `preloaded_devices' option.
@@ -44,7 +49,9 @@ install(Base, State, Opts) ->
                             ),
                         Dev
                     end,
-                    hb_util:message_to_ordered_list(DevNames)
+                    hb_util:message_to_ordered_list(
+                        hb_util:unique(DevNames ++ ?MINIMAL_AO_CORE_DEVICES)
+                    )
                 )
         end,
     ?event({adding_ao_core_resolver, {device_sandbox, AdmissibleDevs}}),
