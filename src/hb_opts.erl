@@ -171,7 +171,7 @@ default_message() ->
         store =>
             [
                 #{
-                    <<"name">> => <<"cache-mainnet">>,
+                    <<"name">> => <<"cache-mainnet/lru">>,
                     <<"store-module">> => hb_store_lru,
                     <<"persistent-store">> => #{
                         <<"store-module">> => hb_store_fs,

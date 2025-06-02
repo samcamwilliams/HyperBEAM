@@ -99,6 +99,9 @@ server_loop(State =
                   index_table := IndexTable},
             Opts) ->
     receive
+        {sync, From} ->
+            From ! {ok, self()},
+            server_loop(State, Opts);
         {get_cache_table, From} ->
             From ! CacheTable;
         {put, Key, Value, From, Ref} ->
@@ -127,6 +130,14 @@ server_loop(State =
     end,
     server_loop(State, Opts).
 
+%% @doc Force the caller to wait until the server has fully processed all 
+%% messages in its mailbox, up to the initiation of the call.
+sync(Server) ->
+    Server ! {sync, self()},
+    receive
+        {ok, Server} -> ok
+    end.
+
 %% @doc Write an entry in the cache.
 %%
 %% After writing, the LRU is updated by moving the key in the most-recently-used
@@ -144,6 +155,7 @@ write(Opts, RawKey, Value) ->
 %% cycle and re-prioritize cache entry.
 read(Opts, RawKey) ->
     #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    sync(Server),
     Key = resolve(Opts, RawKey),
     case get_cache_entry(Table, Key) of
         nil ->
@@ -214,7 +226,8 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    sync(Server),
     InMemoryKeys =
         case get_cache_entry(Table, Path) of
             {group, Set} ->
@@ -246,7 +259,8 @@ list(Opts, Path) ->
 
 %% @doc Determine the type of a key in the store.
 type(Opts, Key) ->
-    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    sync(Server),
     case get_cache_entry(Table, Key) of
         nil ->
             case get_persistent_store(Opts) of

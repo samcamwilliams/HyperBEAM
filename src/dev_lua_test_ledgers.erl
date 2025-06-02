@@ -405,16 +405,7 @@ normalize_without_root(RootProc, Procs) ->
 %% recipients via remote stores. This improves test performance.
 test_opts() ->
     hb:init(),
-    Opts = #{
-        store => Store = [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST">>
-            }
-        ]
-    },
-    hb_store:reset(Store),
-    Opts.
+    #{}.
 
 %%% Test cases.
 

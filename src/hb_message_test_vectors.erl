@@ -49,6 +49,7 @@ test_opts(normal) ->
             [
                 #{
                     <<"store-module">> => hb_store_lru,
+                    <<"name">> => <<"cache-TEST/lru">>,
                     <<"persistent-store">> => #{
                         <<"store-module">> => hb_store_fs,
                         <<"name">> => <<"cache-TEST">>
