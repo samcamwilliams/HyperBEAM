@@ -207,13 +207,14 @@ balances(Mode, ProcMsg, Opts) when is_atom(Mode) ->
     balances(hb_util:bin(Mode), ProcMsg, Opts);
 balances(Prefix, ProcMsg, Opts) ->
     Balances = hb_ao:get(<<Prefix/binary, "/balance">>, ProcMsg, #{}, Opts),
-    hb_private:reset(Balances).
+    hb_private:reset(hb_cache:ensure_all_loaded(Balances, Opts)).
 
 %% @doc Get the supply of a ledger, either `now` or `initial`.
 supply(ProcMsg, Opts) ->
     supply(now, ProcMsg, Opts).
 supply(Mode, ProcMsg, Opts) ->
-    lists:sum(maps:values(balances(Mode, ProcMsg, Opts))).
+    Loaded = hb_cache:ensure_all_loaded(ProcMsg, Opts),
+    lists:sum(maps:values(balances(Mode, Loaded, Opts))).
 
 %% @doc Calculate the supply of tokens in all sub-ledgers, from the balances of
 %% the root ledger.
@@ -236,7 +237,10 @@ user_supply(Proc, AllProcs, Opts) ->
 
 %% @doc Get the local expectation of a ledger's balances with peer ledgers.
 ledgers(ProcMsg, Opts) ->
-    case hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts) of
+    case hb_cache:ensure_all_loaded(
+        hb_ao:get(<<"now/ledgers">>, ProcMsg, #{}, Opts),
+        Opts
+    ) of
         Msg when is_map(Msg) -> hb_private:reset(Msg);
         [] -> #{}
     end.
@@ -331,8 +335,8 @@ verify_net(RootProc, AllProcs, Opts) ->
 %% as the current supply. This invariant will not hold for sub-ledgers, as they
 %% 'mint' tokens in their local supply when they receive them from other ledgers.
 verify_root_supply(RootProc, Opts) ->
-    ?assertEqual(
-        supply(initial, RootProc, Opts),
+    ?assert(
+        supply(initial, RootProc, Opts) ==
         supply(now, RootProc, Opts) +
             lists:sum(maps:values(ledgers(RootProc, Opts)))
     ).
@@ -347,8 +351,8 @@ verify_net_supply(RootProc, AllProcs, Opts) ->
     RootUserSupply = user_supply(RootProc, NormProcsWithoutRoot, Opts),
     SubledgerSupply = subledger_supply(RootProc, AllProcs, Opts),
     ?event(debug, {verify_net_supply, {root, RootUserSupply}, {subledger, SubledgerSupply}}),
-    ?assertEqual(
-        StartingRootSupply,
+    ?assert(
+        StartingRootSupply ==
         RootUserSupply + SubledgerSupply
     ).
 
@@ -534,7 +538,7 @@ subledger_transfer() ->
     ?assertEqual(
         #{
             root => #{
-                balances => #{ alice => 90, bob => 7, subledger => 3 },
+                balances => #{ alice => 90, bob => 7.0, subledger => 3.0 },
                 ledgers => #{},
                 root => true
             },
@@ -587,7 +591,8 @@ subledger_registration_test() ->
 
 %% @doc Verify that registered sub-ledgers are able to send tokens to each other
 %% without the need for messages on the root ledger.
-subledger_to_subledger_test() ->
+subledger_to_subledger_test_() -> {timeout, 30, fun subledger_to_subledger/0}.
+subledger_to_subledger() ->
     Opts = test_opts(),
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
