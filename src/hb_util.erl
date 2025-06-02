@@ -2,12 +2,13 @@
 -module(hb_util).
 -export([int/1, float/1, atom/1, bin/1, list/1]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
--export([key_to_atom/2]).
+-export([key_to_atom/2, binary_to_addresses/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1, to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
+-export([is_string_list/1]).
+-export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).

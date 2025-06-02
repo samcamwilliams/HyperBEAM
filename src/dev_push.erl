@@ -344,11 +344,11 @@ schedule_result(TargetProcess, MsgToPush, Codec, Origin, Opts) ->
     ?event(debug,
         {push_scheduling_result,
             {signed_req, SignedMsg},
-            {verifies, hb_message:verify(SignedMsg, signers)}
+            {verifies, hb_message:verify(SignedMsg, signers, Opts)}
         }
     ),
     {ErlStatus, Res} =
-        case hb_message:signers(SignedMsg) of
+        case hb_message:signers(SignedMsg, Opts) of
             [] ->
                 {error,
                     <<
@@ -508,9 +508,9 @@ commit_result(Msg, Committers, Codec, Opts) ->
         Committers
     ),
     ?event(debug_commit,
-        {signed_message_as, {explicit, hb_message:signers(Signed)}}
+        {signed_message_as, {explicit, hb_message:signers(Signed, Opts)}}
     ),
-    case hb_message:signers(Signed) of
+    case hb_message:signers(Signed, Opts) of
         [] ->
             ?event(debug_commit, signing_with_default_identity),
             commit_result(Msg, [], Codec, Opts);
@@ -642,15 +642,6 @@ push_as_identity_test_() ->
         Opts = #{
             priv_wallet => DefaultWallet,
             cache_control => <<"always">>,
-            store => [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
-                #{ <<"store-module">> => hb_store_gateway,
-                    <<"store">> => #{
-                        <<"store-module">> => hb_store_fs,
-                        <<"prefix">> => <<"cache-TEST">>
-                    }
-                }
-            ],
             identities => #{
                 SchedulingID => #{
                     priv_wallet => SchedulingWallet,
@@ -725,13 +716,7 @@ multi_process_push_test_() ->
         dev_process:init(),
         Opts = #{
             priv_wallet => hb:wallet(),
-            cache_control => <<"always">>,
-            store => [
-                #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"prefix">> => <<"cache-TEST">>
-                }
-            ]
+            cache_control => <<"always">>
         },
         Proc1 = dev_process:test_aos_process(Opts),
         hb_cache:write(Proc1, Opts),
