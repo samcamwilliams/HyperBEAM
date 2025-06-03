@@ -251,7 +251,7 @@ call_function([], _Function, _Args) ->
     no_viable_store;
 call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     try apply(Mod, Function, [Store | Args]) of
-        not_found ->
+        X when X == not_found orelse X == no_viable_store ->
             call_function(Rest, Function, Args);
         Result ->
             Result
