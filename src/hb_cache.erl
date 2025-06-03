@@ -114,7 +114,7 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, RawOpts) ->
                 Type -> dev_codec_structured:decode_value(Type, LoadedMsg)
             end;
         not_found ->
-            throw({necessary_message_not_found, {lazy_link, Link}})
+            throw({necessary_message_not_found, Link})
     end;
 ensure_loaded({link, ID, LinkOpts}, Opts) ->
 	ensure_loaded({link, ID, LinkOpts#{ <<"lazy">> => true}}, Opts);
@@ -145,7 +145,7 @@ list_numbered(Path, Opts) ->
 %% @doc List all items under a given path.
 list(Path, Opts) when is_map(Opts) and not is_map_key(<<"store-module">>, Opts) ->
     case hb_opts:get(store, no_viable_store, Opts) of
-        no_viable_store -> [];
+        not_found -> [];
         Store ->
             list(Path, Store)
     end;
@@ -154,7 +154,7 @@ list(Path, Store) ->
     case hb_store:list(Store, ResolvedPath) of
         {ok, Names} -> Names;
         {error, _} -> [];
-        no_viable_store -> []
+        not_found -> []
     end.
 
 %% @doc Write a message to the cache. For raw binaries, we write the data at
@@ -349,12 +349,11 @@ store_read(Path, Store, Opts) ->
     ?event({reading, {path, PathBin}, {resolved, ResolvedFullPath}, {store, Store}}),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
-        no_viable_store -> not_found;
         simple ->
             ?event({reading_data, ResolvedFullPath}),
             case hb_store:read(Store, ResolvedFullPath) of
                 {ok, Bin} -> {ok, Bin};
-                {error, _} -> not_found
+                not_found -> not_found
             end;
         _ ->
             ?event({reading_composite, ResolvedFullPath}),
