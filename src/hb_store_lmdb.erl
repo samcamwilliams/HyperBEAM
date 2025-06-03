@@ -210,7 +210,8 @@ is_link(Value) ->
 
 %% @doc Unified read function that handles LMDB reads with retry logic.
 %% Returns {ok, Value}, not_found, or performs flush and retries.
-read_with_retry(StoreOpts, Key, RetriesRemaining) when RetriesRemaining > 0 ->
+read_with_retry(_StoreOpts, _Key, 0) -> not_found;
+read_with_retry(StoreOpts, Key, RetriesRemaining) ->
     case lmdb:get(find_env(StoreOpts), Key) of
         {ok, Value} ->
             {ok, Value};
@@ -219,9 +220,7 @@ read_with_retry(StoreOpts, Key, RetriesRemaining) when RetriesRemaining > 0 ->
             ?event({miss_read_key, Key}),
             sync(StoreOpts),
             read_with_retry(StoreOpts, Key, RetriesRemaining - 1)
-    end;
-read_with_retry(_StoreOpts, _Key, 0) ->
-    not_found.
+    end.
 
 %% @doc Read with immediate flush for cases where we need to see recent writes.
 %% This is used when we expect the key to exist from a recent write operation.
