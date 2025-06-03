@@ -138,17 +138,6 @@ generate_test_opts() ->
     }).
 generate_test_opts(Defs) ->
     #{
-        store =>
-            [
-                #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> =>
-                        <<
-                            "cache-TEST/",
-                            (integer_to_binary(os:system_time(millisecond)))/binary
-                        >>
-                }
-            ],
         node_processes => Defs,
         priv_wallet => ar_wallet:new()
     }.
