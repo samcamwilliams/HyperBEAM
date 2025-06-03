@@ -166,7 +166,8 @@ read(Opts, RawKey) ->
                 no_store ->
                     not_found;
                 PersistentStore ->
-                    hb_cache:read(Key, #{ store => PersistentStore })
+                    ResolvedKey = hb_store:resolve(PersistentStore, Key),
+                    hb_store:read(PersistentStore, ResolvedKey)
             end;
         {raw, Entry = #{value := Value}} ->
             Server ! {update_recent, Key, Entry, self(), Ref = make_ref()},
@@ -176,7 +177,9 @@ read(Opts, RawKey) ->
         {link, Link} ->
             ?event({link_found, RawKey, Link}),
             read(Opts, Link);
-        _ -> not_found
+        Unexpected ->
+            ?event({unexpected_result, {unexpected, Unexpected}}),
+            not_found
     end.
 
 resolve(Opts, Key) ->
@@ -245,10 +248,11 @@ list(Opts, Path) ->
         no_store ->
             {ok, InMemoryKeys};
         Store ->
+            ResolvedPath = hb_store:resolve(Store, Path),
             PersistentKeys =
                 lists:map(
                     fun hb_util:bin/1,
-                    case hb_store:list(Store, Path) of
+                    case hb_store:list(Store, ResolvedPath) of
                         {error, _} -> [];
                         {ok, Keys} -> Keys;
                         Keys -> Keys
@@ -265,7 +269,8 @@ type(Opts, Key) ->
                 no_store ->
                     not_found;
                 Store ->
-                    hb_store:type(Store, Key)
+                    ResolvedKey = hb_store:resolve(Store, Key),
+                    hb_store:type(Store, ResolvedKey)
             end;
         {raw, _} ->
             simple;
@@ -325,23 +330,23 @@ get_cache_entry(Table, Key) ->
             Entry
     end.
 
-    fetch_cache_with_retry(Opts, Key) ->
-        fetch_cache_with_retry(Opts, Key, 1).
-    
-    fetch_cache_with_retry(Opts, Key, Retries) ->
-        #{<<"cache-table">> := Table, <<"pid">> := Server} = hb_store:find(Opts),
-        case get_cache_entry(Table, Key) of
-            nil ->
-                case Retries < ?RETRY_THRESHOLD of
-                    true ->
-                        sync(Server),
-                        fetch_cache_with_retry(Opts, Key, Retries + 1);
-                    false ->
-                        nil
-                end;
-            Entry ->
-                Entry
-        end.
+fetch_cache_with_retry(Opts, Key) ->
+    fetch_cache_with_retry(Opts, Key, 1).
+
+fetch_cache_with_retry(Opts, Key, Retries) ->
+    #{<<"cache-table">> := Table, <<"pid">> := Server} = hb_store:find(Opts),
+    case get_cache_entry(Table, Key) of
+        nil ->
+            case Retries < ?RETRY_THRESHOLD of
+                true ->
+                    sync(Server),
+                    fetch_cache_with_retry(Opts, Key, Retries + 1);
+                false ->
+                    nil
+            end;
+        Entry ->
+            Entry
+    end.
 
 put_cache_entry(State, Key, Value, Opts) ->
     ValueSize = erlang:external_size(Value),
@@ -531,7 +536,6 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
                 {raw, RawEntry} ->
                     RawEntry
             end,
-
             ?event(cache_lru, {evict, TailKey, claiming_size, ReclaimedSize}),
             delete_cache_index(State, ID),
             delete_cache_entry(State, TailKey),
