@@ -56,11 +56,11 @@ init(From, StoreOpts) ->
     % Create LRU tables
     CacheTable = ets:new(hb_cache_lru, [
         set,
-        protected,
+        public,
         {read_concurrency, true}
     ]),
-    CacheStatsTable = ets:new(hb_cache_lru_stats, [set]),
-    CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
+    CacheStatsTable = ets:new(hb_cache_lru_stats, [public, set]),
+    CacheIndexTable = ets:new(hb_cache_lru_index, [public, ordered_set]),
     From ! {ok, #{ <<"pid">> => self(), <<"cache-table">> => CacheTable }},
     #{
         cache_table => CacheTable,
