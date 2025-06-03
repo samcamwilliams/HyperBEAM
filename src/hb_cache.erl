@@ -114,7 +114,7 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, RawOpts) ->
                 Type -> dev_codec_structured:decode_value(Type, LoadedMsg)
             end;
         not_found ->
-            throw({necessary_message_not_found, {lazy_link, Link}})
+            throw({necessary_message_not_found, Link})
     end;
 ensure_loaded({link, ID, LinkOpts}, Opts) ->
 	ensure_loaded({link, ID, LinkOpts#{ <<"lazy">> => true}}, Opts);

@@ -292,19 +292,24 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
     UnsetResults = hb_ao:set(State, #{ <<"results">> => unset }, Opts),
     Res = run_as(<<"execution">>, UnsetResults, InputMsg, Opts),
     case Res of
-        {ok, Msg3} ->
+        {ok, NewProcStateMsg} ->
             ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
             % We have now transformed slot n -> n + 1. Increment the current slot.
-            Msg3SlotAfter = hb_ao:set(Msg3, #{ <<"at-slot">> => NextSlot }, Opts),
+            NewProcStateMsgWithSlot =
+                hb_ao:set(
+                    NewProcStateMsg,
+                    #{ <<"device">> => <<"process@1.0">>, <<"at-slot">> => NextSlot },
+                    Opts
+                ),
             % Notify any waiters that the result for a slot is now available.
             dev_process_worker:notify_compute(
                 ProcID,
                 NextSlot,
-                {ok, Msg3SlotAfter},
+                {ok, NewProcStateMsgWithSlot},
                 Opts
             ),
-            store_result(ProcID, NextSlot, Msg3SlotAfter, ReqMsg, Opts),
-            {ok, Msg3SlotAfter};
+            store_result(ProcID, NextSlot, NewProcStateMsgWithSlot, ReqMsg, Opts),
+            {ok, NewProcStateMsgWithSlot};
         {error, Error} ->
             {error, Error}
     end.
