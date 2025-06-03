@@ -1,7 +1,7 @@
 /**
  * Base route for all API calls
  */
-const BASE_ROUTE = window.location.href;
+const BASE_ROUTE = window.location.origin;
 
 /**
  * Format an address for display, shortening it if needed
