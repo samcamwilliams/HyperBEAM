@@ -59,6 +59,6 @@ serialize(Base, Msg, Opts) ->
     {ok,
         #{
             <<"content-type">> => <<"application/json">>,
-            <<"body">> => to(Base, Msg, Opts)
+            <<"body">> => hb_util:ok(to(Base, Msg, Opts))
         }
     }.
