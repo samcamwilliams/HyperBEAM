@@ -25,6 +25,10 @@
 %%% options.
 -define(DEFAULT_LRU_CAPACITY, 4_000_000_000).
 
+%% @doc Maximum number of retries when fetching cache entries that aren't
+%% immediately found due to timing issues in concurrent operations.
+-define(RETRY_THRESHOLD, 2).
+
 %% @doc Start the LRU cache.
 start(StoreOpts = #{ <<"name">> := Name }) ->
     ?event(cache_lru, {starting_lru_server, Name}),
@@ -154,10 +158,9 @@ write(Opts, RawKey, Value) ->
 %% Because the cache uses LRU, the key is moved on the most recent used key to
 %% cycle and re-prioritize cache entry.
 read(Opts, RawKey) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
+    #{ <<"pid">> := Server } = hb_store:find(Opts),
     Key = resolve(Opts, RawKey),
-    case get_cache_entry(Table, Key) of
+    case fetch_cache_with_retry(Opts, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -192,8 +195,7 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
             {generated_partial_path_to_test, PathPart}
         }
     ),
-    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
-    case get_cache_entry(Table, PathPart) of
+    case fetch_cache_with_retry(Opts, PathPart) of
         {link, Link} ->
             resolve(Opts, Link, Rest);
         _ ->
@@ -205,10 +207,10 @@ make_link(_, Link, Link) ->
     ok;
 make_link(Opts, RawExisting, New) ->
     Existing = hb_store:join(RawExisting),
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    #{ <<"pid">> := Server } = hb_store:find(Opts),
     ExistingKeyBin = convert_if_list(RawExisting),
     NewKeyBin = convert_if_list(New),
-    case get_cache_entry(Table, ExistingKeyBin) of
+    case fetch_cache_with_retry(Opts, ExistingKeyBin) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -226,10 +228,8 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
     InMemoryKeys =
-        case get_cache_entry(Table, Path) of
+        case fetch_cache_with_retry(Opts, Path) of
             {group, Set} ->
                 sets:to_list(Set);
             {link, Link} ->
@@ -259,9 +259,7 @@ list(Opts, Path) ->
 
 %% @doc Determine the type of a key in the store.
 type(Opts, Key) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
-    case get_cache_entry(Table, Key) of
+    case fetch_cache_with_retry(Opts, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
@@ -326,6 +324,24 @@ get_cache_entry(Table, Key) ->
         [{_, Entry}] ->
             Entry
     end.
+
+    fetch_cache_with_retry(Opts, Key) ->
+        fetch_cache_with_retry(Opts, Key, 1).
+    
+    fetch_cache_with_retry(Opts, Key, Retries) ->
+        #{<<"cache-table">> := Table, <<"pid">> := Server} = hb_store:find(Opts),
+        case get_cache_entry(Table, Key) of
+            nil ->
+                case Retries < ?RETRY_THRESHOLD of
+                    true ->
+                        sync(Server),
+                        fetch_cache_with_retry(Opts, Key, Retries + 1);
+                    false ->
+                        nil
+                end;
+            Entry ->
+                Entry
+        end.
 
 put_cache_entry(State, Key, Value, Opts) ->
     ValueSize = erlang:external_size(Value),
