@@ -15,7 +15,7 @@
 -module(hb_opts).
 -export([get/1, get/2, get/3, as/2, identities/1, load/1, load_bin/2]).
 -export([default_message/0, mimic_default_types/3]).
--export([validate_node_history/1, validate_node_history/3]).
+-export([validate_node_history/1, validate_node_history/3, ensure_node_history/2]).
 -export([check_required_opts/2]).
 -include("include/hb.hrl").
 
@@ -527,6 +527,72 @@ check_required_opts(KeyValuePairs, Opts) ->
             {error, ErrorMsg}
     end.
 
+%% @doc Ensures all items in a node history meet required configuration options.
+%%
+%% This function verifies that each entry in the node history contains all required
+%% configuration options and that their values match the expected format. It
+%% performs validation in two steps:
+%% 1. Checks that all required keys are present in each history item
+%% 2. Verifies that all values match their expected types and formats
+%%
+%% @param NodeHistory A list of node history items to validate
+%% @param RequiredOpts A map of options that each node history item must have
+%% @returns {ok, <<"valid">>} when all history items meet requirements
+%% @returns {error, <<"missing_keys">>} when any required keys are missing
+%% @returns {error, <<"invalid_values">>} when keys are present but values don't match
+%% @returns {error, <<"validation_failed">>} when other validation errors occur
+-spec ensure_node_history(NodeHistory :: list() | term(), RequiredOpts :: map()) -> 
+    {ok, binary()} | {error, binary()}.
+ensure_node_history(NodeHistory, RequiredOpts) ->
+    ?event(validate_history_items, {required_opts, RequiredOpts}),
+    maybe
+        % Normalize required options
+        NormalizedRequiredOpts ?= hb_ao:normalize_keys(RequiredOpts),
+        % Normalize all node history items once
+        NormalizedNodeHistory ?= lists:map(
+            fun(Item) -> 
+                hb_ao:normalize_keys(Item)
+            end,
+            NodeHistory
+        ),
+        % First check if all items have all required keys
+        KeysPresent = lists:all(
+            fun(NormalizedItem) ->
+                % Check if all required keys are present
+                lists:all(
+                    fun(Key) ->
+                        maps:is_key(Key, NormalizedItem)
+                    end,
+                    maps:keys(NormalizedRequiredOpts)
+                )
+            end,
+            NormalizedNodeHistory
+        ),
+        true ?= KeysPresent orelse {error, keys_missing},
+        % Then check if all values match
+        ValuesMatch = lists:all(
+            fun(NormalizedItem) ->
+                % Check value matches
+                hb_message:match(NormalizedItem, NormalizedRequiredOpts, only_present)
+            end,
+            NormalizedNodeHistory
+        ),
+        true ?= ValuesMatch orelse {error, values_invalid},
+        % If we've made it this far, everything is valid
+        ?event({validate_node_history_items, all_items_valid}),
+        {ok, <<"valid">>}
+    else
+        {error, keys_missing} ->
+            ?event({validate_node_history_items, validation_failed, missing_keys}),
+            {error, <<"missing_keys">>};
+        {error, values_invalid} ->
+            ?event({validate_node_history_items, validation_failed, invalid_values}),
+            {error, <<"invalid_values">>};
+        _ ->
+            ?event({validate_node_history_items, validation_failed, unknown}),
+            {error, <<"validation_failed">>}
+    end.
+
 %%% Tests
 
 -ifdef(TEST).
@@ -660,4 +726,62 @@ validate_node_history_test() ->
         validate_node_history(#{node_history => [entry1, entry2, entry3]}, 3, 3)
     ),
     ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 0)).
+
+    ensure_node_history_test() ->
+        % Define some test data
+        RequiredOpts = #{
+            key1 => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value1">>
+                },
+            key2 => <<"value2">>
+        },
+        % Test case: All items have required options
+        ValidItems = [
+            #{
+                <<"key1">> => 
+                    #{
+                        <<"type">> => <<"string">>,
+                        <<"value">> => <<"value1">>
+                    }, 
+                <<"key2">> => <<"value2">>, 
+                <<"extra">> => <<"value">>
+            },
+            #{
+                <<"key1">> => 
+                    #{
+                        <<"type">> => <<"string">>,
+                        <<"value">> => <<"value1">>
+                    }, 
+                <<"key2">> => <<"value2">>
+            }
+        ],
+        ?assertEqual({ok, <<"valid">>}, ensure_node_history(ValidItems, RequiredOpts)),
+        % Test Missing items
+        MissingItems = [
+            #{
+                <<"key1">> => 
+                    #{
+                        <<"type">> => <<"string">>,
+                        <<"value">> => <<"value1">>
+                    }
+                % missing key2
+            }
+        ],
+        ?assertEqual({error, <<"missing_keys">>}, ensure_node_history(MissingItems, RequiredOpts)),
+        % Test Invalid items
+        InvalidItems = [
+            #{
+                <<"key1">> => 
+                    #{
+                        <<"type">> => <<"string">>,
+                        <<"value">> => <<"value2">>
+                    }, 
+                <<"key2">> => <<"value3">>
+            }
+        ],
+        ?assertEqual({error, <<"invalid_values">>}, ensure_node_history(InvalidItems, RequiredOpts)).    
+        
+    
 -endif.
