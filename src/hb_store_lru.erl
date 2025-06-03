@@ -242,23 +242,28 @@ list(Opts, Path) ->
             {raw, #{value := Value}} when is_list(Value) ->
                 Value;
             nil ->
-                []
+                not_found
         end,
-    case get_persistent_store(Opts) of
-        no_store ->
+    PersistentKeys =
+        case get_persistent_store(Opts) of
+            no_store ->
+                not_found;
+            Store ->
+                ResolvedPath = hb_store:resolve(Store, Path),
+                case hb_store:list(Store, ResolvedPath) of
+                    {ok, Keys} -> Keys;
+                    not_found -> not_found
+                end
+        end,
+    case {InMemoryKeys, PersistentKeys} of
+        {not_found, not_found} ->
+            not_found;
+        {InMemoryKeys, not_found} ->
             {ok, InMemoryKeys};
-        Store ->
-            ResolvedPath = hb_store:resolve(Store, Path),
-            PersistentKeys =
-                lists:map(
-                    fun hb_util:bin/1,
-                    case hb_store:list(Store, ResolvedPath) of
-                        {error, _} -> [];
-                        {ok, Keys} -> Keys;
-                        Keys -> Keys
-                    end
-                ),
-            {ok, InMemoryKeys ++ PersistentKeys}
+        {not_found, PersistentKeys} ->
+            {ok, PersistentKeys};
+        {InMemoryKeys, PersistentKeys} ->
+            {ok, hb_util:unique(InMemoryKeys ++ PersistentKeys)}
     end.
 
 %% @doc Determine the type of a key in the store.
@@ -750,7 +755,7 @@ evict_but_able_to_read_from_fs_store_test() ->
     ?assertEqual({ok, Binary}, read(StoreOpts, <<"key2">>)),
     % Directly offloads if the data is more than the LRU capacity
     write(StoreOpts, <<"sub/key">>, crypto:strong_rand_bytes(600)),
-    ?assertMatch({ok, _}, read(StoreOpts, <<"sub">>)).
+    ?assertMatch({ok, _}, read(StoreOpts, <<"sub/key">>)).
 
 stop_test() ->
     StoreOpts = test_opts(default, 500),
