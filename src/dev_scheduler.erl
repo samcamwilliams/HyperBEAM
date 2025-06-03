@@ -1767,7 +1767,11 @@ http_init(Opts) ->
 		store => [
 			#{
                 <<"store-module">> => hb_store_lru,
-                <<"name">> => <<"cache-mainnet/lru">>
+                <<"name">> => <<"cache-mainnet/lru">>,
+                <<"persistent-store">> => #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"name">> => <<"cache-mainnet/lru">>
+                }
             },
 			#{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
 		]
