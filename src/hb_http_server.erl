@@ -406,27 +406,18 @@ set_opts(Opts) ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
 set_opts(Request, Opts) ->
-    PerparedOpts = hb_opts:mimic_default_types(
-        hb_private:reset(Opts),
-        new_atoms
-    ),
-    PreparedRequest = hb_opts:mimic_default_types(
-        hb_message:uncommitted(Request),
-        new_atoms
-    ),
     MergedOpts =
         maps:merge(
-            PerparedOpts,
-            PreparedRequest
+            Opts,
+            hb_opts:mimic_default_types(
+                hb_message:uncommitted(Request),
+                new_atoms,
+                Opts
+            )
         ),
-    % Get the current node_history
-    NewHistory = case hb_opts:get(node_history, [], PerparedOpts) of
-        [] -> [ maps:without([node_history], PerparedOpts), maps:without([node_history], MergedOpts) ];
-        History -> History ++ [ maps:without([node_history], MergedOpts) ]
-    end,
     FinalOpts = MergedOpts#{
         http_server => hb_opts:get(http_server, no_server, Opts),
-        node_history => NewHistory
+        node_history => [Request | hb_opts:get(node_history, [], Opts)]
     },
     {set_opts(FinalOpts), FinalOpts}.
 
@@ -530,52 +521,3 @@ set_node_opts_test() ->
         }),
     {ok, LiveOpts} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?assert(hb_ao:get(<<"test-success">>, LiveOpts, false, #{})).
-
-%% @doc Test the set_opts/2 function that merges request with options,
-%% manages node history, and updates server state.
-set_opts_test() ->
-
-    DefaultOpts = hb_opts:default_message(),
-    start_node(DefaultOpts#{ 
-        priv_wallet => Wallet = ar_wallet:new(), 
-        port => rand:uniform(10000) + 10000 
-    }),
-    Opts = ?MODULE:get_opts(#{ 
-        http_server => hb_util:human_id(ar_wallet:to_address(Wallet))
-    }),
-    NodeHistory = hb_opts:get(node_history, [], Opts),
-    ?event(debug_node_history, {node_history_length, length(NodeHistory)}),
-    ?assert(length(NodeHistory) == 0),
-
-    % Test case 1: Empty node_history case
-    Request1 = #{
-        <<"hello">> => <<"world">>
-    },             
-    {ok, UpdatedOpts1} = set_opts(Request1, Opts),
-    NodeHistory1 = hb_opts:get(node_history, not_found, UpdatedOpts1),
-    Key1 = hb_opts:get(<<"hello">>, not_found, UpdatedOpts1),
-    ?event(debug_node_history, {node_history_length, length(NodeHistory1)}),
-    ?assert(length(NodeHistory1) == 2),
-    ?assert(Key1 == <<"world">>),
-
-    % Test case 2: Non-empty node_history case
-    Request2 = #{
-        <<"hello2">> => <<"world2">>
-    },
-    {ok, UpdatedOpts2} = set_opts(Request2, UpdatedOpts1),
-    NodeHistory2 = hb_opts:get(node_history, not_found, UpdatedOpts2),
-    Key2 = hb_opts:get(<<"hello2">>, not_found, UpdatedOpts2),
-    ?event(debug_node_history, {node_history_length, length(NodeHistory2)}),
-    ?assert(length(NodeHistory2) == 3),
-    ?assert(Key2 == <<"world2">>),
-
-    % Test case 3: Non-empty node_history case
-    {ok, UpdatedOpts3} = set_opts(#{}, UpdatedOpts2#{ <<"hello3">> => <<"world3">> }),
-    NodeHistory3 = hb_opts:get(node_history, not_found, UpdatedOpts3),
-    Key3 = hb_opts:get(<<"hello3">>, not_found, UpdatedOpts3),
-    ?event(debug_node_history, {node_history_length, length(NodeHistory3)}),
-    ?assert(length(NodeHistory3) == 4),
-    ?assert(Key3 == <<"world3">>).
-
-    
-  

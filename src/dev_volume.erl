@@ -48,7 +48,7 @@ info(_Msg1, _Msg2, _Opts) ->
             <<"mount">> => #{
                 <<"description">> => <<"Mount an encrypted volume">>,
                 <<"required_node_opts">> => #{
-                    <<"priv_volume_key">> => <<"The encryption key">>,
+                    <<"volume_key">> => <<"The encryption key">>,
                     <<"volume_device">> => <<"The base device path">>,
                     <<"volume_partition">> => <<"The partition path">>,
                     <<"volume_partition_type">> => <<"The partition type">>,
@@ -76,7 +76,7 @@ info(_Msg1, _Msg2, _Opts) ->
 %% 6. Updates the node's store configuration to use the mounted volume
 %%
 %% Config options in Opts map:
-%% - priv_volume_key: (Required) The encryption key
+%% - volume_key: (Required) The encryption key
 %% - volume_device: Base device path
 %% - volume_partition: Partition path
 %% - volume_partition_type: Filesystem type
@@ -87,12 +87,12 @@ info(_Msg1, _Msg2, _Opts) ->
 %% @param M1 Base message for context.
 %% @param M2 Request message with operation details.
 %% @param Opts A map of configuration options for volume operations.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec mount(term(), term(), map()) -> {ok, binary()} | {error, binary()}.
 mount(_M1, _M2, Opts) ->
     % Check if an encrypted key was sent in the request
-    EncryptedKey = hb_opts:get(priv_volume_key, not_found, Opts),
+    EncryptedKey = hb_opts:get(volume_key, not_found, Opts),
     % Determine if we need to decrypt a key or use one from config
     ?event(debug_mount, {mount, encrypted_key, EncryptedKey}),
     SkipDecryption = hb_opts:get(volume_skip_decryption, <<"false">>, Opts),
@@ -118,7 +118,7 @@ mount(_M1, _M2, Opts) ->
     StorePath = hb_opts:get(volume_store_path, not_found, Opts),
     % Check for missing required node options
     case hb_opts:check_required_opts([
-        {<<"priv_volume_key">>, Key},
+        {<<"volume_key">>, Key},
         {<<"volume_device">>, Device},
         {<<"volume_partition">>, Partition},
         {<<"volume_partition_type">>, PartitionType},
@@ -153,8 +153,8 @@ mount(_M1, _M2, Opts) ->
 %% @param _M1 Ignored parameter.
 %% @param _M2 Ignored parameter.
 %% @param Opts A map of configuration options.
-%% @returns {ok, Map} containing the node's public key on success.
-%% @returns {error, Binary} if the node's wallet is not available.
+%% @returns `{ok, Map}' containing the node's public key on success, or
+%% `{error, Binary}' if the node's wallet is not available.
 -spec public_key(term(), term(), map()) -> {ok, map()} | {error, binary()}.
 public_key(_M1, _M2, Opts) ->
     ?event(volume, {public_key, start}),
@@ -188,8 +188,8 @@ public_key(_M1, _M2, Opts) ->
 %%
 %% @param EncryptedKey The encrypted volume key (Base64 encoded).
 %% @param Opts A map of configuration options.
-%% @returns {ok, DecryptedKey} on successful decryption.
-%% @returns {error, Binary} if decryption fails.
+%% @returns `{ok, DecryptedKey}' on successful decryption, or
+%% `{error, Binary}' if decryption fails.
 -spec decrypt_volume_key(binary(), map()) -> {ok, binary()} | {error, binary()}.
 decrypt_volume_key(EncryptedKeyBase64, Opts) ->
     % Decode the encrypted key
@@ -226,8 +226,8 @@ decrypt_volume_key(EncryptedKeyBase64, Opts) ->
 %% @param StorePath The store path to check.
 %% @param Key The key to check.
 %% @param Opts The options to check.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec check_base_device(
     term(), term(), term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -259,8 +259,8 @@ check_base_device(
 %% @param StorePath The store path to check.
 %% @param Key The key to check.
 %% @param Opts The options to check.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec check_partition(
     term(), term(), term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -289,8 +289,8 @@ check_partition(
 %% @param VolumeName The name of the volume to mount.
 %% @param StorePath The store path to mount.
 %% @param Opts The options to mount.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec mount_existing_partition(
     term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -316,8 +316,8 @@ mount_existing_partition(
 %% @param VolumeName The name of the volume to mount.
 %% @param StorePath The store path to mount.
 %% @param Opts The options to mount.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec create_and_mount_partition(
     term(), term(), term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -344,8 +344,8 @@ create_and_mount_partition(
 %% @param VolumeName The name of the volume to mount.
 %% @param StorePath The store path to mount.
 %% @param Opts The options to mount.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec format_and_mount(
     term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -370,8 +370,8 @@ format_and_mount(
 %% @param VolumeName The name of the volume to mount.
 %% @param StorePath The store path to mount.
 %% @param Opts The options to mount.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec mount_formatted_partition(
     term(), term(), term(), term(), term(), map()
 ) -> {ok, binary()} | {error, binary()}.
@@ -390,8 +390,8 @@ mount_formatted_partition(
 %% @doc Update the store path to use the mounted volume.
 %% @param StorePath The store path to update.
 %% @param Opts The options to update.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec update_store_path(term(), map()) -> {ok, binary()} | {error, binary()}.
 update_store_path(StorePath, Opts) ->
     CurrentStore = hb_opts:get(store, [], Opts),
@@ -407,8 +407,8 @@ update_store_path(StorePath, Opts) ->
 %% @doc Update the node's configuration with the new store.
 %% @param NewStore The new store to update the node's configuration with.
 %% @param Opts The options to update the node's configuration with.
-%% @returns {ok, Binary} on success with operation result message.
-%% @returns {error, Binary} on failure with error message.
+%% @returns `{ok, Binary}' on success with operation result message, or
+%% `{error, Binary}' on failure with error message.
 -spec update_node_config(term(), map()) -> {ok, binary()} | {error, binary()}.
 update_node_config(NewStore, Opts) ->
     ok = hb_http_server:set_opts(Opts#{store => NewStore}),

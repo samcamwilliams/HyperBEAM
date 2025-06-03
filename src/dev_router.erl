@@ -76,31 +76,37 @@ info(_Msg1, _Msg2, _Opts) ->
 %% a new route with a remote router node. This function should also be itempotent
 %% so that it can be called only once.
 register(_M1, _M2, Opts) ->
-    maybe
-        %% First check if we're already registered to prevent duplicate registrations
-        %% Pattern matching against 'false' will trigger the 'true' clause in the else part if already registered
-        false = hb_opts:get(router_registered, false, Opts),
-        %% Extract all required parameters from options
-        %% These values will be used to construct the registration message
+    Registered = hb_opts:get(router_registered, false, Opts),
+    % Check if the route is already registered
+    case Registered of
+        true ->
+            {error, <<"Route already registered.">>};
+        false ->
+            % Validate node history
+            case hb_opts:validate_node_history(Opts) of
+                {ok, _} ->
                     RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
                     Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
                     Price = hb_opts:get(<<"router_price">>, not_found, Opts),
                     Template = hb_opts:get(<<"router_template">>, not_found, Opts),
-        %% Generate attestation for secure node validation
-        %% This proves the node's identity to the router
-        {ok, Attestion} = dev_snp:generate(#{}, #{}, Opts),
+                    {ok, Attestion} = dev_snp:generate(
+                        #{}, 
+                        #{}, 
+                        #{ 
+                            priv_wallet => hb:wallet(), 
+                            snp_trusted => hb_opts:get(snp_trusted, [#{}], Opts)
+                        }
+                    ),
                     ?event(debug_register, {attestion, Attestion}),
-        %% Validate that all required parameters are present
-        %% This will return {error, Reason} if any parameter is missing or invalid
-        {ok, _} = hb_opts:check_required_opts([
+                    % Check if any required parameters are missing
+                    case hb_opts:check_required_opts([
                         {<<"router_peer_location">>, RouterNode},
                         {<<"router_prefix">>, Prefix},
                         {<<"router_price">>, Price},
                         {<<"router_template">>, Template}
-        ], Opts),
-        %% Post registration request to the router node
-        %% The message includes our route details and attestation for verification
-        {ok, _} = hb_http:post(RouterNode, #{
+                    ], Opts) of
+                        {ok, _} ->
+                            case hb_http:post(RouterNode, #{
                                 <<"path">> => <<"/router~node-process@1.0/schedule">>,
                                 <<"method">> => <<"POST">>,
                                 <<"body">> =>
@@ -117,19 +123,22 @@ register(_M1, _M2, Opts) ->
                                         },
                                         Opts
                                     )
-        }, Opts),
-        %% Registration successful - update local state to prevent future registrations
-        %% This makes the function idempotent as required
+                            }, Opts) of
+                                {ok, _} ->
                                     hb_http_server:set_opts(
                                         Opts#{ router_registered => true }
                                     ),
-        {ok, <<"Route registered.">>}
-    else
-        %% Handle case where we're already registered
-        true -> {error, <<"Route already registered.">>};
-        %% Handle any other errors from the registration process
-        %% This includes parameter validation errors and HTTP errors
-        {error, Reason} -> {error, Reason}
+                                    {ok, <<"Route registered.">>};
+                                {error, _} ->
+                                    {error, <<"Failed to register route.">>}
+                            end;
+                        {error, ErrorMsg} ->
+                            {error, ErrorMsg}
+                    end;
+                {error, Reason} ->
+                    % Node history validation failed
+                    {error, Reason}
+            end
     end.
 
 %% @doc Device function that returns all known routes.
@@ -521,7 +530,7 @@ preprocess(Msg1, Msg2, Opts) ->
                             }]
                     }}
             end;
-        {ok, _Method, Node, _Path, _MsgWithoutMeta, _ReqOpts} ->
+        {ok, Method, Node, Path, _MsgWithoutMeta, _ReqOpts} ->
             ?event(debug_preprocess, {matched_route, {explicit, Res}}),
             CommitRequest =
                 hb_util:atom(

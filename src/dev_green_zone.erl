@@ -116,15 +116,13 @@ default_zone_required_opts(Opts) ->
 %% @param _M1 Ignored parameter
 %% @param _M2 May contain a `required-config' map for custom requirements
 %% @param Opts A map of configuration options
-%% @returns {ok, Binary} on success with confirmation message
-%% @returns {error, Binary} on failure with error message
+%% @returns `{ok, Binary}' on success with confirmation message, or
+%% `{error, Binary}' on failure with error message.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()} | {error, binary()}.
 init(_M1, _M2, Opts) ->
     ?event(green_zone, {init, start}),
-    case hb_opts:get(green_zone_initialized, false, Opts) of
-        true ->
-            {error, <<"Green zone already initialized.">>};
-        false ->
+    case hb_opts:validate_node_history(Opts) of
+        {ok, 1} ->
             RequiredConfig = hb_opts:get(
                 <<"green_zone_required_config">>,
                 default_zone_required_opts(Opts),
@@ -158,11 +156,12 @@ init(_M1, _M2, Opts) ->
                 priv_wallet => NodeWallet,
                 priv_green_zone_aes => GreenZoneAES,
                 trusted_nodes => #{},
-                green_zone_required_opts => RequiredConfig,
-                green_zone_initialized => true
+                green_zone_required_opts => RequiredConfig
             }),
             ?event(green_zone, {init, complete}),
-            {ok, <<"Green zone initialized successfully.">>}
+            {ok, <<"Green zone initialized successfully.">>};
+        {error, Reason} ->
+            {error, Reason}
     end.
     
 
@@ -187,21 +186,26 @@ init(_M1, _M2, Opts) ->
 %% @param M1 The join request message with target peer information
 %% @param M2 Additional request details, may include adoption preferences
 %% @param Opts A map of configuration options for join operations
-%% @returns {ok, Map} on success with join response details
-%% @returns {error, Binary} on failure with error message
+%% @returns `{ok, Map}' on success with join response details, or
+%% `{error, Binary}' on failure with error message.
 -spec join(M1 :: term(), M2 :: term(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-    PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
-    PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
-    ?event(green_zone, {join_peer, PeerLocation, PeerID}),
-    if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
-        validate_join(M1, M2, Opts);
-    true ->
-        join_peer(PeerLocation, PeerID, M1, M2, Opts)
+    case hb_opts:validate_node_history(Opts, 0, 4) of
+        {ok, _N} ->
+            PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
+            PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
+            ?event(green_zone, {join_peer, PeerLocation, PeerID}),
+            if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
+                validate_join(M1, M2, Opts);
+            true ->
+                join_peer(PeerLocation, PeerID, M1, M2, Opts)
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
-    
+
 %% @doc Encrypts and provides the node's private key for secure sharing.
 %%
 %% This function performs the following operations:
@@ -218,8 +222,8 @@ join(M1, M2, Opts) ->
 %% @param _M1 Ignored parameter
 %% @param _M2 Ignored parameter
 %% @param Opts A map of configuration options
-%% @returns {ok, Map} containing the encrypted key and IV on success
-%% @returns {error, Binary} if the node is not part of a green zone
+%% @returns `{ok, Map}' containing the encrypted key and IV on success, or
+%% `{error, Binary}' if the node is not part of a green zone
 -spec key(M1 :: term(), M2 :: term(), Opts :: map()) -> 
     {ok, map()} | {error, binary()}.
 key(_M1, _M2, Opts) ->
@@ -274,8 +278,8 @@ key(_M1, _M2, Opts) ->
 %% @param _M1 Ignored parameter
 %% @param _M2 Ignored parameter
 %% @param Opts A map of configuration options
-%% @returns {ok, Map} on success with confirmation details
-%% @returns {error, Binary} if the node is not part of a green zone or
+%% @returns `{ok, Map}' on success with confirmation details, or
+%% `{error, Binary}' if the node is not part of a green zone or
 %% identity adoption fails.
 -spec become(M1 :: term(), M2 :: term(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
@@ -296,8 +300,8 @@ become(_M1, _M2, Opts) ->
             ?event(green_zone, {become, getting_key, NodeLocation, NodeID}),
             {ok, KeyResp} = hb_http:get(NodeLocation, 
                                        <<"/~greenzone@1.0/key">>, Opts),
-            Signers = hb_message:signers(KeyResp),
-            case hb_message:verify(KeyResp, Signers) and 
+            Signers = hb_message:signers(KeyResp, Opts),
+            case hb_message:verify(KeyResp, Signers, Opts) and 
                  lists:member(NodeID, Signers) of
                 false ->
                     % The response is not from the expected peer.
@@ -378,8 +382,8 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
 %% @param _M1 Ignored parameter
 %% @param M2 May contain ShouldMount flag to enable encrypted volume mounting
 %% @param InitOpts A map of initial configuration options
-%% @returns {ok, Map} on success with confirmation message
-%% @returns {error, Map|Binary} on failure with error details
+%% @returns `{ok, Map}' on success with confirmation message, or
+%% `{error, Map|Binary}' on failure with error details
 -spec join_peer(
     PeerLocation :: binary(),
     PeerID :: binary(),
@@ -419,6 +423,12 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 					IsVerified = hb_message:verify(Resp, Signers, Opts),
 					?event(green_zone, {join, verify, IsVerified}),
 					IsPeerSigner = lists:member(PeerID, Signers),
+					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
+                    Signers = hb_message:signers(Resp, Opts),
+                    ?event(green_zone, {join, signers, Signers}),
+                    IsVerified = hb_message:verify(Resp, Signers, Opts),
+                    ?event(green_zone, {join, verify, IsVerified}),
+                    IsPeerSigner = lists:member(PeerID, Signers),
                     ?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
                     case IsPeerSigner andalso IsVerified of
                         false ->
@@ -487,8 +497,8 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 %% @param PeerID The ID of the peer node to join
 %% @param Req The request message with adoption preferences
 %% @param InitOpts A map of initial configuration options
-%% @returns {ok, Map} with updated configuration on success
-%% @returns {error, Binary} if configuration retrieval fails
+%% @returns `{ok, Map}' with updated configuration on success, or
+%% `{error, Binary}' if configuration retrieval fails
 -spec maybe_set_zone_opts(
     PeerLocation :: binary(),
     PeerID :: binary(),
@@ -571,7 +581,8 @@ calculate_node_message(RequiredOpts, Req, true) ->
     StrippedReq =
         hb_maps:without(
             [
-               <<"path">>, <<"method">>
+                <<"green_zone_adopt_config">>, <<"green_zone_peer_location">>,
+                <<"green_zone_peer_id">>, <<"path">>, <<"method">>
             ],
             hb_message:uncommitted(Req, RequiredOpts)
         ),
@@ -604,8 +615,8 @@ calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
 %% @param M1 Ignored parameter
 %% @param Req The join request containing commitment report and public key
 %% @param Opts A map of configuration options
-%% @returns {ok, Map} on success with encrypted AES key
-%% @returns {error, Binary} on failure with error message
+%% @returns `{ok, Map}' on success with encrypted AES key, or
+%% `{error, Binary}' on failure with error message
 -spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
 validate_join(M1, Req, Opts) ->
@@ -685,27 +696,54 @@ validate_peer_opts(Req, Opts) ->
     PeerOpts =
         hb_ao:normalize_keys(
             hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
-    % Get node_history
+    ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
+    % Add the required config itself to the required options of the peer. This
+    % enforces that the new peer will also enforce the required config on peers
+    % that join them.
+    FullRequiredOpts = RequiredConfig#{
+        green_zone_required_opts => RequiredConfig
+    },
+    ?event(green_zone, 
+        {validate_peer_opts, full_required_opts, FullRequiredOpts}
+    ),
+    % Debug: Check if PeerOpts is a map
+    ?event(green_zone, 
+        {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}
+    ),
+    % Debug: Get node_history safely
     NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
     ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
-    % Validate each item in node_history has required options
-    Result = try
-        case hb_opts:ensure_node_history(NodeHistory, RequiredConfig) of
-            {ok, _} -> 
-                ?event(green_zone, {validate_peer_opts, history_items_check, valid}),
-                true;
-            {error, ErrorMsg} ->
-                ?event(green_zone, {validate_peer_opts, history_items_check, {invalid, ErrorMsg}}),
-                false
-        end
+    % Debug: Check length of node_history
+    case NodeHistory of
+        List when length(List) =< 2 ->
+            ?event(green_zone, 
+                {validate_peer_opts, history_check, correct_length}
+            ),
+            % Debug: Try the match check separately
+            try
+                MatchCheck =
+                    hb_message:match(PeerOpts, FullRequiredOpts, only_present) ==
+                        true,
+                ?event(green_zone, 
+                    {validate_peer_opts, match_check, MatchCheck}
+                ),
+                % Final result
+                ?event(green_zone, 
+                    {validate_peer_opts, final_result, MatchCheck}
+                ),
+                MatchCheck
             catch
-        HistError:HistReason:HistStacktrace ->
-            ?event(green_zone, {validate_peer_opts, history_items_error, 
-                {HistError, HistReason, HistStacktrace}}),
+                Error:Reason:Stacktrace ->
+                    ?event(green_zone,
+                        {validate_peer_opts,
+                            match_error,
+                            {Error, Reason, Stacktrace}
+                        }
+                    ),
                     false
-    end,
-    ?event(green_zone, {validate_peer_opts, final_result, Result}),
-    Result.
+            end;
+        false -> {error, not_a_list}
+    end.
 
 %% @doc Adds a node to the trusted nodes list with its commitment report.
 %%
