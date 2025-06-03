@@ -189,13 +189,10 @@ generate(_M1, _M2, Opts) ->
     ?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
     ?event({snp_report_data, byte_size(ReportData)}),
-
     LocalHashes = hd(hb_opts:get(snp_trusted, [#{}], Opts)),
     ?event(snp_local_hashes, {explicit, LocalHashes}),
-    
     {ok, ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
     ?event({snp_report_json, ReportJSON}),
-
     ?event(
         {snp_report_generated,
             {nonce, ReportData},
@@ -209,7 +206,6 @@ generate(_M1, _M2, Opts) ->
         <<"node-message">> => NodeMsg,
         <<"report">> => ReportJSON
     }, Wallet),
-    
     ?event({verify_res, hb_message:verify(ReportMsg)}),
     ?event({snp_report_msg, ReportMsg}),
     {ok, ReportMsg}.

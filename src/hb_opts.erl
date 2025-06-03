@@ -15,7 +15,7 @@
 -module(hb_opts).
 -export([get/1, get/2, get/3, as/2, identities/1, load/1, load_bin/1]).
 -export([default_message/0, mimic_default_types/2]).
--export([validate_node_history/1, validate_node_history/3]).
+-export([ensure_node_history/2]).
 -export([check_required_opts/2]).
 -include("include/hb.hrl").
 
@@ -383,43 +383,6 @@ mimic_default_types(Map, Mode) ->
         end,
         maps:to_list(Map)
     )).
-    
-%% @doc Validate that the node_history length is within an acceptable range.
-%% @param Opts The options map containing node_history
-%% @param MinLength The minimum acceptable length of node_history
-%% @param MaxLength The maximum acceptable length of node_history
-%% @returns {ok, Length} if MinLength =< Length =< MaxLength,
-%% or {error, Reason} if the length is outside the range.
-validate_node_history(Opts) ->
-    validate_node_history(Opts, 1, 1).
-validate_node_history(Opts, MinLength, MaxLength) ->
-    Length = length(hb_opts:get(node_history, [], Opts)),
-    if
-        Length >= MinLength, Length =< MaxLength -> 
-            {ok, Length};
-        Length < MinLength -> 
-            {
-                error,
-                <<
-                    "Node history too short. Expected at least ",
-                    (integer_to_binary(MinLength))/binary,
-                    " entries, got ",
-                    (integer_to_binary(Length))/binary,
-                    "."
-                >>
-            };
-        true -> 
-            {
-                error,
-                <<
-                    "Node history too long. Expected at most ",
-                    (integer_to_binary(MaxLength))/binary,
-                    " entries, got ",
-                    (integer_to_binary(Length))/binary,
-                    "."
-                >>
-            }
-    end.
 
 %% @doc Find a given identity from the `identities' map, and return the options
 %% merged with the sub-options for that identity.
@@ -514,6 +477,72 @@ check_required_opts(KeyValuePairs, Opts) ->
             ),
             ErrorMsg = <<"Missing required opts: ", MissingOptsStr/binary>>,
             {error, ErrorMsg}
+    end.
+
+%% @doc Ensures all items in a node history meet required configuration options.
+%%
+%% This function verifies that each entry in the node history contains all required
+%% configuration options and that their values match the expected format. It
+%% performs validation in two steps:
+%% 1. Checks that all required keys are present in each history item
+%% 2. Verifies that all values match their expected types and formats
+%%
+%% @param NodeHistory A list of node history items to validate
+%% @param RequiredOpts A map of options that each node history item must have
+%% @returns {ok, <<"valid">>} when all history items meet requirements
+%% @returns {error, <<"missing_keys">>} when any required keys are missing
+%% @returns {error, <<"invalid_values">>} when keys are present but values don't match
+%% @returns {error, <<"validation_failed">>} when other validation errors occur
+-spec ensure_node_history(NodeHistory :: list() | term(), RequiredOpts :: map()) -> 
+    {ok, binary()} | {error, binary()}.
+ensure_node_history(NodeHistory, RequiredOpts) ->
+    ?event(validate_history_items, {required_opts, RequiredOpts}),
+    maybe
+        % Normalize required options
+        NormalizedRequiredOpts ?= hb_ao:normalize_keys(RequiredOpts),
+        % Normalize all node history items once
+        NormalizedNodeHistory ?= lists:map(
+            fun(Item) -> 
+                hb_ao:normalize_keys(Item)
+            end,
+            NodeHistory
+        ),
+        % First check if all items have all required keys
+        KeysPresent = lists:all(
+            fun(NormalizedItem) ->
+                % Check if all required keys are present
+                lists:all(
+                    fun(Key) ->
+                        maps:is_key(Key, NormalizedItem)
+                    end,
+                    maps:keys(NormalizedRequiredOpts)
+                )
+            end,
+            NormalizedNodeHistory
+        ),
+        true ?= KeysPresent orelse {error, keys_missing},
+        % Then check if all values match
+        ValuesMatch = lists:all(
+            fun(NormalizedItem) ->
+                % Check value matches
+                hb_message:match(NormalizedItem, NormalizedRequiredOpts, only_present)
+            end,
+            NormalizedNodeHistory
+        ),
+        true ?= ValuesMatch orelse {error, values_invalid},
+        % If we've made it this far, everything is valid
+        ?event({validate_node_history_items, all_items_valid}),
+        {ok, <<"valid">>}
+    else
+        {error, keys_missing} ->
+            ?event({validate_node_history_items, validation_failed, missing_keys}),
+            {error, <<"missing_keys">>};
+        {error, values_invalid} ->
+            ?event({validate_node_history_items, validation_failed, invalid_values}),
+            {error, <<"invalid_values">>};
+        _ ->
+            ?event({validate_node_history_items, validation_failed, unknown}),
+            {error, <<"validation_failed">>}
     end.
 
 %%% Tests
@@ -612,41 +641,61 @@ as_identity_test() ->
         as(TestID2, Opts)
     ).
     
+ensure_node_history_test() ->
+    % Define some test data
+    RequiredOpts = #{
+        key1 => 
+            #{
+                <<"type">> => <<"string">>,
+                <<"value">> => <<"value1">>
+            },
+        key2 => <<"value2">>
+    },
+    % Test case: All items have required options
+    ValidItems = [
+        #{
+            <<"key1">> => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value1">>
+                }, 
+            <<"key2">> => <<"value2">>, 
+            <<"extra">> => <<"value">>
+        },
+        #{
+            <<"key1">> => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value1">>
+                }, 
+            <<"key2">> => <<"value2">>
+        }
+    ],
+    ?assertEqual({ok, <<"valid">>}, ensure_node_history(ValidItems, RequiredOpts)),
+    % Test Missing items
+    MissingItems = [
+        #{
+            <<"key1">> => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value1">>
+                }
+            % missing key2
+        }
+    ],
+    ?assertEqual({error, <<"missing_keys">>}, ensure_node_history(MissingItems, RequiredOpts)),
+    % Test Invalid items
+    InvalidItems = [
+        #{
+            <<"key1">> => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value2">>
+                }, 
+            <<"key2">> => <<"value3">>
+        }
+    ],
+    ?assertEqual({error, <<"invalid_values">>}, ensure_node_history(InvalidItems, RequiredOpts)).
 
-validate_node_history_test() ->
-    % Test default values (min=1, max=1)
-    ?assertEqual({ok, 1}, validate_node_history(#{node_history => [entry1]})),
-    ?assertEqual(
-        {error, <<"Node history too short. Expected at least 1 entries, got 0.">>}, 
-        validate_node_history(#{})
-    ),
-    ?assertEqual(
-        {error, <<"Node history too long. Expected at most 1 entries, got 2.">>}, 
-        validate_node_history(#{node_history => [entry1, entry2]})
-    ),
-    % Test with custom range
-    ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 2)),
-    ?assertEqual(
-        {ok, 1},
-        validate_node_history(#{node_history => [entry1]}, 0, 2)
-    ),
-    ?assertEqual(
-        {ok, 2},
-        validate_node_history(#{node_history => [entry1, entry2]}, 0, 2)
-    ),
-    % Test range validations
-    ?assertEqual(
-        {error, <<"Node history too short. Expected at least 2 entries, got 1.">>}, 
-        validate_node_history(#{node_history => [entry1]}, 2, 4)
-    ),
-    ?assertEqual(
-        {error, <<"Node history too long. Expected at most 2 entries, got 3.">>}, 
-        validate_node_history(#{node_history => [entry1, entry2, entry3]}, 1, 2)
-    ),
-    % Test edge cases
-    ?assertEqual(
-        {ok, 3},
-        validate_node_history(#{node_history => [entry1, entry2, entry3]}, 3, 3)
-    ),
-    ?assertEqual({ok, 0}, validate_node_history(#{}, 0, 0)).
+    
 -endif.

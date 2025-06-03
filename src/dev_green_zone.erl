@@ -121,8 +121,10 @@ default_zone_required_opts(Opts) ->
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()} | {error, binary()}.
 init(_M1, _M2, Opts) ->
     ?event(green_zone, {init, start}),
-    case hb_opts:validate_node_history(Opts) of
-        {ok, 1} ->
+    case hb_opts:get(green_zone_initialized, false, Opts) of
+        true ->
+            {error, <<"Green zone already initialized.">>};
+        false ->
             RequiredConfig = hb_opts:get(
                 <<"green_zone_required_config">>,
                 default_zone_required_opts(Opts),
@@ -156,12 +158,11 @@ init(_M1, _M2, Opts) ->
                 priv_wallet => NodeWallet,
                 priv_green_zone_aes => GreenZoneAES,
                 trusted_nodes => #{},
-                green_zone_required_opts => RequiredConfig
+                green_zone_required_opts => RequiredConfig,
+                green_zone_initialized => true
             }),
             ?event(green_zone, {init, complete}),
-            {ok, <<"Green zone initialized successfully.">>};
-        {error, Reason} ->
-            {error, Reason}
+            {ok, <<"Green zone initialized successfully.">>}
     end.
     
 
@@ -192,8 +193,6 @@ init(_M1, _M2, Opts) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-    case hb_opts:validate_node_history(Opts, 0, 4) of
-        {ok, _N} ->
             PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
             PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
             ?event(green_zone, {join_peer, PeerLocation, PeerID}),
@@ -201,10 +200,8 @@ join(M1, M2, Opts) ->
                 validate_join(M1, M2, Opts);
             true ->
                 join_peer(PeerLocation, PeerID, M1, M2, Opts)
-            end;
-        {error, Reason} ->
-            {error, Reason}
     end.
+
 
 %% @doc Encrypts and provides the node's private key for secure sharing.
 %%
@@ -575,8 +572,7 @@ calculate_node_message(RequiredOpts, Req, true) ->
     StrippedReq =
         maps:without(
             [
-                <<"green_zone_adopt_config">>, <<"green_zone_peer_location">>,
-                <<"green_zone_peer_id">>, <<"path">>, <<"method">>
+                <<"path">>, <<"method">>
             ],
             hb_message:uncommitted(Req)
         ),
@@ -690,54 +686,27 @@ validate_peer_opts(Req, Opts) ->
     PeerOpts =
         hb_ao:normalize_keys(
             hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
-    ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
-    % Add the required config itself to the required options of the peer. This
-    % enforces that the new peer will also enforce the required config on peers
-    % that join them.
-    FullRequiredOpts = RequiredConfig#{
-        green_zone_required_opts => RequiredConfig
-    },
-    ?event(green_zone, 
-        {validate_peer_opts, full_required_opts, FullRequiredOpts}
-    ),
-    % Debug: Check if PeerOpts is a map
-    ?event(green_zone, 
-        {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}
-    ),
-    % Debug: Get node_history safely
+    % Get node_history
     NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
     ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
-    % Debug: Check length of node_history
-    case NodeHistory of
-        List when length(List) =< 2 ->
-            ?event(green_zone, 
-                {validate_peer_opts, history_check, correct_length}
-            ),
-            % Debug: Try the match check separately
-            try
-                MatchCheck =
-                    hb_message:match(PeerOpts, FullRequiredOpts, only_present) ==
-                        true,
-                ?event(green_zone, 
-                    {validate_peer_opts, match_check, MatchCheck}
-                ),
-                % Final result
-                ?event(green_zone, 
-                    {validate_peer_opts, final_result, MatchCheck}
-                ),
-                MatchCheck
+    % Validate each item in node_history has required options
+    Result = try
+        case hb_opts:ensure_node_history(NodeHistory, RequiredConfig) of
+            {ok, _} -> 
+                ?event(green_zone, {validate_peer_opts, history_items_check, valid}),
+                true;
+            {error, ErrorMsg} ->
+                ?event(green_zone, {validate_peer_opts, history_items_check, {invalid, ErrorMsg}}),
+                false
+        end
             catch
-                Error:Reason:Stacktrace ->
-                    ?event(green_zone,
-                        {validate_peer_opts,
-                            match_error,
-                            {Error, Reason, Stacktrace}
-                        }
-                    ),
+        HistError:HistReason:HistStacktrace ->
+            ?event(green_zone, {validate_peer_opts, history_items_error, 
+                {HistError, HistReason, HistStacktrace}}),
                     false
-            end;
-        false -> {error, not_a_list}
-    end.
+    end,
+    ?event(green_zone, {validate_peer_opts, final_result, Result}),
+    Result.
 
 %% @doc Adds a node to the trusted nodes list with its commitment report.
 %%
@@ -839,7 +808,7 @@ try_mount_encrypted_volume(AESKey, Opts) ->
     ?event(green_zone, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
-        volume_key => AESKey,
+        priv_volume_key => AESKey,
         volume_skip_decryption => <<"true">>
     },
     % Call the dev_volume:mount function to handle the complete process
