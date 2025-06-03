@@ -35,6 +35,7 @@
 -define(DEFAULT_IDLE_FLUSH_TIME, 5).              % 5ms idle time before auto-flush
 -define(DEFAULT_MAX_FLUSH_TIME, 50).              % 50ms maximum time between flushes
 -define(MAX_RETRIES, 1).                          % 1 retry for read operations
+-define(MAX_REDIRECTS, 1000).                     % Only resolve 1000 links to data
 
 %% @doc Start the LMDB storage system for a given database configuration.
 %%
@@ -90,58 +91,28 @@ start(_) ->
 %% @returns 'composite' for group entries, 'simple' for regular values
 -spec type(map(), binary()) -> composite | simple | not_found.
 type(Opts, Key) ->
-    ?event(debug_type_detection, {checking_type_for_key, Key}),
-    case lmdb:get(find_env(Opts), Key) of
+    ?event({checking_type_for_key, Key}),
+    case read_with_flush(Opts, Key) of
         {ok, Value} ->
-            ?event(debug_type_detection, {found_value, Key, Value, byte_size(Value)}),
-            LinkPrefixSize = byte_size(<<"link:">>),
-            case byte_size(Value) > LinkPrefixSize andalso
-                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                true ->
+            ?event({found_value, Key, Value, byte_size(Value)}),
+            case is_link(Value) of
+                {true, Link} ->
                     % This is a link, check the target's type
-                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
-                    ?event(debug_type_detection, {following_link, Key, Link}),
+                    ?event({following_link, Key, Link}),
                     type(Opts, Link);
                 false ->
                     case Value of
                         <<"group">> -> 
-                            ?event(debug_type_detection, {key_is_group, Key}),
+                            ?event({key_is_group, Key}),
                             composite;
                         _ -> 
-                            ?event(debug_type_detection, {key_is_simple, Key, Value}),
+                            ?event({key_is_simple, Key, Value}),
                             simple
                     end
             end;
         not_found ->
-            ?event(debug_type_detection, {key_not_found_triggering_flush, Key}),
-            % Key not found in committed data, trigger flush and retry
-            find_pid(Opts) ! {flush, self(), Ref = make_ref()},
-            receive
-                {flushed, Ref} -> 
-                    case lmdb:get(find_env(Opts), Key) of
-                        {ok, Value} ->
-                            ?event(debug_type_detection, {found_after_flush, Key, Value}),
-                            LinkPrefixSize = byte_size(<<"link:">>),
-                            case byte_size(Value) > LinkPrefixSize andalso
-                                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                                true ->
-                                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
-                                    type(Opts, Link);
-                                false ->
-                                    case Value of
-                                        <<"group">> -> composite;
-                                        _ -> simple
-                                    end
-                            end;
-                        not_found ->
-                    ?event(debug_type_detection, {still_not_found_after_flush_checking_children, Key}),
-                            % Still not found after flush
-                            not_found
-                    end
-            after ?CONNECT_TIMEOUT -> 
-                ?event(debug_type_detection, {flush_timeout, Key}),
-                not_found
-            end
+            ?event({key_not_found_after_flush, Key}),
+            not_found
     end.
 
 %% @doc Write a key-value pair to the database asynchronously.
@@ -223,48 +194,73 @@ read(StoreOpts, Path) ->
             end;
         Error -> 
             Error
+    end.
+
+%% @doc Helper function to check if a value is a link and extract the target.
+is_link(Value) ->
+    LinkPrefixSize = byte_size(<<"link:">>),
+    case byte_size(Value) > LinkPrefixSize andalso
+        binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
+        true -> 
+            Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
+            {true, Link};
+        false ->
+            false
+    end.
+
+%% @doc Unified read function that handles LMDB reads with retry logic.
+%% Returns {ok, Value}, not_found, or performs flush and retries.
+read_with_retry(StoreOpts, Key, RetriesRemaining) when RetriesRemaining > 0 ->
+    case lmdb:get(find_env(StoreOpts), Key) of
+        {ok, Value} ->
+            {ok, Value};
+        not_found ->
+            % Key not found in committed data, trigger flush and retry
+            ?event({miss_read_key, Key}),
+            sync(StoreOpts),
+            read_with_retry(StoreOpts, Key, RetriesRemaining - 1)
     end;
-read(StoreOpts, Key) ->
-    ?event(debug_nested_test, {key, Key}),
-    read_direct(StoreOpts, Key).
+read_with_retry(_StoreOpts, _Key, 0) ->
+    not_found.
+
+%% @doc Read with immediate flush for cases where we need to see recent writes.
+%% This is used when we expect the key to exist from a recent write operation.
+read_with_flush(StoreOpts, Key) ->
+    % First, ensure any pending writes are committed
+    sync(StoreOpts),
+    case lmdb:get(find_env(StoreOpts), Key) of
+        {ok, Value} ->
+            {ok, Value};
+        not_found ->
+            not_found
+    end.
 
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
 read_direct(StoreOpts, Key) ->
-    read_direct(StoreOpts, Key, ?MAX_RETRIES).
-read_direct(StoreOpts, Key, 0) ->
-    not_found;
-read_direct(StoreOpts, Key, RetriesRemaining) ->
-    LinkPrefixSize = byte_size(<<"link:">>),
-    case lmdb:get(Env = find_env(StoreOpts), Key) of
+    case read_with_retry(StoreOpts, Key, ?MAX_RETRIES) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
-            case byte_size(Value) > LinkPrefixSize andalso
-                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                true -> 
+            case is_link(Value) of
+                {true, Link} -> 
                    % Extract the target key and recursively resolve the link
-                   Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
                    read(StoreOpts, Link);
                 false ->
-                    % Check if this is a group marker - groups should not be readable as simple values
+                    % Check if this is a group marker - groups should not be
+                    % readable as simple values
                     case Value of
                         <<"group">> ->
-                            ?event(debug_lmdb_read, {refusing_to_read_group_marker, Key}),
-                            % Groups should be accessed via list/type, not read directly
-                            % This makes LMDB behave like filesystem where directories cannot be read as files
-                            % list(StoreOpts, Key);
+                            ?event({refusing_to_read_group_marker, Key}),
+                            % Groups should be accessed via list/type, not read
+                            % directly
                             not_found;
-                            
                         _ ->
                             % Regular value, return as-is
                             {ok, Value}
                     end
             end;
         not_found ->
-            % Key not found in committed data, trigger flush and retry
-            ?event(read_miss, {miss, Key}),
-            sync(StoreOpts),
-            read_direct(StoreOpts, Key, RetriesRemaining - 1)
+            not_found
     end.
 
 %% @doc Resolve links in a path, checking each segment except the last.
@@ -273,13 +269,14 @@ resolve_path_links(StoreOpts, Path) ->
     resolve_path_links(StoreOpts, Path, 0).
 
 %% Internal helper with depth limit to prevent infinite loops
-resolve_path_links(_StoreOpts, _Path, Depth) when Depth > 10 ->
+resolve_path_links(_StoreOpts, _Path, Depth) when Depth > ?MAX_REDIRECTS ->
     % Prevent infinite loops with depth limit
     {error, too_many_redirects};
 resolve_path_links(_StoreOpts, [LastSegment], _Depth) ->
     % Base case: only one segment left, no link resolution needed
     {ok, [LastSegment]};
 resolve_path_links(StoreOpts, Path, Depth) ->
+    sync(StoreOpts),
     resolve_path_links_acc(StoreOpts, Path, [], Depth).
 
 %% Internal helper that accumulates the resolved path
@@ -293,14 +290,12 @@ resolve_path_links_acc(StoreOpts, [Head | Tail], AccPath, Depth) ->
     % Check if the accumulated path (not just the segment) is a link
     case lmdb:get(find_env(StoreOpts), CurrentPathBin) of
         {ok, Value} ->
-            LinkPrefixSize = byte_size(<<"link:">>),
-            case byte_size(Value) > LinkPrefixSize andalso
-                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                true ->
+            case is_link(Value) of
+                {true, Link} ->
                     % The accumulated path is a link! Resolve it
-                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
                     LinkSegments = binary:split(Link, <<"/">>, [global]),
-                    % Replace the accumulated path with the link target and continue with remaining segments
+                    % Replace the accumulated path with the link target and
+                    % continue with remaining segments
                     NewPath = LinkSegments ++ Tail,
                     resolve_path_links(StoreOpts, NewPath, Depth + 1);
                 false ->
@@ -357,52 +352,26 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
     Env = find_env(StoreOpts),
     ?event(debug_lmdb, {listing, Path}),
     % Check if Path is a link and resolve it if necessary
-    ResolvedPath = case lmdb:get(Env, Path) of
-        {ok, Value} ->
-            ?event(debug_lmdb, {found_value, Value}),
-            LinkPrefixSize = byte_size(<<"link:">>),
-            case byte_size(Value) > LinkPrefixSize andalso
-                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                true ->
-                    % Path is a link, extract the target
-                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
-                    ?event(debug_lmdb, {resolving_link_for_list, Path, to, Link}),
-                    Link;
-                false ->
-                    % Not a link, use original path
-                    Path
-            end;
-        not_found ->
-            % Path not found in committed data, trigger flush and retry
-            ?event(debug_lmdb, {path_not_found_triggering_flush_for_list, Path}),
-            find_pid(StoreOpts) ! {flush, self(), Ref = make_ref()},
-            receive
-                {flushed, Ref} -> 
-                    case lmdb:get(Env, Path) of
-                        {ok, Value} ->
-                            ?event(debug_lmdb, {found_after_flush_for_list, Path, Value}),
-                            LinkPrefixSize = byte_size(<<"link:">>),
-                            case byte_size(Value) > LinkPrefixSize andalso
-                                binary:part(Value, 0, LinkPrefixSize) =:= <<"link:">> of
-                                true ->
-                                    Link = binary:part(Value, LinkPrefixSize, byte_size(Value) - LinkPrefixSize),
-                                    ?event(debug_lmdb, {resolving_link_for_list_after_flush, Path, to, Link}),
-                                    Link;
-                                false ->
-                                    Path
-                            end;
-                        not_found ->
-                            % Still not found after flush, use original path
-                            Path
-                    end
-            after ?CONNECT_TIMEOUT -> 
-                ?event(debug_lmdb, {flush_timeout_for_list, Path}),
-                % Timeout, use original path
+    ResolvedPath =
+        case read_with_flush(StoreOpts, Path) of
+            {ok, Value} ->
+                ?event({found_value, Value}),
+                case is_link(Value) of
+                    {true, Link} ->
+                        % Path is a link, extract the target
+                        ?event(debug_lmdb, {resolving_link_for_list, Path, to, Link}),
+                        Link;
+                    false ->
+                        % Not a link, use original path
+                        Path
+                end;
+            not_found ->
+                % Path not found, use original path
+                ?event({path_not_found_for_list, Path}),
                 Path
-            end
-    end,
+        end,
     % List the children of the resolved path.
-    ?event(debug_lmdb, {listing_children, {resolved_path, ResolvedPath}}),
+    ?event({listing_children, {resolved_path, ResolvedPath}}),
     try
        % Ensure the path ends with "/" for proper prefix matching (like directory listing)
        SearchPath = case ResolvedPath of
@@ -440,7 +409,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            end,
            []
        ),
-       ?event(debug_lmdb, {listing_path, Path, resolved_path, ResolvedPath, search_path, SearchPath, children, Children}),
+       ?event({listing_path, Path, resolved_path, ResolvedPath, search_path, SearchPath, children, Children}),
        Children
     catch
        _:Error -> {error, Error}
@@ -541,10 +510,10 @@ make_link(StoreOpts, Existing, New) ->
 %% @doc Transform a path into the store's canonical form.
 %% For LMDB, paths are simply joined with "/" separators.
 path(_StoreOpts, Path) when is_list(Path) ->
-    ?event(debug_nested_test, { hb_store_path, Path }),
+    ?event({ hb_store_path, Path }),
     hb_util:bin(lists:join(<<"/">>, Path));
 path(_StoreOpts, Path) when is_binary(Path) ->
-    ?event(debug_nested_test, { hb_store_path, Path }),
+    ?event({ hb_store_path, Path }),
     Path.
 
 %% @doc Add two path components together.
@@ -597,31 +566,25 @@ sync(StoreOpts) ->
 %% @returns The resolved path as a binary
 -spec resolve(map(), binary() | list()) -> binary().
 resolve(StoreOpts, Path) when is_binary(Path) ->
-    % Convert binary path to list for resolution, then back to binary
-    PathParts = binary:split(Path, <<"/">>, [global]),
-    ?event(debug_resolve, {resolving_binary_path, Path, path_parts, PathParts}),
-    case resolve_path_links(StoreOpts, PathParts) of
-        {ok, ResolvedParts} ->
-            Result = hb_util:bin(lists:join(<<"/">>, ResolvedParts)),
-            ?event(debug_resolve, {resolved_successfully, Path, to, Result}),
-            Result;
-        {error, Reason} ->
-            % If resolution fails, return original path
-            ?event(debug_resolve, {resolution_failed, Path, reason, Reason}),
-            Path
-    end;
+    resolve(StoreOpts, binary:split(Path, <<"/">>, [global]));
 resolve(StoreOpts, Path) when is_list(Path) ->
     % Handle list paths by resolving directly and converting to binary
-    ?event(debug_resolve, {resolving_list_path, Path}),
+    ?event({resolving_list_path, Path}),
     case resolve_path_links(StoreOpts, Path) of
         {ok, ResolvedParts} ->
             Result = hb_util:bin(lists:join(<<"/">>, ResolvedParts)),
-            ?event(debug_resolve, {resolved_list_successfully, Path, to, Result}),
+            ?event({resolved_list_successfully, Path, to, Result}),
             Result;
         {error, Reason} ->
             % If resolution fails, return original path as binary
             OrigPath = hb_util:bin(lists:join(<<"/">>, Path)),
-            ?event(debug_resolve, {list_resolution_failed, Path, reason, Reason, returning, OrigPath}),
+            ?event(
+                {list_resolution_failed,
+                    {path, Path},
+                    {reason, Reason},
+                    {returning, OrigPath}
+                }
+            ),
             OrigPath
     end;
 resolve(_,_) -> not_found.
@@ -782,11 +745,11 @@ server_write(RawState, Key, Value) ->
           maps:get(<<"instance">>, State, undefined)} of
         {undefined, _} ->
             % Transaction creation failed, return state unchanged
-            ?event(error, {write_failed_no_transaction, Key}),
+            ?event({write_failed_no_transaction, Key}),
             State;
         {_, undefined} ->
             % Database instance missing, return state unchanged
-            ?event(error, {write_failed_no_db_instance, Key}),
+            ?event({write_failed_no_db_instance, Key}),
             State;
         {Txn, Dbi} ->
             % Valid transaction and instance, perform the write
@@ -795,7 +758,7 @@ server_write(RawState, Key, Value) ->
                 State
             catch
                 Class:Reason:Stacktrace ->
-                    ?event(error, {put_failed, Class, Reason, Stacktrace, Key}),
+                    ?event({put_failed, Class, Reason, Stacktrace, Key}),
                     % If put fails, the transaction may be invalid, clean it up
                     State#{ <<"transaction">> => undefined, <<"instance">> => undefined }
             end
