@@ -216,7 +216,6 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
 make_link(_, Link, Link) ->
     ok;
 make_link(Opts, RawExisting, New) ->
-    Existing = hb_store:join(RawExisting),
     #{ <<"pid">> := Server } = hb_store:find(Opts),
     ExistingKeyBin = convert_if_list(RawExisting),
     NewKeyBin = convert_if_list(New),
@@ -229,7 +228,7 @@ make_link(Opts, RawExisting, New) ->
                     hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
         _ ->
-            Server ! {link, Existing, New, self(), Ref = make_ref()},
+            Server ! {link, ExistingKeyBin, NewKeyBin, self(), Ref = make_ref()},
             receive
                 {ok, Ref} ->
                     ok
@@ -374,7 +373,8 @@ put_cache_entry(State, Key, Value, Opts) ->
     Capacity = hb_maps:get(<<"capacity">>, Opts, ?DEFAULT_LRU_CAPACITY),
     case get_cache_entry(State, Key) of
         nil ->
-            % For new entries, we check if the size will the fit the full capacity (even by evicting keys).
+            % For new entries, we check if the size will the fit the full
+            % capacity (even by evicting keys).
             FitInCache = ValueSize =< Capacity,
             case FitInCache of
                 false ->
@@ -402,10 +402,9 @@ put_cache_entry(State, Key, Value, Opts) ->
             ?event(cache_lru, {replace_entry, Key, Value}),
             replace_entry(State, Key, Value, ValueSize, Entry)
     end.
-    % end.
 
 handle_group(State, Key, Opts) ->
-    case filename:dirname(Key) of
+    case filename:dirname(hb_store:join(Key)) of
         <<".">> -> undefined ;
         BaseDir ->
             case maps:get(mode, Opts, undefined) of
