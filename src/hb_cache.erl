@@ -53,18 +53,25 @@
 %% form.
 ensure_loaded(Msg) ->
     ensure_loaded(Msg, #{}).
-ensure_loaded(Lk = {link, ID, LkOpts = #{ <<"type">> := <<"link">>, <<"lazy">> := Lazy }}, Opts) ->
+ensure_loaded(Lk = {link, ID, LkOpts = #{ <<"type">> := <<"link">>, <<"lazy">> := Lazy }}, RawOpts) ->
     % The link is to a submessage; either in lazy (unresolved) form, or direct
     % form.
+    Opts = hb_store:scope(RawOpts, local),
+    Store = hb_opts:get(store, no_viable_store, Opts),
     ?event(debug_cache,
         {loading_multi_link,
             {link, ID},
-            {link_opts, LkOpts}
+            {link_opts, LkOpts},
+            {store, Store}
         }
     ),
     case hb_cache:read(ID, hb_util:deep_merge(Opts, LkOpts, Opts)) of
         {ok, Next} ->
-            ?event(debug_cache, {loaded, {link, ID}, {read, Next}}),
+            ?event(debug_cache,
+                {loaded,
+                    {link, ID},
+                    {store, Store}
+                }),
             case Lazy of
                 true ->
                     % We have resolved the ID of the submessage, so we continue
@@ -88,10 +95,10 @@ ensure_loaded(Lk = {link, ID, LkOpts = #{ <<"type">> := <<"link">>, <<"lazy">> :
             ?event(debug_cache, {lazy_link_not_found, {link, ID}, {link_opts, LkOpts}}),
             throw({necessary_message_not_found, Lk})
     end;
-ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, Opts) ->
+ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, RawOpts) ->
     % If the user provided their own options, we merge them and _overwrite_
     % the options that are already set in the link.
-    ?event(debug_cache, {loading_lazy_link, {link, ID}, {link_opts, LinkOpts}}),
+    Opts = hb_store:scope(RawOpts, local),
     MergedOpts = hb_util:deep_merge(Opts, LinkOpts, Opts),
     case hb_cache:read(ID, MergedOpts) of
         {ok, LoadedMsg} ->
