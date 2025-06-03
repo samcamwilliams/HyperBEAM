@@ -231,19 +231,6 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    InMemoryKeys =
-        case fetch_cache_with_retry(Opts, Path) of
-            {group, Set} ->
-                sets:to_list(Set);
-            {link, Link} ->
-                list(Opts, Link);
-            {raw, #{value := Value}} when is_map(Value) ->
-                maps:keys(Value);
-            {raw, #{value := Value}} when is_list(Value) ->
-                Value;
-            nil ->
-                not_found
-        end,
     PersistentKeys =
         case get_persistent_store(Opts) of
             no_store ->
@@ -255,7 +242,7 @@ list(Opts, Path) ->
                     not_found -> not_found
                 end
         end,
-    case {InMemoryKeys, PersistentKeys} of
+    case {ets_keys(Opts, Path), PersistentKeys} of
         {not_found, not_found} ->
             not_found;
         {InMemoryKeys, not_found} ->
@@ -264,6 +251,26 @@ list(Opts, Path) ->
             {ok, PersistentKeys};
         {InMemoryKeys, PersistentKeys} ->
             {ok, hb_util:unique(InMemoryKeys ++ PersistentKeys)}
+    end.
+
+%% @doc List all of the keys in the store for a given path, supporting a special
+%% case for the root.
+ets_keys(Opts, <<"">>) -> ets_keys(Opts, <<"/">>);
+ets_keys(Opts, <<"/">>) ->
+    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    table_keys(Table, undefined);
+ets_keys(Opts, Path) ->
+    case fetch_cache_with_retry(Opts, Path) of
+        {group, Set} ->
+            sets:to_list(Set);
+        {link, Link} ->
+            list(Opts, Link);
+        {raw, #{value := Value}} when is_map(Value) ->
+            maps:keys(Value);
+        {raw, #{value := Value}} when is_list(Value) ->
+            Value;
+        nil ->
+            not_found
     end.
 
 %% @doc Determine the type of a key in the store.
