@@ -19,9 +19,23 @@
         <<"signature">>
     ]
 ).
-%% The list of tags that a user is explicitly committing to when they sign an
-%% ANS-104 message.
--define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>, <<"type">>]).
+%%% The list of keys that should be forced into the tag list, rather than being
+%%% encoded as fields in the TX record.
+-define(FORCED_TAG_FIELDS,
+    [
+        <<"quantity">>,
+        <<"manifest">>,
+        <<"data_size">>,
+        <<"data_tree">>,
+        <<"data_root">>,
+        <<"reward">>,
+        <<"denomination">>,
+        <<"signature_type">>
+    ]
+).
+%%% The list of tags that a user is explicitly committing to when they sign an
+%%% ANS-104 message.
+-define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
 %% List of tags that should be removed during `to'. These relate to the nested
 %% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
@@ -432,11 +446,15 @@ to(NormTABM, Req, Opts) when is_map(NormTABM) ->
     NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap, Opts),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
-    {RemainingMap, BaseTXList} =
+    ForcedTagFields =
+        maps:with(?FORCED_TAG_FIELDS, NormalizedMsgKeyMap),
+    NormalizedMsgKeyMap2 =
+        maps:without(?FORCED_TAG_FIELDS, NormalizedMsgKeyMap),
+    {RemainingMapWithoutForcedTags, BaseTXList} =
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
                 NormKey = hb_ao:normalize_key(Field),
-                case maps:find(NormKey, NormalizedMsgKeyMap) of
+                case maps:find(NormKey, NormalizedMsgKeyMap2) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
                         % NOTE: Do we really want to do this type coercion?
@@ -455,9 +473,10 @@ to(NormTABM, Req, Opts) when is_map(NormTABM) ->
                         }
                 end
             end,
-            {NormalizedMsgKeyMap, []},
+            {NormalizedMsgKeyMap2, []},
             hb_message:default_tx_list()
         ),
+    RemainingMap = maps:merge(RemainingMapWithoutForcedTags, ForcedTagFields),
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
     % Calculate which set of the remaining keys will be used as tags.
