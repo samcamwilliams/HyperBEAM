@@ -24,7 +24,6 @@
                         src="https://arweave.net/Ggr1cz-jbiDS2gAVFHxkoKzmNQQD4WcMTfipWyuEmgY"
                         alt="hyperbeam-logo"
                     />
-                    <p>Dashboard</p>
                 </div>
                 <div class="subheader-value">
 					<p>Operator:</p>
@@ -32,26 +31,9 @@
 						Loading...
 					</button>
 				</div>
-
-                <a
-                    class="graph-link"
-                    href="/~hyperbuddy@1.0/graph"
-                    target="_blank"
-                >
-                    Cache Visualizer
-                </a>
             </div>
         </header>
         <div class="view-wrapper">
-            <div class="message-id-wrapper">
-                <img
-                    src="https://arweave.net/S3qpd4CF_VSPD9DfVaWD4McFQy6XAUto2FLidcjofpM"
-                    alt="hyperbeam-flag-flow"
-                    width="20px"
-                />
-                <span>Node Id:</span>
-                <p class="message-value">...</p>
-            </div>
             <div class="section-groups">
                 <div class="bg-video">
                     <video
@@ -138,11 +120,17 @@
                     >
                         Console
                     </button>
+                    <button
+                        class="tab-button cache-tab-button"
+                        data-tab="cache-tab"
+                    >
+                        Cacheviz
+                    </button>
                 </div>
 
                 <div id="devices-tab" class="tab-content active">
                     <div id="info-section-lines" class="device-cards-container">
-                        <div class="info-line">
+                        <div class="loading-info-line">
                             <p>Loading...</p>
                         </div>
                     </div>
@@ -154,6 +142,10 @@
 
                 <div id="console-tab" class="tab-content">
                     <div id="console-section"></div>
+                </div>
+                
+                <div id="cache-tab" class="tab-content">
+                    <div id="cache-section"></div>
                 </div>
             </div>
         </div>
