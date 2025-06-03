@@ -166,7 +166,14 @@ read(Opts, RawKey) ->
                 no_store ->
                     not_found;
                 PersistentStore ->
-                    ResolvedKey = hb_store:resolve(PersistentStore, Key),
+                    % FIXME: It might happens some links can be in LRU while data on 
+                    % the permanent store and resolve doesn't produce the same key.
+                    ResolvedKey = case RawKey == Key of
+                      true ->
+                        hb_store:resolve(PersistentStore, RawKey);
+                      false ->
+                        Key
+                    end,
                     hb_store:read(PersistentStore, ResolvedKey)
             end;
         {raw, Entry = #{value := Value}} ->
