@@ -56,11 +56,11 @@ init(From, StoreOpts) ->
     % Create LRU tables
     CacheTable = ets:new(hb_cache_lru, [
         set,
-        public,
+        protected,
         {read_concurrency, true}
     ]),
-    CacheStatsTable = ets:new(hb_cache_lru_stats, [public, set]),
-    CacheIndexTable = ets:new(hb_cache_lru_index, [public, ordered_set]),
+    CacheStatsTable = ets:new(hb_cache_lru_stats, [set]),
+    CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
     From ! {ok, #{ <<"pid">> => self(), <<"cache-table">> => CacheTable }},
     #{
         cache_table => CacheTable,
@@ -217,7 +217,7 @@ make_link(Opts, RawExisting, New) ->
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
-                    no_viable_store;
+                    not_found;
                 Store ->
                     hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
