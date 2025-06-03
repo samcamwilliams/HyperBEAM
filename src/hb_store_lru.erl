@@ -113,7 +113,7 @@ server_loop(State =
             ?event(debug_lru, {put, {key, Key}, {value, Value}}),
             From ! {ok, Ref};
         {link, Existing, New, From, Ref} ->
-            link_cache_entry(State, Existing, New),
+            link_cache_entry(State, Existing, New, Opts),
             From ! {ok, Ref};
         {make_group, Key, From, Ref} ->
             ?event(debug_lru, {make_group, Key}),
@@ -362,16 +362,25 @@ fetch_cache_with_retry(Opts, Key, Retries) ->
 
 put_cache_entry(State, Key, Value, Opts) ->
     ValueSize = erlang:external_size(Value),
-    ?event(cache_lru, {putting_entry, {size, ValueSize}, {opts, Opts}}),
+    CacheSize = cache_size(State),
+    ?event(cache_lru, {putting_entry, {size, ValueSize}, {opts, Opts}, {cache_size, CacheSize}}),
     Capacity = hb_maps:get(<<"capacity">>, Opts, ?DEFAULT_LRU_CAPACITY),
-    case ValueSize =< Capacity of
-        false ->
-            offload_to_store(Key, Value, [], undefined, Opts);
-        true ->
-            case get_cache_entry(State, Key) of
-                nil ->
+    case get_cache_entry(State, Key) of
+        nil ->
+            % For new entries, we check if the size will the fit the full capacity (even by evicting keys).
+            FitInCache = ValueSize =< Capacity,
+            case FitInCache of
+                false ->
+                    case get_persistent_store(Opts) of
+                        no_store -> 
+                            skip;
+                        _ ->
+                            Group = handle_group(State, Key, Opts#{mode => offload}),
+                            offload_to_store(Key, Value, [], Group, Opts)
+                        end;
+                true ->
                     ?event(cache_lru, {assign_entry, Key, Value}),
-                    Group = handle_group(State, Key),
+                    Group = handle_group(State, Key, Opts),
                     assign_new_entry(
                         State,
                         Key,
@@ -380,23 +389,32 @@ put_cache_entry(State, Key, Value, Opts) ->
                         Capacity,
                         Group,
                         Opts
-                    );
-                Entry ->
-                    ?event(cache_lru, {replace_entry, Key, Value}),
-                    replace_entry(State, Key, Value, ValueSize, Entry)
-            end
+                    )
+            end;
+        Entry ->
+            ?event(cache_lru, {replace_entry, Key, Value}),
+            replace_entry(State, Key, Value, ValueSize, Entry)
     end.
+    % end.
 
-handle_group(State, Key) ->
+handle_group(State, Key, Opts) ->
     case filename:dirname(Key) of
         <<".">> -> undefined ;
         BaseDir ->
-            ensure_dir(State, BaseDir),
-            {group, Entry} = get_cache_entry(State, BaseDir),
-            BaseName = filename:basename(Key),
-            NewGroup = append_key_to_group(BaseName, Entry),
-            add_cache_entry(State, BaseDir, {group, NewGroup}),
-            BaseDir
+            case maps:get(mode, Opts, undefined) of
+                offload ->
+                    Store = get_persistent_store(Opts),
+                    ?event(cache_lru, {create_group, BaseDir}),
+                    hb_store:make_group(Store, BaseDir),
+                    BaseDir;
+              undefined -> 
+                    ensure_dir(State, BaseDir),
+                    {group, Entry} = get_cache_entry(State, BaseDir),
+                    BaseName = filename:basename(Key),
+                    NewGroup = append_key_to_group(BaseName, Entry),
+                    add_cache_entry(State, BaseDir, {group, NewGroup}),
+                    BaseDir
+            end
     end.
 ensure_dir(State, Path) ->
     PathParts = hb_path:term_to_path_parts(Path),
@@ -476,11 +494,11 @@ add_cache_entry(#{cache_table := Table}, Key, Value) ->
 add_cache_index(#{index_table := Table}, ID, Key) ->
     ets:insert(Table, {ID, Key}).
 
-link_cache_entry(State = #{cache_table := Table}, Existing, New) ->	
+link_cache_entry(State = #{cache_table := Table}, Existing, New, Opts) ->	
     ?event(cache_lru, {link, Existing, New}),
     % Remove the link from the previous linked entry
     clean_old_link(Table, New),
-    _ = handle_group(State, New),
+    _ = handle_group(State, New, Opts),
     ets:insert(Table, {New, {link, Existing}}),
     % Add links to the linked entry
     case ets:lookup(Table, Existing) of
@@ -606,11 +624,11 @@ offload_to_store(TailKey, TailValue, Links, Group, Opts) ->
                     hb_store:make_group(Store, Group)
             end,
             case hb_store:write(Store, TailKey, TailValue) of
-                {ok, CacheID} ->
-                    hb_store:make_link(Store, CacheID, TailKey),
+                ok ->
                     lists:foreach(
                         fun(Link) ->
-                            hb_store:make_link(Store, Link, TailKey)
+                            ResolvedPath = resolve(Opts, Link),
+                            hb_store:make_link(Store, ResolvedPath, Link)
                         end,
                         Links
                     ),
