@@ -316,9 +316,9 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
     %    original HTTP-Sig encoded message. We prefer keys from the original
     %    if conflicts arise.
     % 5. The resulting combined message is returned to the user.
-    {ok, EncOriginal} = to(TABM, Req#{ <<"index">> => false }, Opts),
-    OrigBody = hb_maps:get(<<"body">>, TABM, <<>>, Opts),
-    OrigContentType = hb_maps:get(<<"content-type">>, TABM, <<>>, Opts),
+    {ok, EncOriginal} = to(TABM, maps:without([<<"index">>], Req), Opts),
+    OrigBody = hb_maps:get(<<"body">>, EncOriginal, <<>>, Opts),
+    OrigContentType = hb_maps:get(<<"content-type">>, EncOriginal, <<>>, Opts),
     case {OrigBody, OrigContentType} of
         {<<>>, <<>>} ->
             % The message has no body or content-type set. Resolve the `index`

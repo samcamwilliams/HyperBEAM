@@ -211,10 +211,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.
     case resolve_hook(<<"request">>, Req, Msgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
-            ?event(
-                {result_after_preprocessing,
-                    hb_ao:normalize_keys(PreProcessedMsg, NodeMsg)}
-            ),
+            ?event({result_after_preprocessing, PreProcessedMsg}),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
             HTTPOpts = hb_maps:merge(
@@ -365,7 +362,7 @@ message_to_status(_Item, _NodeMsg) ->
 maybe_sign({Status, Res}, NodeMsg) ->
     {Status, maybe_sign(Res, NodeMsg)};
 maybe_sign(Res, NodeMsg) ->
-    ?event({maybe_sign, Res, NodeMsg}),
+    ?event({maybe_sign, Res}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res, NodeMsg) of

@@ -302,11 +302,12 @@ do_build(I, [Msg|Rest], ScopedKeys, Opts) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
     ScopedKey = lists:nth(I, ScopedKeys),
-    StepMsg = hb_message:convert(
-        hb_maps:merge(Msg, ScopedKey),
-        <<"structured@1.0">>,
-        Opts#{ topic => ao_internal }
-    ),
+    StepMsg =
+        hb_message:convert(
+            hb_maps:merge(Msg, ScopedKey),
+            <<"structured@1.0">>,
+            Opts#{ topic => ao_internal }
+        ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys, Opts)].
 
 %% @doc Parse a path part into a message or an ID.

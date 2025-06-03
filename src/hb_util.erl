@@ -337,14 +337,26 @@ message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
 message_to_ordered_list(List, _Opts) when is_list(List) ->
     List;
 message_to_ordered_list(Message, Opts) ->
-    Keys = hb_ao:keys(Message, Opts),
-    IntKeys = lists:sort(lists:map(fun int/1, Keys)),
-    message_to_ordered_list(Message, IntKeys, erlang:hd(IntKeys), Opts).
+    NormMessage = hb_ao:normalize_keys(Message, Opts),
+    Keys = hb_maps:keys(NormMessage, Opts) -- [<<"priv">>],
+    SortedKeys =
+        lists:map(
+            fun hb_ao:normalize_key/1,
+            lists:sort(lists:map(fun int/1, Keys))
+        ),
+    message_to_ordered_list(NormMessage, SortedKeys, erlang:hd(SortedKeys), Opts).
 message_to_ordered_list(_Message, [], _Key, _Opts) ->
     [];
 message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
-    case hb_ao:get(Key, Message, Opts#{ hashpath => ignore }) of
-        undefined -> throw({missing_key, Key, {remaining_keys, Keys}});
+    case hb_maps:get(Key, Message, undefined, Opts#{ hashpath => ignore }) of
+        undefined ->
+            throw(
+                {missing_key,
+                    {key, Key},
+                    {remaining_keys, Keys},
+                    {message, Message}
+                }
+            );
         Value ->
             [
                 Value
@@ -352,13 +364,13 @@ message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
                 message_to_ordered_list(
                     Message,
                     Keys,
-                    Key + 1,
+                    hb_ao:normalize_key(int(Key) + 1),
                     Opts
                 )
             ]
     end;
-message_to_ordered_list(_Message, [Key|_Keys], ExpectedKey, _Opts) ->
-    throw({missing_key, {expected, ExpectedKey, {next, Key}}}).
+message_to_ordered_list(Message, [Key|_Keys], ExpectedKey, _Opts) ->
+    throw({missing_key, {expected, ExpectedKey, {next, Key}, {message, Message}}}).
 
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,

@@ -40,7 +40,7 @@
 %%% results will lead to the store manager (this module) iterating to the next
 %%% store message given by the user. If none of the given store messages are 
 %%% able to execute a requested service, the store manager will return 
-%%% `{error, no_viable_store}`.
+%%% `not_found`.
 
 -module(hb_store).
 -export([behavior_info/1]).
@@ -161,7 +161,7 @@ scope(Store, Scope) ->
 %% default scope (local).
 get_store_scope(Store) ->
     case call_function(Store, scope, []) of
-        no_viable_store -> ?DEFAULT_SCOPE;
+        not_found -> ?DEFAULT_SCOPE;
         Scope -> Scope
     end.
 
@@ -231,7 +231,7 @@ path(_, Path) -> path(Path).
 add_path(Path1, Path2) -> Path1 ++ Path2.
 add_path(Store, Path1, Path2) ->
     case call_function(Store, add_path, [Path1, Path2]) of
-        no_viable_store -> add_path(Path1, Path2);
+        not_found -> add_path(Path1, Path2);
         Result -> Result
     end.
 
@@ -244,11 +244,11 @@ resolve(Modules, Path) -> call_function(Modules, resolve, [Path]).
 list(Modules, Path) -> call_function(Modules, list, [Path]).
 
 %% @doc Call a function on the first store module that succeeds. Returns its
-%% result, or no_viable_store if none of the stores succeed.
+%% result, or `not_found` if none of the stores succeed.
 call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
-    no_viable_store;
+    not_found;
 call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     try apply(Mod, Function, [Store | Args]) of
         not_found ->

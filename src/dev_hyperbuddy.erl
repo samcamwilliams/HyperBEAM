@@ -20,7 +20,7 @@ info() ->
 			<<"metrics.js">> => <<"metrics.js">>,
 			<<"devices.js">> => <<"devices.js">>,
 			<<"utils.js">> => <<"utils.js">>,
-			<<"main.js">> => <<"main.js">>,
+			<<"dashboard.js">> => <<"dashboard.js">>,
 			<<"graph.js">> => <<"graph.js">>
         },
         excludes => [<<"return_file">>]

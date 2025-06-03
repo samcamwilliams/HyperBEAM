@@ -71,7 +71,10 @@ write(Opts, PathComponents, Value) ->
 
 %% @doc List contents of a directory in the store.
 list(Opts, Path) ->
-    file:list_dir(add_prefix(Opts, Path)).
+    case file:list_dir(add_prefix(Opts, Path)) of
+        {ok, Files} -> {ok, lists:map(fun hb_util:bin/1, Files)};
+        {error, _} -> not_found
+    end.
 
 %% @doc Replace links in a path successively, returning the final path.
 %% Each element of the path is resolved in turn, with the result of each

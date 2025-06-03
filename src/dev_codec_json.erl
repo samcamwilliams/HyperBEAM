@@ -12,7 +12,16 @@ content_type(_) -> {ok, <<"application/json">>}.
 to(Msg, _Req, _Opts) when is_binary(Msg) ->
     {ok, hb_util:bin(json:encode(Msg))};
 to(Msg, _Req, _Opts) ->
-    {ok, hb_util:bin(json:encode(hb_private:reset(Msg)))}.
+    {
+        ok,
+        hb_util:bin(
+            json:encode(
+                hb_private:reset(
+                    hb_cache:ensure_all_loaded(Msg)
+                )
+            )
+        )
+    }.
 
 %% @doc Decode a JSON string to a message.
 from(Map, _Req, _Opts) when is_map(Map) -> {ok, Map};
@@ -59,6 +68,6 @@ serialize(Base, Msg, Opts) ->
     {ok,
         #{
             <<"content-type">> => <<"application/json">>,
-            <<"body">> => to(Base, Msg, Opts)
+            <<"body">> => hb_util:ok(to(Base, Msg, Opts))
         }
     }.

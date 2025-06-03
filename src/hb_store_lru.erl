@@ -25,6 +25,10 @@
 %%% options.
 -define(DEFAULT_LRU_CAPACITY, 4_000_000_000).
 
+%% @doc Maximum number of retries when fetching cache entries that aren't
+%% immediately found due to timing issues in concurrent operations.
+-define(RETRY_THRESHOLD, 2).
+
 %% @doc Start the LRU cache.
 start(StoreOpts = #{ <<"name">> := Name }) ->
     ?event(cache_lru, {starting_lru_server, Name}),
@@ -154,16 +158,16 @@ write(Opts, RawKey, Value) ->
 %% Because the cache uses LRU, the key is moved on the most recent used key to
 %% cycle and re-prioritize cache entry.
 read(Opts, RawKey) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
+    #{ <<"pid">> := Server } = hb_store:find(Opts),
     Key = resolve(Opts, RawKey),
-    case get_cache_entry(Table, Key) of
+    case fetch_cache_with_retry(Opts, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
                     not_found;
                 PersistentStore ->
-                    hb_cache:read(Key, #{ store => PersistentStore })
+                    ResolvedKey = hb_store:resolve(PersistentStore, Key),
+                    hb_store:read(PersistentStore, ResolvedKey)
             end;
         {raw, Entry = #{value := Value}} ->
             Server ! {update_recent, Key, Entry, self(), Ref = make_ref()},
@@ -173,7 +177,9 @@ read(Opts, RawKey) ->
         {link, Link} ->
             ?event({link_found, RawKey, Link}),
             read(Opts, Link);
-        _ -> not_found
+        Unexpected ->
+            ?event({unexpected_result, {unexpected, Unexpected}}),
+            not_found
     end.
 
 resolve(Opts, Key) ->
@@ -192,8 +198,7 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
             {generated_partial_path_to_test, PathPart}
         }
     ),
-    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
-    case get_cache_entry(Table, PathPart) of
+    case fetch_cache_with_retry(Opts, PathPart) of
         {link, Link} ->
             resolve(Opts, Link, Rest);
         _ ->
@@ -205,14 +210,14 @@ make_link(_, Link, Link) ->
     ok;
 make_link(Opts, RawExisting, New) ->
     Existing = hb_store:join(RawExisting),
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
+    #{ <<"pid">> := Server } = hb_store:find(Opts),
     ExistingKeyBin = convert_if_list(RawExisting),
     NewKeyBin = convert_if_list(New),
-    case get_cache_entry(Table, ExistingKeyBin) of
+    case fetch_cache_with_retry(Opts, ExistingKeyBin) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
-                    no_viable_store;
+                    not_found;
                 Store ->
                     hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
@@ -226,10 +231,8 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
     InMemoryKeys =
-        case get_cache_entry(Table, Path) of
+        case fetch_cache_with_retry(Opts, Path) of
             {group, Set} ->
                 sets:to_list(Set);
             {link, Link} ->
@@ -239,35 +242,40 @@ list(Opts, Path) ->
             {raw, #{value := Value}} when is_list(Value) ->
                 Value;
             nil ->
-                []
+                not_found
         end,
-    case get_persistent_store(Opts) of
-        no_store ->
+    PersistentKeys =
+        case get_persistent_store(Opts) of
+            no_store ->
+                not_found;
+            Store ->
+                ResolvedPath = hb_store:resolve(Store, Path),
+                case hb_store:list(Store, ResolvedPath) of
+                    {ok, Keys} -> Keys;
+                    not_found -> not_found
+                end
+        end,
+    case {InMemoryKeys, PersistentKeys} of
+        {not_found, not_found} ->
+            not_found;
+        {InMemoryKeys, not_found} ->
             {ok, InMemoryKeys};
-        Store ->
-            PersistentKeys =
-                lists:map(
-                    fun hb_util:bin/1,
-                    case hb_store:list(Store, Path) of
-                        {error, _} -> [];
-                        {ok, Keys} -> Keys;
-                        Keys -> Keys
-                    end
-                ),
-            {ok, InMemoryKeys ++ PersistentKeys}
+        {not_found, PersistentKeys} ->
+            {ok, PersistentKeys};
+        {InMemoryKeys, PersistentKeys} ->
+            {ok, hb_util:unique(InMemoryKeys ++ PersistentKeys)}
     end.
 
 %% @doc Determine the type of a key in the store.
 type(Opts, Key) ->
-    #{ <<"cache-table">> := Table, <<"pid">> := Server } = hb_store:find(Opts),
-    sync(Server),
-    case get_cache_entry(Table, Key) of
+    case fetch_cache_with_retry(Opts, Key) of
         nil ->
             case get_persistent_store(Opts) of
                 no_store ->
                     not_found;
                 Store ->
-                    hb_store:type(Store, Key)
+                    ResolvedKey = hb_store:resolve(Store, Key),
+                    hb_store:type(Store, ResolvedKey)
             end;
         {raw, _} ->
             simple;
@@ -324,6 +332,24 @@ get_cache_entry(Table, Key) ->
         [] ->
             nil;
         [{_, Entry}] ->
+            Entry
+    end.
+
+fetch_cache_with_retry(Opts, Key) ->
+    fetch_cache_with_retry(Opts, Key, 1).
+
+fetch_cache_with_retry(Opts, Key, Retries) ->
+    #{<<"cache-table">> := Table, <<"pid">> := Server} = hb_store:find(Opts),
+    case get_cache_entry(Table, Key) of
+        nil ->
+            case Retries < ?RETRY_THRESHOLD of
+                true ->
+                    sync(Server),
+                    fetch_cache_with_retry(Opts, Key, Retries + 1);
+                false ->
+                    nil
+            end;
+        Entry ->
             Entry
     end.
 
@@ -515,7 +541,6 @@ evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
                 {raw, RawEntry} ->
                     RawEntry
             end,
-
             ?event(cache_lru, {evict, TailKey, claiming_size, ReclaimedSize}),
             delete_cache_index(State, ID),
             delete_cache_entry(State, TailKey),
@@ -730,7 +755,7 @@ evict_but_able_to_read_from_fs_store_test() ->
     ?assertEqual({ok, Binary}, read(StoreOpts, <<"key2">>)),
     % Directly offloads if the data is more than the LRU capacity
     write(StoreOpts, <<"sub/key">>, crypto:strong_rand_bytes(600)),
-    ?assertMatch({ok, _}, read(StoreOpts, <<"sub">>)).
+    ?assertMatch({ok, _}, read(StoreOpts, <<"sub/key">>)).
 
 stop_test() ->
     StoreOpts = test_opts(default, 500),
