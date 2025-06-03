@@ -319,7 +319,6 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
     {ok, EncOriginal} = to(TABM, maps:without([<<"index">>], Req), Opts),
     OrigBody = hb_maps:get(<<"body">>, EncOriginal, <<>>, Opts),
     OrigContentType = hb_maps:get(<<"content-type">>, EncOriginal, <<>>, Opts),
-    ?event(debug_index, {index, {orig_body, OrigBody}, {orig_content_type, OrigContentType}}),
     case {OrigBody, OrigContentType} of
         {<<>>, <<>>} ->
             % The message has no body or content-type set. Resolve the `index`
