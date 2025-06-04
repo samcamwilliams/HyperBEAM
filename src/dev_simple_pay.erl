@@ -230,11 +230,12 @@ get_balance_and_top_up_test() ->
     % not have generated a charge in itself. The top-up did not generate a charge
     % because it is the operator that performed it, and not a user.
     ?assertEqual(180, NewBalance),
+    ?hr(),
     {ok, Res2} =
         hb_http:get(
             Node,
             hb_message:commit(
-                #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
+                #{<<"path">> => <<"/~p4@1.0/balance">>},
                 Opts#{ priv_wallet => ClientWallet }
             ),
             Opts
