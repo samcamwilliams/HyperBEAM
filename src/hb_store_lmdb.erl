@@ -379,7 +379,7 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
        end,
        SearchPathSize = byte_size(SearchPath),
        sync(StoreOpts),
-       Children = lmdb:fold(Env, default,
+       Res = lmdb:fold(Env, default,
            fun(Key, _Value, Acc) ->
                % Match keys that start with our search path (like dir listing)
                case byte_size(Key) > SearchPathSize andalso 
@@ -408,8 +408,14 @@ list(StoreOpts, Path) when is_map(StoreOpts), is_binary(Path) ->
            end,
            []
        ),
-       ?event({listing_path, Path, resolved_path, ResolvedPath, search_path, SearchPath, children, Children}),
-       Children
+       case Res of
+           {ok, []} ->
+               % No children, return not_found to indicate that the path is
+               % empty
+               not_found;
+           _ ->
+               Res
+       end
     catch
        _:Error -> {error, Error}
     end;
