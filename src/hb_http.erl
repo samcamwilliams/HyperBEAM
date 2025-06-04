@@ -673,7 +673,6 @@ accept_to_codec(TABMReq, Opts) ->
             mime_to_codec(hb_maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts),
 			Opts
         ),
-    ?event(http, {accept_to_codec, AcceptCodec}),
     case AcceptCodec of
         not_specified ->
             % We hold off until confirming that the codec is not directly in the
@@ -825,7 +824,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
 %% 1. The path in the message
 %% 2. The path in the request URI
 normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
-    ?event(debug_accept, {req, {explicit, Req}}),
+    ?event({adding_method_and_path_from_request, {explicit, Req}}),
     Method = cowboy_req:method(Req),
     MsgPath =
         hb_ao:get(
