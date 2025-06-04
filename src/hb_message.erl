@@ -482,7 +482,7 @@ format(Map, Indent) when is_map(Map) ->
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        maps:to_list(Map) ++
+        maps:to_list(maps:without([<<"path">>, <<"device">>], Map)) ++
         FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
