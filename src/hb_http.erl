@@ -496,7 +496,7 @@ reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, TABMReq, Status, RawMessage, Opts) ->
     Message = hb_ao:normalize_keys(RawMessage, Opts),
-    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(TABMReq, Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(Status, TABMReq, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr, Opts),
@@ -562,7 +562,7 @@ add_cors_headers(Msg, ReqHdr, Opts) ->
     hb_maps:merge(WithAllowHeaders, Msg, Opts).
 
 %% @doc Generate the headers and body for a HTTP response message.
-encode_reply(TABMReq, Message, Opts) ->
+encode_reply(Status, TABMReq, Message, Opts) ->
     Codec = accept_to_codec(TABMReq, Opts),
     ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
     BaseHdrs =
@@ -576,11 +576,32 @@ encode_reply(TABMReq, Message, Opts) ->
             end,
 			Opts
         ),
+    AcceptBundle = hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)),
     % Codecs generally do not need to specify headers outside of the content-type,
     % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
-    case Codec of
-        <<"httpsig@1.0">> ->
+    case {Status, Codec, AcceptBundle} of
+        {404, <<"httpsig@1.0">>, false} ->
+            {ok, ErrMsg} =
+                dev_hyperbuddy:return_file(
+                    <<"hyperbuddy@1.0">>,
+                    <<"404.html">>
+                ),
+            {ok,
+                maps:without([<<"body">>], ErrMsg),
+                maps:get(<<"body">>, ErrMsg, <<>>)
+            };
+        {500, <<"httpsig@1.0">>, false} ->
+            {ok, ErrMsg} =
+                dev_hyperbuddy:return_file(
+                    <<"hyperbuddy@1.0">>,
+                    <<"500.html">>
+                ),
+            {ok,
+                maps:without([<<"body">>], ErrMsg),
+                maps:get(<<"body">>, ErrMsg, <<>>)
+            };
+        {_, <<"httpsig@1.0">>, _} ->
             TABM =
                 hb_message:convert(
                     Message,
@@ -591,7 +612,7 @@ encode_reply(TABMReq, Message, Opts) ->
             {ok, EncMessage} =
                 dev_codec_httpsig:to(
                     TABM,
-                    case hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)) of
+                    case AcceptBundle of
                         true ->
                             #{
                                 <<"bundle">> => true
@@ -609,7 +630,7 @@ encode_reply(TABMReq, Message, Opts) ->
                 hb_maps:without([<<"body">>], EncMessage, Opts),
                 hb_maps:get(<<"body">>, EncMessage, <<>>, Opts)
             };
-        <<"ans104@1.0">> ->
+        {_, <<"ans104@1.0">>, _} ->
             % The `ans104@1.0' codec is a binary format, so we must serialize
             % the message to a binary before sending it.
             {

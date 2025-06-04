@@ -21,7 +21,9 @@ info() ->
 			<<"devices.js">> => <<"devices.js">>,
 			<<"utils.js">> => <<"utils.js">>,
 			<<"dashboard.js">> => <<"dashboard.js">>,
-			<<"graph.js">> => <<"graph.js">>
+			<<"graph.js">> => <<"graph.js">>,
+            <<"404.html">> => <<"404.html">>,
+            <<"500.html">> => <<"500.html">>
         },
         excludes => [<<"return_file">>]
     }.
