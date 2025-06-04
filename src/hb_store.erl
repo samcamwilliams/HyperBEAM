@@ -265,7 +265,7 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 call_function(X, Function, Args) ->
     {Time, Result} = timer:tc(fun() -> do_call_function(X, Function, Args) end),
     hb_event:increment(<<"store_duration">>, hb_util:bin(Function), #{}, Time),
-    hb_event:increment(<<"store">>, hb_util:bin(Function), #{}, Time),
+    hb_event:increment(<<"store">>, hb_util:bin(Function), #{}, 1),
     Result.
 -else.
 call_function(X, Function, Args) ->
