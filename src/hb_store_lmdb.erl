@@ -163,9 +163,10 @@ is_link(Value) ->
 to_path(PathParts) ->
     hb_util:bin(lists:join(<<"/">>, PathParts)).
 
-
 %% @doc Unified read function that handles LMDB reads with retry logic.
 %% Returns {ok, Value}, not_found, or performs flush and retries.
+read_with_retry(Opts, Path) -> 
+    read_with_retry(Opts, Path, ?MAX_RETRIES).
 read_with_retry(_Opts, _Path, 0) -> 
     not_found;
 read_with_retry(Opts, Path, RetriesRemaining) ->
@@ -192,7 +193,7 @@ read_with_flush(Opts, Path) ->
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
 read_direct(Opts, Path) ->
-    case read_with_retry(Opts, Path, ?MAX_RETRIES) of
+    case read_with_retry(Opts, Path) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
             case is_link(Value) of
