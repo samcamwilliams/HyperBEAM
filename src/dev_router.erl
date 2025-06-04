@@ -795,7 +795,7 @@ dynamic_router() ->
     ProxyWallet = ar_wallet:new(),
     ExecNode =
         hb_http_server:start_node(
-            ExecOpts = #{ priv_wallet => ExecWallet }
+            ExecOpts = #{ priv_wallet => ExecWallet, store => hb_opts:get(store) }
         ),
     Node = hb_http_server:start_node(ProxyOpts = #{
         snp_trusted => [
@@ -814,12 +814,7 @@ dynamic_router() ->
                     <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
             }
         ],
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ProxyWallet,
         on => 
             #{
@@ -847,8 +842,8 @@ dynamic_router() ->
                 <<"performance-weight">> => 1,
                 <<"score-preference">> => 4,
                 <<"is-admissible">> => #{ 
-                  <<"device">> => <<"snp@1.0">>,
-                  <<"path">> => <<"verify">>
+                    <<"device">> => <<"snp@1.0">>,
+                    <<"path">> => <<"verify">>
                 }
             }
         }
@@ -1313,18 +1308,18 @@ add_route_test() ->
     ?assertMatch(<<"new">>, Recvd).
 
 relay_nearest_test() ->
-    Peer1 = <<"https://tee-2.forward.computer">>,
-    Peer2 = <<"https://tee-3.forward.computer">>,
-    HTTPSOpts = #{ http_client => httpc },
-    {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
-    {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
+    Peer1 = hb_http_server:start_node(#{ priv_wallet => W1 = ar_wallet:new() }),
+    Peer2 = hb_http_server:start_node(#{ priv_wallet => W2 = ar_wallet:new() }),
+    Address1 = hb_util:human_id(ar_wallet:to_address(W1)),
+    Address2 = hb_util:human_id(ar_wallet:to_address(W2)),
     Peers = [Address1, Address2],
     Node =
         hb_http_server:start_node(Opts = #{
+            store => hb_opts:get(store),
             priv_wallet => ar_wallet:new(),
             routes => [
                 #{
-                    <<"template">> => <<"/.*~process@1.0/.*">>,
+                    <<"template">> => <<"/.*">>,
                     <<"strategy">> => <<"Nearest">>,
                     <<"nodes">> => [
                         #{
@@ -1342,13 +1337,10 @@ relay_nearest_test() ->
     {ok, RelayRes} =
         hb_http:get(
             Node,
-            <<
-                "/~relay@1.0/call?relay-path=",
-                    "/CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM~process@1.0",
-                    "/slot"
-            >>,
-            #{}
+            <<"/~relay@1.0/call?relay-path=~hyperbuddy@1.0/dashboard">>,
+            Opts
         ),
+    ?event({relay_res, RelayRes}),
     HasValidSigner =
         lists:any(
             fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes, Opts)) end,
