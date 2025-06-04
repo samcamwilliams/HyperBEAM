@@ -17,7 +17,7 @@ counters() ->
             {Group, Name, Count}
         ||
             {{default, <<"event">>, [Group, Name], _}, Count, _}
-                <- ets:tab2list(prometheus_counter_table)
+                <- raw_counters()
         ],
     lists:foldl(
         fun({Group, Name, Count}, Acc) -> 
@@ -30,6 +30,14 @@ counters() ->
         #{},
         UnaggregatedCounts
     ).
+
+-ifdef(STORE_EVENTS).
+raw_counters() ->
+    ets:tab2list(prometheus_counter_table).
+-else.
+raw_counters() ->
+    [].
+-endif.
 
 -ifdef(NO_EVENTS).
 log(_X) -> ok.
