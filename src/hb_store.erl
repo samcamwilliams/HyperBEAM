@@ -57,6 +57,9 @@
 %% @doc The number of write and read operations to perform in the benchmark.
 -define(STORE_BENCH_WRITE_OPS, 100_000).
 -define(STORE_BENCH_READ_OPS, 100_000).
+-define(BENCH_MSG_WRITE_OPS, 250).
+-define(BENCH_MSG_READ_OPS, 250).
+-define(BENCH_MSG_DATA_SIZE, 1024).
 
 behavior_info(callbacks) ->
     [
@@ -405,15 +408,16 @@ store_suite_test_() ->
 
 benchmark_suite_test_() ->
     generate_test_suite([
-        {"benchmark store", fun benchmark_store/1}
+        {"benchmark key read write", fun benchmark_key_read_write/1},
+        {"benchmark message read write", fun benchmark_message_read_write/1}
     ]).
 
 %% @doc Benchmark a store. By default, we write 10,000 keys and read 10,000
 %% keys. This can be altered by setting the `STORE_BENCH_WRITE_OPS' and
 %% `STORE_BENCH_READ_OPS' macros.
-benchmark_store(Store) ->
-    benchmark_store(Store, ?STORE_BENCH_WRITE_OPS, ?STORE_BENCH_READ_OPS).
-benchmark_store(Store, WriteOps, ReadOps) ->
+benchmark_key_read_write(Store) ->
+    benchmark_key_read_write(Store, ?STORE_BENCH_WRITE_OPS, ?STORE_BENCH_READ_OPS).
+benchmark_key_read_write(Store, WriteOps, ReadOps) ->
     start(Store),
     timer:sleep(100),
     ?event(
@@ -467,6 +471,106 @@ benchmark_store(Store, WriteOps, ReadOps) ->
                     fun(Key, Count) -> 
                         case read(Store, Key) of
                             {ok, _} -> Count;
+                            _ -> Count + 1
+                        end
+                    end,
+                    0,
+                    ReadKeys
+                )
+            end
+        ),
+    % Calculate read rate.
+    ReadRate = erlang:round(ReadOps / (ReadTime / 1000000)),
+    hb_util:eunit_print(
+        "Read ~s records in ~p ms (~s records/s)",
+        [
+            hb_util:human_int(ReadOps),
+            ReadTime/1000,
+            hb_util:human_int(ReadRate)
+        ]
+    ),
+    ?assertEqual(0, NotFoundCount, "Written keys not found in store.").
+
+benchmark_message_read_write(Store) ->
+    benchmark_message_read_write(Store, ?BENCH_MSG_WRITE_OPS, ?BENCH_MSG_READ_OPS).
+benchmark_message_read_write(Store, WriteOps, ReadOps) ->
+    start(Store),
+    Opts = #{ store => Store, priv_wallet => hb:wallet() },
+    TestDataSize = ?BENCH_MSG_DATA_SIZE * 8, % in _bits_
+    timer:sleep(100),
+    ?event(
+        {benchmarking,
+            {store, Store},
+            {write_ops, WriteOps},
+            {read_ops, ReadOps}
+        }
+    ),
+    % Generate a random message to write and the keys to read ahead of time.
+    Msgs =
+        lists:map(
+            fun(N) ->
+                #{
+                    <<"process">> => hb_util:human_id(crypto:strong_rand_bytes(32)),
+                    <<"slot">> => N,
+                    <<"message">> =>
+                        hb_message:commit(
+                            #{
+                                <<"body">> => <<"test", 0:TestDataSize, N:32>>
+                            },
+                            Opts
+                        )
+                }
+            end,
+            lists:seq(1, WriteOps)
+        ),
+    hb_util:eunit_print(
+        "Generated ~s messages (size ~s bits)",
+        [
+            hb_util:human_int(WriteOps),
+            hb_util:human_int(TestDataSize)
+        ]
+    ),
+    {WriteTime, MsgPairs} =
+        timer:tc(
+            fun() ->
+                lists:map(
+                    fun(Msg) ->
+                        {hb_util:ok(hb_cache:write(Msg, Opts)), Msg}
+                    end,
+                    Msgs
+                )
+            end
+        ),
+    % Calculate write rate.
+    WriteRate = erlang:round(WriteOps / (WriteTime / 1000000)),
+    hb_util:eunit_print(
+        "Wrote ~s records in ~p ms (~s records/s)",
+        [
+            hb_util:human_int(WriteOps),
+            WriteTime/1000,
+            hb_util:human_int(WriteRate)
+        ]
+    ),
+    % Generate keys to read ahead of time.
+    ReadKeys =
+        lists:map(
+            fun(_) ->
+                lists:nth(rand:uniform(length(MsgPairs)), MsgPairs)
+            end,
+            lists:seq(1, ReadOps)
+        ),
+    % Time random reads.
+    {ReadTime, NotFoundCount} =
+        timer:tc(
+            fun() ->
+                lists:foldl(
+                    fun({MsgID, Msg}, Count) -> 
+                        case hb_cache:read(MsgID, Opts) of
+                            {ok, Msg1} ->
+                                case hb_cache:ensure_all_loaded(Msg1, Opts) of
+                                    Msg -> Count;
+                                    _ -> Count + 1
+                                end;
                             _ -> Count + 1
                         end
                     end,
