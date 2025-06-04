@@ -332,7 +332,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    MultiOpts = #{
+    #{
         nodes := Nodes,
         responses := Responses,
         stop_after := StopAfter,
@@ -342,8 +342,7 @@ multirequest(Config, Method, Path, Message, Opts) ->
     ?event(http,
         {multirequest_opts_parsed,
             {config, Config},
-            {message, Message},
-            {multirequest_opts, MultiOpts}
+            {message, Message}
         }),
     AllResults =
         if Parallel ->
