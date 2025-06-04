@@ -152,14 +152,21 @@ validate_next_slot(Msg1, [NextAssignment|Assignments], Lookahead, Last, Opts) ->
             ?event(next_profiling, setting_cache),
             ?event(next, {setting_cache, {assignments, length(Assignments)}}),
             NextState =
-                hb_private:set(
-                    Msg1,
-                    #{ <<"scheduler@1.0">> => #{
-                        <<"assignments">> => Assignments,
-                        <<"lookahead-worker">> => Lookahead
-                    }},
-                    Opts
-                ),
+                case hb_util:atom(hb_opts:get(scheduler_in_memory_cache, false, Opts)) of
+                    true ->
+                        hb_private:set(
+                            Msg1,
+                            #{ <<"scheduler@1.0">> => #{
+                                <<"assignments">> => Assignments,
+                                <<"lookahead-worker">> => Lookahead
+                            }},
+                            Opts
+                        );
+                    false ->
+                        Msg1#{
+                            <<"lookahead-worker">> => Lookahead
+                        }
+                end,
             ?event(debug_next,
                 {next_returning,
                     {slot, NextAssignmentSlot},
