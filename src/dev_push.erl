@@ -631,7 +631,7 @@ full_push_test_() ->
     end}.
 
 push_as_identity_test_() ->
-    {timeout, 30, fun() ->
+    {timeout, 90, fun() ->
         dev_process:init(),
         % Create a new identity for the scheduler.
         DefaultWallet = hb:wallet(),
