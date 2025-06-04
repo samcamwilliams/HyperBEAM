@@ -354,7 +354,7 @@ uncommitted(Msg, Opts) ->
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
 signers(Msg, Opts) ->
-    hb_ao:get(<<"committers">>, Msg, [], Opts).
+    hb_util:ok(dev_message:committers(Msg, #{}, Opts)).
 
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
