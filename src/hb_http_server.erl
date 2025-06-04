@@ -405,7 +405,7 @@ set_opts(Opts) ->
     end.
 set_opts(Request, Opts) ->
     PerparedOpts = hb_opts:mimic_default_types(
-        hb_private:reset(Opts),
+        Opts,
         new_atoms
     ),
     PreparedRequest = hb_opts:mimic_default_types(
@@ -418,13 +418,15 @@ set_opts(Request, Opts) ->
             PreparedRequest
         ),
     % Get the current node_history
-    NewHistory = case hb_opts:get(node_history, [], PerparedOpts) of
-        [] -> [ maps:without([node_history], PerparedOpts), maps:without([node_history], MergedOpts) ];
-        History -> History ++ [ maps:without([node_history], MergedOpts) ]
-    end,
+    % NewHistory = case hb_opts:get(node_history, [], PerparedOpts) of
+    %     [] -> [ hb_private:reset(maps:without([node_history], PerparedOpts)), hb_private:reset(maps:without([node_history], MergedOpts)) ];
+    %     History -> History ++ [ hb_private:reset(maps:without([node_history], MergedOpts)) ]
+    % end,
+    History = hb_opts:get(node_history, [], Opts) ++ [ hb_private:reset(maps:without([node_history], PreparedRequest)) ],
+    % TODO: Priv reset history before adding to node history
     FinalOpts = MergedOpts#{
         http_server => hb_opts:get(http_server, no_server, Opts),
-        node_history => NewHistory
+        node_history => History
     },
     {set_opts(FinalOpts), FinalOpts}.
 

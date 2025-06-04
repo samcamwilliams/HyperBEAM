@@ -1207,7 +1207,7 @@ cache_remote_schedule(Schedule, Opts) ->
                 fun(Assignment) ->
                     % We do not care about the result of the write because it is only
                     % an additional cache.
-                    ?event(debug_sched,
+                    ?event(debug_schedd,
                         {writing_assignment,
                             {assignment, maps:get(<<"slot">>, Assignment)}
                         }

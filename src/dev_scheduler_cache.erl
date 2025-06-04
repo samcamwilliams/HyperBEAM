@@ -6,6 +6,11 @@
 
 %% @doc Write an assignment message into the cache.
 write(Assignment, Opts) ->
+    % ?event(debug_schedd,
+    %     {writing_assignment,
+    %         {assignment, maps:get(<<"slot">>, Assignment)}
+    %     }
+    % ),
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
     ProcID = hb_ao:get(<<"process">>, Assignment),
