@@ -267,7 +267,9 @@ write_key(Base, <<"commitments">>, _HPAlg, RawCommitments, Store, Opts) ->
             )
         end,
         Commitments
-    );
+    ),
+    % Link the commitments base to `base/commitments`.
+    hb_store:make_link(Store, CommitmentsBase, <<Base/binary, "/commitments">>);
 write_key(Base, Key, HPAlg, Value, Store, Opts) ->
     KeyHashPath =
         hb_path:hashpath(
@@ -370,8 +372,7 @@ store_read(Path, Store, Opts) ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, RawSubpaths} ->
                     Subpaths =
-                        lists:map(fun hb_util:bin/1, RawSubpaths)
-                        ++ [<<"commitments">>],
+                        lists:map(fun hb_util:bin/1, RawSubpaths),
                     ?event(
                         {listed,
                             {original_path, Path},
@@ -406,7 +407,11 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
                     % List the commitments for this message, and load them into
                     % memory. If there no commitments at the path, we exclude
                     % commitments from the list of links.
-                    CommPath = commitment_path(RootPath, Opts),
+                    CommPath =
+                        hb_store:resolve(
+                            Store,
+                            hb_store:path(Store, [RootPath, <<"commitments">>])
+                        ),
                     ?event(
                         {reading_commitments,
                             {root_path, RootPath},
