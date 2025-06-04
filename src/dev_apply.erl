@@ -218,22 +218,23 @@ reverse_resolve_pair_test() ->
 
 apply_over_http_test() ->
     Node = hb_http_server:start_node(),
-    Signed = hb_message:commit(
-        #{
-            <<"device">> => <<"apply@1.0">>,
-            <<"user-request">> =>
-                #{
-                    <<"path">> => <<"/test-key">>,
-                    <<"test-key">> => <<"DATA">>
-                }
-        },
-       hb:wallet()
-    ),
+    Signed =
+        hb_message:commit(
+            #{
+                <<"device">> => <<"apply@1.0">>,
+                <<"user-request">> =>
+                    #{
+                        <<"path">> => <<"/test-key">>,
+                        <<"test-key">> => <<"DATA">>
+                    }
+            },
+            #{ priv_wallet => hb:wallet() }
+        ),
     ?assertEqual(
         {ok, <<"DATA">>},
         hb_ao:resolve(
             Signed#{ <<"path">> => <<"/user-request">> },
-            #{}
+            #{ priv_wallet => hb:wallet() }
         )
     ),
     ?assertEqual(
@@ -243,6 +244,6 @@ apply_over_http_test() ->
             Node,
             <<"/user-request">>,
             Signed,
-            #{}
+            #{ priv_wallet => hb:wallet() }
         )
     ).
