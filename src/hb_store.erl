@@ -69,8 +69,19 @@ behavior_info(callbacks) ->
 
 %%% Store named terms registry functions.
 
+-ifdef(STORE_EVENTS).
 %% @doc Find or spawn a store instance by its store opts.
-find(StoreOpts = #{ <<"store-module">> := Mod }) ->
+find(StoreOpts) ->
+    {Time, Result} = timer:tc(fun() -> do_find(StoreOpts) end),
+    hb_event:increment(<<"store_duration">>, <<"find">>, #{}, Time),
+    hb_event:increment(<<"store">>, <<"find">>, #{}, 1),
+    Result.
+-else.
+find(StoreOpts) ->
+    do_find(StoreOpts).
+-endif.
+
+do_find(StoreOpts = #{ <<"store-module">> := Mod }) ->
     Name = maps:get(<<"name">>, StoreOpts, Mod),
     LookupName = {store, Mod, Name},
     case get(LookupName) of
@@ -244,21 +255,34 @@ resolve(Modules, Path) -> call_function(Modules, resolve, [Path]).
 list(Modules, Path) -> call_function(Modules, list, [Path]).
 
 %% @doc Call a function on the first store module that succeeds. Returns its
-%% result, or `not_found` if none of the stores succeed.
-call_function(X, _Function, _Args) when not is_list(X) ->
-    call_function([X], _Function, _Args);
-call_function([], _Function, _Args) ->
+%% result, or `not_found` if none of the stores succeed. If `TIME_CALLS` is set,
+%% this function will also time the call and increment the appropriate event
+%% counter.
+-ifdef(STORE_EVENTS).
+call_function(X, Function, Args) ->
+    {Time, Result} = timer:tc(fun() -> do_call_function(X, Function, Args) end),
+    hb_event:increment(<<"store_duration">>, hb_util:bin(Function), #{}, Time),
+    hb_event:increment(<<"store">>, hb_util:bin(Function), #{}, Time),
+    Result.
+-else.
+call_function(X, Function, Args) ->
+    do_call_function(X, Function, Args).
+-endif.
+
+do_call_function(X, _Function, _Args) when not is_list(X) ->
+    do_call_function([X], _Function, _Args);
+do_call_function([], _Function, _Args) ->
     not_found;
-call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
+do_call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     try apply(Mod, Function, [Store | Args]) of
         not_found ->
-            call_function(Rest, Function, Args);
+            do_call_function(Rest, Function, Args);
         Result ->
             Result
     catch
         Class:Reason:Stacktrace ->
             ?event(warning, {store_call_failed, {Class, Reason, Stacktrace}}),
-            call_function(Rest, Function, Args)
+            do_call_function(Rest, Function, Args)
     end.
 
 %% @doc Call a function on all modules in the store.
