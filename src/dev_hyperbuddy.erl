@@ -1,6 +1,6 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
--export([info/0, format/3, metrics/3, return_file/2]).
+-export([info/0, format/3, metrics/3, events/3, return_file/2]).
 -include_lib("include/hb.hrl").
 
 %% @doc Export an explicit list of files via http.
@@ -54,6 +54,10 @@ metrics(_, Req, Opts) ->
         false ->
             {ok, #{ <<"body">> => <<"Prometheus metrics disabled.">> }}
     end.
+
+%% @doc Return the current event counters as a message.
+events(_, _Req, _Opts) ->
+    {ok, hb_event:counters()}.
 
 %% @doc Employ HyperBEAM's internal pretty printer to format a message.
 format(Base, Req, Opts) ->
