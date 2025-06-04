@@ -316,10 +316,11 @@ list(Opts, Path) when is_map(Opts), is_binary(Path) ->
         end,
     try
        % Ensure the path ends with "/" for proper prefix matching (like directory listing)
-       SearchPath = case ResolvedPath of
-           <<>> -> <<"">>;  % Root path
-           _ -> <<ResolvedPath/binary, "/">>
-       end,
+       SearchPath = 
+           case ResolvedPath of
+               <<>> -> <<"">>;  % Root path
+               _ -> <<ResolvedPath/binary, "/">>
+           end,
        SearchPathSize = byte_size(SearchPath),
       
        Children = 
