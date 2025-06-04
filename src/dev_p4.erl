@@ -448,6 +448,13 @@ hyper_token_ledger() ->
     Node =
         hb_http_server:start_node(
             #{
+                store => [
+                    #{
+                        <<"name">> => <<"cache-mainnet/lmdb">>,
+                        <<"store-module">> => hb_store_lmdb,
+                        <<"max-size">> => 4 * 1024 * 1024 * 1024
+                    }
+                ],
                 priv_wallet => HostWallet,
                 p4_non_chargable_routes =>
                     [
