@@ -31,6 +31,14 @@ counters() ->
         UnaggregatedCounts
     ).
 
+-ifdef(NO_EVENTS).
+log(_X) -> ok.
+log(_Topic, _X) -> ok.
+log(_Topic, _X, _Mod) -> ok.
+log(_Topic, _X, _Mod, _Func) -> ok.
+log(_Topic, _X, _Mod, _Func, _Line) -> ok.
+log(_Topic, _X, _Mod, _Func, _Line, _Opts) -> ok.
+-else.
 %% @doc Debugging log logging function. For now, it just prints to standard
 %% error.
 log(X) -> log(global, X).
@@ -71,6 +79,7 @@ log(Topic, X, Mod, Func, Line, Opts) ->
     % `?event(...)' macros into the flow of other executions, without having to
     % break functional style.
     X.
+-endif.
 
 handle_tracer(Topic, X, Opts) ->
 	AllowedTopics = [http, ao_core, ao_result],
