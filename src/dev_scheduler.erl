@@ -1307,6 +1307,12 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
                     OnlyCommitted,
                     Opts
                 ),
+            ?event(debug_downgrade,
+                {with_ans104_comms,
+                    {only_committed, OnlyCommitted},
+                    {with_only_ans104_comms, WithANS104Comms}
+                }
+            ),
             case hb_message:signers(WithANS104Comms, Opts) of
                 [] ->
                     {error, #{
@@ -1775,12 +1781,8 @@ http_init(Opts) ->
 		priv_wallet => Wallet,
 		store => [
 			#{
-                <<"store-module">> => hb_store_lru,
-                <<"name">> => <<"cache-mainnet/lru">>,
-                <<"persistent-store">> => #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> => <<"cache-mainnet/lru">>
-                }
+                <<"store-module">> => hb_store_lmdb,
+                <<"name">> => <<"cache-mainnet/lmdb">>
             },
 			#{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
 		]
@@ -1974,25 +1976,27 @@ http_post_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
         {Node, Opts} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
-        Msg1 = hb_message:commit(#{
-            <<"path">> => <<"/~scheduler@1.0/schedule">>,
-            <<"method">> => <<"POST">>,
-            <<"body">> =>
-                hb_message:commit(
-                    #{
-                        <<"data-protocol">> => <<"ao">>,
-                        <<"variant">> => <<"ao.TN.1">>,
-                        <<"type">> => <<"Message">>,
-                        <<"action">> => <<"ping">>,
-                        <<"target">> => Target,
-                        <<"test-from">> => hb_util:human_id(hb:address())
-                    },
-                    Opts,
-                    <<"ans104@1.0">>
-                )
-        }, Opts),
-        {Status, Res} = hb_http:post(Node, Msg1, Opts),
-        ?event({status, Status}),
+        Signed =
+            hb_message:commit(
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"variant">> => <<"ao.TN.1">>,
+                    <<"type">> => <<"Message">>,
+                    <<"action">> => <<"ping">>,
+                    <<"target">> => Target,
+                    <<"test-from">> => hb_util:human_id(hb:address())
+                },
+                Opts,
+                <<"ans104@1.0">>
+            ),
+        WithMethodAndPath =
+            Signed#{
+                <<"path">> => <<"/~scheduler@1.0/schedule">>,
+                <<"method">> => <<"POST">>
+            },
+        ?event(debug_downgrade, {signed, Signed}),
+        {Status, Res} = hb_http:post(Node, WithMethodAndPath, Opts),
+        ?event(debug_downgrade, {status, Status}),
         ?event({res, Res}),
         ?assertMatch(
             {ok, #{ <<"slot">> := Slot }} when Slot > 0,
