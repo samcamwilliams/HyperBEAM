@@ -666,14 +666,12 @@ pure_lua_process_benchmark() ->
 invoke_aos_test() ->
     Opts = #{ priv_wallet => hb:wallet() },
     Process = generate_lua_process("test/hyper-aos.lua", Opts),
-    ?event(debug_lua_test, {process, Process}),
     {ok, _} = hb_cache:write(Process, Opts),
     Message = generate_test_message(Process, Opts),
-    ?event(debug_lua_test, {message, Message}),
     {ok, Assignment} = hb_ao:resolve(Process, Message, Opts#{ hashpath => ignore }),
-    ?event(debug_lua_test, {assignment, Assignment}),
-    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, Opts),
-    ?assertEqual(<<"1">>, Results).
+    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output">>, Opts),
+    ?assertEqual(<<"New Message">>, hb_ao:get(<<"data">>, Results, #{})),
+    ?assertEqual(<<"aos> ">>, hb_ao:get(<<"prompt">>, Results, #{})).
 
 aos_authority_not_trusted_test() ->
     Opts = #{ priv_wallet => ar_wallet:new() },
