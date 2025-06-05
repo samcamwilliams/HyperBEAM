@@ -667,8 +667,8 @@ local_process_route_provider() ->
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
-local_dynamic_router_test_disabled() ->
-    {timeout, 30, fun local_dynamic_router/0}.
+local_dynamic_router_test_() ->
+    {timeout, 60, fun local_dynamic_router/0}.
 local_dynamic_router() ->
     BenchRoutes = 50,
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
@@ -872,7 +872,7 @@ dynamic_router() ->
     end, lists:seq(1, 1)),
     % Force computation of the current state. This should be done with a 
     % background worker (ex: a `~cron@1.0/every' task).
-    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
+    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now/at-slot">>, #{}),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
     ?assertEqual(ok, Status),
     ProxyWalletAddr = hb_util:human_id(ar_wallet:to_address(ProxyWallet)),
@@ -897,7 +897,7 @@ dynamic_router() ->
 %% according to the real-time performance of nodes. This test utilizes the
 %% `dynamic-router' script to manage routes and recalculate weights based on the
 %% reported performance.
-dynamic_routing_by_performance_test_disabled() ->
+dynamic_routing_by_performance_test_() ->
     {timeout, 60, fun dynamic_routing_by_performance/0}.
 dynamic_routing_by_performance() ->
     % Setup test parameters
@@ -910,12 +910,7 @@ dynamic_routing_by_performance() ->
     Run = hb_util:bin(rand:uniform(1337_000)),
     Node = hb_http_server:start_node(Opts = #{
         relay_http_client => gun,
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ar_wallet:new(),
         route_provider => #{
             <<"path">> =>

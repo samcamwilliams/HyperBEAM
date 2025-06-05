@@ -635,8 +635,19 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
                     _ -> <<Parent/binary, "/", NormKey/binary>>
                 end,
             case Value of
-                _ when is_map(Value) ->
-                    case hb_maps:size(Value, Opts) of
+                _ when is_map(Value) orelse is_list(Value) ->
+                    NormMsg =
+                        if is_list(Value) ->
+                            hb_message:convert(
+                                Value,
+                                tabm,
+                                <<"structured@1.0">>,
+                                Opts
+                            );
+                        true ->
+                            Value
+                        end,
+                    case hb_maps:size(NormMsg, Opts) of
                         0 ->
                             {
                                 CurMap,
@@ -648,7 +659,7 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
                                 )
                             };
                         _ ->
-                            NewTop = group_maps(Value, FlatK, CurTop, Opts),
+                            NewTop = group_maps(NormMsg, FlatK, CurTop, Opts),
                             {CurMap, NewTop}
                     end;
                 _ ->
