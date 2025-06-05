@@ -65,7 +65,7 @@ verify(Base, Req, RawOpts) ->
     {ok, EncMsg, EncComm, _} = normalize_for_encoding(Base, Req, Opts),
     SigBase = signature_base(EncMsg, EncComm, Opts),
     ?event({signature_base_verify, {string, SigBase}}),
-    KeyID = hb_util:decode(maps:get(<<"keyid">>, Req)),
+    KeyID = maps:get(<<"keyid">>, Req),
     RawSignature = hb_util:decode(Signature = maps:get(<<"signature">>, Req)),
     case maps:get(<<"type">>, Req) of
         <<"rsa-pss-sha512">> ->
@@ -73,7 +73,7 @@ verify(Base, Req, RawOpts) ->
             {
                 ok,
                 ar_wallet:verify(
-                    {{rsa, 65537}, KeyID},
+                    {{rsa, 65537}, base64:decode(KeyID)},
                     SigBase,
                     RawSignature,
                     sha512
@@ -82,7 +82,7 @@ verify(Base, Req, RawOpts) ->
         <<"hmac-sha256">> ->
             ActualHMac =
                 hb_util:human_id(
-                    crypto:mac(hmac, sha256, <<"ao">>, SigBase)
+                    crypto:mac(hmac, sha256, KeyID, SigBase)
                 ),
             ?event(httpsig_verify,
                 {verify,
@@ -131,7 +131,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
             MaybeTagMap#{
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"rsa-pss-sha512">>,
-                <<"keyid">> => hb_util:encode(ar_wallet:to_pubkey(Wallet)),
+                <<"keyid">> => base64:encode(ar_wallet:to_pubkey(Wallet)),
                 <<"committer">> =>
                     hb_util:human_id(ar_wallet:to_address(Wallet)),
                 <<"committed">> => ToCommit
@@ -191,7 +191,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
             #{
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"hmac-sha256">>,
-                <<"keyid">> => hb_util:encode(<<"ao">>),
+                <<"keyid">> => <<"ao">>,
                 <<"committed">> => hb_ao:normalize_keys(CommittedKeys)
             },
             Req,
@@ -382,17 +382,17 @@ key_present(Key, Msg) ->
 %% This implements a portion of RFC-9421 see:
 %% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(EncodedMsg, Commitment, Opts) ->
-	ComponentsLine =
+	ComponentsLines =
         signature_components_line(
             EncodedMsg,
             Commitment,
             Opts
         ),
-    ?event({component_identifiers_for_sig_base, ComponentsLine}),
+    ?event({component_identifiers_for_sig_base, ComponentsLines}),
 	ParamsLine = signature_params_line(Commitment, Opts),
     SignatureBase = 
         <<
-            ComponentsLine/binary, "\n",
+            ComponentsLines/binary, "\n",
             "\"@signature-params\": ", ParamsLine/binary
         >>,
     ?event(signature_base, {signature_base, {string, SignatureBase}}),
@@ -429,7 +429,13 @@ signature_components_line(Req, Commitment, _Opts) ->
 %% @doc construct the "signature-params-line" part of the signature base.
 %%
 %% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
-signature_params_line(Commitment, Opts) ->
+signature_params_line(RawCommitment, Opts) ->
+    Commitment =
+        maps:without(
+            [<<"signature">>, <<"signature-input">>],
+            RawCommitment
+        ),
+    ?event(debug_enc, {signature_params_line, {commitment, Commitment}}),
 	hb_util:bin(
         hb_structured_fields:list(
             [
