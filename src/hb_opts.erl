@@ -213,12 +213,8 @@ default_message() ->
                     <<"store">> =>
                         [
                             #{
-                                <<"name">> => <<"cache-mainnet/lru">>,
-                                <<"store-module">> => hb_store_lru,
-                                <<"persistent-store">> => #{
-                                    <<"store-module">> => hb_store_fs,
-                                    <<"name">> => <<"cache-mainnet/lru">>
-                                }
+                                <<"name">> => <<"cache-mainnet/lmdb">>,
+                                <<"store-module">> => hb_store_lmdb
                             }
                         ]
                 }

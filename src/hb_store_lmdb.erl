@@ -170,7 +170,8 @@ read_with_retry(Opts, Path) ->
 read_with_retry(_Opts, _Path, 0) -> 
     not_found;
 read_with_retry(Opts, Path, RetriesRemaining) ->
-    case lmdb:get(find_env(Opts), Path) of
+    NifOpts = #{ env => find_env(Opts), name => default },
+    case lmdb:get(NifOpts, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
@@ -181,9 +182,10 @@ read_with_retry(Opts, Path, RetriesRemaining) ->
 %% @doc Read with immediate flush for cases where we need to see recent writes.
 %% This is used when we expect the key to exist from a recent write operation.
 read_with_flush(Opts, Path) ->
+    NifOpts = #{ env => find_env(Opts), name => default },
     % First, ensure any pending writes are committed
     sync(Opts),
-    case lmdb:get(find_env(Opts), Path) of
+    case lmdb:get(NifOpts, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
@@ -238,8 +240,9 @@ resolve_path_links_acc(Opts, [Head | Tail], AccPath, Depth) ->
     % Build the accumulated path so far
     CurrentPath = lists:reverse([Head | AccPath]),
     CurrentPathBin = to_path(CurrentPath),
+    NifOpts = #{ env => find_env(Opts), name => default },
     % Check if the accumulated path (not just the segment) is a link
-    case lmdb:get(find_env(Opts), CurrentPathBin) of
+    case lmdb:get(NifOpts, CurrentPathBin) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -323,8 +326,9 @@ list(Opts, Path) when is_map(Opts), is_binary(Path) ->
                _ -> <<ResolvedPath/binary, "/">>
            end,
        SearchPathSize = byte_size(SearchPath),
+       NifOpts = #{ env => Env, name => default },
        Res = 
-           lmdb:fold(Env, default,
+           lmdb:fold(NifOpts,
                fun(Key, _Value, Acc) ->
                    % Match keys that start with our search path (like dir listing)
                    case byte_size(Key) > SearchPathSize andalso 
@@ -423,8 +427,9 @@ create_parent_groups(_Opts, _Current, []) ->
 create_parent_groups(Opts, Current, [Next | Rest]) ->
     NewCurrent = Current ++ [Next],
     GroupPath = to_path(NewCurrent),
+    NifOpts = #{ env => find_env(Opts), name => default },
     % Only create group if it doesn't already exist - use direct LMDB check to avoid recursion
-    case lmdb:get(find_env(Opts), GroupPath) of
+    case lmdb:get(NifOpts, GroupPath) of
         not_found ->
             make_group(Opts, GroupPath);
         {ok, _} ->
@@ -498,7 +503,7 @@ add_path(Opts, Path1, Path2) when is_binary(Path1), is_list(Path2) ->
 %% use cases include critical checkpoints, before system shutdown, or
 %% when preparing for read operations that must see the latest writes.
 %%
-%% @param StoreOpts Database configuration map
+%% @param StoreOpts Database configuration madbs => 10,p
 %% @returns 'ok' when flush is complete, {error, Reason} on failure
 -spec sync(map()) -> ok | {error, term()}.
 sync(Opts) ->
@@ -564,7 +569,9 @@ start(Opts = #{ <<"name">> := DataDir }) ->
         lmdb:env_create(
             DataDir,
             #{
-                max_mapsize => maps:get(<<"max-size">>, Opts, ?DEFAULT_SIZE)
+                max_dbs => 10,
+                max_mapsize => maps:get(<<"max-size">>, Opts, ?DEFAULT_SIZE),
+                flags => [create, notls, nosync, nometasync, writemap, mapasync, nordahead]
             }
         ),
     % Prepare server state with environment handle
