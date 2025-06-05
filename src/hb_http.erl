@@ -132,7 +132,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             {path, {string, Path}},
             {body_size, byte_size(Body)}
         }),
-    case hb_maps:get(<<"ao-result">>, NormHeaderMap, undefined, Opts) of
+    ReturnAOResult =
+        hb_opts:get(http_only_result, true, Opts) andalso
+        hb_maps:get(<<"ao-result">>, NormHeaderMap, false, Opts),
+    case ReturnAOResult of
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
             ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
@@ -152,7 +155,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     };
                 Value -> {BaseStatus, Value}
             end;
-        undefined ->
+        false ->
             case hb_maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>, Opts) of
                 <<"httpsig@1.0">> ->
                     ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
