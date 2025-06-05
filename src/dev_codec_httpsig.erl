@@ -419,7 +419,7 @@ signature_components_line(Req, Commitment, _Opts) ->
                             }
                         );
                     Value ->
-                        << Name/binary, <<": ">>/binary, Value/binary>>
+                        << <<"\"">>/binary, Name/binary, <<"\"">>/binary, <<": ">>/binary, Value/binary>>
                 end
             end,
             maps:get(<<"committed">>, Commitment)
