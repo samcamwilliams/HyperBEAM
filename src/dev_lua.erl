@@ -381,12 +381,18 @@ decode(Other, _Opts) ->
 
 %% @doc Encode a HyperBEAM `structured@1.0' message into a Lua term.
 encode(Map, Opts) when is_map(Map) ->
-    case hb_util:is_ordered_list(Map, Opts) of
-        true -> encode(hb_util:message_to_ordered_list(Map), Opts);
-        false -> maps:to_list(maps:map(fun(_, V) -> encode(V, Opts) end, Map))
-    end;
-encode(List, _Opts) when is_list(List) ->
-    lists:map(fun(V) -> encode(V, _Opts) end, List);
+    hb_cache:ensure_all_loaded(
+        case hb_util:is_ordered_list(Map, Opts) of
+            true -> encode(hb_util:message_to_ordered_list(Map), Opts);
+            false -> maps:to_list(maps:map(fun(_, V) -> encode(V, Opts) end, Map))
+        end,
+        Opts
+    );
+encode(List, Opts) when is_list(List) ->
+    hb_cache:ensure_all_loaded(
+        lists:map(fun(V) -> encode(V, Opts) end, List),
+        Opts
+    );
 encode(Atom, _Opts) when is_atom(Atom) and (Atom /= false) and (Atom /= true)->
     hb_util:bin(Atom);
 encode(Other, _Opts) ->
@@ -595,6 +601,7 @@ lua_http_hook_test() ->
     {ok, Module} = file:read_file("test/test.lua"),
     Node = hb_http_server:start_node(
         #{
+            priv_wallet => ar_wallet:new(),
             on => #{
                 <<"request">> =>
                     #{
@@ -657,13 +664,14 @@ pure_lua_process_benchmark() ->
     ).
 
 invoke_aos_test() ->
-    Opts = #{},
+    Opts = #{ priv_wallet => hb:wallet() },
     Process = generate_lua_process("test/hyper-aos.lua", Opts),
-    {ok, _} = hb_cache:write(Process, #{}),
+    {ok, _Proc} = hb_cache:write(Process, Opts),
     Message = generate_test_message(Process, Opts),
-    {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
-    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?assertEqual(<<"1">>, Results).
+    {ok, _Assignment} = hb_ao:resolve(Process, Message, Opts#{ hashpath => ignore }),
+    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output">>, Opts),
+    ?assertEqual(<<"1">>, hb_ao:get(<<"data">>, Results, #{})),
+    ?assertEqual(<<"aos> ">>, hb_ao:get(<<"prompt">>, Results, #{})).
 
 aos_authority_not_trusted_test() ->
     Opts = #{ priv_wallet => ar_wallet:new() },
@@ -690,8 +698,8 @@ aos_authority_not_trusted_test() ->
         Opts
     ),
     ?event({message, Message}),
-    {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
-    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
+    {ok, _} = hb_ao:resolve(Process, Message, Opts#{ hashpath => ignore }),
+    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, Opts),
     ?assertEqual(<<"Message is not trusted.">>, Results).
 
 %% @doc Benchmark the performance of Lua executions.
@@ -735,8 +743,9 @@ aos_process_benchmark_test_() ->
 
 %% @doc Generate a Lua process message.
 generate_lua_process(File, Opts) ->
-    NormOpts = Opts#{ priv_wallet => maps:get(priv_wallet, Opts, hb:wallet()) },
+    NormOpts = Opts#{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts) },
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), NormOpts),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     {ok, Module} = file:read_file(File),
     hb_message:commit(
         #{
@@ -749,7 +758,7 @@ generate_lua_process(File, Opts) ->
                 <<"body">> => Module
             },
             <<"authority">> => [ 
-                hb:address(), 
+                Address, 
                 <<"E3FJ53E6xtAzcftBpaw2E1H4ZM9h6qy6xz9NXh5lhEQ">>
             ], 
             <<"scheduler-location">> =>
@@ -762,7 +771,7 @@ generate_lua_process(File, Opts) ->
 %% @doc Generate a test message for a Lua process.
 generate_test_message(Process, Opts) ->
     ProcID = hb_message:id(Process, all),
-    NormOpts = Opts#{ priv_wallet => maps:get(priv_wallet, Opts, hb:wallet()) },
+    NormOpts = Opts#{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts) },
     Code = """ 
       Count = 0
       function add() 
@@ -782,7 +791,7 @@ generate_test_message(Process, Opts) ->
                         <<"type">> => <<"Message">>,
                         <<"body">> => #{
                             <<"content-type">> => <<"application/lua">>,
-                            <<"body">> => list_to_binary(Code) 
+                            <<"body">> => hb_util:bin(Code) 
                         },
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>

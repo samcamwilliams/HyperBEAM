@@ -116,11 +116,11 @@ paid_wasm_test() ->
     % Check that the client's balance has been deducted.
     ClientMessage2 =
         hb_message:commit(
-            #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
+            #{<<"path">> => <<"/~p4@1.0/balance">>},
             ClientWallet
         ),
     {ok, Res2} = hb_http:get(HostNode, ClientMessage2, Opts),
-    ?assertMatch(40, Res2).
+    ?assertMatch(60, Res2).
 
 create_schedule_aos2_test_disabled() ->
     % The legacy process format, according to the ao.tn.1 spec:

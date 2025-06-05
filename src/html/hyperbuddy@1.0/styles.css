@@ -184,7 +184,7 @@ footer {
 .header-inner {
 	width: 100%;
 	max-width: 2000px;
-	padding: 10px 40px;
+	padding: 15px 40px;
 	margin: 0 auto;
 	display: flex;
 	align-items: center;
@@ -366,6 +366,7 @@ footer {
     justify-content: space-between;
     padding: 0 15px;
     border-bottom: 1px solid var(--border-color);
+	font-size: 14px;
 }
 
 .info-line:nth-child(even) {
@@ -473,8 +474,12 @@ footer {
 }
 
 @media (max-width: 1024px) {
-	.view-wrapper {
-		padding: 0px 25px !important;
+	.header-inner {
+		padding: 15px 10px !important;
+	}
+	
+    .view-wrapper {
+		padding: 55px 10px 80px 10px !important;;
 	}
 
 	.section-group {
@@ -492,46 +497,6 @@ footer {
 	.tab-content .device-cards-container {
 		grid-template-columns: repeat(1, 1fr);
 
-	}
-
-	/* 
-  .section-line {
-	height: fit-content;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 10px;
-	padding: 15px;
-  } */
-}
-
-@media (max-width: 1000px) {
-	.header-inner {
-		padding: 20px;
-	}
-
-	.explorer-view-flex {
-		flex-direction: column;
-	}
-
-	.explorers-wrapper,
-	.visual-wrapper {
-		width: 100% !important;
-	}
-
-}
-
-
-@media (max-width: 500px) {
-	.header-inner {
-		padding: 20px;
-	}
-
-	.header-left .light-video {
-		width: 300px;
-	}
-
-	.header-left {
-		margin-left: -50px;
 	}
 }
 
@@ -603,7 +568,7 @@ footer {
 
 .metrics-navbar {
 	display: flex;
-	flex-wrap: wrap;
+	overflow-x: auto;
 }
 
 .metrics-nav-item {
@@ -613,6 +578,7 @@ footer {
 	background-color: var(--section-bg-color-alt2);
 	border-left: 1px solid var(--border-color);
 	font-size: 14px;
+    white-space: nowrap;
 }
 
 .metrics-nav-item:last-child {
@@ -624,7 +590,7 @@ footer {
 }
 
 .metrics-nav-item.active {
-	background: var(--section-bg-color-alt1);
+	background: var(--active-action-bg);
 	color: var(--text-color-primary);
 	position: relative;
 	font-weight: 600;
@@ -680,7 +646,7 @@ footer {
 .view-wrapper {
 	width: 100%;
 	max-width: 2000px;
-	padding: 40px 40px 80px 40px;
+	padding: 55px 40px 80px 40px;
 	margin: 33.5px auto 0 auto;
 	display: flex;
 	flex-direction: column;
@@ -940,6 +906,21 @@ footer {
 	font-weight: 500 !important;
 	background: var(--pulse-color) !important;
 	border-radius: var(--border-radius) !important;
+}
+
+#metrics-tab {
+    border-bottom: 1px solid var(--border-color);
+	border-bottom-left-radius: var(--border-radius);
+	border-bottom-right-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+#cache-section {
+    border-bottom: 1px solid var(--border-color);
+	border-left: 1px solid var(--border-color);
+	border-right: 1px solid var(--border-color);
+	border-bottom-left-radius: var(--border-radius);
+	border-bottom-right-radius: var(--border-radius);
 }
 
 .explorer-body-row-flag span {

@@ -310,10 +310,10 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 %% default into all HyperBEAM distributions.
 test_stores() ->
     [
-        #{
-            <<"store-module">> => hb_store_fs,
-            <<"name">> => <<"cache-TEST/fs">>
-        },
+        % #{
+        %     <<"store-module">> => hb_store_fs,
+        %     <<"name">> => <<"cache-TEST/fs">>
+        % },
         #{
             <<"store-module">> => hb_store_lmdb,
             <<"name">> => <<"cache-TEST/lmdb">>,

@@ -354,7 +354,7 @@ uncommitted(Msg, Opts) ->
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
 signers(Msg, Opts) ->
-    hb_ao:get(<<"committers">>, Msg, [], Opts).
+    hb_util:ok(dev_message:committers(Msg, #{}, Opts)).
 
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
@@ -482,7 +482,7 @@ format(Map, Indent) when is_map(Map) ->
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        maps:to_list(Map) ++
+        maps:to_list(maps:without([<<"path">>, <<"device">>], Map)) ++
         FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(

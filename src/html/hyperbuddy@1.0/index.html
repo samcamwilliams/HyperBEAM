@@ -19,11 +19,19 @@
     <body>
         <header>
             <div class="header-inner">
-                <div class="logo">
-                    <img
-                        src="https://arweave.net/Ggr1cz-jbiDS2gAVFHxkoKzmNQQD4WcMTfipWyuEmgY"
-                        alt="hyperbeam-logo"
-                    />
+                <a href="/">
+                    <div class="logo">
+                        <img
+                            src="https://arweave.net/Ggr1cz-jbiDS2gAVFHxkoKzmNQQD4WcMTfipWyuEmgY"
+                            alt="hyperbeam-logo"
+                        />
+                    </div>
+                </a>
+                <div class="subheader-value">
+                    <p>Operator:</p>
+                    <button id="operator-action" disabled="true">
+                        Loading...
+                    </button>
                 </div>
             </div>
         </header>
@@ -61,19 +69,21 @@
                                     viewBox="0 0 256 256"
                                 >
                                     <path
-                                        d="M232,80a55.67,55.67,0,0,1-16.4,39.6l-30.07,30.06a8,8,0,0,1-11.31-11.32l30.07-30.06a40,40,0,1,0-56.57-56.56L117.66,81.77a8,8,0,0,1-11.32-11.32L136.4,40.4A56,56,0,0,1,232,80Zm-93.66,94.22-30.06,30.06a40,40,0,1,1-56.56-56.57l30.05-30.05a8,8,0,0,0-11.32-11.32L40.4,136.4a56,56,0,0,0,79.2,79.2l30.06-30.07a8,8,0,0,0-11.32-11.31Z"
+                                        d="M120,176h-8v-4a28,28,0,0,0-56,0v4H48a8,8,0,0,0-8,8v40a8,8,0,0,0,8,8h72a8,8,0,0,0,8-8V184A8,8,0,0,0,120,176Zm-48-4a12,12,0,0,1,24,0v4H72Zm40,44H56V192h56ZM213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40v88a8,8,0,0,0,16,0V40h88V88a8,8,0,0,0,8,8h48V216H160a8,8,0,0,0,0,16h40a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160Z"
                                     ></path>
                                 </svg>
-                                <p>Links</p>
+                                <p>Response</p>
                             </div>
-                            <div id="links-explorer" class="explorer"></div>
+                            <div
+                                id="signed-headers-explorer"
+                                class="explorer"
+                            ></div>
                             <div class="explorer-footer">
-                                <p id="links-explorer-footer-value">
-                                    (0) Links
+                                <p id="headers-explorer-footer-value">
+                                    (0) Headers
                                 </p>
                             </div>
                         </div>
-
                         <div class="explorer-wrapper">
                             <div class="explorer-header">
                                 <svg
@@ -84,18 +94,15 @@
                                     viewBox="0 0 256 256"
                                 >
                                     <path
-                                        d="M120,176h-8v-4a28,28,0,0,0-56,0v4H48a8,8,0,0,0-8,8v40a8,8,0,0,0,8,8h72a8,8,0,0,0,8-8V184A8,8,0,0,0,120,176Zm-48-4a12,12,0,0,1,24,0v4H72Zm40,44H56V192h56ZM213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40v88a8,8,0,0,0,16,0V40h88V88a8,8,0,0,0,8,8h48V216H160a8,8,0,0,0,0,16h40a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160Z"
+                                        d="M232,80a55.67,55.67,0,0,1-16.4,39.6l-30.07,30.06a8,8,0,0,1-11.31-11.32l30.07-30.06a40,40,0,1,0-56.57-56.56L117.66,81.77a8,8,0,0,1-11.32-11.32L136.4,40.4A56,56,0,0,1,232,80Zm-93.66,94.22-30.06,30.06a40,40,0,1,1-56.56-56.57l30.05-30.05a8,8,0,0,0-11.32-11.32L40.4,136.4a56,56,0,0,0,79.2,79.2l30.06-30.07a8,8,0,0,0-11.32-11.31Z"
                                     ></path>
                                 </svg>
-                                <p>Signed Headers</p>
+                                <p>Links</p>
                             </div>
-                            <div
-                                id="signed-headers-explorer"
-                                class="explorer"
-                            ></div>
+                            <div id="links-explorer" class="explorer"></div>
                             <div class="explorer-footer">
-                                <p id="headers-explorer-footer-value">
-                                    (0) Headers
+                                <p id="links-explorer-footer-value">
+                                    (0) Links
                                 </p>
                             </div>
                         </div>

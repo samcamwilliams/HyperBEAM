@@ -1,4 +1,4 @@
-import { get, formatDisplayAmount, copyToClipboard } from '/~hyperbuddy@1.0/utils.js';
+import { get, copyToClipboard } from '/~hyperbuddy@1.0/utils.js';
 
 // Set up global message handler for console communications
 window.addEventListener('message', (event) => {
@@ -71,47 +71,50 @@ function renderInfoGroups(groups, devicesStr) {
   const devices = JSON.parse(devicesStr);
   const container = document.getElementById("info-section-lines");
 
-  // Clear previous content
-  container.innerHTML = "";
+  if (container) {
 
-  // Make sure it has the right class
-  container.className = "device-cards-container";
+    // Clear previous content
+    container.innerHTML = "";
 
-  for (const [key, device] of Object.entries(devices)) {
-    if (key == "device") continue;
-    const [name, variant] = device.name.split("@");
+    // Make sure it has the right class
+    container.className = "device-cards-container";
 
-    // Create a card for each device
-    const card = document.createElement("div");
-    card.classList.add("device-card");
+    for (const [key, device] of Object.entries(devices)) {
+      if (key == "device") continue;
+      const [name, variant] = device.name.split("@");
 
-    // Create device name element
-    const deviceName = document.createElement("div");
-    deviceName.classList.add("device-name");
-    deviceName.textContent = name;
+      // Create a card for each device
+      const card = document.createElement("div");
+      card.classList.add("device-card");
 
-    // Create variant element with color based on version number
-    const deviceVariant = document.createElement("div");
-    deviceVariant.classList.add("device-variant");
+      // Create device name element
+      const deviceName = document.createElement("div");
+      deviceName.classList.add("device-name");
+      deviceName.textContent = name;
 
-    // Add color class based on version number
-    const versionNum = parseFloat(variant);
-    if (versionNum >= 1.0) {
-      deviceVariant.classList.add("device-variant-high");
-    } else if (versionNum >= 0.5) {
-      deviceVariant.classList.add("device-variant-medium");
-    } else {
-      deviceVariant.classList.add("device-variant-low");
+      // Create variant element with color based on version number
+      const deviceVariant = document.createElement("div");
+      deviceVariant.classList.add("device-variant");
+
+      // Add color class based on version number
+      const versionNum = parseFloat(variant);
+      if (versionNum >= 1.0) {
+        deviceVariant.classList.add("device-variant-high");
+      } else if (versionNum >= 0.5) {
+        deviceVariant.classList.add("device-variant-medium");
+      } else {
+        deviceVariant.classList.add("device-variant-low");
+      }
+
+      deviceVariant.textContent = variant;
+
+      // Add elements to card
+      card.appendChild(deviceName);
+      card.appendChild(deviceVariant);
+
+      // Add card to container
+      container.appendChild(card);
     }
-
-    deviceVariant.textContent = variant;
-
-    // Add elements to card
-    card.appendChild(deviceName);
-    card.appendChild(deviceVariant);
-
-    // Add card to container
-    container.appendChild(card);
   }
 }
 
@@ -124,7 +127,7 @@ async function fetchInfo() {
       operatorAction.innerHTML = formatAddress(operatorAddress);
       operatorAction.value = operatorAddress;
       operatorAction.disabled = false;
-      
+
       operatorAction.addEventListener("click", function () {
         copyToClipboard(this);
       });

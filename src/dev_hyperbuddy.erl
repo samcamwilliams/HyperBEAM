@@ -21,7 +21,9 @@ info() ->
 			<<"devices.js">> => <<"devices.js">>,
 			<<"utils.js">> => <<"utils.js">>,
 			<<"dashboard.js">> => <<"dashboard.js">>,
-			<<"graph.js">> => <<"graph.js">>
+			<<"graph.js">> => <<"graph.js">>,
+            <<"404.html">> => <<"404.html">>,
+            <<"500.html">> => <<"500.html">>
         },
         excludes => [<<"return_file">>]
     }.
@@ -102,15 +104,20 @@ return_file(Device, Name) ->
     Base = hb_util:bin(code:priv_dir(hb)),
     Filename = <<Base/binary, "/html/", Device/binary, "/", Name/binary >>,
     ?event({hyperbuddy_serving, Filename}),
-    {ok, Body} = file:read_file(Filename),
-    {ok, #{
-        <<"body">> => Body,
-        <<"content-type">> =>
-            case filename:extension(Filename) of
-                <<".html">> -> <<"text/html">>;
-                <<".js">> -> <<"text/javascript">>;
-                <<".css">> -> <<"text/css">>;
-                <<".png">> -> <<"image/png">>;
-                <<".ico">> -> <<"image/x-icon">>
-            end
-    }}.
+    case file:read_file(Filename) of
+        {ok, Body} ->
+            {ok, #{
+                <<"body">> => Body,
+                <<"content-type">> =>
+                    case filename:extension(Filename) of
+                        <<".html">> -> <<"text/html">>;
+                        <<".js">> -> <<"text/javascript">>;
+                        <<".css">> -> <<"text/css">>;
+                        <<".png">> -> <<"image/png">>;
+                        <<".ico">> -> <<"image/x-icon">>
+                    end
+                }
+            };
+        {error, _} ->
+            {error, not_found}
+    end.
