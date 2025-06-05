@@ -2446,12 +2446,12 @@ function process.handle(req, base)
 
   -- state.checkSlot(msg, ao)
   Handlers.add("_eval", function (_req)
-    local function getMsgFrom(m)
+    local function getOwnerFrom(m)
       local from = ""
       Utils.map(
         function (k)
           local c = m.commitments[k]
-          if c.alg == "rsa-pss-sha512" then
+          if c.type == "rsa-pss-sha512" then
             from = c.committer
           end
         end,
@@ -2459,7 +2459,7 @@ function process.handle(req, base)
       )
       return from
     end
-    return _req.body.action == "Eval" and Owner == getMsgFrom(_req.body)
+    return _req.body.action == "Eval" and Owner == getOwnerFrom(_req.body)
   end, eval(ao))
 
   Handlers.add("_default",
