@@ -141,7 +141,7 @@ default_message() ->
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
                 <<"template">> => <<"/result/.*">>,
-                <<"node">> => #{ <<"name">> => <<"http://localhost:6363">> }
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             },
             #{
                 % Routes for GraphQL requests to use a remote GraphQL API.
@@ -149,11 +149,11 @@ default_message() ->
                 <<"nodes">> =>
                     [
                         #{
-                            <<"name">> => <<"https://arweave-search.goldsky.com">>,
+                            <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
                             <<"opts">> => #{ http_client => httpc, protocol => http2 }
                         },
                         #{
-                            <<"name">> => <<"https://arweave.net">>,
+                            <<"prefix">> => <<"https://arweave.net">>,
                             <<"opts">> => #{ http_client => gun, protocol => http2 }
                         }
                     ]
@@ -163,7 +163,7 @@ default_message() ->
                 <<"template">> => <<"/raw">>,
                 <<"node">> =>
                     #{
-                        <<"name">> => <<"https://arweave.net">>,
+                        <<"prefix">> => <<"https://arweave.net">>,
                         <<"opts">> => #{ http_client => gun, protocol => http2 }
                     }
             }
