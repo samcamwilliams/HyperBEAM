@@ -17,8 +17,8 @@
     <<"request-target">>,
     <<"path">>,
     <<"query">>,
-    <<"query-param">>,
-    <<"status">>
+    <<"query-param">>
+    % <<"status">> % Some libraries does not support it
 ]).
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
