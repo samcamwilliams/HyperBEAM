@@ -43,6 +43,15 @@ call(M1, RawM2, Opts) ->
             ],
             Opts
         ),
+    RelayDevice =
+        hb_ao:get_first(
+            [
+                {M1, <<"relay-device">>},
+                {{as, <<"message@1.0">>, BaseTarget}, <<"relay-device">>},
+                {RawM2, <<"relay-device">>}
+            ],
+            Opts
+        ),
     RelayPeer =
         hb_ao:get_first(
             [
@@ -90,28 +99,34 @@ call(M1, RawM2, Opts) ->
         if RelayBody == not_found -> BaseTarget;
         true -> BaseTarget#{<<"body">> => RelayBody}
         end,
-    TargetMod2 = TargetMod1#{
-        <<"method">> => RelayMethod,
-        <<"path">> => RelayPath
-    },
+    TargetMod2 =
+        TargetMod1#{
+            <<"method">> => RelayMethod,
+            <<"path">> => RelayPath
+        },
     TargetMod3 =
+        case RelayDevice of
+            not_found -> hb_maps:without([<<"device">>], TargetMod2);
+            _ -> TargetMod2#{<<"device">> => RelayDevice}
+        end,
+    TargetMod4 =
         case Commit of
             true ->
                 case hb_opts:get(relay_allow_commit_request, false, Opts) of
                     true ->
-                        ?event(debug_relay, {recommitting, TargetMod2}),
-                        Committed = hb_message:commit(TargetMod2, Opts),
+                        ?event(debug_relay, {recommitting, TargetMod3}),
+                        Committed = hb_message:commit(TargetMod3, Opts),
                         ?event({relay_call, {committed, Committed}}),
                         true = hb_message:verify(Committed, all),
                         Committed;
                     false ->
                         throw(relay_commit_request_not_allowed)
                 end;
-            false -> TargetMod2
+            false -> TargetMod3
         end,
-    ?event(debug_relay, {relay_call, {without_http_params, TargetMod2}}),
-    ?event(debug_relay, {relay_call, {with_http_params, TargetMod3}}),
-    true = hb_message:verify(TargetMod3),
+    ?event(debug_relay, {relay_call, {without_http_params, TargetMod3}}),
+    ?event(debug_relay, {relay_call, {with_http_params, TargetMod4}}),
+    true = hb_message:verify(TargetMod4),
     ?event(debug_relay, {relay_call, {verified, true}}),
     Client =
         case hb_ao:get(<<"http-client">>, BaseTarget, Opts) of
@@ -120,17 +135,18 @@ call(M1, RawM2, Opts) ->
         end,
     % Let `hb_http:request/2' handle finding the peer and dispatching the
     % request, unless the peer is explicitly given.
+    HTTPOpts = Opts#{ http_client => Client, http_only_result => false },
     case RelayPeer of
         not_found ->
-            hb_http:request(TargetMod3, Opts#{ http_client => Client });
+            hb_http:request(TargetMod4, HTTPOpts);
         _ ->
             ?event(debug_relay, {relaying_to_peer, RelayPeer}),
             hb_http:request(
                 RelayMethod,
                 RelayPeer,
                 RelayPath,
-                TargetMod3,
-                Opts#{ http_client => Client }
+                TargetMod4,
+                HTTPOpts
             )
     end.
 
@@ -174,60 +190,53 @@ call_get_test() ->
         ),
     ?assertEqual(true, byte_size(Body) > 10_000).
 
-%% @doc Test that the `preprocess/3' function re-routes a request to remote
-%% peers, according to the node's routing table.
-request_hook_reroute_to_nearest_test() ->
-    Peer1 = <<"https://tee-3.forward.computer">>,
-    Peer2 = <<"https://tee-2.forward.computer">>,
-    HTTPSOpts = #{ http_client => httpc },
-    {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
-    {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
+relay_nearest_test() ->
+    Peer1 = hb_http_server:start_node(#{ priv_wallet => W1 = ar_wallet:new() }),
+    Peer2 = hb_http_server:start_node(#{ priv_wallet => W2 = ar_wallet:new() }),
+    Address1 = hb_util:human_id(ar_wallet:to_address(W1)),
+    Address2 = hb_util:human_id(ar_wallet:to_address(W2)),
     Peers = [Address1, Address2],
     Node =
-        hb_http_server:start_node(#{
+        hb_http_server:start_node(Opts = #{
+            store => hb_opts:get(store),
             priv_wallet => ar_wallet:new(),
-            routes =>
-                [
-                    #{
-                        <<"template">> => <<"/.*/.*/.*">>,
-                        <<"strategy">> => <<"Nearest">>,
-                        <<"nodes">> =>
-                            lists:map(
-                                fun({Address, Node}) ->
-                                    #{
-                                        <<"name">> => Node,
-                                        <<"wallet">> => Address
-                                    }
-                                end,
-                                [
-                                    {Address1, Peer1},
-                                    {Address2, Peer2}
-                                ]
-                            )
-                    }
-                ],
-            on => #{ <<"request">> => #{ <<"device">> => <<"relay@1.0">> } }
+            routes => [
+                #{
+                    <<"template">> => <<"/.*">>,
+                    <<"strategy">> => <<"Nearest">>,
+                    <<"nodes">> => [
+                        #{
+                            <<"prefix">> => Peer1,
+                            <<"wallet">> => Address1
+                        },
+                        #{
+                            <<"prefix">> => Peer2,
+                            <<"wallet">> => Address2
+                        }
+                    ]
+                }
+            ]
         }),
-    Res =
-        lists:map(
-            fun(_) ->
-                hb_util:ok(
-                    hb_http:get(
-                        Node,
-                        <<"/~meta@1.0/info/address">>,
-                        #{}
-                    )
-                )
-            end,
-            lists:seq(1, 3)
+    {ok, RelayRes} =
+        hb_http:get(
+            Node,
+            <<"/~relay@1.0/call?relay-path=/~meta@1.0/info">>,
+            Opts#{ http_only_result => false }
         ),
-    ?event({res, Res}),
-    HasValidSigner = lists:any(
-        fun(Peer) ->
-            lists:member(Peer, hb_message:signers(Res, HTTPSOpts))
-        end,
-        Peers
+    ?event(
+        {relay_res,
+            {response, RelayRes},
+            {signer, hb_message:signers(RelayRes, Opts)},
+            {peers, Peers}
+        }
     ),
+    HasValidSigner =
+        lists:any(
+            fun(Peer) ->
+                lists:member(Peer, hb_message:signers(RelayRes, Opts))
+            end,
+            Peers
+        ),
     ?assert(HasValidSigner).
 
 %% @doc Test that a `relay@1.0/call' correctly commits requests as specified.
@@ -258,7 +267,7 @@ commit_request_test() ->
                         <<"nodes">> => [
                             #{
                                 <<"wallet">> => hb_util:human_id(Wallet),
-                                <<"name">> => Executor
+                                <<"prefix">> => Executor
                             }
                         ]
                     }

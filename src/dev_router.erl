@@ -70,7 +70,7 @@ info(_Msg1, _Msg2, _Opts) ->
             }
         }
     },
-    {ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
+    {ok, InfoBody}.
 
 %% A exposed register function that allows telling the current node to register
 %% a new route with a remote router node. This function should also be itempotent
@@ -115,7 +115,7 @@ register(_M1, _M2, Opts) ->
                                             <<"path">> => <<"register">>,
                                             <<"route">> =>
                                                 #{
-                                                    <<"name">> => Prefix,
+                                                    <<"prefix">> => Prefix,
                                                     <<"template">> => Template,
                                                     <<"price">> => Price
                                                 },
@@ -312,34 +312,32 @@ apply_routes(Msg, R, Opts) ->
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_route(Msg, RouteLink, Opts) when ?IS_LINK(RouteLink) ->
-    apply_route(Msg, hb_cache:ensure_loaded(RouteLink, Opts), Opts);
-apply_route(Msg, Route = #{ <<"opts">> := RawRouteOpts }, Opts) ->
+apply_route(Msg, Route, Opts) ->
     LoadedRoute = hb_cache:ensure_all_loaded(Route, Opts),
-    RouteOpts = hb_cache:ensure_all_loaded(RawRouteOpts, Opts),
+    RouteOpts = hb_maps:get(<<"opts">>, LoadedRoute, #{}),
     LoadedMsg = hb_cache:ensure_all_loaded(Msg, Opts),
     {ok, #{
         <<"opts">> => RouteOpts,
         <<"uri">> =>
             hb_util:ok(
-                apply_route(
+                do_apply_route(
                     LoadedMsg,
                     hb_maps:without([<<"opts">>], LoadedRoute, Opts),
                     Opts
                 )
             )
-    }};
-apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
-    apply_route(#{ <<"path">> => Path }, R, Opts);
-apply_route(#{ <<"path">> := RawPath }, #{ <<"name">> := RawPrefix }, Opts) ->
+    }}.
+do_apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
+    do_apply_route(#{ <<"path">> => Path }, R, Opts);
+do_apply_route(#{ <<"path">> := RawPath }, #{ <<"prefix">> := RawPrefix }, Opts) ->
     Path = hb_cache:ensure_loaded(RawPath, Opts),
     Prefix = hb_cache:ensure_loaded(RawPrefix, Opts),
     {ok, <<Prefix/binary, Path/binary>>};
-apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
+do_apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
     Path = hb_cache:ensure_loaded(RawPath, Opts),
     Suffix = hb_cache:ensure_loaded(RawSuffix, Opts),
     {ok, <<Path/binary, Suffix/binary>>};
-apply_route(
+do_apply_route(
         #{ <<"path">> := RawPath },
         #{ <<"match">> := RawMatch, <<"with">> := RawWith },
         Opts) ->
@@ -656,17 +654,15 @@ local_process_route_provider() ->
                 hb_util:ok(
                     hb_http:get(
                         Node,
-                        <<"/~router@1.0/route?route-path=test2">>,
-                        #{
-                            <<"route-path">> => <<"test2">>
-                        }
+                        <<"/~router@1.0/route&route-path=test2/uri">>,
+                        #{}
                     )
                 )
             end,
             lists:seq(1, 10)
         ),
     ?event({responses, Responses}),
-    ?assertEqual(2, sets:size(sets:from_list(Responses))).
+    ?assertEqual(2, length(hb_util:unique(Responses))).
 
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
@@ -678,12 +674,7 @@ local_dynamic_router() ->
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ar_wallet:new(),
         route_provider => #{
             <<"path">> =>
@@ -697,7 +688,7 @@ local_dynamic_router() ->
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
                 <<"module">> => #{
                     <<"content-type">> => <<"application/lua">>,
-                    <<"module">> => <<"dynamic-router">>,
+                    <<"name">> => <<"dynamic-router">>,
                     <<"body">> => Module
                 },
                 % Set module-specific factors for the test
@@ -722,7 +713,7 @@ local_dynamic_router() ->
                             <<"path">> => <<"register">>,
                             <<"route">> =>
                                 #{
-                                    <<"name">> => 
+                                    <<"prefix">> => 
                                         <<
                                             "https://test-node-",
                                                 (hb_util:bin(X))/binary,
@@ -866,7 +857,7 @@ dynamic_router() ->
                                 <<"path">> => <<"register">>,
                                 <<"route">> =>
                                     #{
-                                        <<"name">> => ExecNode,
+                                        <<"prefix">> => ExecNode,
                                         <<"template">> => <<"/c">>,
                                         <<"price">> => X * 250
                                     },
@@ -994,7 +985,7 @@ dynamic_routing_by_performance() ->
                                     <<"path">> => <<"register">>,
                                     <<"route">> =>
                                         #{
-                                            <<"name">> => XNode,
+                                            <<"prefix">> => XNode,
                                             <<"template">> => TestPath,
                                             <<"price">> => 1000 + X
                                         }
@@ -1307,7 +1298,9 @@ add_route_test() ->
     {ok, Recvd} = GetRes,
     ?assertMatch(<<"new">>, Recvd).
 
-relay_nearest_test() ->
+%% @doc Test that the `preprocess/3' function re-routes a request to remote
+%% peers via `~relay@1.0', according to the node's routing table.
+request_hook_reroute_to_nearest_test() ->
     Peer1 = hb_http_server:start_node(#{ priv_wallet => W1 = ar_wallet:new() }),
     Peer2 = hb_http_server:start_node(#{ priv_wallet => W2 = ar_wallet:new() }),
     Address1 = hb_util:human_id(ar_wallet:to_address(W1)),
@@ -1315,37 +1308,54 @@ relay_nearest_test() ->
     Peers = [Address1, Address2],
     Node =
         hb_http_server:start_node(Opts = #{
-            store => hb_opts:get(store),
             priv_wallet => ar_wallet:new(),
-            routes => [
-                #{
-                    <<"template">> => <<"/.*">>,
-                    <<"strategy">> => <<"Nearest">>,
-                    <<"nodes">> => [
-                        #{
-                            <<"name">> => Peer1,
-                            <<"wallet">> => Address1
-                        },
-                        #{
-                            <<"name">> => Peer2,
-                            <<"wallet">> => Address2
-                        }    
-                    ]
-                }
-            ]
+            routes =>
+                [
+                    #{
+                        <<"template">> => <<"/.*/.*/.*">>,
+                        <<"strategy">> => <<"Nearest">>,
+                        <<"nodes">> =>
+                            lists:map(
+                                fun({Address, Node}) ->
+                                    #{
+                                        <<"prefix">> => Node,
+                                        <<"wallet">> => Address
+                                    }
+                                end,
+                                [
+                                    {Address1, Peer1},
+                                    {Address2, Peer2}
+                                ]
+                            )
+                    }
+                ],
+            on => #{ <<"request">> => #{ <<"device">> => <<"relay@1.0">> } }
         }),
-    {ok, RelayRes} =
-        hb_http:get(
-            Node,
-            <<"/~relay@1.0/call?relay-path=~hyperbuddy@1.0/dashboard">>,
-            Opts
+    Res =
+        lists:map(
+            fun(_) ->
+                hb_util:ok(
+                    hb_http:get(
+                        Node,
+                        <<"/~meta@1.0/info/address">>,
+                        Opts#{ http_only_result => true }
+                    )
+                )
+            end,
+            lists:seq(1, 3)
         ),
-    ?event({relay_res, RelayRes}),
-    HasValidSigner =
-        lists:any(
-            fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes, Opts)) end,
-            Peers
-        ),
+    ?event(debug_test,
+        {res, {
+            {response, Res},
+            {signers, hb_message:signers(Res, Opts)}
+        }}
+    ),
+    HasValidSigner = lists:any(
+        fun(Peer) ->
+            lists:member(Peer, Res)
+        end,
+        Peers
+    ),
     ?assert(HasValidSigner).
 
 %%% Statistical test utilities
