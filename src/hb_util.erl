@@ -438,13 +438,27 @@ debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==>~n~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~s @ ~s]==>~n~s~n",
         [
-            TSDiff, self(),
+            TSDiff,
+            case server_id() of
+                undefined -> bin(io_lib:format("~p", [self()]));
+                ServerID ->
+                    bin(io_lib:format("~s (~p)", [short_id(ServerID), self()]))
+            end,
             format_debug_trace(Mod, Func, LineNum),
             debug_fmt(X, 0)
         ]),
     X.
+
+%% @doc Retreive the server ID of the calling process, if known.
+server_id() ->
+    server_id(#{ server_id => undefined }).
+server_id(Opts) ->
+    case hb_opts:get(server_id, undefined, Opts) of
+        undefined -> get(server_id);
+        ServerID -> ServerID
+    end.
 
 %% @doc Generate the appropriate level of trace for a given call.
 format_debug_trace(Mod, Func, Line) ->
