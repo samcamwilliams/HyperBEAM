@@ -170,8 +170,8 @@ read_with_retry(Opts, Path) ->
 read_with_retry(_Opts, _Path, 0) -> 
     not_found;
 read_with_retry(Opts, Path, RetriesRemaining) ->
-    NifOpts = #{ env => find_env(Opts), name => default },
-    case lmdb:get(NifOpts, Path) of
+    #{ <<"db">> := DBInstance } = find_env(Opts),
+    case elmdb:get(DBInstance, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
@@ -182,10 +182,10 @@ read_with_retry(Opts, Path, RetriesRemaining) ->
 %% @doc Read with immediate flush for cases where we need to see recent writes.
 %% This is used when we expect the key to exist from a recent write operation.
 read_with_flush(Opts, Path) ->
-    NifOpts = #{ env => find_env(Opts), name => default },
+    #{ <<"db">> := DBInstance } = find_env(Opts),
     % First, ensure any pending writes are committed
     sync(Opts),
-    case lmdb:get(NifOpts, Path) of
+    case elmdb:get(DBInstance, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
@@ -240,9 +240,9 @@ resolve_path_links_acc(Opts, [Head | Tail], AccPath, Depth) ->
     % Build the accumulated path so far
     CurrentPath = lists:reverse([Head | AccPath]),
     CurrentPathBin = to_path(CurrentPath),
-    NifOpts = #{ env => find_env(Opts), name => default },
+    #{ <<"db">> := DBInstance } = find_env(Opts),
     % Check if the accumulated path (not just the segment) is a link
-    case lmdb:get(NifOpts, CurrentPathBin) of
+    case elmdb:get(DBInstance, CurrentPathBin) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -318,7 +318,7 @@ list(Opts, Path) when is_map(Opts), is_binary(Path) ->
             not_found ->
                 Path
         end,
-    try
+    % try
        % Ensure the path ends with "/" for proper prefix matching (like directory listing)
        SearchPath = 
            case ResolvedPath of
@@ -326,9 +326,9 @@ list(Opts, Path) when is_map(Opts), is_binary(Path) ->
                _ -> <<ResolvedPath/binary, "/">>
            end,
        SearchPathSize = byte_size(SearchPath),
-       NifOpts = #{ env => Env, name => default },
        Res = 
-           lmdb:fold(NifOpts,
+           fold_after(Opts,
+               SearchPath,
                fun(Key, _Value, Acc) ->
                    % Match keys that start with our search path (like dir listing)
                    case byte_size(Key) > SearchPathSize andalso 
@@ -370,12 +370,39 @@ list(Opts, Path) when is_map(Opts), is_binary(Path) ->
                not_found;
            _ ->
                Res
-       end
-    catch
-       _:Error -> {error, Error}
-    end;
+       end;
+    % catch
+    %    _:Error -> {error, Error}
+    % end;
 list(_, _) ->
     {error, {badarg, <<"StoreOpts must be a map and Path must be an binary">>}}.
+
+%% @doc Fold over a database after a given path. The `Fun` is called with
+%% the key and value, and the accumulator.
+fold_after(Opts, Path, Fun, Acc) ->
+    #{ <<"db">> := DBInstance, <<"env">> := Env } = find_env(Opts),
+    {ok, Txn} = elmdb:ro_txn_begin(Env),
+    {ok, Cur} = elmdb:ro_txn_cursor_open(Txn, DBInstance),
+    fold_cursor(
+        elmdb:ro_txn_cursor_get(Cur, {set_range, Path}),
+        Txn,
+        Cur,
+        Fun,
+        Acc
+    ).
+
+fold_cursor(not_found, Txn, Cur, _Fun, Acc) ->
+    ok = elmdb:ro_txn_cursor_close(Cur),
+    ok = elmdb:ro_txn_commit(Txn),
+    {ok, Acc};
+fold_cursor({ok, Key, Value}, Txn, Cur, Fun, Acc) ->
+    fold_cursor(
+        elmdb:ro_txn_cursor_get(Cur, next),
+        Txn,
+        Cur,
+        Fun,
+        Fun(Key, Value, Acc)
+    ).
 
 %% @doc Create a group entry that can contain other keys hierarchically.
 %%
@@ -427,9 +454,9 @@ create_parent_groups(_Opts, _Current, []) ->
 create_parent_groups(Opts, Current, [Next | Rest]) ->
     NewCurrent = Current ++ [Next],
     GroupPath = to_path(NewCurrent),
-    NifOpts = #{ env => find_env(Opts), name => default },
+    #{ <<"db">> := DBInstance } = find_env(Opts),
     % Only create group if it doesn't already exist - use direct LMDB check to avoid recursion
-    case lmdb:get(NifOpts, GroupPath) of
+    case elmdb:get(DBInstance, GroupPath) of
         not_found ->
             make_group(Opts, GroupPath);
         {ok, _} ->
@@ -538,9 +565,7 @@ resolve(Opts, PathParts) when is_list(PathParts) ->
 resolve(_,_) -> not_found.
 
 %% @doc Retrieve or create the LMDB environment handle for a database.
-find_env(Opts) ->
-    #{ <<"env">> := Env } = hb_store:find(Opts),
-    Env.
+find_env(Opts) -> hb_store:find(Opts).
 
 %% @doc Locate an existing server process or spawn a new one if needed.
 find_pid(StoreOpts) ->
@@ -562,20 +587,11 @@ find_pid(StoreOpts) ->
 %% @returns {ok, ServerPid} on success, {error, Reason} on failure
 -spec start(map()) -> {ok, pid()} | {error, term()}.
 start(Opts = #{ <<"name">> := DataDir }) ->
-    % Ensure the database directory exists
-    filelib:ensure_dir(hb_util:list(DataDir) ++ "/mbd.data"),
     % Create the LMDB environment with specified size limit
-    {ok, Env} =
-        lmdb:env_create(
-            DataDir,
-            #{
-                max_dbs => 10,
-                max_mapsize => maps:get(<<"max-size">>, Opts, ?DEFAULT_SIZE),
-                flags => [create, notls, nosync, nometasync, writemap, mapasync, nordahead]
-            }
-        ),
+    {ok, Env} = elmdb:env_open(hb_util:list(DataDir), []),
+    {ok, DBInstance} = elmdb:db_open(Env, [create]),
     % Prepare server state with environment handle
-    ServerOpts = Opts#{ <<"env">> => Env },
+    ServerOpts = Opts#{ <<"env">> => Env, <<"db">> => DBInstance },
     % Spawn the main server process with linked commit manager
     Server = 
         spawn(
@@ -584,7 +600,7 @@ start(Opts = #{ <<"name">> := DataDir }) ->
                 server(ServerOpts)
             end
         ),
-    {ok, #{ <<"pid">> => Server, <<"env">> => Env }};
+    {ok, #{ <<"pid">> => Server, <<"env">> => Env, <<"db">> => DBInstance }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
 
@@ -674,7 +690,7 @@ server(State) ->
         {stop, From, Ref} ->
             % Shutdown request, flush final data and terminate
             server_flush(State),
-            lmdb:env_close(maps:get(<<"env">>, State)),
+            elmdb:env_close(maps:get(<<"env">>, State)),
             From ! {stopped, Ref},
             ok
     after
@@ -700,25 +716,25 @@ server(State) ->
 server_write(RawState, Key, Value) ->
     State = ensure_transaction(RawState),
     case {maps:get(<<"transaction">>, State, undefined), 
-          maps:get(<<"instance">>, State, undefined)} of
+          maps:get(<<"db">>, State, undefined)} of
         {undefined, _} ->
             % Transaction creation failed, return state unchanged
-            ?event({write_failed_no_transaction, Key}),
+            ?event(error, {write_failed_no_transaction, Key}),
             State;
         {_, undefined} ->
             % Database instance missing, return state unchanged
-            ?event({write_failed_no_db_instance, Key}),
+            ?event(error, {write_failed_no_db_instance, Key}),
             State;
         {Txn, Dbi} ->
             % Valid transaction and instance, perform the write
             try
-                lmdb_nif:put(Txn, Dbi, Key, Value, 0),
+                elmdb:txn_put(Txn, Dbi, Key, Value),
                 State
             catch
                 Class:Reason:Stacktrace ->
-                    ?event({put_failed, Class, Reason, Stacktrace, Key}),
+                    ?event(error, {put_failed, Class, Reason, Stacktrace, Key}),
                     % If put fails, the transaction may be invalid, clean it up
-                    State#{ <<"transaction">> => undefined, <<"instance">> => undefined }
+                    State#{ <<"transaction">> => undefined }
             end
     end.
 
@@ -745,16 +761,16 @@ server_flush(RawState) ->
         Txn ->
             % Commit the transaction with proper error handling
             try
-                lmdb_nif:txn_commit(Txn),
+                elmdb:txn_commit(Txn),
                 notify_flush(RawState),
-                RawState#{ <<"transaction">> => undefined, <<"instance">> => undefined }
+                RawState#{ <<"transaction">> => undefined }
             catch
                 Class:Reason:Stacktrace ->
                     ?event(error, {txn_commit_failed, Class, Reason, Stacktrace}),
                     % Even if commit fails, clean up the transaction reference
                     % to prevent trying to use an invalid handle
                     notify_flush(RawState),
-                    RawState#{ <<"transaction">> => undefined, <<"instance">> => undefined }
+                    RawState#{ <<"transaction">> => undefined }
             end
     end.
 
@@ -832,14 +848,8 @@ ensure_transaction(State) ->
         undefined ->
             % No transaction exists, create one with error handling
             try
-                {ok, Txn} =
-                    lmdb_nif:txn_begin(
-                        maps:get(<<"env">>, State),
-                        undefined,
-                        0
-                    ),
-                {ok, Dbi} = lmdb:open_db(Txn, default),
-                State#{<<"transaction">> => Txn, <<"instance">> => Dbi}
+                {ok, Txn} = elmdb:txn_begin(maps:get(<<"env">>, State)),
+                State#{ <<"transaction">> => Txn }
             catch
                 Class:Reason:Stacktrace ->
                     ?event(error, {txn_begin_failed, Class, Reason, Stacktrace}),
