@@ -259,15 +259,21 @@ sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
     {ok, ID, Commitment5}.
 
 decoding_nested_map_binary(Bin) ->
-    MapBinary = lists:foldl(fun (X, Acc) ->
-        ?event(debug, {x, X}),
-        case binary:split(X, <<":">>, [global]) of
-            [ID, Key, Value] ->
-                maps:put(ID, #{ <<"name">> => Key, <<"value">> => Value }, Acc);
-            _ ->
-                X
-        end
-    end, #{}, binary:split(Bin, <<", ">>, [global])),
+    MapBinary =
+        lists:foldl(
+            fun (X, Acc) ->
+                case binary:split(X, <<":">>, [global]) of
+                    [ID, Key, Value] ->
+                        Acc#{
+                            ID => #{ <<"name">> => Key, <<"value">> => Value }
+                        };
+                    _ ->
+                        X
+                end
+            end,
+            #{},
+            binary:split(Bin, <<", ">>, [global])
+        ),
     case MapBinary of
         Res when is_map(Res) ->
             Res;
