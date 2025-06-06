@@ -13,6 +13,8 @@
 %% 4. The relay succeeds when the client has enough balance.
 %% 5. The received message is signed by the host using http-sig and validates
 %%    correctly.
+relay_with_payments_test_() ->
+    {timeout, 30, fun relay_with_payments_test/0}.
 relay_with_payments_test() ->
     HostWallet = ar_wallet:new(),
     ClientWallet = ar_wallet:new(),
@@ -67,6 +69,8 @@ relay_with_payments_test() ->
 %% 2. Execute a simple WASM function on the host node.
 %% 3. Verify the response is correct and signed by the host node.
 %% 4. Get the balance of the client and verify it has been deducted.
+paid_wasm_test_() ->
+    {timeout, 30, fun paid_wasm_test/0}.
 paid_wasm_test() ->
     HostWallet = ar_wallet:new(),
     ClientWallet = ar_wallet:new(),

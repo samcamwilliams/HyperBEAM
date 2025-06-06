@@ -76,69 +76,54 @@ info(_Msg1, _Msg2, _Opts) ->
 %% a new route with a remote router node. This function should also be itempotent
 %% so that it can be called only once.
 register(_M1, _M2, Opts) ->
-    Registered = hb_opts:get(router_registered, false, Opts),
-    % Check if the route is already registered
-    case Registered of
-        true ->
-            {error, <<"Route already registered.">>};
-        false ->
-            % Validate node history
-            case hb_opts:validate_node_history(Opts) of
-                {ok, _} ->
-                    RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
-                    Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
-                    Price = hb_opts:get(<<"router_price">>, not_found, Opts),
-                    Template = hb_opts:get(<<"router_template">>, not_found, Opts),
-                    {ok, Attestion} = dev_snp:generate(
-                        #{}, 
-                        #{}, 
-                        #{ 
-                            priv_wallet => hb:wallet(), 
-                            snp_trusted => hb_opts:get(snp_trusted, [#{}], Opts)
-                        }
-                    ),
-                    ?event(debug_register, {attestion, Attestion}),
-                    % Check if any required parameters are missing
-                    case hb_opts:check_required_opts([
-                        {<<"router_peer_location">>, RouterNode},
-                        {<<"router_prefix">>, Prefix},
-                        {<<"router_price">>, Price},
-                        {<<"router_template">>, Template}
-                    ], Opts) of
-                        {ok, _} ->
-                            case hb_http:post(RouterNode, #{
-                                <<"path">> => <<"/router~node-process@1.0/schedule">>,
-                                <<"method">> => <<"POST">>,
-                                <<"body">> =>
-                                    hb_message:commit(
-                                        #{
-                                            <<"path">> => <<"register">>,
-                                            <<"route">> =>
-                                                #{
-                                                    <<"prefix">> => Prefix,
-                                                    <<"template">> => Template,
-                                                    <<"price">> => Price
-                                                },
-                                            <<"body">> => Attestion
-                                        },
-                                        Opts
-                                    )
-                            }, Opts) of
-                                {ok, _} ->
-                                    hb_http_server:set_opts(
-                                        Opts#{ router_registered => true }
-                                    ),
-                                    {ok, <<"Route registered.">>};
-                                {error, _} ->
-                                    {error, <<"Failed to register route.">>}
-                            end;
-                        {error, ErrorMsg} ->
-                            {error, ErrorMsg}
-                    end;
-                {error, Reason} ->
-                    % Node history validation failed
-                    {error, Reason}
-            end
+    maybe
+        %% Extract all required parameters from options
+        %% These values will be used to construct the registration message
+        RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
+        Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
+        Price = hb_opts:get(<<"router_price">>, not_found, Opts),
+        Template = hb_opts:get(<<"router_template">>, not_found, Opts),
+        %% Generate attestation for secure node validation
+        %% This proves the node's identity to the router
+        {ok, Attestion} = dev_snp:generate(#{}, #{}, Opts),
+        ?event(debug_register, {attestion, Attestion}),
+        %% Validate that all required parameters are present
+        %% This will return {error, Reason} if any parameter is missing or invalid
+        {ok, _} = hb_opts:check_required_opts([
+            {<<"router_peer_location">>, RouterNode},
+            {<<"router_prefix">>, Prefix},
+            {<<"router_price">>, Price},
+            {<<"router_template">>, Template}
+        ], Opts),
+        %% Post registration request to the router node
+        %% The message includes our route details and attestation for verification
+        {ok, _} = hb_http:post(
+            RouterNode, 
+            #{
+                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                        hb_message:commit(
+                            #{
+                                <<"path">> => <<"register">>,
+                                <<"route">> =>
+                                #{
+                                    <<"prefix">> => Prefix,
+                                    <<"template">> => Template,
+                                    <<"price">> => Price
+                                },
+                                <<"body">> => Attestion
+                            },
+                            Opts
+                        )
+            },
+            Opts
+        ),
+        {ok, <<"Route registered.">>}
+    else
+        %% Handle any other errors from the registration process
+        %% This includes parameter validation errors and HTTP errors
+        {error, Reason} -> {error, Reason}
     end.
 
 %% @doc Device function that returns all known routes.
@@ -550,6 +535,31 @@ preprocess(Msg1, Msg2, Opts) ->
             % This allows us to potentially sign the request before sending it,
             % letting the recipient node charge/verify us as necessary, without
             % explicitly signing the user's request itself.
+            % 
+            % We additionally ensure that the request itself has a commitment,
+            % such that headers added by the relaying node are not added to the
+            % user's request.
+            UserReqWithCommit =
+                case hb_message:signers(Req, Opts) of
+                    [] ->
+                        hb_message:commit(
+                            Req,
+                            Opts,
+                            #{
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => <<"unsigned">>
+                            }
+                        );
+                    _ ->
+                        Req
+                end,
+            RelayReq = 
+                #{
+                    <<"device">> => <<"apply@1.0">>,
+                    <<"path">> => <<"user-request">>,
+                    <<"user-request">> => UserReqWithCommit
+                },
+            ?event(debug_relay, {prepared_relay_req, RelayReq}),
             {
                 ok,
                 #{
@@ -557,18 +567,14 @@ preprocess(Msg1, Msg2, Opts) ->
                         [
                             MaybeCommit#{
                                 <<"device">> => <<"relay@1.0">>,
+                                <<"relay-device">> => <<"apply@1.0">>,
                                 <<"method">> => <<"POST">>,
                                 <<"peer">> => Node
                             },
                             #{
                                 <<"path">> => <<"call">>,
                                 <<"target">> => <<"proxy-message">>,
-                                <<"proxy-message">> =>
-                                    #{
-                                        <<"device">> => <<"apply@1.0">>,
-                                        <<"path">> => <<"user-request">>,
-                                        <<"user-request">> => Req
-                                    }
+                                <<"proxy-message">> => RelayReq
                             }
                         ]
                 }
