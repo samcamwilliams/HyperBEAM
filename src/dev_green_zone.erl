@@ -404,7 +404,10 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                 Opts
             ),
             % Create an committed join request using the wallet.
-            Req = hb_message:commit(MergedReq, Wallet),
+            Req = hb_cache:ensure_all_loaded(
+                hb_message:commit(MergedReq, Wallet),
+                Opts
+            ),
             ?event({join_req, {explicit, Req}}),
             ?event({verify_res, hb_message:verify(Req)}),
             % Log that the commitment report is being sent to the peer.
