@@ -103,17 +103,20 @@ register(_M1, _M2, Opts) ->
                 <<"path">> => <<"/router~node-process@1.0/schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"body">> =>
-                    hb_message:commit(
-                        #{
-                            <<"path">> => <<"register">>,
-                            <<"route">> =>
+                    hb_cache:ensure_all_loaded(
+                        hb_message:commit(
+                            #{
+                                <<"path">> => <<"register">>,
+                                <<"route">> =>
                                 #{
                                     <<"prefix">> => Prefix,
                                     <<"template">> => Template,
                                     <<"price">> => Price
                                 },
-                            <<"body">> => Attestion
-                        },
+                                <<"body">> => Attestion
+                            },
+                            Opts
+                        ),
                         Opts
                     )
             },

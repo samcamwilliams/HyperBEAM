@@ -200,13 +200,16 @@ generate(_M1, _M2, Opts) ->
             {report, ReportJSON}
         }
     ),
-    ReportMsg = hb_message:commit(#{
-        <<"local-hashes">> => LocalHashes,
-        <<"nonce">> => hb_util:encode(ReportData),
-        <<"address">> => Address,
-        <<"node-message">> => NodeMsg,
-        <<"report">> => ReportJSON
-    }, Wallet),
+    ReportMsg = hb_cache:ensure_all_loaded(
+        hb_message:commit(#{
+            <<"local-hashes">> => LocalHashes,
+            <<"nonce">> => hb_util:encode(ReportData),
+            <<"address">> => Address,
+            <<"node-message">> => NodeMsg,
+            <<"report">> => ReportJSON
+        }, Wallet),
+        Opts
+    ),
     ?event({verify_res, hb_message:verify(ReportMsg)}),
     ?event({snp_report_msg, ReportMsg}),
     {ok, ReportMsg}.

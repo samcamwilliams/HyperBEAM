@@ -407,12 +407,12 @@ set_opts(Opts) ->
     end.
 set_opts(Request, Opts) ->
     PerparedOpts = hb_opts:mimic_default_types(
-        Opts,
+        hb_cache:ensure_all_loaded(Opts, Opts),
         new_atoms,
         Opts
     ),
     PreparedRequest = hb_opts:mimic_default_types(
-        hb_message:uncommitted(Request),
+        hb_cache:ensure_all_loaded(hb_message:uncommitted(Request), Opts),
         new_atoms,
         Opts
     ),
@@ -421,6 +421,7 @@ set_opts(Request, Opts) ->
             PerparedOpts,
             PreparedRequest
         ),
+    ?event(set_opts, {merged_opts, {explicit, MergedOpts}}),
     History = hb_opts:get(node_history, [], Opts) ++ [ hb_private:reset(maps:without([node_history], PreparedRequest)) ],
     FinalOpts = MergedOpts#{
         http_server => hb_opts:get(http_server, no_server, Opts),
