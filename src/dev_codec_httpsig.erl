@@ -419,7 +419,7 @@ signature_components_line(Req, Commitment, _Opts) ->
                             }
                         );
                     Value ->
-                        << Name/binary, <<": ">>/binary, Value/binary>>
+                        << <<"\"">>/binary, Name/binary, <<"\"">>/binary, <<": ">>/binary, Value/binary>>
                 end
             end,
             maps:get(<<"committed">>, Commitment)
@@ -451,24 +451,27 @@ signature_params_line(RawCommitment, Opts) ->
                         )
                     ),
                     lists:map(
-                        fun ({Name, Param}) when is_binary(Param) ->
+                        fun ({<<"alg">>, Param}) when is_binary(Param) ->
+                            {<<"alg">>, {string, Param}};
+                        ({Name, Param}) when is_binary(Param) ->
                             {Name, {string, Param}};
                         ({Name, Param}) when is_integer(Param) ->
                             {Name, Param}
                         end,
-                        maps:to_list(
+                        lists:sort(maps:to_list(
                             maps:with(
                                 [
                                     <<"created">>,
                                     <<"expires">>,
                                     <<"nonce">>,
+                                    <<"alg">>,
                                     <<"keyid">>,
                                     <<"tag">>,
                                     <<"bundle">>
                                 ],
-                                Commitment
+                                Commitment#{ <<"alg">> => maps:get(<<"type">>, Commitment) }
                             )
-                        )
+                        ))
                     )
                 }
             ]
