@@ -399,7 +399,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
             ?event(green_zone, {remove_uncommitted, Report}),
             MergedReq = hb_ao:set(
                 Report, 
-                <<"public-key">>,
+                <<"public_key">>,
                 base64:encode(term_to_binary(WalletPub)),
                 Opts
             ),
@@ -424,12 +424,6 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 					?event(green_zone, {join, verify, IsVerified}),
 					IsPeerSigner = lists:member(PeerID, Signers),
 					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
-                    Signers = hb_message:signers(Resp, Opts),
-                    ?event(green_zone, {join, signers, Signers}),
-                    IsVerified = hb_message:verify(Resp, Signers, Opts),
-                    ?event(green_zone, {join, verify, IsVerified}),
-                    IsPeerSigner = lists:member(PeerID, Signers),
-                    ?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
                     case IsPeerSigner andalso IsVerified of
                         false ->
                             % The response is not from the expected peer.
@@ -631,7 +625,7 @@ validate_join(M1, Req, Opts) ->
     % Retrieve and decode the joining node's public key.
     ?event(green_zone, {m1, {explicit, M1}}),
     ?event(green_zone, {req, {explicit, Req}}),
-    EncodedPubKey = hb_ao:get(<<"public-key">>, Req, Opts),
+    EncodedPubKey = hb_ao:get(<<"public_key">>, Req, Opts),
     ?event(green_zone, {encoded_pub_key, {explicit, EncodedPubKey}}),
     RequesterPubKey = case EncodedPubKey of
         not_found -> not_found;
@@ -660,7 +654,7 @@ validate_join(M1, Req, Opts) ->
                 <<"body">>         => <<"Node joined green zone successfully.">>,
                 <<"node-address">> => NodeAddr,
                 <<"zone-key">>     => base64:encode(EncryptedPayload),
-                <<"public-key">>   => WalletPubKey
+                <<"public_key">>   => WalletPubKey
             }};
         {ok, <<"false">>} ->
             % Commitment failed.
