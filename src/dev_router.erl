@@ -106,26 +106,23 @@ register(_M1, _M2, Opts) ->
         %% The message includes our route details and attestation for verification
         {ok, _} = hb_http:post(
             RouterNode,
-            #{
-                <<"path">> => <<"/router~node-process@1.0/schedule">>,
-                <<"body">> =>
-                    hb_cache:ensure_all_loaded(
-                        hb_message:commit(
-                            #{
-                                <<"path">> => <<"register">>,
-                                <<"route">> =>
-                                #{
-                                    <<"prefix">> => Prefix,
-                                    <<"template">> => Template,
-                                    <<"price">> => Price
-                                },
-                                <<"body">> => Attestion
-                            },
-                            Opts
-                        ),
-                        Opts
-                    )
-            },
+            <<"/router~node-process@1.0/schedule">>,
+            hb_cache:ensure_all_loaded(
+                hb_message:commit(
+                    #{
+                        <<"action">> => <<"register">>,
+                        <<"route">> =>
+                        #{
+                            <<"prefix">> => Prefix,
+                            <<"template">> => Template,
+                            <<"price">> => Price
+                        },
+                        <<"body">> => Attestion
+                    },
+                    Opts
+                ),
+                Opts
+            ),
             Opts
         ),
         {ok, <<"Route registered.">>}
