@@ -272,7 +272,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                     WithAcceptBundle,
                     #{
                         <<"device">> => <<"httpsig@1.0">>,
-                        <<"bundle">> => false
+                        <<"bundle">> => true
                     },
                     Opts
                 ),

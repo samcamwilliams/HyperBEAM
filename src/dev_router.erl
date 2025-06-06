@@ -103,7 +103,6 @@ register(_M1, _M2, Opts) ->
                 <<"path">> => <<"/router~node-process@1.0/schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"body">> =>
-                    hb_cache:ensure_all_loaded(
                         hb_message:commit(
                             #{
                                 <<"path">> => <<"register">>,
@@ -116,9 +115,7 @@ register(_M1, _M2, Opts) ->
                                 <<"body">> => Attestion
                             },
                             Opts
-                        ),
-                        Opts
-                    )
+                        )
             },
             Opts
         ),
