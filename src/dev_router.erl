@@ -85,7 +85,10 @@ register(_M1, _M2, Opts) ->
         Template = hb_opts:get(<<"router_template">>, not_found, Opts),
         %% Generate attestation for secure node validation
         %% This proves the node's identity to the router
-        {ok, Attestion} = dev_snp:generate(#{}, #{}, Opts),
+        Attestion = hb_message:commit(
+            hb_util:ok(dev_snp:generate(#{}, #{}, Opts)),
+            Opts
+        ),
         ?event(debug_register, {attestion, Attestion}),
         %% Validate that all required parameters are present
         %% This will return {error, Reason} if any parameter is missing or invalid
