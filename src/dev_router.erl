@@ -86,11 +86,13 @@ register(_M1, _M2, Opts) ->
         %% Generate attestation for secure node validation
         %% This proves the node's identity to the router
         Attestion = 
-            hb_message:commit(
-                hb_util:ok(dev_snp:generate(#{}, #{}, Opts)),
+            hb_cache:ensure_all_loaded(
+                hb_message:commit(
+                    hb_util:ok(dev_snp:generate(#{}, #{}, Opts)),
+                    Opts
+                ),
                 Opts
             ),
- 
         ?event(debug_register, {attestion, Attestion}),
         %% Validate that all required parameters are present
         %% This will return {error, Reason} if any parameter is missing or invalid
@@ -104,20 +106,26 @@ register(_M1, _M2, Opts) ->
         %% The message includes our route details and attestation for verification
         {ok, _} = hb_http:post(
             RouterNode,
-            <<"/router~node-process@1.0/schedule">>,
-            hb_message:commit(
-                #{
-                    <<"action">> => <<"register">>,
-                    <<"route">> =>
-                    #{
-                        <<"prefix">> => Prefix,
-                        <<"template">> => Template,
-                        <<"price">> => Price
-                    },
-                    <<"body">> => Attestion
-                },
-                Opts
-            ),
+            #{
+                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                <<"body">> =>
+                    hb_cache:ensure_all_loaded(
+                        hb_message:commit(
+                            #{
+                                <<"path">> => <<"register">>,
+                                <<"route">> =>
+                                #{
+                                    <<"prefix">> => Prefix,
+                                    <<"template">> => Template,
+                                    <<"price">> => Price
+                                },
+                                <<"body">> => Attestion
+                            },
+                            Opts
+                        ),
+                        Opts
+                    )
+            },
             Opts
         ),
         {ok, <<"Route registered.">>}
