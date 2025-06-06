@@ -107,20 +107,18 @@ register(_M1, _M2, Opts) ->
         {ok, _} = hb_http:post(
             RouterNode,
             <<"/router~node-process@1.0/schedule">>,
-            hb_cache:ensure_all_loaded(
-                hb_message:commit(
-                    #{
-                        <<"action">> => <<"register">>,
-                        <<"route">> =>
+            hb_message:commit(
+                #{
+                    <<"subject">> => <<"self">>,
+                    <<"action">> => <<"register">>,
+                    <<"route">> =>
                         #{
                             <<"prefix">> => Prefix,
                             <<"template">> => Template,
                             <<"price">> => Price
                         },
-                        <<"body">> => Attestion
-                    },
-                    Opts
-                ),
+                    <<"body">> => Attestion
+                },
                 Opts
             ),
             Opts
