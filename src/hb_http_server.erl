@@ -347,13 +347,14 @@ handle_request(RawReq, Body, ServerID) ->
                 ),
                 % hb_tracer:record_step(TracePID, request_parsing),
                 % Invoke the meta@1.0 device to handle the request.
+                LoadedReq = hb_cache:ensure_all_loaded(ReqSingleton, NodeMsg),
                 {ok, Res} =
                     dev_meta:handle(
                         NodeMsg#{
                             commitment_device => CommitmentCodec,
                             trace => TracePID
                         },
-                        ReqSingleton
+                        LoadedReq
                     ),
                 hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
             catch
