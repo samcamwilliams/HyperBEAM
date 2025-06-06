@@ -181,8 +181,7 @@ default_message() ->
                 % },
                 #{
                     <<"name">> => <<"cache-mainnet/lmdb">>,
-                    <<"store-module">> => hb_store_lmdb,
-                    <<"max-size">> => 4 * 1024 * 1024 * 1024
+                    <<"store-module">> => hb_store_lmdb
                 },
                 #{
                     <<"store-module">> => hb_store_fs,

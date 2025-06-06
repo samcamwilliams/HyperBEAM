@@ -580,7 +580,7 @@ find_pid(StoreOpts) ->
 %% environment and coordinates all database operations.
 %%
 %% The StoreOpts map must contain a "prefix" key specifying the
-%% database directory path. Also the required configuration includes "max-size" for
+%% database directory path. Also the required configuration includes "capacity" for
 %% the maximum database size and flush timing parameters.
 %%
 %% @param StoreOpts A map containing database configuration options
@@ -588,7 +588,14 @@ find_pid(StoreOpts) ->
 -spec start(map()) -> {ok, pid()} | {error, term()}.
 start(Opts = #{ <<"name">> := DataDir }) ->
     % Create the LMDB environment with specified size limit
-    {ok, Env} = elmdb:env_open(hb_util:list(DataDir), []),
+    {ok, Env} =
+        elmdb:env_open(
+            hb_util:list(DataDir),
+            [
+                map_async,
+                {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)}
+            ]
+        ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
     % Prepare server state with environment handle
     ServerOpts = Opts#{ <<"env">> => Env, <<"db">> => DBInstance },
@@ -877,8 +884,7 @@ ensure_transaction(State) ->
 basic_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
-        <<"name">> => <<"/tmp/store-1">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"name">> => <<"/tmp/store-1">>
     },
     reset(StoreOpts),
     Res = write(StoreOpts, <<"Hello">>, <<"World2">>),
@@ -896,7 +902,7 @@ list_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-2">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     
@@ -949,7 +955,7 @@ group_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store3">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     make_group(StoreOpts, <<"colors">>),
@@ -967,7 +973,7 @@ link_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store3">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, <<"foo/bar/baz">>, <<"Bam">>),
@@ -980,7 +986,7 @@ link_fragment_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store3">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, [<<"data">>, <<"bar">>, <<"baz">>], <<"Bam">>),
@@ -998,7 +1004,7 @@ type_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-6">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     make_group(StoreOpts, <<"assets">>),
@@ -1029,7 +1035,7 @@ link_key_list_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-7">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     write(StoreOpts, [ <<"parent">>, <<"key">> ], <<"value">>),
@@ -1052,7 +1058,7 @@ path_traversal_link_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-8">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     % Create the actual data at group/key
@@ -1070,7 +1076,7 @@ exact_hb_store_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-exact">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     
     % Follow exact same pattern as hb_store test
@@ -1109,7 +1115,7 @@ cache_style_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-cache-style">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     % Start the store
@@ -1135,7 +1141,7 @@ nested_map_cache_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-nested-cache">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     
     % Clean up any previous test data
@@ -1266,7 +1272,7 @@ cache_debug_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/cache-debug">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     
     reset(StoreOpts),
@@ -1314,7 +1320,7 @@ isolated_type_debug_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/isolated-debug">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     
     reset(StoreOpts),
@@ -1365,7 +1371,7 @@ list_with_link_test() ->
     StoreOpts = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => <<"/tmp/store-list-link">>,
-        <<"max-size">> => ?DEFAULT_SIZE
+        <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
     

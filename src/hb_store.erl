@@ -316,8 +316,7 @@ test_stores() ->
         % },
         #{
             <<"store-module">> => hb_store_lmdb,
-            <<"name">> => <<"cache-TEST/lmdb">>,
-            <<"max-size">> => 600 * 1024 * 1024
+            <<"name">> => <<"cache-TEST/lmdb">>
         },
         #{
             <<"store-module">> => hb_store_lru,
