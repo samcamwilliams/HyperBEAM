@@ -393,7 +393,7 @@ fold_after(Opts, Path, Fun, Acc) ->
 
 fold_cursor(not_found, Txn, Cur, _Fun, Acc) ->
     ok = elmdb:ro_txn_cursor_close(Cur),
-    ok = elmdb:ro_txn_commit(Txn),
+    % ok = elmdb:ro_txn_abort(Txn),
     {ok, Acc};
 fold_cursor({ok, Key, Value}, Txn, Cur, Fun, Acc) ->
     fold_cursor(
@@ -592,8 +592,8 @@ start(Opts = #{ <<"name">> := DataDir }) ->
         elmdb:env_open(
             hb_util:list(DataDir),
             [
-                map_async,
                 {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)}
+                , no_sync, no_meta_sync, no_mem_init, no_read_ahead, map_async
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
@@ -741,7 +741,8 @@ server_write(RawState, Key, Value) ->
                 Class:Reason:Stacktrace ->
                     ?event(error, {put_failed, Class, Reason, Stacktrace, Key}),
                     % If put fails, the transaction may be invalid, clean it up
-                    State#{ <<"transaction">> => undefined }
+                    State#{ <<"transaction">> => undefined },
+                ok
             end
     end.
 
