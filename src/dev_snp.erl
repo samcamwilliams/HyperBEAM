@@ -171,16 +171,17 @@ verify(M1, M2, NodeOpts) ->
 %% message ID), as well as the expected measurement (firmware, kernel, and VMSAs
 %% hashes).
 generate(_M1, _M2, Opts) ->
-    ?event({generate_opts, {explicit, Opts}}),
-    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    LoadedOpts = hb_cache:ensure_all_loaded(Opts, Opts),
+    ?event({generate_opts, {explicit, LoadedOpts}}),
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, LoadedOpts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % ?event({snp_wallet, Wallet}),
     % Remove the `priv*' keys from the options.
     {ok, PublicNodeMsgID} =
         dev_message:id(
-                NodeMsg = hb_private:reset(Opts),
+                NodeMsg = hb_private:reset(LoadedOpts),
                 #{ <<"committers">> => <<"none">> },
-                Opts
+                LoadedOpts
             ),
     RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
     ?event({snp_node_msg, NodeMsg}),
@@ -190,7 +191,7 @@ generate(_M1, _M2, Opts) ->
     ?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
     ?event({snp_report_data, byte_size(ReportData)}),
-    LocalHashes = hd(hb_opts:get(snp_trusted, [#{}], Opts)),
+    LocalHashes = hd(hb_opts:get(snp_trusted, [#{}], LoadedOpts)),
     ?event(snp_local_hashes, {explicit, LocalHashes}),
     {ok, ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
     ?event({snp_report_json, ReportJSON}),
@@ -209,7 +210,7 @@ generate(_M1, _M2, Opts) ->
                     <<"node-message">> => NodeMsg,
                     <<"report">> => ReportJSON
                 }, Wallet),
-            Opts
+            LoadedOpts
         ),
     ?event({verify_res, hb_message:verify(ReportMsg)}),
     ?event({snp_report_msg, ReportMsg}),
