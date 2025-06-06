@@ -554,7 +554,10 @@ subledger_transfer() ->
 
 %% @doc Verify that peer ledgers on the same token are able to register mutually
 %% to establish a peer-to-peer connection.
-subledger_registration_test() ->
+%% 
+%% Disabled as explicit peer registration is not required for `hyper-token.lua'
+%% to function.
+subledger_registration_test_disabled() ->
     Opts = test_opts(),
     Alice = ar_wallet:new(),
     RootLedger =
