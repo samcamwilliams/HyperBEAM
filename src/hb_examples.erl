@@ -70,8 +70,8 @@ relay_with_payments_test() ->
 %% 3. Verify the response is correct and signed by the host node.
 %% 4. Get the balance of the client and verify it has been deducted.
 paid_wasm_test_() ->
-    {timeout, 30, fun paid_wasm_test/0}.
-paid_wasm_test() ->
+    {timeout, 30, fun paid_wasm/0}.
+paid_wasm() ->
     HostWallet = ar_wallet:new(),
     ClientWallet = ar_wallet:new(),
     ClientAddress = hb_util:human_id(ar_wallet:to_address(ClientWallet)),
