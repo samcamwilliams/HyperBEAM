@@ -78,7 +78,6 @@ on(HookName, Req, Opts) ->
         _ -> 
             % Execute each handler in sequence, passing the result of each to
             % the next as input.
-            ?event(hook, {executing_handlers, {HookName, Handlers, Req, Opts}}),
             execute_handlers(HookName, Handlers, Req, Opts)
     end.
 
@@ -91,17 +90,12 @@ on(HookName, Req, Opts) ->
 find(HookName, Opts) ->
     find(#{}, #{ <<"target">> => <<"body">>, <<"body">> => HookName }, Opts).
 find(_Base, Req, Opts) ->
-    ?event(hook, {finding_handlers, {explicit, Req}}),
-    ?event(hook, {node_message, Opts}),
     HookName = maps:get(maps:get(<<"target">>, Req, <<"body">>), Req),
-    ?event(hook, {hook_name, HookName}),
     case maps:get(HookName, hb_opts:get(on, #{}, Opts), []) of
         Handler when is_map(Handler) -> 
-            ?event(hook, {is_map, Handler}),
             % If a single handler is found, wrap it in a list.
             [Handler];
         Handlers when is_list(Handlers) -> 
-            ?event(hook, {is_list, Handlers}),
             % If multiple handlers are found, return them as is
             Handlers;
         _ -> 

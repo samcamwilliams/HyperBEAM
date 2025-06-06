@@ -113,8 +113,6 @@ info(_, Request, NodeMsg) ->
                         NodeMsg
                     );
                 _ ->
-                    ?event(info, {updating_node_message, Request}),
-                    ?event(info, {node_message, NodeMsg}),
                     update_node_message(Request, NodeMsg)
             end;
         _ ->
