@@ -546,10 +546,8 @@ preprocess(Msg1, Msg2, Opts) ->
                             Req,
                             Opts,
                             #{
-                                <<"commitment-device">> =>
-                                    <<"httpsig@1.0">>,
-                                <<"type">> =>
-                                    <<"unsigned">>
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => <<"unsigned">>
                             }
                         );
                     _ ->

@@ -579,7 +579,15 @@ encode_reply(Status, TABMReq, Message, Opts) ->
             end,
 			Opts
         ),
-    AcceptBundle = hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)),
+    AcceptBundle =
+        hb_util:atom(
+            hb_ao:get(
+                <<"accept-bundle">>,
+                {as, <<"message@1.0">>, TABMReq},
+                false,
+                Opts
+            )
+        ),
     % Codecs generally do not need to specify headers outside of the content-type,
     % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
@@ -652,7 +660,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                                 hb_util:atom(
                                     hb_ao:get(
                                         <<"accept-bundle">>,
-                                        TABMReq,
+                                        {as, <<"message@1.0">>, TABMReq},
                                         true,
                                         Opts
                                     )
