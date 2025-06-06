@@ -148,12 +148,14 @@ do_from(RawTX, Req, Opts) ->
         ),
     % Normalize `owner' to `keyid', remove 'id', and remove 'signature'
     TXKeysMap =
-        maps:without(
-            [<<"owner">>, <<"signature">>],
-            case maps:get(<<"owner">>, RawTXKeysMap, ?DEFAULT_OWNER) of
-                ?DEFAULT_OWNER -> RawTXKeysMap;
-                Owner -> RawTXKeysMap#{ <<"keyid">> => Owner }
-            end
+        hb_message:filter_default_keys(
+            maps:without(
+                [<<"owner">>, <<"signature">>],
+                case maps:get(<<"owner">>, RawTXKeysMap, ?DEFAULT_OWNER) of
+                    ?DEFAULT_OWNER -> RawTXKeysMap;
+                    Owner -> RawTXKeysMap#{ <<"keyid">> => Owner }
+                end
+            )
         ),
     % Generate a TABM from the tags.
     MapWithoutData =
