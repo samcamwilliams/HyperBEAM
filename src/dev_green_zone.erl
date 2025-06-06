@@ -356,10 +356,11 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     ),
     ?event(green_zone, {become, update_wallet, complete}),
     {ok, #{
-        <<"status">> => 200,
-        <<"message">> => <<"Successfully adopted target node identity">>,
-        <<"peer-location">> => NodeLocation,
-        <<"peer-id">> => NodeID
+        <<"body">> => #{
+            <<"message">> => <<"Successfully adopted target node identity">>,
+            <<"peer-location">> => NodeLocation,
+            <<"peer-id">> => NodeID
+        }
     }}.
 
 %% @doc Processes a join request to a specific peer node.
