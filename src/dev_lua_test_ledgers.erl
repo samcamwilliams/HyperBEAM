@@ -643,7 +643,8 @@ subledger_to_subledger() ->
 %% duplicates of itself. In order for this to be safe, the peer ledger network's
 %% base process message must implement sufficicient rollback protections and 
 %% compute correctness guarantees.
-unregistered_peer_transfer_test() ->
+unregistered_peer_transfer_test_() -> {timeout, 30, fun unregistered_peer_transfer/0}.
+unregistered_peer_transfer() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
