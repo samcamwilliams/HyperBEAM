@@ -486,14 +486,14 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
 preprocess(Msg1, Msg2, Opts) ->
-    Req = hb_ao:get(<<"request">>, Msg2, Opts#{hashpath => ignore}),
+    Req = hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore }),
     ?event(debug_preprocess, {called_preprocess,Req}),
     TemplateRoutes = load_routes(Opts),
     ?event(debug_preprocess, {template_routes, TemplateRoutes}),
-    {_, Match} = match(#{ <<"routes">> => TemplateRoutes }, Req, Opts),
-    ?event(debug_preprocess, {match, Match}),
-    case Match of
-        no_matching_route -> 
+    Res = hb_http:message_to_request(Req, Opts),
+    ?event(debug_preprocess, {match, Res}),
+    case Res of
+        {error, _} -> 
             ?event(debug_preprocess, preprocessor_did_not_match),
             case hb_opts:get(router_preprocess_default, <<"local">>, Opts) of
                 <<"local">> ->
@@ -513,13 +513,12 @@ preprocess(Msg1, Msg2, Opts) ->
                             }]
                     }}
             end;
-        _ -> 
-            ?event(debug_preprocess, {matched_route, Match}),
+        {ok, Method, Node, Path, _MsgWithoutMeta, _ReqOpts} ->
+            ?event(debug_preprocess, {matched_route, {explicit, Res}}),
             CommitRequest =
                 hb_util:atom(
                     hb_ao:get_first(
                         [
-                            {Match, <<"commit-request">>},
                             {Msg1, <<"commit-request">>}
                         ],
                         false,
@@ -531,25 +530,34 @@ preprocess(Msg1, Msg2, Opts) ->
                     true -> #{ <<"commit-request">> => true };
                     false -> #{}
                 end,
-            ReqBody = 
+            % Construct a request to `relay@1.0/call' which will proxy a request
+            % to `apply@1.0/body' with the original request body as the argument.
+            % This allows us to potentially sign the request before sending it,
+            % letting the recipient node charge/verify us as necessary, without
+            % explicitly signing the user's request itself.
+            {
+                ok,
                 #{
                     <<"body">> =>
                         [
-                            MaybeCommit#{ <<"device">> => <<"relay@1.0">> },
+                            MaybeCommit#{
+                                <<"device">> => <<"relay@1.0">>,
+                                <<"method">> => <<"POST">>,
+                                <<"peer">> => Node
+                            },
                             #{
                                 <<"path">> => <<"call">>,
-                                <<"target">> => <<"body">>,
-                                <<"body">> =>
-                                    hb_ao:get(
-                                        <<"request">>,
-                                        Msg2,
-                                        Opts#{ hashpath => ignore }
-                                    )
+                                <<"target">> => <<"proxy-message">>,
+                                <<"proxy-message">> =>
+                                    #{
+                                        <<"device">> => <<"apply@1.0">>,
+                                        <<"path">> => <<"user-request">>,
+                                        <<"user-request">> => Req
+                                    }
                             }
                         ]
-                },
-            ?event(debug_preprocess, {req_body, ReqBody}),
-            {ok, ReqBody}
+                }
+            }
     end.
 
 %%% Tests
