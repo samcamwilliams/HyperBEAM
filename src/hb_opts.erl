@@ -545,7 +545,7 @@ ensure_node_history(Opts, RequiredOpts) ->
         
         % Step 2: Validate first item values match requirements
         FirstItemValuesMatch = hb_message:match(FirstItem, NormalizedRequiredOpts, only_present),
-        true ?= FirstItemValuesMatch orelse {error, values_invalid},
+        true ?= (FirstItemValuesMatch == true) orelse {error, values_invalid},
         % Step 3: Check that remaining items don't modify required keys
         NoRequiredKeysModified = lists:all(
             fun(HistoryItem) ->
@@ -754,25 +754,24 @@ ensure_node_history_test() ->
     ?event({missing_items, MissingItems}),
     % Test Invalid items
     InvalidItems =
-    #{
-        <<"key1">> => 
         #{
-            <<"type">> => <<"string">>,
-            <<"value">> => <<"value">>
-        }, 
-        <<"key2">> => <<"value2">>,
-        node_history => [
-            #{
-                <<"key1">> => 
-                    #{
-                        <<"type">> => <<"string">>,
-                    <<"value">> => <<"value2">>
+            <<"key1">> => 
+                #{
+                    <<"type">> => <<"string">>,
+                    <<"value">> => <<"value">>
                 }, 
-                <<"key2">> => <<"value3">>
-            }
-        ]
-    },
+            <<"key2">> => <<"value2">>,
+            node_history =>
+                [
+                    #{
+                        <<"key1">> => 
+                            #{
+                                <<"type">> => <<"string">>,
+                                <<"value">> => <<"value2">>
+                            },
+                        <<"key2">> => <<"value3">>
+                    }
+                ]
+        },
     ?assertEqual({error, <<"invalid_values">>}, ensure_node_history(InvalidItems, RequiredOpts)).
-
-    
 -endif.
