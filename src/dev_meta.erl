@@ -68,8 +68,7 @@ build(_, _, _NodeMsg) ->
 %% other messages are routed to the `handle_resolve/2' function.
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
-    Req = hb_cache:ensure_all_loaded(RawRequest, NodeMsg),
-    NormRequest = hb_singleton:from(Req, NodeMsg),
+    NormRequest = hb_singleton:from(RawRequest, NodeMsg),
     ?event(http, {request, hb_ao:normalize_keys(NormRequest, NodeMsg)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
@@ -82,7 +81,7 @@ handle(NodeMsg, RawRequest) ->
                     NodeMsg
                 ),
             Res;
-        _ -> handle_resolve(Req, NormRequest, NodeMsg)
+        _ -> handle_resolve(RawRequest, NormRequest, NodeMsg)
     end.
 
 handle_initialize([Base = #{ <<"device">> := Dev}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
@@ -211,7 +210,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
     TracePID = hb_opts:get(trace, no_tracer_set, NodeMsg),
     % Apply the pre-processor to the request.
     ?event({resolve_hook, Req, Msgs, NodeMsg}),
-    case resolve_hook(<<"request">>, Req, Msgs, NodeMsg) of
+    case resolve_hook(<<"request">>, Req, hb_cache:ensure_all_loaded(Msgs, NodeMsg), NodeMsg) of
         {ok, PreProcessedMsg} ->
             ?event({result_after_preprocessing, PreProcessedMsg}),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
