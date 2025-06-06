@@ -129,12 +129,34 @@ verify(M1, M2, NodeOpts) ->
                             fun atom_to_binary/1,
                             ?COMMITTED_PARAMETERS
                         ),
-                        hb_ao:get(<<"local-hashes">>, Msg, NodeOpts)
+                        hb_ao:resolve(
+                            hb_ao:get(<<"local-hashes">>, Msg, NodeOpts),
+                            NodeOpts
+                        )
+                    )
+                )
+            )
+        ),
+    Args2 =
+        maps:from_list(
+            lists:map(
+                fun({Key, Val}) -> {binary_to_existing_atom(Key), Val} end,
+                maps:to_list(
+                    maps:with(
+                        lists:map(
+                            fun atom_to_binary/1,
+                            ?COMMITTED_PARAMETERS
+                        ),
+                        hb_cache:ensure_all_loaded(
+                            hb_ao:get(<<"local-hashes">>, Msg, NodeOpts),
+                            NodeOpts
+                        )
                     )
                 )
             )
         ),
     ?event({args, { explicit, Args}}),
+    ?event({args2, { explicit, Args2}}),
     {ok,Expected} = dev_snp_nif:compute_launch_digest(Args),
     ExpectedBin = list_to_binary(Expected),
     ?event({expected_measurement, ExpectedBin}),
