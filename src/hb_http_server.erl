@@ -407,12 +407,12 @@ set_opts(Opts) ->
     end.
 set_opts(Request, Opts) ->
     PerparedOpts = hb_opts:mimic_default_types(
-        hb_cache:ensure_all_loaded(Opts, Opts),
+        Opts,
         new_atoms,
         Opts
     ),
     PreparedRequest = hb_opts:mimic_default_types(
-        hb_cache:ensure_all_loaded(hb_message:uncommitted(Request), Opts),
+        hb_message:uncommitted(Request),
         new_atoms,
         Opts
     ),
