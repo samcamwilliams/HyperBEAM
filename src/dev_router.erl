@@ -535,6 +535,33 @@ preprocess(Msg1, Msg2, Opts) ->
             % This allows us to potentially sign the request before sending it,
             % letting the recipient node charge/verify us as necessary, without
             % explicitly signing the user's request itself.
+            % 
+            % We additionally ensure that the request itself has a commitment,
+            % such that headers added by the relaying node are not added to the
+            % user's request.
+            UserReqWithCommit =
+                case hb_message:signers(Req, Opts) of
+                    [] ->
+                        hb_message:commit(
+                            Req,
+                            Opts,
+                            #{
+                                <<"commitment-device">> =>
+                                    <<"httpsig@1.0">>,
+                                <<"type">> =>
+                                    <<"unsigned">>
+                            }
+                        );
+                    _ ->
+                        Req
+                end,
+            RelayReq = 
+                #{
+                    <<"device">> => <<"apply@1.0">>,
+                    <<"path">> => <<"user-request">>,
+                    <<"user-request">> => UserReqWithCommit
+                },
+            ?event(debug_relay, {prepared_relay_req, RelayReq}),
             {
                 ok,
                 #{
@@ -542,18 +569,14 @@ preprocess(Msg1, Msg2, Opts) ->
                         [
                             MaybeCommit#{
                                 <<"device">> => <<"relay@1.0">>,
+                                <<"relay-device">> => <<"apply@1.0">>,
                                 <<"method">> => <<"POST">>,
                                 <<"peer">> => Node
                             },
                             #{
                                 <<"path">> => <<"call">>,
                                 <<"target">> => <<"proxy-message">>,
-                                <<"proxy-message">> =>
-                                    #{
-                                        <<"device">> => <<"apply@1.0">>,
-                                        <<"path">> => <<"user-request">>,
-                                        <<"user-request">> => Req
-                                    }
+                                <<"proxy-message">> => RelayReq
                             }
                         ]
                 }
