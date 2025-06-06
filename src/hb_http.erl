@@ -509,7 +509,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {status, {explicit, Status}},
             {path, hb_maps:get(<<"path">>, Req, undefined_path, Opts)},
             {raw_message, RawMessage},
-            {enc_headers, EncodedHeaders},
+            {enc_headers, {explicit, EncodedHeaders}},
             {enc_body, EncodedBody}
         }
     ),
