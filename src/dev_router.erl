@@ -58,12 +58,10 @@ info(_Msg1, _Msg2, _Opts) ->
             },
             <<"register">> => #{
                 <<"description">> => <<"Register a route with a remote router node">>,
-                <<"required_node_opts">> => #{
-                    <<"router_peer_location">> => <<"Location of the router peer">>,
-                    <<"router_prefix">> => <<"Prefix for the route">>,
-                    <<"router_price">> => <<"Price for the route">>,
-                    <<"router_template">> => <<"Template to match the route">>
-                }
+                    <<"peer_location">> => <<"Location of the router peer">>,
+                    <<"prefix">> => <<"Prefix for the route">>,
+                    <<"price">> => <<"Price for the route">>,
+                    <<"template">> => <<"Template to match the route">>
             },
             <<"preprocess">> => #{
                 <<"description">> => <<"Preprocess a request to check if it should be relayed">>
@@ -79,43 +77,37 @@ register(_M1, M2, Opts) ->
     maybe
         %% Extract all required parameters from options
         %% These values will be used to construct the registration message
-        RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
-        Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
-        Price = hb_opts:get(<<"router_price">>, not_found, Opts),
-        Template = hb_opts:get(<<"router_template">>, not_found, Opts),
+        RouterRegOpts = hb_opts:get(router_registration_opts, undefined, Opts),
+        RouterNode =
+            hb_ao:get(
+                <<"registration-peer">>,
+                RouterRegOpts,
+                not_found,
+                Opts
+            ),
         {ok, SigOpts} =
             case hb_ao:get(<<"as">>, M2, not_found, Opts) of
                 not_found -> {ok, Opts};
                 AsID -> hb_opts:as(AsID, Opts)
             end,
-        %% Validate that all required parameters are present
-        %% This will return {error, Reason} if any parameter is missing or invalid
-        {ok, _} = hb_opts:check_required_opts([
-            {<<"router_peer_location">>, RouterNode},
-            {<<"router_prefix">>, Prefix},
-            {<<"router_price">>, Price},
-            {<<"router_template">>, Template}
-        ], Opts),
+        ?event({sig_opts, SigOpts}),
         %% Post registration request to the router node
         %% The message includes our route details and attestation for verification
-        {ok, _} = hb_http:post(
-            RouterNode,
-            <<"/router~node-process@1.0/schedule">>,
-            hb_message:commit(
-                #{
-                    <<"subject">> => <<"self">>,
-                    <<"action">> => <<"register">>,
-                    <<"route">> =>
-                        #{
-                            <<"prefix">> => Prefix,
-                            <<"template">> => Template,
-                            <<"price">> => Price
-                        }
-                },
-                SigOpts
+        {ok, Res} =
+            hb_http:post(
+                RouterNode,
+                <<"/router~node-process@1.0/schedule">>,
+                hb_message:commit(
+                    #{
+                        <<"subject">> => <<"self">>,
+                        <<"action">> => <<"register">>,
+                        <<"route">> => RouterRegOpts
+                    },
+                    SigOpts
+                ),
+                Opts
             ),
-            Opts
-        ),
+        ?event({registered, {msg, M2}, {res, Res}}),
         {ok, <<"Route registered.">>}
     else
         %% Handle any other errors from the registration process
@@ -666,6 +658,82 @@ local_process_route_provider() ->
         ),
     ?event({responses, Responses}),
     ?assertEqual(2, length(hb_util:unique(Responses))).
+
+local_dynamic_trusted_peer_test() ->
+    {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
+    Wallet = ar_wallet:new(),
+    AltWallet = ar_wallet:new(),
+    ?event(
+        {wallets,
+            {main, hb_util:human_id(Wallet)},
+            {alt, hb_util:human_id(AltWallet)}
+        }
+    ),
+    Node =
+        hb_http_server:start_node(#{
+            store => hb_opts:get(store),
+            node_processes => #{
+                <<"router">> => #{
+                    <<"device">> => <<"process@1.0">>,
+                    % Set the caller's alternate ID to be trusted for registration
+                    % on the node.
+                    <<"trusted-peer">> => hb_util:human_id(AltWallet),
+                    <<"execution-device">> => <<"lua@5.3a">>,
+                    <<"scheduler-device">> => <<"scheduler@1.0">>,
+                    <<"module">> => #{
+                        <<"content-type">> => <<"application/lua">>,
+                        <<"name">> => <<"dynamic-router">>,
+                        <<"body">> => Module
+                    },
+                    % Set module-specific factors for the test
+                    <<"pricing-weight">> => 9,
+                    <<"performance-weight">> => 1,
+                    <<"score-preference">> => 4,
+                    <<"is-admissible">> => #{
+                        <<"path">> => <<"default">>,
+                        <<"default">> => <<"false">>
+                    }
+                }
+            }
+        }),
+    % Create the options for the joiner.
+    JoinerOpts = #{
+        priv_wallet => Wallet,
+        router_registration_opts => #{
+            <<"registration-peer">> => Node,
+            <<"prefix">> => <<"https://test-node.com">>,
+            <<"template">> => <<"/.*~process@1.0/.*">>,
+            <<"price">> => 250
+        },
+        identities => #{
+            <<"alt-id">> => #{ priv_wallet => AltWallet }
+        }
+    },
+    % Validate that signing as the `alt-id` generates the expected commitment.
+    {ok, OptsAsID} = hb_opts:as(<<"alt-id">>, JoinerOpts),
+    SignedAs = hb_message:commit(#{ <<"a">> => 1 }, OptsAsID),
+    AltID = hb_util:human_id(AltWallet),
+    ?assertEqual([AltID], hb_message:signers(SignedAs, OptsAsID)),
+    % Register the joiner with the node using the `alt-id`.
+    {ok, RegResult} =
+        hb_ao:resolve(
+            #{ <<"device">> => <<"router@1.0">> },
+            #{
+                <<"path">> => <<"register">>,
+                <<"as">> => <<"alt-id">>
+            },
+            JoinerOpts
+        ),
+    ?event({reg_res, RegResult}),
+    {ok, ScheduledMsg} =
+        hb_http:get(
+            Node,
+            <<"/router~node-process@1.0/schedule/assignments/1/body">>,
+            JoinerOpts
+        ),
+    [Committer] = hb_message:signers(ScheduledMsg, JoinerOpts),
+    ?event({committer, Committer}),
+    ?assertEqual(AltID, Committer).
 
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
