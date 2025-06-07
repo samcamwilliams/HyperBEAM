@@ -5,7 +5,7 @@
 %%% and node identity cloning. All operations are protected by hardware 
 %%% commitment and encryption.
 -module(dev_green_zone).
--export([info/1, info/3, join/3, init/3, become/3, key/3]).
+-export([info/1, info/3, join/3, init/3, become/3, key/3, is_trusted/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
@@ -18,7 +18,7 @@
 %% @param _ Ignored parameter
 %% @returns A map with the `exports' key containing a list of allowed functions
 info(_) -> 
-    #{ exports => [info, init, join, become, key] }.
+    #{ exports => [info, init, join, become, key, is_trusted] }.
 
 %% @doc Provides information about the green zone device and its API.
 %%
@@ -98,6 +98,22 @@ default_zone_required_opts(Opts) ->
         % initialized => permanent
     }.
 
+%% @doc Returns `true' if the request is signed by a trusted node.
+is_trusted(_M1, Req, Opts) ->
+    Signers = hb_message:signers(Req, Opts),
+    {ok,
+        hb_util:bin(
+            lists:any(
+                fun(Signer) ->
+                    lists:member(
+                        Signer,
+                        maps:keys(hb_opts:get(trusted_nodes, #{}, Opts))
+                    )
+                end,
+                Signers
+            )
+        )
+    }.
 
 %% @doc Initialize the green zone for a node.
 %%
