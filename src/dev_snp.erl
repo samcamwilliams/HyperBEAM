@@ -72,6 +72,9 @@ verify(M1, M2, NodeOpts) ->
     ?event(snp_verify, verify_called),
     % Search for a `body' key in the message, and if found use it as the source
     % of the report. If not found, use the message itself as the source.
+    ?event({m1, {explicit, M1}}),
+    ?event({m2, {explicit, M2}}),
+    ?event({node_opts, {explicit, NodeOpts}}),
     MsgWithJSONReport =
         hb_util:ok(
             hb_message:with_only_committed(
@@ -79,6 +82,7 @@ verify(M1, M2, NodeOpts) ->
                 NodeOpts
             )
         ),
+    ?event({msg_with_json_report, {explicit, MsgWithJSONReport}}),
     % Normalize the request message
     ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
     Report = hb_json:decode(ReportJSON),
