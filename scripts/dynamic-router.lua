@@ -205,6 +205,19 @@ function register(state, assignment, opts)
     state = ensure_defaults(state)
     ao.event({"register", { state = state, assignment = assignment, opts = opts }})
     local req = assignment.body
+
+    -- If the message is signed by an explicitly trusted peer, we can skip the
+    -- is-admissible check.
+    if state["trusted"] then
+        local committers = ao.get("committers", req)
+        for _, committer in ipairs(committers) do
+            if committer == state["trusted"] then
+                state = add_node(state, req)
+                return recalculate(state, assignment, opts)
+            end
+        end
+    end
+
     req.path = state["is-admissible"].path or "is-admissible"
     local status, is_admissible = ao.resolve(state["is-admissible"], req)
 
