@@ -564,11 +564,12 @@ ensure_process_key(Msg1, Opts) ->
                 end,
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
             ?event({process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
-            Res = hb_ao:set(
-                Msg1,
-                #{ <<"process">> => Committed },
-                Opts#{ hashpath => ignore }
-            ),
+            Res =
+                hb_ao:set(
+                    hb_message:uncommitted(Msg1, Opts),
+                    #{ <<"process">> => Committed },
+                    Opts#{ hashpath => ignore }
+                ),
             ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
             Res;
         _ -> Msg1
