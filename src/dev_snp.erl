@@ -75,10 +75,19 @@ verify(M1, M2, NodeOpts) ->
     ?event({m1, {explicit, M1}}),
     ?event({m2, {explicit, M2}}),
     ?event({node_opts, {explicit, NodeOpts}}),
+    RawMsg = hb_ao:get(<<"body">>, M2, M2, NodeOpts#{ hashpath => ignore }),
+    ?event({msg, {explicit, RawMsg}}),
     MsgWithJSONReport =
         hb_util:ok(
             hb_message:with_only_committed(
-                hb_ao:get(<<"body">>, M2, M2, NodeOpts#{ hashpath => ignore }),
+                hb_message:with_only_committers(
+                    RawMsg,
+                    hb_message:signers(
+                RawMsg,
+                        NodeOpts
+                    ),
+                    NodeOpts
+                ),
                 NodeOpts
             )
         ),
