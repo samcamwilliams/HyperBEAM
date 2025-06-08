@@ -602,16 +602,17 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                 maps:without([<<"body">>], ErrMsg),
                 maps:get(<<"body">>, ErrMsg, <<>>)
             };
-        {500, <<"httpsig@1.0">>, false} ->
-            {ok, ErrMsg} =
-                dev_hyperbuddy:return_file(
-                    <<"hyperbuddy@1.0">>,
-                    <<"500.html">>
-                ),
-            {ok,
-                maps:without([<<"body">>], ErrMsg),
-                maps:get(<<"body">>, ErrMsg, <<>>)
-            };
+        % {500, <<"httpsig@1.0">>, false} ->
+        %     {ok, ErrMsg} =
+        %         dev_hyperbuddy:return_file(
+        %             <<"hyperbuddy@1.0">>,
+        %             <<"500.html">>,
+        %             #{ <<"error">> => <<"500 Internal Server Error">> }
+        %         ),
+        %     {ok,
+        %         maps:without([<<"body">>], ErrMsg),
+        %         maps:get(<<"body">>, ErrMsg, <<>>)
+        %     };
         {_, <<"httpsig@1.0">>, _} ->
             TABM =
                 hb_message:convert(
