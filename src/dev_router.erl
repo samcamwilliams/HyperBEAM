@@ -77,7 +77,7 @@ register(_M1, M2, Opts) ->
     maybe
         %% Extract all required parameters from options
         %% These values will be used to construct the registration message
-        RouterRegOpts = hb_opts:get(router_registration_opts, undefined, Opts),
+        RouterRegOpts = hb_opts:get(router_registration_opts, #{}, Opts),
         RouterNode =
             hb_ao:get(
                 <<"registration-peer">>,
