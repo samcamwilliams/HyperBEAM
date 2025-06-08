@@ -1,7 +1,8 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
--export([info/0, format/3, metrics/3, events/3, return_file/2]).
+-export([info/0, format/3, metrics/3, events/3, return_file/2, return_error/1]).
 -include_lib("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Export an explicit list of files via http.
 info() ->
@@ -22,8 +23,7 @@ info() ->
 			<<"utils.js">> => <<"utils.js">>,
 			<<"dashboard.js">> => <<"dashboard.js">>,
 			<<"graph.js">> => <<"graph.js">>,
-            <<"404.html">> => <<"404.html">>,
-            <<"500.html">> => <<"500.html">>
+            <<"404.html">> => <<"404.html">>
         },
         excludes => [<<"return_file">>]
     }.
@@ -99,13 +99,16 @@ serve(Key, _, _, Opts) ->
 
 %% @doc Read a file from disk and serve it as a static HTML page.
 return_file(Name) ->
-    return_file(<<"hyperbuddy@1.0">>, Name).
+    return_file(<<"hyperbuddy@1.0">>, Name, #{}).
 return_file(Device, Name) ->
+    return_file(Device, Name, #{}).
+return_file(Device, Name, Template) ->
     Base = hb_util:bin(code:priv_dir(hb)),
     Filename = <<Base/binary, "/html/", Device/binary, "/", Name/binary >>,
     ?event({hyperbuddy_serving, Filename}),
     case file:read_file(Filename) of
-        {ok, Body} ->
+        {ok, RawBody} ->
+            Body = apply_template(RawBody, Template),
             {ok, #{
                 <<"body">> => Body,
                 <<"content-type">> =>
@@ -121,3 +124,43 @@ return_file(Device, Name) ->
         {error, _} ->
             {error, not_found}
     end.
+
+%% @doc Return an error page, with the `{{error}}` template variable replaced.
+return_error(Error) ->
+    return_file(
+        <<"hyperbuddy@1.0">>,
+        <<"500.html">>,
+        #{ <<"error">> => Error }
+    ).
+
+%% @doc Apply a template to a body.
+apply_template(Body, Template) when is_map(Template) ->
+    apply_template(Body, maps:to_list(Template));
+apply_template(Body, []) ->
+    Body;
+apply_template(Body, [{Key, Value} | Rest]) ->
+    apply_template(
+        re:replace(
+            Body,
+            <<"\\{\\{", Key/binary, "\\}\\}">>,
+            hb_util:bin(Value),
+            [global, {return, binary}]
+        ),
+        Rest
+    ).
+
+%%% Tests
+
+return_templated_file_test() ->
+    {ok, #{ <<"body">> := Body }} =
+        return_file(
+            <<"hyperbuddy@1.0">>,
+            <<"500.html">>,
+            #{
+                <<"error">> => <<"This is an error message.">>
+            }
+        ),
+    ?assertNotEqual(
+        binary:match(Body, <<"This is an error message.">>),
+        nomatch
+    ).

@@ -359,7 +359,15 @@ handle_request(RawReq, Body, ServerID) ->
             catch
                 Type:Details:Stacktrace ->
                     Trace = hb_tracer:get_trace(TracePID),
-                    TraceString = hb_tracer:format_error_trace(Trace),
+                    FormattedError =
+                        hb_util:bin(hb_message:format(
+                            #{
+                                <<"type">> => Type,
+                                <<"details">> => Details,
+                                <<"stacktrace">> => Stacktrace
+                            }
+                        )),
+                    {ok, ErrorPage} = dev_hyperbuddy:return_error(FormattedError),
                     ?event(
                         http_error,
                         {http_error,
@@ -377,10 +385,7 @@ handle_request(RawReq, Body, ServerID) ->
                     hb_http:reply(
                         Req,
                         #{},
-                        #{
-                            <<"status">> => 500,
-                            <<"body">> => TraceString
-                        },
+                        ErrorPage#{ <<"status">> => 500 },
                         NodeMsg
                     )
             end
