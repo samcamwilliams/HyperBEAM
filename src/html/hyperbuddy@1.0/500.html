@@ -52,7 +52,6 @@
         font-weight: 300;
         text-align: center;
         position: absolute;
-        bottom: 40vh;
         left: 20vw;
         right: 20vw;
       }
@@ -126,6 +125,9 @@
           opacity: 0;
         }
       }
+      #error-text {
+        text-align: left;
+      }
     </style>
   </head>
   <body>
@@ -144,7 +146,7 @@
       <div id="main-text">
         <p id="number">500.</p>
         <p id="main">Oops, your hashpath couldn't be resolved right now.</p>
-        <p id="error"><pre>{{error}}</pre></p>
+        <p id="error"><pre id="error-text">{{error}}</pre></p>
       </div>
     </div>
 
