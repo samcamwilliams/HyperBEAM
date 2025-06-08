@@ -122,7 +122,7 @@ do_push(PrimaryProcess, Assignment, Opts) ->
         {ok, Outbox} ->
             ?event(push, {push_found_outbox, {outbox, Outbox}}),
             Downstream =
-                maps:map(
+                hb_maps:map(
                     fun(Key, RawMsgToPush = #{ <<"target">> := Target }) ->
                         MsgToPush =
                             case hb_ao:get(<<"device">>, RawMsgToPush, Opts) of
