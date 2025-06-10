@@ -125,34 +125,17 @@ do_push(PrimaryProcess, Assignment, Opts) ->
                 hb_maps:map(
                     fun(Key, RawMsgToPush = #{ <<"target">> := Target }) ->
                         MsgToPush =
-                            case hb_ao:get(<<"device">>, RawMsgToPush, Opts) of
-                                not_found -> RawMsgToPush;
-                                _ ->
-                                    ReqMsg =
-                                        maps:without(
-                                            [<<"target">>],
-                                            RawMsgToPush
-                                        ),
-                                    case hb_ao:resolve(ReqMsg, Opts) of
-                                        {ok, EvalRes} ->
-                                            EvalRes#{
-                                                <<"target">> =>
-                                                    hb_ao:get(
-                                                        <<"target">>,
-                                                        RawMsgToPush,
-                                                        Opts
-                                                    )
-                                            };
-                                        Err ->
-                                            #{
-                                                <<"resolve">> => <<"error">>,
-                                                <<"target">> => ID,
-                                                <<"status">> => 400,
-                                                <<"outbox-index">> => Key,
-                                                <<"reason">> => Err,
-                                                <<"source">> => RawMsgToPush
-                                            }
-                                    end
+                            case maybe_evaluate_message(RawMsgToPush, Opts) of
+                                {ok, R} -> R;
+                                Err ->
+                                    #{
+                                        <<"resolve">> => <<"error">>,
+                                        <<"target">> => ID,
+                                        <<"status">> => 400,
+                                        <<"outbox-index">> => Key,
+                                        <<"reason">> => Err,
+                                        <<"source">> => RawMsgToPush
+                                    }
                             end,
                         case hb_cache:read(Target, Opts) of
                             {ok, DownstreamProcess} ->
@@ -210,6 +193,35 @@ do_push(PrimaryProcess, Assignment, Opts) ->
         {Err, Error} when Err == error; Err == failure ->
             ?event(push, {push_failed_to_find_outbox, {error, Error}}, Opts),
             {error, Error}
+    end.
+
+
+%% @doc If the outbox message has a path we interpret it as a request to perform
+%% AO-Core eval and schedule the result. Additionally, we  remove the `target` 
+%% from the base message before execution and re-add it to the result, such that
+%% the target to schedule the execution result upon is not confused with
+%% functional components of the evaluation.
+maybe_evaluate_message(Message, Opts) ->
+    case hb_ao:get(<<"path">>, Message, Opts) of
+        not_found -> Message;
+        _ ->
+            ReqMsg =
+                maps:without(
+                    [<<"target">>],
+                    Message
+                ),
+            case hb_ao:resolve(ReqMsg, Opts) of
+                {ok, EvalRes} ->
+                    EvalRes#{
+                        <<"target">> =>
+                            hb_ao:get(
+                                <<"target">>,
+                                Message,
+                                Opts
+                            )
+                    };
+                Err -> Err
+            end
     end.
 
 %% @doc Push a downstream message result. The `Origin' map contains information
@@ -1078,9 +1090,8 @@ oracle_script() ->
             end
         )
         Send({
-            device = "relay@1.0",
             target = ao.id,
-            path = "call",
+            path = "/~relay@1.0/call",
             ["relay-path"] = "https://arweave.net"
         })
         
