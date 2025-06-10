@@ -361,11 +361,11 @@ handle_request(RawReq, Body, ServerID) ->
                     Trace = hb_tracer:get_trace(TracePID),
                     FormattedError =
                         hb_util:bin(hb_message:format(
-                            #{
+                            hb_private:reset(#{
                                 <<"type">> => Type,
                                 <<"details">> => Details,
                                 <<"stacktrace">> => Stacktrace
-                            }
+                            })
                         )),
                     {ok, ErrorPage} = dev_hyperbuddy:return_error(FormattedError),
                     ?event(
