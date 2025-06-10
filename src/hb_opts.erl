@@ -137,6 +137,11 @@ default_message() ->
         debug_show_priv => if_present,
         debug_resolve_links => false,
 		trusted => #{},
+        snp_enforced_keys => [
+            firmware, kernel, 
+            initrd, append,
+            vmm_type, guest_features
+        ],
         routes => [
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
