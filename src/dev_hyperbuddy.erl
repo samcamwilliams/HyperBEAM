@@ -1,6 +1,7 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
 -export([info/0, format/3, metrics/3, events/3, return_file/2, return_error/1]).
+-export([throw/3]).
 -include_lib("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -85,6 +86,13 @@ format(Base, Req, Opts) ->
                     )
         }
     }.
+
+%% @doc Test key for validating the behavior of the `500` HTTP response.
+throw(_Msg, _Req, Opts) ->
+    case hb_opts:get(mode, prod, Opts) of
+        prod -> {error, <<"Forced-throw unavailable in `prod` mode.">>};
+        debug -> throw({intentional_error, Opts})
+    end.
 
 %% @doc Serve a file from the priv directory. Only serves files that are explicitly
 %% listed in the `routes' field of the `info/0' return value.
