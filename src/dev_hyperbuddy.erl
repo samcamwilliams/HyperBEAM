@@ -69,21 +69,25 @@ format(Base, Req, Opts) ->
     {ok,
         #{
             <<"body">> =>
-                    hb_util:bin(
-                        hb_message:format(
-                            #{
-                                <<"base">> =>
-                                    maps:without(
-                                        [<<"device">>],
-                                        hb_private:reset(LoadedBase)),
-                                <<"request">> =>
-                                    maps:without(
-                                        [<<"path">>],
-                                        hb_private:reset(LoadedReq)
-                                    )
-                            }
-                        )
+                hb_util:bin(
+                    hb_message:format(
+                        #{
+                            <<"base">> =>
+                                maps:without(
+                                    [<<"device">>],
+                                    hb_private:reset(LoadedBase)),
+                            <<"request">> =>
+                                maps:without(
+                                    [<<"path">>],
+                                    hb_private:reset(LoadedReq)
+                                )
+                        },
+                        Opts#{
+                            linkify_mode => discard,
+                            cache_control => [<<"no-cache">>, <<"no-store">>]
+                        }
                     )
+                )
         }
     }.
 
