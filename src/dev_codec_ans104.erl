@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/3, from/3, commit/3, verify/3, content_type/1]).
+-export([to/3, from/3, commit/3, verify/3, content_type/1, normalize_data/1]).
 -export([serialize/3, deserialize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -380,19 +380,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
     RawTABM2 = hb_message:filter_default_keys(RawTABM),
     % Calculate and normalize the `data', if applicable.
-    NormTABM =
-        case maps:is_key(<<"ao-data-key">>, RawTABM2) of
-            true -> RawTABM2;
-            false ->
-                case inline_key(RawTABM2) of
-                    <<"data">> -> RawTABM2;
-                    InlineKey ->
-                        (maps:without([InlineKey], RawTABM2))#{
-                            <<"ao-data-key">> => InlineKey,
-                            <<"data">> => maps:get(InlineKey, RawTABM2)
-                        }
-                end
-        end,
+    NormTABM = normalize_data(RawTABM2),
     ?event({to, {inbound, NormTABM}, {req, Req}}),
     MaybeBundle =
         case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
@@ -594,6 +582,21 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     {ok, Res};
 to(_Other, _Req, _Opts) ->
     throw(invalid_tx).
+
+%% @doc Normalize the data field of a message to its appropriate value in a TABM.
+normalize_data(Msg) ->
+    case maps:is_key(<<"ao-data-key">>, Msg) of
+        true -> Msg;
+        false ->
+            case inline_key(Msg) of
+                <<"data">> -> Msg;
+                InlineKey ->
+                    (maps:without([InlineKey], Msg))#{
+                        <<"ao-data-key">> => InlineKey,
+                        <<"data">> => maps:get(InlineKey, Msg)
+                    }
+            end
+    end.
 
 %% @doc Determine if an `ao-data-key` should be added to the message.
 inline_key(Msg) ->
