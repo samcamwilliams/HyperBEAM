@@ -202,23 +202,26 @@ do_push(PrimaryProcess, Assignment, Opts) ->
 %% the target to schedule the execution result upon is not confused with
 %% functional components of the evaluation.
 maybe_evaluate_message(Message, Opts) ->
-    case hb_ao:get(<<"path">>, Message, Opts) of
-        not_found -> Message;
-        _ ->
+    case hb_ao:get(<<"resolve">>, Message, Opts) of
+        not_found -> {ok, Message};
+        ResolvePath ->
             ReqMsg =
                 maps:without(
                     [<<"target">>],
                     Message
                 ),
-            case hb_ao:resolve(ReqMsg, Opts) of
+            case hb_ao:resolve(ReqMsg#{ <<"path">> => ResolvePath }, Opts) of
                 {ok, EvalRes} ->
-                    EvalRes#{
-                        <<"target">> =>
-                            hb_ao:get(
-                                <<"target">>,
-                                Message,
-                                Opts
-                            )
+                    {
+                        ok,
+                        EvalRes#{
+                            <<"target">> =>
+                                hb_ao:get(
+                                    <<"target">>,
+                                    Message,
+                                    Opts
+                                )
+                        }
                     };
                 Err -> Err
             end
@@ -1091,7 +1094,7 @@ oracle_script() ->
         )
         Send({
             target = ao.id,
-            path = "/~relay@1.0/call",
+            resolve = "/~relay@1.0/call",
             ["relay-path"] = "https://arweave.net"
         })
         
