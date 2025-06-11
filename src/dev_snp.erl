@@ -60,21 +60,32 @@
     {ok, binary()} | {error, term()}.
 verify(M1, M2, NodeOpts) ->
     ?event(snp_verify, verify_called),
-    
     maybe
         {ok, {Msg, Address, NodeMsgID, ReportJSON, MsgWithJSONReport}} 
             ?= extract_and_normalize_message(M2, NodeOpts),
-        
         % Perform all validation steps
         {ok, NonceResult} ?= verify_nonce(Address, NodeMsgID, Msg, NodeOpts),
-        {ok, SigResult} ?= verify_signature_and_address(MsgWithJSONReport, Address, NodeOpts),
+        {ok, SigResult} ?= 
+            verify_signature_and_address(
+                MsgWithJSONReport, 
+                Address, 
+                NodeOpts
+            ),
         {ok, DebugResult} ?= verify_debug_disabled(Msg),
         {ok, TrustedResult} ?= verify_trusted_software(M1, Msg, NodeOpts),
         {ok, MeasurementResult} ?= verify_measurement(Msg, ReportJSON, NodeOpts),
         {ok, ReportResult} ?= verify_report_integrity(ReportJSON),
-        
-        Valid = lists:all(fun(Bool) -> Bool end, 
-            [NonceResult, SigResult, DebugResult, TrustedResult, MeasurementResult, ReportResult]),
+        Valid = lists:all(
+            fun(Bool) -> Bool end, 
+                [
+                    NonceResult, 
+                    SigResult, 
+                    DebugResult, 
+                    TrustedResult, 
+                    MeasurementResult, 
+                    ReportResult
+                ]
+            ),
         ?event({final_validation_result, Valid}),
         {ok, hb_util:bin(Valid)}
     else
@@ -110,10 +121,11 @@ generate(_M1, _M2, Opts) ->
         LoadedOpts = hb_cache:ensure_all_loaded(Opts, Opts),
         ?event({generate_opts, {explicit, LoadedOpts}}),
         % Validate wallet availability
-        {ok, ValidWallet} ?= case hb_opts:get(priv_wallet, no_viable_wallet, LoadedOpts) of
-            no_viable_wallet -> {error, no_wallet_available};
-            Wallet -> {ok, Wallet}
-        end,
+        {ok, ValidWallet} ?= 
+            case hb_opts:get(priv_wallet, no_viable_wallet, LoadedOpts) of
+                no_viable_wallet -> {error, no_wallet_available};
+                Wallet -> {ok, Wallet}
+            end,
         % Generate address and node message components
         Address = hb_util:human_id(ar_wallet:to_address(ValidWallet)),
         NodeMsg = hb_private:reset(LoadedOpts),
@@ -129,11 +141,12 @@ generate(_M1, _M2, Opts) ->
         ReportData = generate_nonce(Address, RawPublicNodeMsgID),
         ?event({snp_report_data, byte_size(ReportData)}),
         % Extract local hashes
-        {ok, ValidLocalHashes} ?= case hb_opts:get(snp_trusted, [#{}], LoadedOpts) of
-            [] -> {error, no_trusted_configs};
-            [FirstConfig | _] -> {ok, FirstConfig};
-            _ -> {error, invalid_trusted_configs_format}
-        end,
+        {ok, ValidLocalHashes} ?= 
+            case hb_opts:get(snp_trusted, [#{}], LoadedOpts) of
+                [] -> {error, no_trusted_configs};
+                [FirstConfig | _] -> {ok, FirstConfig};
+                _ -> {error, invalid_trusted_configs_format}
+            end,
         ?event(snp_local_hashes, {explicit, ValidLocalHashes}),
         % Generate the hardware attestation report
         {ok, ReportJSON} ?= case get(mock_snp_nif_enabled) of
@@ -143,7 +156,10 @@ generate(_M1, _M2, Opts) ->
                 {ok, MockResponse};
             _ ->
                 % Call actual NIF function
-                dev_snp_nif:generate_attestation_report(ReportData, ?REPORT_DATA_VERSION)
+                dev_snp_nif:generate_attestation_report(
+                    ReportData, 
+                    ?REPORT_DATA_VERSION
+                )
         end,
         ?event({snp_report_json, ReportJSON}),
         ?event({snp_report_generated, {nonce, ReportData}, {report, ReportJSON}}),
@@ -352,7 +368,11 @@ verify_measurement(Msg, ReportJSON, NodeOpts) ->
     ?event({expected_measurement, {explicit, Expected}}),
     Measurement = hb_ao:get(<<"measurement">>, Msg, NodeOpts),
     ?event({measurement, {explicit,Measurement}}),
-    {Status, MeasurementIsValid} = dev_snp_nif:verify_measurement(ReportJSON, ExpectedBin),
+    {Status, MeasurementIsValid} =
+        dev_snp_nif:verify_measurement(
+            ReportJSON,
+            ExpectedBin
+        ),
     ?event({status, Status}),
     ?event({measurement_is_valid, MeasurementIsValid}),
     case MeasurementIsValid of
@@ -427,7 +447,8 @@ is_debug(Report) ->
 %%
 %% Configuration options in NodeOpts map:
 %% - snp_trusted: List of maps containing trusted software configurations
-%% - snp_enforced_keys: Keys to enforce during validation (defaults to all committed parameters)
+%% - snp_enforced_keys: Keys to enforce during validation (defaults to all 
+%%   committed parameters)
 %%
 %% @param _M1 Ignored parameter
 %% @param Msg The SNP message containing local software hashes
@@ -439,7 +460,12 @@ execute_is_trusted(_M1, Msg, NodeOpts) ->
     FilteredLocalHashes = get_filtered_local_hashes(Msg, NodeOpts),
     TrustedSoftware = hb_opts:get(snp_trusted, [#{}], NodeOpts),
     ?event({trusted_software, {explicit, TrustedSoftware}}),
-    IsTrusted = is_software_trusted(FilteredLocalHashes, TrustedSoftware, NodeOpts),
+    IsTrusted = 
+        is_software_trusted(
+            FilteredLocalHashes, 
+            TrustedSoftware, 
+            NodeOpts
+        ),
     ?event({is_all_software_trusted, IsTrusted}),
     {ok, IsTrusted}.
 
@@ -493,10 +519,17 @@ get_enforced_keys(NodeOpts) ->
 -spec is_software_trusted(map(), [] | [map()] | term(), map()) -> boolean().
 is_software_trusted(_FilteredLocalHashes, [], _NodeOpts) ->
     false;
-is_software_trusted(FilteredLocalHashes, TrustedSoftware, NodeOpts) when is_list(TrustedSoftware) ->
+is_software_trusted(FilteredLocalHashes, TrustedSoftware, NodeOpts) 
+    when is_list(TrustedSoftware) ->
     lists:any(
         fun(TrustedMap) ->
-            Match = hb_message:match(FilteredLocalHashes, TrustedMap, primary, NodeOpts),
+            Match = 
+                hb_message:match(
+                    FilteredLocalHashes,
+                    TrustedMap,
+                    primary, 
+                    NodeOpts
+                ),
             ?event({match, {explicit, Match}}),
             is_map(TrustedMap) andalso Match == true
         end,
@@ -768,7 +801,12 @@ verify_mock_generate_success() ->
                                  firmware, kernel, initrd, append]
         },
         % Step 3: Verify the generated report
-        {ok, VerifyResult} = verify(#{}, hb_message:commit(GeneratedMsg, GenerateOpts), VerifyOpts),
+        {ok, VerifyResult} = 
+            verify(
+                #{}, 
+                hb_message:commit(GeneratedMsg, GenerateOpts), 
+                VerifyOpts
+            ),
         % Step 4: Assert that verification succeeds
         ?assertEqual(<<"true">>, VerifyResult),
         % Additional validation: verify specific fields
@@ -819,7 +857,12 @@ verify_mock_generate_wrong_config() ->
             snp_enforced_keys => [vcpus, vcpu_type, firmware, kernel]
         },
         % Step 3: Verify the generated report with wrong config
-        VerifyResult = verify(#{}, hb_message:commit(GeneratedMsg, GenerateOpts), VerifyOpts),
+        VerifyResult = 
+            verify(
+                #{}, 
+                hb_message:commit(GeneratedMsg, GenerateOpts), 
+                VerifyOpts
+            ),
         ?event({verify_result, {explicit, VerifyResult}}),
         % Step 4: Assert that verification fails (either as error or false result)
         case VerifyResult of
