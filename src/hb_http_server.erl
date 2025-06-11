@@ -45,7 +45,7 @@ start() ->
                 Loaded
             )
         ),
-    FormattedConfig = hb_util:debug_fmt(MergedConfig, 2),
+    FormattedConfig = hb_util:debug_fmt(MergedConfig, MergedConfig, 2),
     io:format("~n"
         "===========================================================~n"
         "==    ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗           ==~n"
