@@ -210,7 +210,8 @@ maybe_evaluate_message(Message, Opts) ->
                     [<<"target">>],
                     Message
                 ),
-            case hb_ao:resolve(ReqMsg#{ <<"path">> => ResolvePath }, Opts) of
+            ResolveOpts = Opts#{ force_message => true },
+            case hb_ao:resolve(ReqMsg#{ <<"path">> => ResolvePath }, ResolveOpts) of
                 {ok, EvalRes} ->
                     {
                         ok,
