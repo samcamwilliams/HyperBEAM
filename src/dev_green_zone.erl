@@ -183,21 +183,20 @@ init(_M1, _M2, Opts) ->
                 case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
                     undefined ->
                         ?event(green_zone, {init, aes_key, generated}),
-                        AES = crypto:strong_rand_bytes(32),
-                        try_mount_encrypted_volume(AES, Opts),
-                        AES;
+                        crypto:strong_rand_bytes(32);
                     ExistingAES ->
                         ?event(green_zone, {init, aes_key, found}),
                         ExistingAES
                 end,
             % Store the wallet, AES key, and an empty trusted nodes map.
-            hb_http_server:set_opts(Opts#{
+            hb_http_server:set_opts(NewOpts =Opts#{
                 priv_wallet => NodeWallet,
                 priv_green_zone_aes => GreenZoneAES,
                 trusted_nodes => #{},
                 green_zone_required_opts => ProcessedRequiredConfig,
                 green_zone_initialized => true
             }),
+            try_mount_encrypted_volume(GreenZoneAES, NewOpts),
             ?event(green_zone, {init, complete}),
             {ok, <<"Green zone initialized successfully.">>}
     end.
