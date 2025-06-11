@@ -98,6 +98,29 @@ default_zone_required_opts(Opts) ->
         % initialized => permanent
     }.
 
+%% @doc Replace values of <<"self">> in a configuration map with corresponding values from Opts.
+%%
+%% This function iterates through all key-value pairs in the configuration map.
+%% If a value is <<"self">>, it replaces that value with the result of
+%% hb_opts:get(Key, not_found, Opts) where Key is the corresponding key.
+%%
+%% @param Config The configuration map to process
+%% @param Opts The options map to fetch replacement values from
+%% @returns A new map with <<"self">> values replaced
+-spec replace_self_values(Config :: map(), Opts :: map()) -> map().
+replace_self_values(Config, Opts) ->
+    maps:map(
+        fun(Key, Value) ->
+            case Value of
+                <<"self">> ->
+                    hb_opts:get(Key, not_found, Opts);
+                _ ->
+                    Value
+            end
+        end,
+        Config
+    ).
+
 %% @doc Returns `true' if the request is signed by a trusted node.
 is_trusted(_M1, Req, Opts) ->
     Signers = hb_message:signers(Req, Opts),
@@ -146,7 +169,9 @@ init(_M1, _M2, Opts) ->
                 default_zone_required_opts(Opts),
                 Opts
             ),
-            ?event(green_zone, {init, required_config, RequiredConfig}),
+            % Process RequiredConfig to replace <<"self">> values with actual values from Opts
+            ProcessedRequiredConfig = replace_self_values(RequiredConfig, Opts),
+            ?event(green_zone, {init, required_config, ProcessedRequiredConfig}),
             % Check if a wallet exists; create one if absent.
             NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
                 undefined -> 
@@ -174,7 +199,7 @@ init(_M1, _M2, Opts) ->
                 priv_wallet => NodeWallet,
                 priv_green_zone_aes => GreenZoneAES,
                 trusted_nodes => #{},
-                green_zone_required_opts => RequiredConfig,
+                green_zone_required_opts => ProcessedRequiredConfig,
                 green_zone_initialized => true
             }),
             ?event(green_zone, {init, complete}),
