@@ -403,40 +403,39 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     M1 :: term(),
     M2 :: term(),
     Opts :: map()) -> {ok, map()} | {error, map() | binary()}.
-join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
+join_peer(PeerLocation, PeerID, _M1, _M2, InitOpts) ->
     % Check here if the node is already part of a green zone.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, InitOpts),
-    case (GreenZoneAES == undefined) andalso 
-         maybe_set_zone_opts(PeerLocation, PeerID, M2, InitOpts) of
-        {ok, Opts} ->
-            Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-            {ok, Report} = dev_snp:generate(#{}, #{}, Opts),
+    case GreenZoneAES == undefined of
+        true ->
+            Wallet = hb_opts:get(priv_wallet, undefined, InitOpts),
+            {ok, Report} = dev_snp:generate(#{}, #{}, InitOpts),
             WalletPub = element(2, Wallet),
             ?event(green_zone, {remove_uncommitted, Report}),
             MergedReq = hb_ao:set(
                 Report, 
                 <<"public_key">>,
                 base64:encode(term_to_binary(WalletPub)),
-                Opts
+                InitOpts
             ),
             % Create an committed join request using the wallet.
             Req = hb_cache:ensure_all_loaded(
                 hb_message:commit(MergedReq, Wallet),
-                Opts
+                InitOpts
             ),
             ?event({join_req, {explicit, Req}}),
             ?event({verify_res, hb_message:verify(Req)}),
             % Log that the commitment report is being sent to the peer.
             ?event(green_zone, {join, sending_commitment, PeerLocation, PeerID, Req}),
-            case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, Opts) of
+            case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, InitOpts) of
                 {ok, Resp} ->
                     % Log the response received from the peer.
                     ?event(green_zone, {join, join_response, PeerLocation, PeerID, Resp}),
                     % Ensure that the response is from the expected peer, avoiding
                     % the risk of a man-in-the-middle attack.
-                    Signers = hb_message:signers(Resp, Opts),
+                    Signers = hb_message:signers(Resp, InitOpts),
 					?event(green_zone, {join, signers, Signers}),
-					IsVerified = hb_message:verify(Resp, Signers, Opts),
+					IsVerified = hb_message:verify(Resp, Signers, InitOpts),
 					?event(green_zone, {join, verify, IsVerified}),
 					IsPeerSigner = lists:member(PeerID, Signers),
 					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
@@ -447,15 +446,14 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                         true ->
                             % Extract the encrypted shared AES key (zone-key) 
                             % from the response.
-                            ZoneKey = hb_ao:get(<<"zone-key">>, Resp, Opts),
+                            ZoneKey = hb_ao:get(<<"zone-key">>, Resp, InitOpts),
                             % Decrypt the zone key using the local node's
                             % private key.
-                            {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
+                            {ok, AESKey} = decrypt_zone_key(ZoneKey, InitOpts),
                             % Update local configuration with the retrieved
                             % shared AES key.
-                            ?event(green_zone, {oldOpts, {explicit, InitOpts}}),
-                            ?event(green_zone, {newOpts, {explicit, Opts}}),
-                            NewOpts = Opts#{
+                            ?event(green_zone, {opts, {explicit, InitOpts}}),
+                            NewOpts = InitOpts#{
                                 priv_green_zone_aes => AESKey
                             },
                             hb_http_server:set_opts(NewOpts),
@@ -491,120 +489,122 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
             {error, Reason}
     end.
 
-%% @doc Adopts configuration from a peer when joining a green zone.
-%%
-%% This function handles the conditional adoption of peer configuration:
-%% 1. Checks if adoption is enabled (default: true)
-%% 2. Requests required configuration from the peer
-%% 3. Verifies the authenticity of the configuration
-%% 4. Creates a node message with appropriate settings
-%% 5. Updates the local node configuration
-%%
-%% Config options:
-%% - green_zone_adopt_config: Controls configuration adoption (boolean, list, or binary)
-%%
-%% @param PeerLocation The location of the peer node to join
-%% @param PeerID The ID of the peer node to join
-%% @param Req The request message with adoption preferences
-%% @param InitOpts A map of initial configuration options
-%% @returns `{ok, Map}' with updated configuration on success, or
-%% `{error, Binary}' if configuration retrieval fails
--spec maybe_set_zone_opts(
-    PeerLocation :: binary(),
-    PeerID :: binary(),
-    Req :: map(),
-    InitOpts :: map()) -> {ok, map()} | {error, binary()}.
-maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
-    case hb_opts:get(<<"green_zone_adopt_config">>, true, InitOpts) of
-        false ->
-            % The node operator does not want to adopt the peer's config. Return
-            % the initial options unchanged.
-            {ok, InitOpts};
-        AdoptConfig ->
-            ?event(green_zone, 
-                {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}
-            ),
-            % Request the required config from the peer.
-            RequiredConfigRes =
-                hb_http:get(
-                    PeerLocation,
-                    <<"/~meta@1.0/info/green_zone_required_opts">>,
-                    InitOpts
-                ),
-            % Ensure the response is okay.
-            ?event({req_opts_get_result, RequiredConfigRes}),
-            case RequiredConfigRes of
-                {error, Reason} ->
-                    % Log the error and return the initial options.
-                    ?event(green_zone, 
-                        {join_error, get_req_opts_failed, Reason}
-                    ),
-                    {error, <<"Could not get required config from peer.">>};
-                {ok, RequiredConfig} ->
-                    % Print the required config response.
-                    Signers = hb_message:signers(RequiredConfig, InitOpts),
-                    ?event(green_zone, {req_conf_signers, {explicit, Signers}}),
-                    % Extract and log the verification steps
-                    IsVerified = hb_message:verify(RequiredConfig, Signers, InitOpts),
-                    ?event(green_zone, 
-                        {req_opts, {verified, IsVerified}, {signers, Signers}}
-                    ),
-                    % Combined check
-                    case lists:member(PeerID, Signers) andalso IsVerified of
-                        false ->
-                            % The response is not from the expected peer.
-                            {
-                                error, 
-                                <<"Peer gave invalid signature for required config.">>
-                            };
-                        true ->
-                            % Generate the node message that should be set prior
-                            % to joining a green zone.
-                            NodeMessage =
-                                calculate_node_message(
-                                    RequiredConfig, 
-                                    Req, 
-                                    AdoptConfig
-                                ),
-                            % Adopt the node message.
-                            hb_http_server:set_opts(NodeMessage, InitOpts)
-                    end
-            end
-    end.
+% %% @doc Adopts configuration from a peer when joining a green zone.
+% %%
+% %% This function handles the conditional adoption of peer configuration:
+% %% 1. Checks if adoption is enabled (default: true)
+% %% 2. Requests required configuration from the peer
+% %% 3. Verifies the authenticity of the configuration
+% %% 4. Creates a node message with appropriate settings
+% %% 5. Updates the local node configuration
+% %%
+% %% Config options:
+% %% - green_zone_adopt_config: Controls configuration adoption (boolean, list, or binary)
+% %%
+% %% @param PeerLocation The location of the peer node to join
+% %% @param PeerID The ID of the peer node to join
+% %% @param Req The request message with adoption preferences
+% %% @param InitOpts A map of initial configuration options
+% %% @returns `{ok, Map}' with updated configuration on success, or
+% %% `{error, Binary}' if configuration retrieval fails
+% -spec maybe_set_zone_opts(
+%     PeerLocation :: binary(),
+%     PeerID :: binary(),
+%     Req :: map(),
+%     InitOpts :: map()) -> {ok, map()} | {error, binary()}.
+% maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
+%     case hb_opts:get(<<"green_zone_adopt_config">>, true, InitOpts) of
+%         false ->
+%             % The node operator does not want to adopt the peer's config. Return
+%             % the initial options unchanged.
+%             {ok, InitOpts};
+%         AdoptConfig ->
+%             ?event(green_zone, 
+%                 {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}
+%             ),
+%             % Request the required config from the peer.
+%             RequiredConfigRes =
+%                 hb_http:get(
+%                     PeerLocation,
+%                     <<"/~meta@1.0/info/green_zone_required_opts">>,
+%                     InitOpts
+%                 ),
+%             % Ensure the response is okay.
+%             ?event({req_opts_get_result, RequiredConfigRes}),
+%             case RequiredConfigRes of
+%                 {error, Reason} ->
+%                     % Log the error and return the initial options.
+%                     ?event(green_zone, 
+%                         {join_error, get_req_opts_failed, Reason}
+%                     ),
+%                     {error, <<"Could not get required config from peer.">>};
+%                 {ok, RequiredConfig} ->
+%                     % Print the required config response.
+%                     Signers = hb_message:signers(RequiredConfig, InitOpts),
+%                     ?event(green_zone, {req_conf_signers, {explicit, Signers}}),
+%                     % Extract and log the verification steps
+%                     IsVerified = hb_message:verify(RequiredConfig, Signers, InitOpts),
+%                     ?event(green_zone, 
+%                         {req_opts, {verified, IsVerified}, {signers, Signers}}
+%                     ),
+%                     % Combined check
+%                     case lists:member(PeerID, Signers) andalso IsVerified of
+%                         false ->
+%                             % The response is not from the expected peer.
+%                             {
+%                                 error, 
+%                                 <<"Peer gave invalid signature for required config.">>
+%                             };
+%                         true ->
+%                             % Generate the node message that should be set prior
+%                             % to joining a green zone.
+%                             ?event(debug_green_zone, {calculate_node_message, {explicit, RequiredConfig}}),
+%                             NodeMessage =
+%                                 calculate_node_message(
+%                                     RequiredConfig, 
+%                                     Req, 
+%                                     AdoptConfig
+%                                 ),
+%                             ?event(debug_green_zone, {node_message, {explicit, NodeMessage}}),
+%                             % Adopt the node message.
+%                             {ok, NewOpts} = hb_http_server:set_opts(NodeMessage, InitOpts),
+%                             ?event(green_zone, {new_opts, {explicit, NewOpts}}),
+%                             {ok, NewOpts}
+%                     end
+%             end
+%     end.
 
-%% @doc Generate the node message that should be set prior to joining 
-%% a green zone.
-%%
-%% This function takes a required opts message, a request message, and an 
-%% `adopt-config' value. The `adopt-config' value can be a boolean, a list of
-%% fields that should be included in the node message from the request, or a
-%% binary string of fields to include, separated by commas.
-%%
-%% @param RequiredOpts The required configuration options from the peer node.
-%% @param Req The request message containing configuration options.
-%% @param AdoptConfig Boolean, list, or binary string indicating which fields
-%% to adopt.
-%% @returns A map containing the merged configuration to be used as the
-%% node message.
-calculate_node_message(RequiredOpts, Req, true) ->
-    % Remove irrelevant fields from the request.
-    StrippedReq =
-        hb_maps:without(
-            [
-                <<"path">>, <<"method">>
-            ],
-            hb_message:uncommitted(Req, RequiredOpts)
-        ),
-    % Convert atoms to binaries in RequiredOpts to prevent
-    % binary_to_existing_atom errors.
-    % The required config should override the request, if necessary.
-    hb_maps:merge(StrippedReq, RequiredOpts);
-calculate_node_message(RequiredOpts, Req, <<"true">>) ->
-    calculate_node_message(RequiredOpts, Req, true);
-calculate_node_message(RequiredOpts, Req, List) when is_list(List) ->
-    calculate_node_message(RequiredOpts, hb_maps:with(List, Req), true);
-calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
-    calculate_node_message(RequiredOpts, hb_util:list(BinList), Req).
+% %% @doc Generate the node message that should be set prior to joining 
+% %% a green zone.
+% %%
+% %% This function takes a required opts message, a request message, and an 
+% %% `adopt-config' value. The `adopt-config' value can be a boolean, a list of
+% %% fields that should be included in the node message from the request, or a
+% %% binary string of fields to include, separated by commas.
+% %%
+% %% @param RequiredOpts The required configuration options from the peer node.
+% %% @param Req The request message containing configuration options.
+% %% @param AdoptConfig Boolean, list, or binary string indicating which fields
+% %% to adopt.
+% %% @returns A map containing the merged configuration to be used as the
+% %% node message.
+% calculate_node_message(RequiredOpts, Req, true) ->
+%     % Only keep fields from the request that match required option keys.
+%     StrippedReq =
+%         hb_maps:with(
+%             hb_maps:keys(hb_ao:normalize_keys(RequiredOpts)),
+%             hb_message:uncommitted(Req)
+%         ),
+%     % Convert atoms to binaries in RequiredOpts to prevent
+%     % binary_to_existing_atom errors.
+%     % The required config should override the request, if necessary.
+%     StrippedReq;
+% calculate_node_message(RequiredOpts, Req, <<"true">>) ->
+%     calculate_node_message(RequiredOpts, Req, true);
+% calculate_node_message(RequiredOpts, Req, List) when is_list(List) ->
+%     calculate_node_message(RequiredOpts, hb_maps:with(List, Req), true);
+% calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
+%     calculate_node_message(RequiredOpts, hb_util:list(BinList), Req).
 
 %%%--------------------------------------------------------------------
 %%% Internal Functions
