@@ -40,6 +40,7 @@
 %%% The default list of routes that should not be charged for.
 -define(DEFAULT_NON_CHARGABLE_ROUTES, [
     #{ <<"template">> => <<"/~p4@1.0/balance">> },
+    #{ <<"template">> => <<"/~p4@1.0/topup">> },
     #{ <<"template">> => <<"/~meta@1.0/*">> }
 ]).
 
@@ -204,6 +205,10 @@ response(State, RawResponse, NodeMsg) ->
                 end,
             ?event(payment, {p4_post_pricing_response, PricingRes}),
             case PricingRes of
+                {ok, 0} ->
+                    % The pricing device has estimated the cost of the request
+                    % to be zero, so we proceed.
+                    {ok, #{ <<"body">> => Response }};
                 {ok, Price} ->
                     % We have successfully determined the cost of the request,
                     % so we proceed to charge the user's account. We sign the
@@ -443,6 +448,12 @@ hyper_token_ledger() ->
     Node =
         hb_http_server:start_node(
             #{
+                store => [
+                    #{
+                        <<"name">> => <<"cache-mainnet/lmdb">>,
+                        <<"store-module">> => hb_store_lmdb
+                    }
+                ],
                 priv_wallet => HostWallet,
                 p4_non_chargable_routes =>
                     [

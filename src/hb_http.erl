@@ -132,7 +132,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             {path, {string, Path}},
             {body_size, byte_size(Body)}
         }),
-    case hb_maps:get(<<"ao-result">>, NormHeaderMap, undefined, Opts) of
+    ReturnAOResult =
+        hb_opts:get(http_only_result, true, Opts) andalso
+        hb_maps:get(<<"ao-result">>, NormHeaderMap, false, Opts),
+    case ReturnAOResult of
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
             ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
@@ -152,7 +155,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     };
                 Value -> {BaseStatus, Value}
             end;
-        undefined ->
+        false ->
             case hb_maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>, Opts) of
                 <<"httpsig@1.0">> ->
                     ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
@@ -332,7 +335,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    MultiOpts = #{
+    #{
         nodes := Nodes,
         responses := Responses,
         stop_after := StopAfter,
@@ -342,8 +345,7 @@ multirequest(Config, Method, Path, Message, Opts) ->
     ?event(http,
         {multirequest_opts_parsed,
             {config, Config},
-            {message, Message},
-            {multirequest_opts, MultiOpts}
+            {message, Message}
         }),
     AllResults =
         if Parallel ->
@@ -497,7 +499,7 @@ reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, TABMReq, Status, RawMessage, Opts) ->
     Message = hb_ao:normalize_keys(RawMessage, Opts),
-    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(TABMReq, Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(Status, TABMReq, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr, Opts),
@@ -507,7 +509,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {status, {explicit, Status}},
             {path, hb_maps:get(<<"path">>, Req, undefined_path, Opts)},
             {raw_message, RawMessage},
-            {enc_headers, EncodedHeaders},
+            {enc_headers, {explicit, EncodedHeaders}},
             {enc_body, EncodedBody}
         }
     ),
@@ -563,7 +565,7 @@ add_cors_headers(Msg, ReqHdr, Opts) ->
     hb_maps:merge(WithAllowHeaders, Msg, Opts).
 
 %% @doc Generate the headers and body for a HTTP response message.
-encode_reply(TABMReq, Message, Opts) ->
+encode_reply(Status, TABMReq, Message, Opts) ->
     Codec = accept_to_codec(TABMReq, Opts),
     ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
     BaseHdrs =
@@ -577,11 +579,41 @@ encode_reply(TABMReq, Message, Opts) ->
             end,
 			Opts
         ),
+    AcceptBundle =
+        hb_util:atom(
+            hb_ao:get(
+                <<"accept-bundle">>,
+                {as, <<"message@1.0">>, TABMReq},
+                false,
+                Opts
+            )
+        ),
     % Codecs generally do not need to specify headers outside of the content-type,
     % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
-    case Codec of
-        <<"httpsig@1.0">> ->
+    case {Status, Codec, AcceptBundle} of
+        {404, <<"httpsig@1.0">>, false} ->
+            {ok, ErrMsg} =
+                dev_hyperbuddy:return_file(
+                    <<"hyperbuddy@1.0">>,
+                    <<"404.html">>
+                ),
+            {ok,
+                maps:without([<<"body">>], ErrMsg),
+                maps:get(<<"body">>, ErrMsg, <<>>)
+            };
+        % {500, <<"httpsig@1.0">>, false} ->
+        %     {ok, ErrMsg} =
+        %         dev_hyperbuddy:return_file(
+        %             <<"hyperbuddy@1.0">>,
+        %             <<"500.html">>,
+        %             #{ <<"error">> => <<"500 Internal Server Error">> }
+        %         ),
+        %     {ok,
+        %         maps:without([<<"body">>], ErrMsg),
+        %         maps:get(<<"body">>, ErrMsg, <<>>)
+        %     };
+        {_, <<"httpsig@1.0">>, _} ->
             TABM =
                 hb_message:convert(
                     Message,
@@ -592,7 +624,7 @@ encode_reply(TABMReq, Message, Opts) ->
             {ok, EncMessage} =
                 dev_codec_httpsig:to(
                     TABM,
-                    case hb_util:atom(hb_ao:get(<<"accept-bundle">>, TABMReq, false, Opts)) of
+                    case AcceptBundle of
                         true ->
                             #{
                                 <<"bundle">> => true
@@ -610,7 +642,7 @@ encode_reply(TABMReq, Message, Opts) ->
                 hb_maps:without([<<"body">>], EncMessage, Opts),
                 hb_maps:get(<<"body">>, EncMessage, <<>>, Opts)
             };
-        <<"ans104@1.0">> ->
+        {_, <<"ans104@1.0">>, _} ->
             % The `ans104@1.0' codec is a binary format, so we must serialize
             % the message to a binary before sending it.
             {
@@ -629,7 +661,7 @@ encode_reply(TABMReq, Message, Opts) ->
                                 hb_util:atom(
                                     hb_ao:get(
                                         <<"accept-bundle">>,
-                                        TABMReq,
+                                        {as, <<"message@1.0">>, TABMReq},
                                         true,
                                         Opts
                                     )
@@ -673,7 +705,6 @@ accept_to_codec(TABMReq, Opts) ->
             mime_to_codec(hb_maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts),
 			Opts
         ),
-    ?event(http, {accept_to_codec, AcceptCodec}),
     case AcceptCodec of
         not_specified ->
             % We hold off until confirming that the codec is not directly in the
@@ -825,7 +856,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
 %% 1. The path in the message
 %% 2. The path in the request URI
 normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
-    ?event(debug_accept, {req, {explicit, Req}}),
+    ?event({adding_method_and_path_from_request, {explicit, Req}}),
     Method = cowboy_req:method(Req),
     MsgPath =
         hb_ao:get(

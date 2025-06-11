@@ -213,7 +213,7 @@ compute(Msg1, Msg2, Opts) ->
 %% we reach the target slot that the user has requested.
 compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
     CurrentSlot = hb_ao:get(<<"at-slot">>, Msg1, Opts#{ hashpath => ignore }),
-    ?event(compute, {starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
+    ?event(compute_short, {starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
             % The cache should already have the result, so we should never end up
@@ -433,7 +433,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
             LoadRes =
                 dev_process_cache:latest(
                     ProcID,
-                    [<<"snapshot">>],
+                    [<<"snapshot+link">>],
                     TargetSlot,
                     Opts
                 ),
@@ -564,11 +564,12 @@ ensure_process_key(Msg1, Opts) ->
                 end,
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
             ?event({process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
-            Res = hb_ao:set(
-                Msg1,
-                #{ <<"process">> => Committed },
-                Opts#{ hashpath => ignore }
-            ),
+            Res =
+                hb_ao:set(
+                    hb_message:uncommitted(Msg1, Opts),
+                    #{ <<"process">> => Committed },
+                    Opts#{ hashpath => ignore }
+                ),
             ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
             Res;
         _ -> Msg1

@@ -126,7 +126,9 @@
 %%     11: Notify waiters.
 %%     12: Fork worker.
 %%     13: Recurse or terminate.
-resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
+resolve(Path, Opts) when is_binary(Path) ->
+    resolve(#{ <<"path">> => Path }, Opts);
+resolve(SingletonMsg, Opts) ->
     resolve_many(hb_singleton:from(SingletonMsg, Opts), Opts).
 
 resolve(Msg1, Path, Opts) when not is_map(Path) ->

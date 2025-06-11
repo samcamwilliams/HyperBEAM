@@ -34,6 +34,7 @@ svg(Base, Req, Opts) ->
 %% target. Otherwise, we generate a new target by writing the message to the
 %% cache and using the ID of the written message.
 json(Base, Req, Opts) ->
+    ?event({json, {base, Base}, {req, Req}}),
     Target =
         case hb_ao:get(<<"target">>, Req, Opts) of
             not_found -> 
@@ -41,19 +42,22 @@ json(Base, Req, Opts) ->
                     0 ->
                         all;
                     _ ->
+                        ?event({writing_base_for_rendering, Base}),
                         {ok, Path} = hb_cache:write(Base, Opts),
                         ?event({wrote_message, Path}),
                         ID = hb_message:id(Base, all, Opts),
                         ?event({generated_id, ID}),
                         ID
                 end;
-            <<".">> -> <<"/">>;
+            <<".">> -> all;
             ReqTarget -> ReqTarget
         end,
     MaxSize = hb_util:int(hb_ao:get(<<"max-size">>, Req, 250, Opts)),
     ?event({max_size, MaxSize}),
-    ?event({json, {target, Target}, {req, Req}}),
-    hb_cache_render:get_graph_data(Target, MaxSize, Opts).
+    ?event({generating_json_for, {target, Target}}),
+    Res = hb_cache_render:get_graph_data(Target, MaxSize, Opts),
+    ?event({graph_data, Res}),
+    Res.
 
 %% @doc Return a renderer in HTML form for the JSON format.
 index(Base, _, _Opts) ->

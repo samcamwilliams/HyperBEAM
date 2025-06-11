@@ -138,17 +138,6 @@ generate_test_opts() ->
     }).
 generate_test_opts(Defs) ->
     #{
-        store =>
-            [
-                #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> =>
-                        <<
-                            "cache-TEST/",
-                            (integer_to_binary(os:system_time(millisecond)))/binary
-                        >>
-                }
-            ],
         node_processes => Defs,
         priv_wallet => ar_wallet:new()
     }.
@@ -177,7 +166,10 @@ lookup_spawn_test() ->
         ?TEST_NAME,
         Opts
     ),
-    ?assertEqual(hb_cache:ensure_all_loaded(Process1, Opts), hb_cache:ensure_all_loaded(Process2, Opts)).
+    ?assertEqual(
+        hb_cache:ensure_all_loaded(Process1, Opts),
+        hb_cache:ensure_all_loaded(Process2, Opts)
+    ).
 
 %% @doc Test that a process can be spawned, executed upon, and its result retrieved.
 lookup_execute_test() ->

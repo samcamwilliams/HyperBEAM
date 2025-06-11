@@ -13,6 +13,8 @@
 %% 4. The relay succeeds when the client has enough balance.
 %% 5. The received message is signed by the host using http-sig and validates
 %%    correctly.
+relay_with_payments_test_() ->
+    {timeout, 30, fun relay_with_payments_test/0}.
 relay_with_payments_test() ->
     HostWallet = ar_wallet:new(),
     ClientWallet = ar_wallet:new(),
@@ -67,7 +69,9 @@ relay_with_payments_test() ->
 %% 2. Execute a simple WASM function on the host node.
 %% 3. Verify the response is correct and signed by the host node.
 %% 4. Get the balance of the client and verify it has been deducted.
-paid_wasm_test() ->
+paid_wasm_test_() ->
+    {timeout, 30, fun paid_wasm/0}.
+paid_wasm() ->
     HostWallet = ar_wallet:new(),
     ClientWallet = ar_wallet:new(),
     ClientAddress = hb_util:human_id(ar_wallet:to_address(ClientWallet)),
@@ -116,11 +120,11 @@ paid_wasm_test() ->
     % Check that the client's balance has been deducted.
     ClientMessage2 =
         hb_message:commit(
-            #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
+            #{<<"path">> => <<"/~p4@1.0/balance">>},
             ClientWallet
         ),
     {ok, Res2} = hb_http:get(HostNode, ClientMessage2, Opts),
-    ?assertMatch(40, Res2).
+    ?assertMatch(60, Res2).
 
 create_schedule_aos2_test_disabled() ->
     % The legacy process format, according to the ao.tn.1 spec:

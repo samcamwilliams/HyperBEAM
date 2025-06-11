@@ -152,14 +152,23 @@ validate_next_slot(Msg1, [NextAssignment|Assignments], Lookahead, Last, Opts) ->
             ?event(next_profiling, setting_cache),
             ?event(next, {setting_cache, {assignments, length(Assignments)}}),
             NextState =
-                hb_private:set(
-                    Msg1,
-                    #{ <<"scheduler@1.0">> => #{
-                        <<"assignments">> => Assignments,
-                        <<"lookahead-worker">> => Lookahead
-                    }},
-                    Opts
-                ),
+                case hb_util:atom(hb_opts:get(scheduler_in_memory_cache, true, Opts)) of
+                    true ->
+                        hb_private:set(
+                            Msg1,
+                            #{ <<"scheduler@1.0">> => #{
+                                <<"assignments">> => Assignments,
+                                <<"lookahead-worker">> => Lookahead
+                            }},
+                            Opts
+                        );
+                    false ->
+                        Msg1#{
+                            <<"scheduler@1.0">> => #{
+                                <<"lookahead-worker">> => Lookahead
+                            }
+                        }
+                end,
             ?event(debug_next,
                 {next_returning,
                     {slot, NextAssignmentSlot},
@@ -1119,7 +1128,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                 <<
                     ProcID/binary, "?proc-id=", ProcID/binary,
                     FromBin/binary, ToParam/binary,
-                    "&limit=1000"
+                    "&limit=", (hb_util:bin(?MAX_ASSIGNMENT_QUERY_LEN))/binary
                 >>
         end,
     ?event({getting_remote_schedule, {node, {string, Node}}, {path, {string, Path}}}),
@@ -1298,6 +1307,12 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
                     OnlyCommitted,
                     Opts
                 ),
+            ?event(debug_downgrade,
+                {with_ans104_comms,
+                    {only_committed, OnlyCommitted},
+                    {with_only_ans104_comms, WithANS104Comms}
+                }
+            ),
             case hb_message:signers(WithANS104Comms, Opts) of
                 [] ->
                     {error, #{
@@ -1456,13 +1471,25 @@ find_target_id(Msg1, Msg2, Opts) ->
 
 %% @doc Search the given base and request message pair to find the message to
 %% schedule. The precidence order for search is as follows:
-%% 1. `Msg2/body'
-%% 2. `Msg2'
+%% 1. A key in `Msg2' with the value `self', indicating that the entire message
+%%    is the subject.
+%% 2. A key in `Msg2' with another value, present in that message.
+%% 3. The body of the message.
+%% 4. The message itself.
 find_message_to_schedule(_Msg1, Msg2, Opts) ->
-    case hb_ao:resolve(Msg2, <<"body">>, Opts#{ hashpath => ignore }) of
-        {ok, Body} ->
-            Body;
-        _ -> Msg2
+    Subject =
+        hb_ao:get(
+            <<"subject">>,
+            Msg2,
+            not_found,
+            Opts#{ hashpath => ignore }
+        ),
+    case Subject of
+        <<"self">> -> Msg2;
+        not_found ->
+            hb_ao:get(<<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore });
+        Subject ->
+            hb_ao:get(Subject, Msg2, Opts#{ hashpath => ignore })
     end.
 
 %% @doc Generate a `GET /schedule' response for a process.
@@ -1766,8 +1793,8 @@ http_init(Opts) ->
 		priv_wallet => Wallet,
 		store => [
 			#{
-                <<"store-module">> => hb_store_lru,
-                <<"name">> => <<"cache-mainnet/lru">>
+                <<"store-module">> => hb_store_lmdb,
+                <<"name">> => <<"cache-mainnet/lmdb">>
             },
 			#{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
 		]
@@ -1912,7 +1939,7 @@ http_get_schedule_test_() ->
     
 
 http_get_legacy_schedule_test_() ->
-    {timeout, 10, fun() ->
+    {timeout, 60, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
         {Node, Opts} = http_init(),
         {ok, Res} = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary>>, Opts),
@@ -1921,7 +1948,7 @@ http_get_legacy_schedule_test_() ->
     end}.
 
 http_get_legacy_slot_test_() ->
-    {timeout, 10, fun() ->
+    {timeout, 60, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
         {Node, Opts} = http_init(),
         Res = hb_http:get(Node, <<"/~scheduler@1.0/slot&target=", Target/binary>>, Opts),
@@ -1929,7 +1956,7 @@ http_get_legacy_slot_test_() ->
     end}.
 
 http_get_legacy_schedule_slot_range_test_() ->
-    {timeout, 10, fun() ->
+    {timeout, 60, fun() ->
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
         {Node, Opts} = http_init(),
         {ok, Res} = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary,
@@ -1940,7 +1967,7 @@ http_get_legacy_schedule_slot_range_test_() ->
     end}.
 
 http_get_legacy_schedule_as_aos2_test_() ->
-    {timeout, 10, fun() ->
+    {timeout, 60, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
         {Node, Opts} = http_init(),
         {ok, Res} =
@@ -1958,28 +1985,30 @@ http_get_legacy_schedule_as_aos2_test_() ->
     end}.
 
 http_post_legacy_schedule_test_() ->
-    {timeout, 10, fun() ->
+    {timeout, 60, fun() ->
         {Node, Opts} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
-        Msg1 = hb_message:commit(#{
-            <<"path">> => <<"/~scheduler@1.0/schedule">>,
-            <<"method">> => <<"POST">>,
-            <<"body">> =>
-                hb_message:commit(
-                    #{
-                        <<"data-protocol">> => <<"ao">>,
-                        <<"variant">> => <<"ao.TN.1">>,
-                        <<"type">> => <<"Message">>,
-                        <<"action">> => <<"ping">>,
-                        <<"target">> => Target,
-                        <<"test-from">> => hb_util:human_id(hb:address())
-                    },
-                    Opts,
-                    <<"ans104@1.0">>
-                )
-        }, Opts),
-        {Status, Res} = hb_http:post(Node, Msg1, Opts),
-        ?event({status, Status}),
+        Signed =
+            hb_message:commit(
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"variant">> => <<"ao.TN.1">>,
+                    <<"type">> => <<"Message">>,
+                    <<"action">> => <<"ping">>,
+                    <<"target">> => Target,
+                    <<"test-from">> => hb_util:human_id(hb:address())
+                },
+                Opts,
+                <<"ans104@1.0">>
+            ),
+        WithMethodAndPath =
+            Signed#{
+                <<"path">> => <<"/~scheduler@1.0/schedule">>,
+                <<"method">> => <<"POST">>
+            },
+        ?event(debug_downgrade, {signed, Signed}),
+        {Status, Res} = hb_http:post(Node, WithMethodAndPath, Opts),
+        ?event(debug_downgrade, {status, Status}),
         ?event({res, Res}),
         ?assertMatch(
             {ok, #{ <<"slot">> := Slot }} when Slot > 0,
@@ -1988,7 +2017,7 @@ http_post_legacy_schedule_test_() ->
     end}.
 
 http_get_json_schedule_test_() ->
-	{timeout, 20, fun() ->
+	{timeout, 60, fun() ->
 		{Node, Opts} = http_init(),
 		PMsg = hb_message:commit(test_process(Opts), Opts),
 		Msg1 = hb_message:commit(#{

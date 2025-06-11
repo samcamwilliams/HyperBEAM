@@ -27,7 +27,15 @@ estimate(_, EstimateReq, NodeMsg) ->
                     hb_ao:get(<<"request">>, EstimateReq, NodeMsg),
                     NodeMsg
                 ),
-            {ok, length(Messages) * hb_opts:get(simple_pay_price, 1, NodeMsg)}
+            % Attempt to find the price from the router registration options,
+            % if it exists. If not, use the simple pay price.
+            RouterOpts = hb_opts:get(router_registration_opts, #{}, NodeMsg),
+            Price =
+                case hb_ao:get(<<"price">>, RouterOpts, not_found, NodeMsg) of
+                    not_found -> hb_opts:get(simple_pay_price, 1, NodeMsg);
+                    P -> P
+                end,
+            {ok, length(Messages) * Price}
     end.
 
 %% @doc Preprocess a request by checking the ledger and charging the user. We 
@@ -234,7 +242,7 @@ get_balance_and_top_up_test() ->
         hb_http:get(
             Node,
             hb_message:commit(
-                #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
+                #{<<"path">> => <<"/~p4@1.0/balance">>},
                 Opts#{ priv_wallet => ClientWallet }
             ),
             Opts

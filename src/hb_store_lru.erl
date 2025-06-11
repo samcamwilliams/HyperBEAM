@@ -113,7 +113,7 @@ server_loop(State =
             ?event(debug_lru, {put, {key, Key}, {value, Value}}),
             From ! {ok, Ref};
         {link, Existing, New, From, Ref} ->
-            link_cache_entry(State, Existing, New),
+            link_cache_entry(State, Existing, New, Opts),
             From ! {ok, Ref};
         {make_group, Key, From, Ref} ->
             ?event(debug_lru, {make_group, Key}),
@@ -166,7 +166,14 @@ read(Opts, RawKey) ->
                 no_store ->
                     not_found;
                 PersistentStore ->
-                    ResolvedKey = hb_store:resolve(PersistentStore, Key),
+                    % FIXME: It might happens some links can be in LRU while data on 
+                    % the permanent store and resolve doesn't produce the same key.
+                    ResolvedKey = case RawKey == Key of
+                      true ->
+                        hb_store:resolve(PersistentStore, RawKey);
+                      false ->
+                        Key
+                    end,
                     hb_store:read(PersistentStore, ResolvedKey)
             end;
         {raw, Entry = #{value := Value}} ->
@@ -209,7 +216,6 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
 make_link(_, Link, Link) ->
     ok;
 make_link(Opts, RawExisting, New) ->
-    Existing = hb_store:join(RawExisting),
     #{ <<"pid">> := Server } = hb_store:find(Opts),
     ExistingKeyBin = convert_if_list(RawExisting),
     NewKeyBin = convert_if_list(New),
@@ -222,7 +228,7 @@ make_link(Opts, RawExisting, New) ->
                     hb_store:make_link(Store, ExistingKeyBin, NewKeyBin)
             end;
         _ ->
-            Server ! {link, Existing, New, self(), Ref = make_ref()},
+            Server ! {link, ExistingKeyBin, NewKeyBin, self(), Ref = make_ref()},
             receive
                 {ok, Ref} ->
                     ok
@@ -231,19 +237,6 @@ make_link(Opts, RawExisting, New) ->
 
 %% @doc List all the keys registered.
 list(Opts, Path) ->
-    InMemoryKeys =
-        case fetch_cache_with_retry(Opts, Path) of
-            {group, Set} ->
-                sets:to_list(Set);
-            {link, Link} ->
-                list(Opts, Link);
-            {raw, #{value := Value}} when is_map(Value) ->
-                maps:keys(Value);
-            {raw, #{value := Value}} when is_list(Value) ->
-                Value;
-            nil ->
-                not_found
-        end,
     PersistentKeys =
         case get_persistent_store(Opts) of
             no_store ->
@@ -255,7 +248,7 @@ list(Opts, Path) ->
                     not_found -> not_found
                 end
         end,
-    case {InMemoryKeys, PersistentKeys} of
+    case {ets_keys(Opts, Path), PersistentKeys} of
         {not_found, not_found} ->
             not_found;
         {InMemoryKeys, not_found} ->
@@ -264,6 +257,26 @@ list(Opts, Path) ->
             {ok, PersistentKeys};
         {InMemoryKeys, PersistentKeys} ->
             {ok, hb_util:unique(InMemoryKeys ++ PersistentKeys)}
+    end.
+
+%% @doc List all of the keys in the store for a given path, supporting a special
+%% case for the root.
+ets_keys(Opts, <<"">>) -> ets_keys(Opts, <<"/">>);
+ets_keys(Opts, <<"/">>) ->
+    #{ <<"cache-table">> := Table } = hb_store:find(Opts),
+    table_keys(Table, undefined);
+ets_keys(Opts, Path) ->
+    case fetch_cache_with_retry(Opts, Path) of
+        {group, Set} ->
+            sets:to_list(Set);
+        {link, Link} ->
+            list(Opts, Link);
+        {raw, #{value := Value}} when is_map(Value) ->
+            maps:keys(Value);
+        {raw, #{value := Value}} when is_list(Value) ->
+            Value;
+        nil ->
+            not_found
     end.
 
 %% @doc Determine the type of a key in the store.
@@ -355,16 +368,26 @@ fetch_cache_with_retry(Opts, Key, Retries) ->
 
 put_cache_entry(State, Key, Value, Opts) ->
     ValueSize = erlang:external_size(Value),
-    ?event(cache_lru, {putting_entry, {size, ValueSize}, {opts, Opts}}),
+    CacheSize = cache_size(State),
+    ?event(cache_lru, {putting_entry, {size, ValueSize}, {opts, Opts}, {cache_size, CacheSize}}),
     Capacity = hb_maps:get(<<"capacity">>, Opts, ?DEFAULT_LRU_CAPACITY),
-    case ValueSize =< Capacity of
-        false ->
-            offload_to_store(Key, Value, [], undefined, Opts);
-        true ->
-            case get_cache_entry(State, Key) of
-                nil ->
+    case get_cache_entry(State, Key) of
+        nil ->
+            % For new entries, we check if the size will the fit the full
+            % capacity (even by evicting keys).
+            FitInCache = ValueSize =< Capacity,
+            case FitInCache of
+                false ->
+                    case get_persistent_store(Opts) of
+                        no_store -> 
+                            skip;
+                        _ ->
+                            Group = handle_group(State, Key, Opts#{mode => offload}),
+                            offload_to_store(Key, Value, [], Group, Opts)
+                        end;
+                true ->
                     ?event(cache_lru, {assign_entry, Key, Value}),
-                    Group = handle_group(State, Key),
+                    Group = handle_group(State, Key, Opts),
                     assign_new_entry(
                         State,
                         Key,
@@ -373,23 +396,31 @@ put_cache_entry(State, Key, Value, Opts) ->
                         Capacity,
                         Group,
                         Opts
-                    );
-                Entry ->
-                    ?event(cache_lru, {replace_entry, Key, Value}),
-                    replace_entry(State, Key, Value, ValueSize, Entry)
-            end
+                    )
+            end;
+        Entry ->
+            ?event(cache_lru, {replace_entry, Key, Value}),
+            replace_entry(State, Key, Value, ValueSize, Entry)
     end.
 
-handle_group(State, Key) ->
-    case filename:dirname(Key) of
+handle_group(State, Key, Opts) ->
+    case filename:dirname(hb_store:join(Key)) of
         <<".">> -> undefined ;
         BaseDir ->
-            ensure_dir(State, BaseDir),
-            {group, Entry} = get_cache_entry(State, BaseDir),
-            BaseName = filename:basename(Key),
-            NewGroup = append_key_to_group(BaseName, Entry),
-            add_cache_entry(State, BaseDir, {group, NewGroup}),
-            BaseDir
+            case maps:get(mode, Opts, undefined) of
+                offload ->
+                    Store = get_persistent_store(Opts),
+                    ?event(cache_lru, {create_group, BaseDir}),
+                    hb_store:make_group(Store, BaseDir),
+                    BaseDir;
+              undefined -> 
+                    ensure_dir(State, BaseDir),
+                    {group, Entry} = get_cache_entry(State, BaseDir),
+                    BaseName = filename:basename(Key),
+                    NewGroup = append_key_to_group(BaseName, Entry),
+                    add_cache_entry(State, BaseDir, {group, NewGroup}),
+                    BaseDir
+            end
     end.
 ensure_dir(State, Path) ->
     PathParts = hb_path:term_to_path_parts(Path),
@@ -469,11 +500,11 @@ add_cache_entry(#{cache_table := Table}, Key, Value) ->
 add_cache_index(#{index_table := Table}, ID, Key) ->
     ets:insert(Table, {ID, Key}).
 
-link_cache_entry(State = #{cache_table := Table}, Existing, New) ->	
+link_cache_entry(State = #{cache_table := Table}, Existing, New, Opts) ->	
     ?event(cache_lru, {link, Existing, New}),
     % Remove the link from the previous linked entry
     clean_old_link(Table, New),
-    _ = handle_group(State, New),
+    _ = handle_group(State, New, Opts),
     ets:insert(Table, {New, {link, Existing}}),
     % Add links to the linked entry
     case ets:lookup(Table, Existing) of
@@ -599,11 +630,11 @@ offload_to_store(TailKey, TailValue, Links, Group, Opts) ->
                     hb_store:make_group(Store, Group)
             end,
             case hb_store:write(Store, TailKey, TailValue) of
-                {ok, CacheID} ->
-                    hb_store:make_link(Store, CacheID, TailKey),
+                ok ->
                     lists:foreach(
                         fun(Link) ->
-                            hb_store:make_link(Store, Link, TailKey)
+                            ResolvedPath = resolve(Opts, Link),
+                            hb_store:make_link(Store, ResolvedPath, Link)
                         end,
                         Links
                     ),

@@ -17,8 +17,8 @@
     <<"request-target">>,
     <<"path">>,
     <<"query">>,
-    <<"query-param">>,
-    <<"status">>
+    <<"query-param">>
+    % <<"status">> % Some libraries does not support it
 ]).
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
@@ -27,14 +27,15 @@ commitments_to_siginfo(_Msg, Comms, _Opts) when ?IS_EMPTY_MESSAGE(Comms) ->
     #{};
 commitments_to_siginfo(Msg, Comms, Opts) ->
     % Generate a SF item for each commitment's signature and signature-input.
-    {Sigs, SigsInputs} =
+    {Sigs, SigInputs} =
         maps:fold(
-            fun(_CommID, Commitment, {Sigs, SigsInputs}) ->
-                {ok, SigName, SFSig, SFSigInput} =
+            fun(_CommID, Commitment, {Sigs, SigInputs}) ->
+                {ok, SigNameRaw, SFSig, SFSigInput} =
                     commitment_to_sf_siginfo(Msg, Commitment, Opts),
+                SigName = <<"sig-", SigNameRaw/binary>>,
                 {
                     Sigs#{ SigName => SFSig },
-                    SigsInputs#{ SigName => SFSigInput }
+                    SigInputs#{ SigName => SFSigInput }
                 }
             end,
             {#{}, #{}},
@@ -44,7 +45,7 @@ commitments_to_siginfo(Msg, Comms, Opts) ->
         <<"signature">> =>
             hb_util:bin(hb_structured_fields:dictionary(Sigs)),
         <<"signature-input">> =>
-            hb_util:bin(hb_structured_fields:dictionary(SigsInputs))
+            hb_util:bin(hb_structured_fields:dictionary(SigInputs))
     }.
 
 %% @doc Generate a `signature' and `signature-input' key pair from a given
@@ -56,7 +57,7 @@ commitment_to_sf_siginfo(Msg, Commitment, Opts) ->
     % `keyid' in the `signature-input' keys.
     KeyID = maps:get(<<"keyid">>, Commitment, <<>>),
     % Extract the signature from the commitment.
-    Signature = maps:get(<<"signature">>, Commitment),
+    Signature = hb_util:decode(maps:get(<<"signature">>, Commitment)),
     % Extract the keys present in the commitment.
     CommittedKeys = to_siginfo_keys(Msg, Commitment, Opts),
     ?event({normalized_for_enc, CommittedKeys, {commitment, Commitment}}),
@@ -124,7 +125,11 @@ get_additional_params(Commitment) ->
                         <<"created">>,
                         <<"expires">>,
                         <<"nonce">>,
-                        <<"committed">>
+                        <<"committed">>,
+                        <<"signature">>,
+                        <<"type">>,
+                        <<"commitment-device">>,
+                        <<"committer">>
                     ]
                 )
             )
@@ -157,7 +162,7 @@ nested_map_to_string(Map) ->
 %% @doc Take a message with a `signature' and `signature-input' key pair and
 %% return a map of commitments.
 siginfo_to_commitments(
-        Msg = #{ <<"signature">> := SFSigBin, <<"signature-input">> := SFSigInputBin },
+        Msg = #{ <<"signature">> := <<"sig-", SFSigBin/binary>>, <<"signature-input">> := <<"sig-", SFSigInputBin/binary>> },
         BodyKeys,
         Opts) ->
     % Parse the signature and signature-input structured-fields.
@@ -176,7 +181,13 @@ siginfo_to_commitments(
         lists:map(
             fun ({SFSig, SFSigInput}) ->
                 {ok, ID, Commitment} =
-                    sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts),
+                    sf_siginfo_to_commitment(
+                        Msg,
+                        BodyKeys,
+                        SFSig,
+                        SFSigInput,
+                        Opts
+                    ),
                 {ID, Commitment}
             end,
             CommitmentSFs
@@ -192,17 +203,21 @@ siginfo_to_commitments(_Msg, _BodyKeys, _Opts) ->
 %% return a commitment.
 sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
     % Extract the signature and signature-input from the structured-fields.
-    {item, {binary, EncodedSig}, []} = SFSig,
+    {item, {binary, Sig}, []} = SFSig,
     {list, SigInput, ParamsKV} = SFSigInput,
     % Generate a commitment message from the signature-input parameters.
     Commitment1 =
         maps:from_list(
             lists:map(
-                fun ({Key, BareItem}) ->
-                    Item = case hb_structured_fields:from_bare_item(BareItem) of
-                        Res when is_binary(Res) -> decoding_nested_map_binary(Res);
-                        Res -> Res
-                    end,
+                fun ({Key, {binary, Bin}}) -> {Key, hb_util:encode(Bin)};
+                    ({Key, BareItem}) ->
+                    Item =
+                        case hb_structured_fields:from_bare_item(BareItem) of
+                            Res when is_binary(Res) ->
+                                decoding_nested_map_binary(Res);
+                            Res ->
+                                Res
+                        end,
                     {Key, Item}
                 end,
                 ParamsKV
@@ -237,37 +252,44 @@ sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
     %    the `committer' to its hash.
     Commitment3 =
         Commitment2#{
-            <<"signature">> => EncodedSig,
+            <<"signature">> => hb_util:encode(Sig),
             <<"committed">> => CommittedKeys
         },
     Commitment5 =
-        case hb_util:decode(maps:get(<<"keyid">>, Commitment3)) of
-            DecKeyID when byte_size(DecKeyID) =< 32 ->
+        case maps:get(<<"keyid">>, Commitment3) of
+            DecKeyID when byte_size(DecKeyID) =< 43 ->
                 Commitment3;
             DecPubKey ->
                 Commitment3#{
                     <<"committer">> =>
-                        hb_util:human_id(crypto:hash(sha256, DecPubKey))
+                        hb_util:human_id(
+                            crypto:hash(sha256, hb_util:decode(DecPubKey))
+                        )
                 }
         end,
     ID =
-        case hb_util:decode(maps:get(<<"signature">>, Commitment5, EncodedSig)) of
-            DecSig when byte_size(DecSig) == 32 -> hb_util:human_id(DecSig);
-            DecSig -> hb_util:human_id(crypto:hash(sha256, DecSig))
+        if byte_size(Sig) == 32 -> hb_util:human_id(Sig);
+        true -> hb_util:human_id(crypto:hash(sha256, Sig))
         end,
     % Return the commitment and calculated ID.
     {ok, ID, Commitment5}.
 
 decoding_nested_map_binary(Bin) ->
-    MapBinary = lists:foldl(fun (X, Acc) ->
-        ?event(debug, {x, X}),
-        case binary:split(X, <<":">>, [global]) of
-            [ID, Key, Value] ->
-                maps:put(ID, #{ <<"name">> => Key, <<"value">> => Value }, Acc);
-            _ ->
-                X
-        end
-    end, #{}, binary:split(Bin, <<", ">>, [global])),
+    MapBinary =
+        lists:foldl(
+            fun (X, Acc) ->
+                case binary:split(X, <<":">>, [global]) of
+                    [ID, Key, Value] ->
+                        Acc#{
+                            ID => #{ <<"name">> => Key, <<"value">> => Value }
+                        };
+                    _ ->
+                        X
+                end
+            end,
+            #{},
+            binary:split(Bin, <<", ">>, [global])
+        ),
     case MapBinary of
         Res when is_map(Res) ->
             Res;

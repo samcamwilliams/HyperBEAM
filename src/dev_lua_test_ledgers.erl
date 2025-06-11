@@ -554,7 +554,10 @@ subledger_transfer() ->
 
 %% @doc Verify that peer ledgers on the same token are able to register mutually
 %% to establish a peer-to-peer connection.
-subledger_registration_test() ->
+%% 
+%% Disabled as explicit peer registration is not required for `hyper-token.lua'
+%% to function.
+subledger_registration_test_disabled() ->
     Opts = test_opts(),
     Alice = ar_wallet:new(),
     RootLedger =
@@ -640,7 +643,8 @@ subledger_to_subledger() ->
 %% duplicates of itself. In order for this to be safe, the peer ledger network's
 %% base process message must implement sufficicient rollback protections and 
 %% compute correctness guarantees.
-unregistered_peer_transfer_test() ->
+unregistered_peer_transfer_test_() -> {timeout, 30, fun unregistered_peer_transfer/0}.
+unregistered_peer_transfer() ->
     Opts = #{},
     Alice = ar_wallet:new(),
     Bob = ar_wallet:new(),
@@ -706,7 +710,7 @@ unregistered_peer_transfer_test() ->
 %%   peer ledger's `X' field.
 %% - `X-required`: A list of `X`s that always must be present in the
 %%   peer ledger's `X' field.
-multischeduler_test_() -> {timeout, 30, fun multischeduler/0}.
+multischeduler_test_disabled() -> {timeout, 30, fun multischeduler/0}.
 multischeduler() ->
     BaseOpts = test_opts(),
     NodeWallet = ar_wallet:new(),

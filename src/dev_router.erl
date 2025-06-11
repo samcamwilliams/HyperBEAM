@@ -58,87 +58,61 @@ info(_Msg1, _Msg2, _Opts) ->
             },
             <<"register">> => #{
                 <<"description">> => <<"Register a route with a remote router node">>,
-                <<"required_node_opts">> => #{
-                    <<"router_peer_location">> => <<"Location of the router peer">>,
-                    <<"router_prefix">> => <<"Prefix for the route">>,
-                    <<"router_price">> => <<"Price for the route">>,
-                    <<"router_template">> => <<"Template to match the route">>
-                }
+                    <<"peer_location">> => <<"Location of the router peer">>,
+                    <<"prefix">> => <<"Prefix for the route">>,
+                    <<"price">> => <<"Price for the route">>,
+                    <<"template">> => <<"Template to match the route">>
             },
             <<"preprocess">> => #{
                 <<"description">> => <<"Preprocess a request to check if it should be relayed">>
             }
         }
     },
-    {ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
+    {ok, InfoBody}.
 
-%% A exposed register function that allows telling the current node to register
-%% a new route with a remote router node. This function should also be itempotent
+%% @doc Register function that allows telling the current node to register
+%% a new route with a remote router node. This function should also be idempotent.
 %% so that it can be called only once.
-register(_M1, _M2, Opts) ->
-    Registered = hb_opts:get(router_registered, false, Opts),
-    % Check if the route is already registered
-    case Registered of
-        true ->
-            {error, <<"Route already registered.">>};
-        false ->
-            % Validate node history
-            case hb_opts:validate_node_history(Opts) of
-                {ok, _} ->
-                    RouterNode = hb_opts:get(<<"router_peer_location">>, not_found, Opts),
-                    Prefix = hb_opts:get(<<"router_prefix">>, not_found, Opts),
-                    Price = hb_opts:get(<<"router_price">>, not_found, Opts),
-                    Template = hb_opts:get(<<"router_template">>, not_found, Opts),
-                    {ok, Attestion} = dev_snp:generate(
-                        #{}, 
-                        #{}, 
-                        #{ 
-                            priv_wallet => hb:wallet(), 
-                            snp_trusted => hb_opts:get(snp_trusted, [#{}], Opts)
-                        }
-                    ),
-                    ?event(debug_register, {attestion, Attestion}),
-                    % Check if any required parameters are missing
-                    case hb_opts:check_required_opts([
-                        {<<"router_peer_location">>, RouterNode},
-                        {<<"router_prefix">>, Prefix},
-                        {<<"router_price">>, Price},
-                        {<<"router_template">>, Template}
-                    ], Opts) of
-                        {ok, _} ->
-                            case hb_http:post(RouterNode, #{
-                                <<"path">> => <<"/router~node-process@1.0/schedule">>,
-                                <<"method">> => <<"POST">>,
-                                <<"body">> =>
-                                    hb_message:commit(
-                                        #{
-                                            <<"path">> => <<"register">>,
-                                            <<"route">> =>
-                                                #{
-                                                    <<"name">> => Prefix,
-                                                    <<"template">> => Template,
-                                                    <<"price">> => Price
-                                                },
-                                            <<"body">> => Attestion
-                                        },
-                                        Opts
-                                    )
-                            }, Opts) of
-                                {ok, _} ->
-                                    hb_http_server:set_opts(
-                                        Opts#{ router_registered => true }
-                                    ),
-                                    {ok, <<"Route registered.">>};
-                                {error, _} ->
-                                    {error, <<"Failed to register route.">>}
-                            end;
-                        {error, ErrorMsg} ->
-                            {error, ErrorMsg}
-                    end;
-                {error, Reason} ->
-                    % Node history validation failed
-                    {error, Reason}
-            end
+register(_M1, M2, Opts) ->
+    maybe
+        %% Extract all required parameters from options
+        %% These values will be used to construct the registration message
+        RouterRegOpts = hb_opts:get(router_registration_opts, #{}, Opts),
+        RouterNode =
+            hb_ao:get(
+                <<"registration-peer">>,
+                RouterRegOpts,
+                not_found,
+                Opts
+            ),
+        {ok, SigOpts} =
+            case hb_ao:get(<<"as">>, M2, not_found, Opts) of
+                not_found -> {ok, Opts};
+                AsID -> hb_opts:as(AsID, Opts)
+            end,
+        ?event({sig_opts, SigOpts}),
+        %% Post registration request to the router node
+        %% The message includes our route details and attestation for verification
+        {ok, Res} =
+            hb_http:post(
+                RouterNode,
+                <<"/router~node-process@1.0/schedule">>,
+                hb_message:commit(
+                    #{
+                        <<"subject">> => <<"self">>,
+                        <<"action">> => <<"register">>,
+                        <<"route">> => RouterRegOpts
+                    },
+                    SigOpts
+                ),
+                Opts
+            ),
+        ?event({registered, {msg, M2}, {res, Res}}),
+        {ok, <<"Route registered.">>}
+    else
+        %% Handle any other errors from the registration process
+        %% This includes parameter validation errors and HTTP errors
+        {error, Reason} -> {error, Reason}
     end.
 
 %% @doc Device function that returns all known routes.
@@ -312,34 +286,32 @@ apply_routes(Msg, R, Opts) ->
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_route(Msg, RouteLink, Opts) when ?IS_LINK(RouteLink) ->
-    apply_route(Msg, hb_cache:ensure_loaded(RouteLink, Opts), Opts);
-apply_route(Msg, Route = #{ <<"opts">> := RawRouteOpts }, Opts) ->
+apply_route(Msg, Route, Opts) ->
     LoadedRoute = hb_cache:ensure_all_loaded(Route, Opts),
-    RouteOpts = hb_cache:ensure_all_loaded(RawRouteOpts, Opts),
+    RouteOpts = hb_maps:get(<<"opts">>, LoadedRoute, #{}),
     LoadedMsg = hb_cache:ensure_all_loaded(Msg, Opts),
     {ok, #{
         <<"opts">> => RouteOpts,
         <<"uri">> =>
             hb_util:ok(
-                apply_route(
+                do_apply_route(
                     LoadedMsg,
                     hb_maps:without([<<"opts">>], LoadedRoute, Opts),
                     Opts
                 )
             )
-    }};
-apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
-    apply_route(#{ <<"path">> => Path }, R, Opts);
-apply_route(#{ <<"path">> := RawPath }, #{ <<"name">> := RawPrefix }, Opts) ->
+    }}.
+do_apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
+    do_apply_route(#{ <<"path">> => Path }, R, Opts);
+do_apply_route(#{ <<"path">> := RawPath }, #{ <<"prefix">> := RawPrefix }, Opts) ->
     Path = hb_cache:ensure_loaded(RawPath, Opts),
     Prefix = hb_cache:ensure_loaded(RawPrefix, Opts),
     {ok, <<Prefix/binary, Path/binary>>};
-apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
+do_apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
     Path = hb_cache:ensure_loaded(RawPath, Opts),
     Suffix = hb_cache:ensure_loaded(RawSuffix, Opts),
     {ok, <<Path/binary, Suffix/binary>>};
-apply_route(
+do_apply_route(
         #{ <<"path">> := RawPath },
         #{ <<"match">> := RawMatch, <<"with">> := RawWith },
         Opts) ->
@@ -552,6 +524,31 @@ preprocess(Msg1, Msg2, Opts) ->
             % This allows us to potentially sign the request before sending it,
             % letting the recipient node charge/verify us as necessary, without
             % explicitly signing the user's request itself.
+            % 
+            % We additionally ensure that the request itself has a commitment,
+            % such that headers added by the relaying node are not added to the
+            % user's request.
+            UserReqWithCommit =
+                case hb_message:signers(Req, Opts) of
+                    [] ->
+                        hb_message:commit(
+                            Req,
+                            Opts,
+                            #{
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => <<"unsigned">>
+                            }
+                        );
+                    _ ->
+                        Req
+                end,
+            RelayReq = 
+                #{
+                    <<"device">> => <<"apply@1.0">>,
+                    <<"path">> => <<"user-request">>,
+                    <<"user-request">> => UserReqWithCommit
+                },
+            ?event(debug_relay, {prepared_relay_req, RelayReq}),
             {
                 ok,
                 #{
@@ -559,18 +556,14 @@ preprocess(Msg1, Msg2, Opts) ->
                         [
                             MaybeCommit#{
                                 <<"device">> => <<"relay@1.0">>,
+                                <<"relay-device">> => <<"apply@1.0">>,
                                 <<"method">> => <<"POST">>,
                                 <<"peer">> => Node
                             },
                             #{
                                 <<"path">> => <<"call">>,
                                 <<"target">> => <<"proxy-message">>,
-                                <<"proxy-message">> =>
-                                    #{
-                                        <<"device">> => <<"apply@1.0">>,
-                                        <<"path">> => <<"user-request">>,
-                                        <<"user-request">> => Req
-                                    }
+                                <<"proxy-message">> => RelayReq
                             }
                         ]
                 }
@@ -656,34 +649,103 @@ local_process_route_provider() ->
                 hb_util:ok(
                     hb_http:get(
                         Node,
-                        <<"/~router@1.0/route?route-path=test2">>,
-                        #{
-                            <<"route-path">> => <<"test2">>
-                        }
+                        <<"/~router@1.0/route&route-path=test2/uri">>,
+                        #{}
                     )
                 )
             end,
             lists:seq(1, 10)
         ),
     ?event({responses, Responses}),
-    ?assertEqual(2, sets:size(sets:from_list(Responses))).
+    ?assertEqual(2, length(hb_util:unique(Responses))).
+
+local_dynamic_trusted_peer_test() ->
+    {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
+    Wallet = ar_wallet:new(),
+    AltWallet = ar_wallet:new(),
+    ?event(
+        {wallets,
+            {main, hb_util:human_id(Wallet)},
+            {alt, hb_util:human_id(AltWallet)}
+        }
+    ),
+    Node =
+        hb_http_server:start_node(#{
+            store => hb_opts:get(store),
+            node_processes => #{
+                <<"router">> => #{
+                    <<"device">> => <<"process@1.0">>,
+                    % Set the caller's alternate ID to be trusted for registration
+                    % on the node.
+                    <<"trusted-peer">> => hb_util:human_id(AltWallet),
+                    <<"execution-device">> => <<"lua@5.3a">>,
+                    <<"scheduler-device">> => <<"scheduler@1.0">>,
+                    <<"module">> => #{
+                        <<"content-type">> => <<"application/lua">>,
+                        <<"name">> => <<"dynamic-router">>,
+                        <<"body">> => Module
+                    },
+                    % Set module-specific factors for the test
+                    <<"pricing-weight">> => 9,
+                    <<"performance-weight">> => 1,
+                    <<"score-preference">> => 4,
+                    <<"is-admissible">> => #{
+                        <<"path">> => <<"default">>,
+                        <<"default">> => <<"false">>
+                    }
+                }
+            }
+        }),
+    % Create the options for the joiner.
+    JoinerOpts = #{
+        priv_wallet => Wallet,
+        router_registration_opts => #{
+            <<"registration-peer">> => Node,
+            <<"prefix">> => <<"https://test-node.com">>,
+            <<"template">> => <<"/.*~process@1.0/.*">>,
+            <<"price">> => 250
+        },
+        identities => #{
+            <<"alt-id">> => #{ priv_wallet => AltWallet }
+        }
+    },
+    % Validate that signing as the `alt-id` generates the expected commitment.
+    {ok, OptsAsID} = hb_opts:as(<<"alt-id">>, JoinerOpts),
+    SignedAs = hb_message:commit(#{ <<"a">> => 1 }, OptsAsID),
+    AltID = hb_util:human_id(AltWallet),
+    ?assertEqual([AltID], hb_message:signers(SignedAs, OptsAsID)),
+    % Register the joiner with the node using the `alt-id`.
+    {ok, RegResult} =
+        hb_ao:resolve(
+            #{ <<"device">> => <<"router@1.0">> },
+            #{
+                <<"path">> => <<"register">>,
+                <<"as">> => <<"alt-id">>
+            },
+            JoinerOpts
+        ),
+    ?event({reg_res, RegResult}),
+    {ok, ScheduledMsg} =
+        hb_http:get(
+            Node,
+            <<"/router~node-process@1.0/schedule/assignments/1/body">>,
+            JoinerOpts
+        ),
+    [Committer] = hb_message:signers(ScheduledMsg, JoinerOpts),
+    ?event({committer, Committer}),
+    ?assertEqual(AltID, Committer).
 
 %% @doc Example of a Lua module being used as the `route_provider' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
-local_dynamic_router_test_disabled() ->
-    {timeout, 30, fun local_dynamic_router/0}.
+local_dynamic_router_test_() ->
+    {timeout, 60, fun local_dynamic_router/0}.
 local_dynamic_router() ->
     BenchRoutes = 50,
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ar_wallet:new(),
         route_provider => #{
             <<"path">> =>
@@ -697,7 +759,7 @@ local_dynamic_router() ->
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
                 <<"module">> => #{
                     <<"content-type">> => <<"application/lua">>,
-                    <<"module">> => <<"dynamic-router">>,
+                    <<"name">> => <<"dynamic-router">>,
                     <<"body">> => Module
                 },
                 % Set module-specific factors for the test
@@ -722,7 +784,7 @@ local_dynamic_router() ->
                             <<"path">> => <<"register">>,
                             <<"route">> =>
                                 #{
-                                    <<"name">> => 
+                                    <<"prefix">> => 
                                         <<
                                             "https://test-node-",
                                                 (hb_util:bin(X))/binary,
@@ -795,7 +857,7 @@ dynamic_router() ->
     ProxyWallet = ar_wallet:new(),
     ExecNode =
         hb_http_server:start_node(
-            ExecOpts = #{ priv_wallet => ExecWallet }
+            ExecOpts = #{ priv_wallet => ExecWallet, store => hb_opts:get(store) }
         ),
     Node = hb_http_server:start_node(ProxyOpts = #{
         snp_trusted => [
@@ -814,12 +876,7 @@ dynamic_router() ->
                     <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
             }
         ],
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ProxyWallet,
         on => 
             #{
@@ -847,8 +904,8 @@ dynamic_router() ->
                 <<"performance-weight">> => 1,
                 <<"score-preference">> => 4,
                 <<"is-admissible">> => #{ 
-                  <<"device">> => <<"snp@1.0">>,
-                  <<"path">> => <<"verify">>
+                    <<"device">> => <<"snp@1.0">>,
+                    <<"path">> => <<"verify">>
                 }
             }
         }
@@ -871,7 +928,7 @@ dynamic_router() ->
                                 <<"path">> => <<"register">>,
                                 <<"route">> =>
                                     #{
-                                        <<"name">> => ExecNode,
+                                        <<"prefix">> => ExecNode,
                                         <<"template">> => <<"/c">>,
                                         <<"price">> => X * 250
                                     },
@@ -886,7 +943,7 @@ dynamic_router() ->
     end, lists:seq(1, 1)),
     % Force computation of the current state. This should be done with a 
     % background worker (ex: a `~cron@1.0/every' task).
-    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
+    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now/at-slot">>, #{}),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
     ?assertEqual(ok, Status),
     ProxyWalletAddr = hb_util:human_id(ar_wallet:to_address(ProxyWallet)),
@@ -911,7 +968,7 @@ dynamic_router() ->
 %% according to the real-time performance of nodes. This test utilizes the
 %% `dynamic-router' script to manage routes and recalculate weights based on the
 %% reported performance.
-dynamic_routing_by_performance_test_disabled() ->
+dynamic_routing_by_performance_test_() ->
     {timeout, 60, fun dynamic_routing_by_performance/0}.
 dynamic_routing_by_performance() ->
     % Setup test parameters
@@ -924,12 +981,7 @@ dynamic_routing_by_performance() ->
     Run = hb_util:bin(rand:uniform(1337_000)),
     Node = hb_http_server:start_node(Opts = #{
         relay_http_client => gun,
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-TEST/dynrouter-", Run/binary>>
-            }
-        ],
+        store => hb_opts:get(store),
         priv_wallet => ar_wallet:new(),
         route_provider => #{
             <<"path">> =>
@@ -971,6 +1023,7 @@ dynamic_routing_by_performance() ->
                 XNode =
                     hb_http_server:start_node(
                         #{
+                            store => hb_opts:get(store),
                             on =>
                                 #{
                                     <<"request">> => #{
@@ -999,7 +1052,7 @@ dynamic_routing_by_performance() ->
                                     <<"path">> => <<"register">>,
                                     <<"route">> =>
                                         #{
-                                            <<"name">> => XNode,
+                                            <<"prefix">> => XNode,
                                             <<"template">> => TestPath,
                                             <<"price">> => 1000 + X
                                         }
@@ -1312,48 +1365,64 @@ add_route_test() ->
     {ok, Recvd} = GetRes,
     ?assertMatch(<<"new">>, Recvd).
 
-relay_nearest_test() ->
-    Peer1 = <<"https://tee-2.forward.computer">>,
-    Peer2 = <<"https://tee-3.forward.computer">>,
-    HTTPSOpts = #{ http_client => httpc },
-    {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
-    {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
+%% @doc Test that the `preprocess/3' function re-routes a request to remote
+%% peers via `~relay@1.0', according to the node's routing table.
+request_hook_reroute_to_nearest_test() ->
+    Peer1 = hb_http_server:start_node(#{ priv_wallet => W1 = ar_wallet:new() }),
+    Peer2 = hb_http_server:start_node(#{ priv_wallet => W2 = ar_wallet:new() }),
+    Address1 = hb_util:human_id(ar_wallet:to_address(W1)),
+    Address2 = hb_util:human_id(ar_wallet:to_address(W2)),
     Peers = [Address1, Address2],
     Node =
         hb_http_server:start_node(Opts = #{
             priv_wallet => ar_wallet:new(),
-            routes => [
-                #{
-                    <<"template">> => <<"/.*~process@1.0/.*">>,
-                    <<"strategy">> => <<"Nearest">>,
-                    <<"nodes">> => [
-                        #{
-                            <<"name">> => Peer1,
-                            <<"wallet">> => Address1
-                        },
-                        #{
-                            <<"name">> => Peer2,
-                            <<"wallet">> => Address2
-                        }    
-                    ]
-                }
-            ]
+            routes =>
+                [
+                    #{
+                        <<"template">> => <<"/.*/.*/.*">>,
+                        <<"strategy">> => <<"Nearest">>,
+                        <<"nodes">> =>
+                            lists:map(
+                                fun({Address, Node}) ->
+                                    #{
+                                        <<"prefix">> => Node,
+                                        <<"wallet">> => Address
+                                    }
+                                end,
+                                [
+                                    {Address1, Peer1},
+                                    {Address2, Peer2}
+                                ]
+                            )
+                    }
+                ],
+            on => #{ <<"request">> => #{ <<"device">> => <<"relay@1.0">> } }
         }),
-    {ok, RelayRes} =
-        hb_http:get(
-            Node,
-            <<
-                "/~relay@1.0/call?relay-path=",
-                    "/CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM~process@1.0",
-                    "/slot"
-            >>,
-            #{}
+    Res =
+        lists:map(
+            fun(_) ->
+                hb_util:ok(
+                    hb_http:get(
+                        Node,
+                        <<"/~meta@1.0/info/address">>,
+                        Opts#{ http_only_result => true }
+                    )
+                )
+            end,
+            lists:seq(1, 3)
         ),
-    HasValidSigner =
-        lists:any(
-            fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes, Opts)) end,
-            Peers
-        ),
+    ?event(debug_test,
+        {res, {
+            {response, Res},
+            {signers, hb_message:signers(Res, Opts)}
+        }}
+    ),
+    HasValidSigner = lists:any(
+        fun(Peer) ->
+            lists:member(Peer, Res)
+        end,
+        Peers
+    ),
     ?assert(HasValidSigner).
 
 %%% Statistical test utilities

@@ -28,13 +28,14 @@ cache_path_to_dot(ToRender, RenderOpts, StoreOrOpts) ->
 %% @doc Main function to collect graph elements
 cache_path_to_graph(ToRender, GraphOpts, StoreOrOpts) when is_map(StoreOrOpts) ->
     Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
+    ?event({store, Store}),
     cache_path_to_graph(ToRender, GraphOpts, Store, StoreOrOpts).
 cache_path_to_graph(all, GraphOpts, Store, Opts) ->
-    {ok, Keys} = hb_store:list(Store, "/"),
+    {ok, Keys} = hb_store:list(Store, <<"/">>),
+    ?event({all_keys, Keys}),
     cache_path_to_graph(Store, GraphOpts, Keys, Opts);
 cache_path_to_graph(InitPath, GraphOpts, Store, Opts) when is_binary(InitPath) ->
-    {ok, Keys} = hb_store:list(Store, InitPath),
-    cache_path_to_graph(Store, GraphOpts, Keys, Opts);
+    cache_path_to_graph(Store, GraphOpts, [InitPath], Opts);
 cache_path_to_graph(Store, GraphOpts, RootKeys, Opts) ->
     % Use a map to track nodes, arcs and visited paths (to avoid cycles)
     EmptyGraph = GraphOpts#{ nodes => #{}, arcs => #{}, visited => #{} },
@@ -46,29 +47,41 @@ cache_path_to_graph(Store, GraphOpts, RootKeys, Opts) ->
     ).
 
 %% @doc Traverse the store recursively to build the graph
-traverse_store(Store, Key, Parent, Graph, Opts) ->
+traverse_store(Store, Path, Parent, Graph, Opts) ->
     % Get the path and check if we've already visited it
-    JoinedPath = hb_store:join(Key),
-    ResolvedPath = hb_store:resolve(Store, Key),
+    JoinedPath = hb_store:join(Path),
+    ResolvedPath =
+        case hb_link:is_link_key(JoinedPath) of
+            true ->
+                ?event({is_link_key, {path, Path}, {res_path, JoinedPath}}),
+                {ok, Link} = hb_store:read(Store, hb_store:resolve(Store, JoinedPath)),
+                ?event({resolved_link, {read, Link}}),
+                hb_store:resolve(Store, Link);
+            false -> hb_store:resolve(Store, Path)
+        end,
+    ?event({traverse_store, {path, Path}, {joined_path, JoinedPath}, {resolved_path, ResolvedPath}, {parent, Parent}}),
     % Skip if we've already processed this node
     case hb_maps:get(visited, Graph, #{}, Opts) of
-        #{JoinedPath := _} -> Graph;
+        #{ JoinedPath := _ } -> Graph;
         _ ->
             % Mark as visited to avoid cycles
             Graph1 = Graph#{visited => hb_maps:put(JoinedPath, true, hb_maps:get(visited, Graph, #{}, Opts), Opts)},
+            % ?event({traverse_store, {key, Key}, {graph1, Graph1}}),
             % Process node based on its type
-            case hb_store:type(Store, Key) of
+            case hb_store:type(Store, ResolvedPath) of
                 simple -> 
-                    process_simple_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph1, Opts);
+                    process_simple_node(Store, Path, Parent, ResolvedPath, JoinedPath, Graph1, Opts);
                 composite -> 
-                    process_composite_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph1, Opts);
+                    process_composite_node(Store, Path, Parent, ResolvedPath, JoinedPath, Graph1, Opts);
                 _ -> 
+                    ?event({unknown_node_type, {path, Path}, {type, hb_store:type(Store, Path)}}),
                     Graph1
             end
     end.
 
 %% @doc Process a simple (leaf) node
-process_simple_node(_Store, _Key, Parent, ResolvedPath, JoinedPath, Graph, Opts) ->
+process_simple_node(_Store, Key, Parent, ResolvedPath, JoinedPath, Graph, Opts) ->
+    % ?event({process_simple_node, {key, Key}, {resolved_path, ResolvedPath}}),
     % Add the node to the graph
     case hb_maps:get(render_data, Graph, true, Opts) of
         false -> Graph;
@@ -84,7 +97,7 @@ process_simple_node(_Store, _Key, Parent, ResolvedPath, JoinedPath, Graph, Opts)
     end.
 
 %% @doc Process a composite (directory) node
-process_composite_node(_Store, "data", _Parent, _ResolvedPath, _JoinedPath, Graph, _Opts) ->
+process_composite_node(_Store, <<"data">>, _Parent, _ResolvedPath, _JoinedPath, Graph, _Opts) ->
     % Data is a special case: It contains every binary item in the store.
     % We don't need to render it.
     Graph;
@@ -205,13 +218,11 @@ collect_output(Port, Acc) ->
 
 %% @doc Get graph data for the Three.js visualization
 get_graph_data(Base, MaxSize, Opts) ->
-    % Get the store from options
-    Store = hb_opts:get(store, no_viable_store, Opts),
     % Try to generate graph using hb_cache_render
     Graph =
         try
             % Use hb_cache_render to build the graph
-            cache_path_to_graph(Base, #{}, Store)
+            cache_path_to_graph(Base, #{}, Opts)
         catch
             Error:Reason:Stack -> 
                 ?event({hyperbuddy_graph_error, Error, Reason, Stack}),

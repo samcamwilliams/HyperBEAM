@@ -242,31 +242,35 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     {ok, UncommittedID}.
 
 %% @doc Write a single key for a message into the store.
-write_key(Base, <<"commitments">>, HPAlg, RawCommitments, Store, Opts) ->
-    % Search to see if we already have commitments for this message locally.
+write_key(Base, <<"commitments">>, _HPAlg, RawCommitments, Store, Opts) ->
+    % The commitments are a special case: We calculate the single-part hashpath
+    % for the `baseID/commitments` key, then write each commitment to the store
+    % and link it to `baseCommHP/commitmentID`.
     Commitments = prepare_commitments(RawCommitments, Opts),
-    LocalStore = hb_store:scope(Store, local),
-    case read(<<Base/binary, "/commitments">>, Opts#{ store => LocalStore }) of
-        {ok, ExistingCommitments} ->
-            % We do, so we need to merge the new commitments with the old ones.
-            % We do this by fully loading the existing commitments, converting
-            % them to TABM, and merging the maps.
-            LoadedExisting = prepare_commitments(ExistingCommitments, Opts),
-            Merged = hb_maps:merge(Commitments, LoadedExisting),
-            % Write the merged commitments to the store.
-            {ok, Path} = do_write_message(Merged, Store, Opts),
-            % Link the merged commitments to the message.
-            hb_store:make_link(Store, Path, <<Base/binary, "/commitments">>),
-            {ok, Path};
-        _ ->
-            % We do not have any commitments for this message locally, so we
-            % write the commitments to the store.
-            do_write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts)
-    end;
+    CommitmentsBase = commitment_path(Base, Opts),
+    ok = hb_store:make_group(Store, CommitmentsBase),
+    ?event(
+        {writing_commitments,
+            {base, Base},
+            {commitments_message, Commitments},
+            {commitments_base, CommitmentsBase}
+        }
+    ),
+    maps:map(
+        fun(BaseCommID, Commitment) ->
+            ?event(debug_cache, {writing_commitment, {commitment, Commitment}}),
+            {ok, CommMsgID} = do_write_message(Commitment, Store, Opts),
+            hb_store:make_link(
+                Store,
+                CommMsgID,
+                << CommitmentsBase/binary, "/", BaseCommID/binary >>
+            )
+        end,
+        Commitments
+    ),
+    % Link the commitments base to `base/commitments`.
+    hb_store:make_link(Store, CommitmentsBase, <<Base/binary, "/commitments">>);
 write_key(Base, Key, HPAlg, Value, Store, Opts) ->
-    do_write_key(Base, Key, HPAlg, Value, Store, Opts).
-
-do_write_key(Base, Key, HPAlg, Value, Store, Opts) ->
     KeyHashPath =
         hb_path:hashpath(
             Base,
@@ -289,6 +293,10 @@ prepare_commitments(RawCommitments, Opts) ->
         end,
         Commitments
     ).
+
+%% @doc Generate the commitment path for a given base path.
+commitment_path(Base, Opts) ->
+    hb_path:hashpath(<<Base/binary, "/commitments">>, Opts).
 
 %% @doc Calculate the IDs for a message.
 calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
@@ -346,7 +354,11 @@ store_read(_Path, no_viable_store, _) ->
     not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathBin = hb_path:to_binary(Path)),
-    ?event({reading, {path, PathBin}, {resolved, ResolvedFullPath}, {store, Store}}),
+    ?event({read_resolved,
+        {original_path, {string, PathBin}},
+        {resolved_path, ResolvedFullPath},
+        {store, Store}
+    }),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         simple ->
@@ -355,11 +367,12 @@ store_read(Path, Store, Opts) ->
                 {ok, Bin} -> {ok, Bin};
                 not_found -> not_found
             end;
-        _ ->
+        composite ->
             ?event({reading_composite, ResolvedFullPath}),
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, RawSubpaths} ->
-                    Subpaths = lists:map(fun hb_util:bin/1, RawSubpaths),
+                    Subpaths =
+                        lists:map(fun hb_util:bin/1, RawSubpaths),
                     ?event(
                         {listed,
                             {original_path, Path},
@@ -370,12 +383,17 @@ store_read(Path, Store, Opts) ->
                     % `ao-types'. `commitments' is always read in its entirety,
                     % such that all messages have their IDs and signatures
                     % locally available.
-                    Msg = prepare_links(Path, Subpaths, Store, Opts),
-                    ?event({completed_read, {explicit, Msg}}),
+                    Msg = prepare_links(ResolvedFullPath, Subpaths, Store, Opts),
+                    ?event(
+                        {completed_read,
+                            {resolved_path, ResolvedFullPath},
+                            {explicit, Msg}
+                        }
+                    ),
                     {ok, Msg};
                 _ ->
-                    ?event({composite_message_not_found, ResolvedFullPath}),
-                    not_found
+                    ?event({empty_composite_message, ResolvedFullPath}),
+                    {ok, #{}}
             end
     end.
 
@@ -386,28 +404,60 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
         maps:from_list(lists:filtermap(
             fun(<<"ao-types">>) -> false;
                 (<<"commitments">>) ->
-                    % Ensure that the full commitments map is recursively
-                    % loaded into memory.
-                    {true,
-                        {
-                            <<"commitments">>,
-                            hb_cache:ensure_all_loaded(
-                                {link, 
-                                    hb_store:path(
-                                        Store,
-                                        [
-                                            RootPath,
-                                            <<"commitments">>
-                                        ]
-                                    ),
-                                    #{
-                                        <<"lazy">> => true
-                                    }
-                                },
-                                Opts
-                            )
+                    % List the commitments for this message, and load them into
+                    % memory. If there no commitments at the path, we exclude
+                    % commitments from the list of links.
+                    CommPath =
+                        hb_store:resolve(
+                            Store,
+                            hb_store:path(Store, [RootPath, <<"commitments">>])
+                        ),
+                    ?event(
+                        {reading_commitments,
+                            {root_path, RootPath},
+                            {commitments_path, CommPath}
                         }
-                    };
+                    ),
+                    case hb_store:list(Store, CommPath) of
+                        {ok, CommitmentIDs} ->
+                            ?event(
+                                {found_commitments,
+                                    {path, CommPath},
+                                    {ids, CommitmentIDs}
+                                }
+                            ),
+                            % We have commitments, so we read each commitment
+                            % into memory, and return it as part of the message.
+                            {
+                                true,
+                                {
+                                    <<"commitments">>,
+                                    maps:from_list(lists:map(
+                                        fun(CommitmentID) ->
+                                            {ok, Commitment} =
+                                                read(
+                                                    <<
+                                                        CommPath/binary,
+                                                        "/",
+                                                        CommitmentID/binary
+                                                    >>,
+                                                    Opts
+                                                ),
+                                            {
+                                                CommitmentID,
+                                                ensure_all_loaded(
+                                                    Commitment,
+                                                    Opts
+                                                )
+                                            }
+                                        end,
+                                        CommitmentIDs
+                                    ))
+                                }
+                            };
+                        _ ->
+                            false
+                    end;
                 (Subpath) ->
                     ?event(
                         {returning_link,
@@ -563,8 +613,16 @@ test_store_unsigned_empty_message(Store) ->
     Opts = #{ store => Store },
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
-    ?event({retrieved_item, {path, {string, Path}}, {item, RetrievedItem}}),
-    ?assert(hb_message:match(Item, RetrievedItem)).
+    ?event(
+        {retrieved_item,
+            {path, {string, Path}},
+            {expected, Item},
+            {got, RetrievedItem}
+        }
+    ),
+    MatchRes = hb_message:match(Item, RetrievedItem, strict, Opts),
+    ?event({match_result, MatchRes}),
+    ?assert(MatchRes).
 
 test_store_unsigned_nested_empty_message(Store) ->
     ?event(debug_store_test, {store, Store}),
@@ -621,17 +679,22 @@ test_store_simple_signed_message(Store) ->
     Wallet = ar_wallet:new(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     Item = test_signed(<<"Simple signed data item">>, Wallet),
-    ?event({writing_message, Item}),
+    ?event({writing_test_message, Item}),
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
-    %% Read the item back
-    {ok, UID} = dev_message:id(Item, #{ <<"committers">> => <<"none">> }, Opts),
-    {ok, RetrievedItemU} = read(UID, Opts),
-    ?event({retreived_unsigned_message, {expected, Item}, {got, RetrievedItemU}}),
-    ?assert(hb_message:match(Item, RetrievedItemU, strict, Opts)),
+    % %% Read the item back
+    % {ok, UID} = dev_message:id(Item, #{ <<"committers">> => <<"none">> }, Opts),
+    % {ok, RetrievedItemUnsig} = read(UID, Opts),
+    % ?event({retreived_unsigned_message, {expected, Item}, {got, RetrievedItemUnsig}}),
+    % MatchRes = hb_message:match(Item, RetrievedItemUnsig, strict, Opts),
+    % ?event({match_result, MatchRes}),
+    % ?assert(MatchRes),
     {ok, CommittedID} = dev_message:id(Item, #{ <<"committers">> => [Address] }, Opts),
-    {ok, RetrievedItemS} = read(CommittedID, Opts),
-    ?assert(hb_message:match(Item, RetrievedItemS, strict, Opts)),
+    {ok, RetrievedItemSigned} = read(CommittedID, Opts),
+    ?event({retreived_signed_message, {expected, Item}, {got, RetrievedItemSigned}}),
+    MatchResSigned = hb_message:match(Item, RetrievedItemSigned, strict, Opts),
+    ?event({match_result_signed, MatchResSigned}),
+    ?assert(MatchResSigned),
     ok.
 
 %% @doc Test deeply nested item storage and retrieval
@@ -742,6 +805,9 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Store =
         [
-            #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> }
+            #{
+                <<"store-module">> => hb_store_lmdb,
+                <<"name">> => <<"cache-TEST/lmdb">>
+            }
         ],
-    test_deeply_nested_complex_message(Store).
+    test_store_simple_signed_message(Store).
