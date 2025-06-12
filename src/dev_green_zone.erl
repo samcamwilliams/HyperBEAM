@@ -231,11 +231,13 @@ join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
     PeerLocation = hb_opts:get(<<"green_zone_peer_location">>, undefined, Opts),
     PeerID = hb_opts:get(<<"green_zone_peer_id">>, undefined, Opts),
-    ?event(green_zone, {join_peer, PeerLocation, PeerID}),
-    if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
-        validate_join(M1, M2, hb_cache:ensure_all_loaded(Opts, Opts));
+    Identities = hb_opts:get(identities, #{}, Opts),
+    HasGreenZoneIdentity = maps:is_key(<<"green-zone">>, Identities),
+    ?event(green_zone, {join_peer, PeerLocation, PeerID, HasGreenZoneIdentity}),
+    if (not HasGreenZoneIdentity) andalso (PeerLocation =/= undefined) andalso (PeerID =/= undefined) ->
+        join_peer(PeerLocation, PeerID, M1, M2, Opts);
     true ->
-        join_peer(PeerLocation, PeerID, M1, M2, Opts)
+        validate_join(M1, M2, hb_cache:ensure_all_loaded(Opts, Opts))
     end.
 
 %% @doc Encrypts and provides the node's private key for secure sharing.
@@ -262,7 +264,12 @@ key(_M1, _M2, Opts) ->
     ?event(green_zone, {get_key, start}),
     % Retrieve the shared AES key and the node's wallet.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
-    {{KeyType, Priv, Pub}, _PubKey} = hb_opts:get(priv_wallet, undefined, Opts),
+    Identities = hb_opts:get(identities, #{}, Opts),
+    Wallet = case maps:find(<<"green-zone">>, Identities) of
+        {ok, #{priv_wallet := GreenZoneWallet}} -> GreenZoneWallet;
+        _ -> hb_opts:get(priv_wallet, undefined, Opts)
+    end,
+    {{KeyType, Priv, Pub}, _PubKey} = Wallet,
     ?event(green_zone, 
         {get_key, wallet, hb_util:human_id(ar_wallet:to_address(Pub))}),
     case GreenZoneAES of
@@ -381,22 +388,12 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
             priv_wallet => GreenZoneWallet
         }
     },
-    NewOpts =         
-        maps:without(
-            [
-                <<"green_zone_peer_location">>,
-                <<"green_zone_peer_id">>,
-                green_zone_peer_location,
-                green_zone_peer_id
-            ],
+    ok = 
+        hb_http_server:set_opts(
             Opts#{
-                identities => UpdatedIdentities,
-                <<"green_zone_peer_location">> => unset,
-                <<"green_zone_peer_id">> => unset
+                identities => UpdatedIdentities
             }
         ),
-    ?event(green_zone, {become, new_opts, {explicit, NewOpts}}),
-    ok = hb_http_server:set_opts(NewOpts),
     % Print the updated wallet address
     Wallet = hb_opts:get(priv_wallet, undefined, Opts),
     ?event(green_zone,
