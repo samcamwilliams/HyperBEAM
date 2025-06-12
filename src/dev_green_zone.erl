@@ -381,9 +381,22 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
             priv_wallet => GreenZoneWallet
         }
     },
-    ok = hb_http_server:set_opts(Opts#{
-        identities => UpdatedIdentities
-    }),
+    NewOpts =         
+        maps:without(
+            [
+                <<"green_zone_peer_location">>,
+                <<"green_zone_peer_id">>,
+                green_zone_peer_location,
+                green_zone_peer_id
+            ],
+            Opts#{
+                identities => UpdatedIdentities,
+                <<"green_zone_peer_location">> => unset,
+                <<"green_zone_peer_id">> => unset
+            }
+        ),
+    ?event(green_zone, {become, new_opts, {explicit, NewOpts}}),
+    ok = hb_http_server:set_opts(NewOpts),
     % Print the updated wallet address
     Wallet = hb_opts:get(priv_wallet, undefined, Opts),
     ?event(green_zone,
