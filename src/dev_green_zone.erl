@@ -781,4 +781,3 @@ rsa_wallet_integration_test() ->
     ?assertEqual(PlainText, Decrypted),
     % Verify wallet structure
     ?assertEqual(KeyType, {rsa, 65537}).
-
