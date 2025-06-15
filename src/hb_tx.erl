@@ -2,7 +2,7 @@
 %%% and Arewave L1 transactions.
 -module(hb_tx).
 -export([signer/1, is_signed/1]).
--export([tx_to_tabm/4, tabm_to_tx/3, binary_to_tx/1, encoded_tags_to_map/1]).
+-export([tx_to_tabm/4, tabm_to_tx/4, binary_to_tx/1, encoded_tags_to_map/1]).
 -export([id/1, id/2, reset_ids/1, update_ids/1]).
 -export([normalize/1, normalize_data/1, normalize_data_field/1]).
 -export([commit_message/4, verify_message/4, verify/1]).
@@ -19,22 +19,6 @@
 -define(BIN_PRINT, 20).
 -define(INDENT_SPACES, 2).
 
-%%% The list of keys that should be forced into the tag list, rather than being
-%%% encoded as fields in the TX record.
--define(INVALID_FIELDS,
-    [
-        <<"id">>,
-        <<"unsigned_id">>,
-        <<"owner">>,
-        <<"owner_address">>,
-        <<"tags">>,
-        <<"data_size">>,
-        <<"data_tree">>,
-        <<"signature">>,
-        <<"signature_type">>
-    ]
-).
-
 %% List of tags that should be removed during `to'. These relate to the nested
 %% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
@@ -42,6 +26,22 @@
         <<"bundle-format">>,
         <<"bundle-map">>,
         <<"bundle-version">>
+    ]
+).
+
+
+%%% The list of keys that should be forced into the tag list, rather than being
+%%% encoded as fields in the TX record.
+-define(BASE_INVALID_FIELDS,
+    [
+        <<"id">>,
+        <<"unsigned_id">>,
+        <<"owner">>,
+        <<"owner_address">>,
+        <<"tags">>,
+        <<"data_tree">>,
+        <<"signature">>,
+        <<"signature_type">>
     ]
 ).
 
@@ -232,7 +232,7 @@ tx_to_tabm2(RawTX, CommittedTags, Req, Opts) ->
     TABM0 = apply_tx_to_tabm(RawTags, TX, Opts),
 
     % 1. Strip out any fields that will be auto-computed
-    TABM1 = maps:without(?INVALID_FIELDS, TABM0),
+    TABM1 = maps:without(invalid_fields(RawTX), TABM0),
 
     % 2. Set the data field, if it's a map, we need to recursively turn its children
     %    into messages from their tx representations.
@@ -245,21 +245,14 @@ tx_to_tabm2(RawTX, CommittedTags, Req, Opts) ->
     ?event({tx_to_tabm, {result, {explicit, Result}}}),
     Result.
 
-tabm_to_tx(InputTABM, Req, Opts) ->
+tabm_to_tx(BaseTX, InputTABM, Req, Opts) ->
     NormalizedTABM = hb_ao:normalize_keys(normalize_data_field(InputTABM), Opts),
     ?event({tabm_to_tx, {input_tabm, {explicit, NormalizedTABM}}}),
 
     TABM = maybe_bundle(NormalizedTABM, Req, Opts),
-
-    % Check for invalid fields
-    InvalidFields = [Field || Field <- ?INVALID_FIELDS, maps:is_key(Field, TABM)],
-        case InvalidFields of
-            [] -> ok;
-            _ -> throw({invalid_fields, InvalidFields})
-        end,
     
     % 1. Initialize the #tx record with the values from the TABM.
-    {TX, RemainingTABM, OriginalTags} = apply_tabm_to_tx(#tx{}, TABM, Req, Opts),
+    {TX, RemainingTABM, OriginalTags} = apply_tabm_to_tx(BaseTX, TABM, Req, Opts),
 
     % 2. Ensure any links are loaded.
     LoadedTABM = hb_cache:ensure_all_loaded(RemainingTABM),
@@ -273,9 +266,20 @@ tabm_to_tx(InputTABM, Req, Opts) ->
     % 5. Set the data items on the #tx record.
     TXWithData = set_tx_data_or_throw(TXWithoutData, DataItems, Req, Opts),
     
-    Result = normalize(TXWithData),
-    ?event({tabm_to_tx, {result, {explicit, Result}}}),
-    Result.
+    TXFinal = normalize(TXWithData),
+
+    % Check for invalid fields. We do this at the end once tx.format and tx.data have been
+    % set.
+    HasInvalidFields = [
+        Field || 
+        Field <- invalid_fields(BaseTX), maps:is_key(Field, TABM)],
+    case HasInvalidFields of
+        [] -> ok;
+        _ -> throw({invalid_fields, HasInvalidFields})
+    end,
+
+    ?event({tabm_to_tx, {result, {explicit, TXFinal}}}),
+    TXFinal.
 
 binary_to_tx(Binary) ->
     % ans104 and Arweave cannot serialize just a simple binary or get an ID for it, so
@@ -318,7 +322,7 @@ apply_tx_to_tabm(InputTABM, TX, Opts) ->
 
 apply_to_structured(Structured, TX) ->
     % Process each field in the default TX list, excluding auto-computed fields and data.
-    SkipFields = [<<"data">> | ?INVALID_FIELDS],
+    SkipFields = [<<"data">> | invalid_fields(TX)],
     lists:foldl(
         fun ({Field, DefaultValue}, AccStructured) ->
             case lists:member(Field, SkipFields) of
@@ -327,16 +331,20 @@ apply_to_structured(Structured, TX) ->
                     % Get the field value from TX
                     FieldIndex = field_index(hb_util:atom(Field)),
                     TXValue = element(FieldIndex, TX),
+                    NormField = hb_ao:normalize_key(Field),
                     
                     % Only add to Structured if value is different from default
-                    case TXValue of
-                        DefaultValue -> AccStructured;
+                    case {Field, TXValue} of
+                        {<<"format">>, <<"1">>} ->
+                            set_map_value_or_throw(NormField, 1, AccStructured);
+                        {<<"format">>, _} -> AccStructured;
+                        {_, DefaultValue} -> AccStructured;
                         _ ->
                             % Try to coerce the value to match the expected type
                             case coerce_value(Field, TXValue, DefaultValue) of
                                 {ok, CoercedValue} ->
                                     set_map_value_or_throw(
-                                        hb_ao:normalize_key(Field), CoercedValue, AccStructured);
+                                        NormField, CoercedValue, AccStructured);
                                 error ->
                                     AccStructured
                             end
@@ -361,6 +369,11 @@ add_commitments(TABM, TX, Device, CommittedTags, Opts) ->
                 hb_util:to_sorted_keys(TABM)
             )
         ),
+    ?event({committed_keys,
+        {committed_keys, {explicit, CommittedKeys}},
+        {tags, {explicit, TX#tx.tags}},
+        {sorted_tabm, {explicit, hb_util:to_sorted_keys(TABM)}}
+    }),
     WithCommitments =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
@@ -559,7 +572,7 @@ maybe_bundle(TABM, Req, Opts) ->
 %% 
 %% Returns the updated #tx record, any remaining unapplied TABM keys, and the original tags
 %% extracted from the TABM commitments.
-apply_tabm_to_tx(TX, TABM, Req,  Opts) ->
+apply_tabm_to_tx(TX, InputTABM, Req,  Opts) ->
     % There are 3 classes of values that can be applied directly to the #tx record:
     % 1. Simple fields (e.g. data_root, quantity, etc...)
     % 2. Commitments
@@ -567,7 +580,7 @@ apply_tabm_to_tx(TX, TABM, Req,  Opts) ->
     
     % 1. Convert simple TABM fields to their native type, and apply to the #tx record.
     %    Simple fields are: the default #tx fields *excluding* data.
-    DefaultTXTABM= hb_maps:with(hb_message:default_tx_keys(), TABM),
+    DefaultTXTABM= hb_maps:with(hb_message:default_tx_keys(), InputTABM),
     SimpleTABM = hb_maps:without([<<"data">>], DefaultTXTABM),
     Structured = hb_message:convert(
         SimpleTABM,
@@ -577,14 +590,14 @@ apply_tabm_to_tx(TX, TABM, Req,  Opts) ->
     {AppliedSimpleFields, TX1} = apply_to_tx(TX, Structured),
     
     % 2. Flatten the commitments into the 'signature' and 'owner' keys, and then apply those.
-    {SignatureMap, OriginalTags} = flatten_commitments(TABM, Opts),
+    {SignatureMap, OriginalTags} = flatten_commitments(InputTABM, Opts),
     {_, TX2} = apply_to_tx(TX1, SignatureMap),
 
     % 3. If the data field is a map, we recursively turn it into messages.
     %    Notably, we do not simply call message_to_tx/1 on the inner map
     %    because that would lead to adding an extra layer of nesting to the
     %    data. Apply the result.
-    RawData = hb_maps:get(<<"data">>, TABM, ?DEFAULT_DATA, Opts),
+    RawData = hb_maps:get(<<"data">>, InputTABM, ?DEFAULT_DATA, Opts),
     Data = case RawData of
         _ when is_map(RawData) -> hb_util:ok(dev_codec_ans104:to(RawData, Req, Opts));
         _ -> RawData
@@ -592,10 +605,22 @@ apply_tabm_to_tx(TX, TABM, Req,  Opts) ->
     {AppliedDataField, TX3} = apply_to_tx(TX2, #{ <<"data">> => Data }),
 
     % Return any remaining TABM keys that were not applied. These will be processed later.
-    UnappliedTABM = hb_maps:without(
-        AppliedSimpleFields ++ AppliedDataField ++ [<<"commitments">>],
-        TABM
+    InputAOTypes = hb_ao:get(<<"ao-types">>, InputTABM, <<>>, Opts),
+    DecodedAOTypes = dev_codec_structured:decode_ao_types(InputAOTypes, Opts),
+    UnappliedAOTypes = hb_maps:without(AppliedSimpleFields, DecodedAOTypes),
+    UnappliedTABM0 = hb_maps:without(
+        AppliedSimpleFields ++ AppliedDataField ++ [<<"commitments">>, <<"ao-types">>],
+        InputTABM
     ),
+    UnappliedTABM = case UnappliedAOTypes of
+        _ when map_size(UnappliedAOTypes) =:= 0 ->
+            UnappliedTABM0;
+        _ ->
+            UnappliedTABM0#{
+                <<"ao-types">> => dev_codec_structured:encode_ao_types(UnappliedAOTypes, Opts)
+            }
+    end,
+
     {TX3, UnappliedTABM, OriginalTags}.
 
 apply_to_tx(TX, Structured) ->
@@ -759,6 +784,16 @@ set_tags(TX, Tags, OriginalTags, Opts) ->
 %%% ------------------------------------------------------------------------------------------
 %%% Generic helpers
 %%% ------------------------------------------------------------------------------------------
+
+invalid_fields(#tx{ format = ans104 }) ->
+    ?BASE_INVALID_FIELDS ++ [<<"data_size">>];
+invalid_fields(#tx{ format = 1 }) ->
+    ?BASE_INVALID_FIELDS ++ [<<"data_size">>];
+invalid_fields(#tx{ format = 2 } = TX) ->
+    case TX#tx.data of
+        ?DEFAULT_DATA -> ?BASE_INVALID_FIELDS;
+        _ -> ?BASE_INVALID_FIELDS ++ [<<"data_size">>, <<"data_root">>]
+    end.
 
 %% @doc Deduplicate a list of key-value pairs by key, generating a list of
 %% values for each normalized key if there are duplicates.

@@ -21,6 +21,21 @@
     ]
 ).
 
+%%% The list of keys that should be forced into the tag list, rather than being
+%%% encoded as fields in the TX record.
+-define(BASE_INVALID_FIELDS,
+    [
+        <<"id">>,
+        <<"unsigned_id">>,
+        <<"owner">>,
+        <<"owner_address">>,
+        <<"tags">>,
+        <<"data_tree">>,
+        <<"signature">>,
+        <<"signature_type">>
+    ]
+).
+
 %% Default #tx format to use if no format is provided. Limited to formats that are valid
 %% for Arweave L1 transcations (1 and 2 as of June 2025)
 -define(DEFAULT_FORMAT, 2).
@@ -59,16 +74,7 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(NormTABM, Req, Opts) when is_map(NormTABM) ->
     ?event({to, NormTABM}),
-    % If no format is provided, set to format 2 since we're in the dev_codec_tx module.
-    % If the ans104 format is explicitly provided, throw an error as this is the wrong
-    % device to use.
-    NormTABM2 = case hb_maps:get(<<"format">>, NormTABM, ?DEFAULT_FORMAT) of
-        ans104 ->
-            throw(invalid_tx);
-        Value ->
-            NormTABM#{ <<"format">> => Value }
-    end,
-    TXWithIDs = hb_tx:tabm_to_tx(NormTABM2, Req, Opts),
+    TXWithIDs = hb_tx:tabm_to_tx( #tx{ format = 2 }, NormTABM, Req, Opts),
 
     TXWithAddress = TXWithIDs#tx{
         owner_address = ar_tx:get_owner_address(TXWithIDs)
@@ -82,19 +88,6 @@ to(_Other, _Req, _Opts) ->
 %%%===================================================================
 %%% Private functions.
 %%%===================================================================
-tx_keys(#tx{ format = 1 }) ->
-    % Format 1 is the non-default value for Arweave transactions, so we want to include
-    % the format field.
-    ?TX_KEYS ++ [<<"format">>];
-tx_keys(TX = #tx{ format = 2 }) ->
-    % Normally we can rebuild the data_root from the data, but since format 2 transactions
-    % can be signed and posted without data, we sometimes need to force that the data_root
-    % and data_size fields are included.
-    IncludeDataRoot = (TX#tx.data == ?DEFAULT_DATA) andalso (TX#tx.data_root /= <<>>),
-    case IncludeDataRoot of
-        true -> ?TX_KEYS ++ [<<"data_size">>, <<"data_root">>];
-        false -> ?TX_KEYS
-    end.
 
 committed_tags(#tx{ format = 1 }) ->
     ?TX_KEYS ++ [<<"format">>, <<"data">>];
@@ -105,211 +98,216 @@ committed_tags(#tx{ format = 2 }) ->
 % %%% Tests.
 % %%%===================================================================
 
-% make_expected_tabm(TX, TestOpts, ExpectedFields) ->
-%     ExpectedCommitments = make_expected_commitments(TX, TestOpts),
-%     hb_maps:merge(ExpectedCommitments, ExpectedFields, #{}).
+make_expected_tabm(TX, TestOpts, ExpectedFields) ->
+    Signed = maps:get(signed, TestOpts, false),
+    IncludeOriginalTags = maps:get(include_original_tags, TestOpts, false),
+    HasCommitment = Signed orelse IncludeOriginalTags,
+    Commitment0 = case {Signed, HasCommitment} of
+        {true, _} ->
+            ExpectedOwnerAddress = ar_wallet:to_address(TX#tx.owner),
+            #{
+                <<"commitment-device">> => <<"tx@1.0">>,
+                <<"committer">> => hb_util:safe_encode(ExpectedOwnerAddress),
+                <<"committed">> => hb_ao:normalize_keys(
+                    hb_util:unique(
+                        committed_tags(TX)
+                            ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
+                            ++ hb_util:to_sorted_keys(ExpectedFields)
+                    )
+                ),
+                <<"keyid">> => hb_util:safe_encode(TX#tx.owner),
+                <<"signature">> => hb_util:safe_encode(TX#tx.signature),
+                <<"type">> => <<"rsa-pss-sha256">>
+            };
+        {false, true} ->
+            #{
+                <<"commitment-device">> => <<"tx@1.0">>,
+                <<"type">> => <<"unsigned-sha256">>
+            };
+       _ ->
+            #{}
+    end,
+    Commitment1 = case IncludeOriginalTags of
+        true -> Commitment0#{
+            <<"original-tags">> => hb_tx:encoded_tags_to_map(TX#tx.tags)
+        };
+        false -> Commitment0
+    end,
 
-% make_expected_commitments(TX, TestOpts) ->
-%     Signed = maps:get(signed, TestOpts, false),
-%     IncludeOriginalTags = maps:get(include_original_tags, TestOpts, false),
-%     HasCommitment = Signed orelse IncludeOriginalTags,
-%     Commitment0 = case {Signed, HasCommitment} of
-%         {true, _} ->
-%             ExpectedOwnerAddress = ar_wallet:to_address(TX#tx.owner),
-%             #{
-%                 <<"commitment-device">> => <<"tx@1.0">>,
-%                 <<"committer">> => hb_util:safe_encode(ExpectedOwnerAddress),
-%                 <<"committed">> => hb_util:unique(
-%                     committed_tags(TX)
-%                         ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
-%                 ),
-%                 <<"keyid">> => hb_util:safe_encode(TX#tx.owner),
-%                 <<"signature">> => hb_util:safe_encode(TX#tx.signature),
-%                 <<"type">> => <<"rsa-pss-sha256">>
-%             };
-%         {false, true} ->
-%             #{
-%                 <<"commitment-device">> => <<"tx@1.0">>,
-%                 <<"type">> => <<"unsigned-sha256">>
-%             };
-%        _ ->
-%             #{}
-%     end,
-%     Commitment1 = case IncludeOriginalTags of
-%         true -> Commitment0#{
-%             <<"original-tags">> => hb_tx:encoded_tags_to_map(TX#tx.tags)
-%         };
-%         false -> Commitment0
-%     end,
+    Commitments = case {Signed, HasCommitment} of
+        {true, _} ->
+            ID = ar_tx:generate_id(TX, signed),
+            #{ <<"commitments">> => #{ hb_util:safe_encode(ID) => Commitment1 } };
+        {false, true} ->
+            ID = ar_tx:generate_id(TX, unsigned),
+            #{ <<"commitments">> => #{ hb_util:safe_encode(ID) => Commitment1 }};
+        _ ->
+            #{}
+    end,
 
-%     case {Signed, HasCommitment} of
-%         {true, _} ->
-%             ID = ar_tx:generate_id(TX, signed),
-%             #{ <<"commitments">> => #{ hb_util:safe_encode(ID) => Commitment1 } };
-%         {false, true} ->
-%             ID = ar_tx:generate_id(TX, unsigned),
-%             #{ <<"commitments">> => #{ hb_util:safe_encode(ID) => Commitment1 }};
-%         _ ->
-%             #{}
-%     end.
+    hb_maps:merge(Commitments, ExpectedFields, #{}).
 
 % %%%-------------------------------------------------------------------
 % %%% Tests for `from/3`.
 % %%%-------------------------------------------------------------------
 
-% from_test_() ->
-%     [
-%         fun test_from_enforce_valid_tx/0,
-%         {timeout, 30, fun test_from_happy/0}
-%     ].
+from_test_() ->
+    [
+        fun test_from_enforce_valid_tx/0,
+        {timeout, 30, fun test_from_happy/0}
+    ].
 
-% test_from_enforce_valid_tx() ->
-%     LastTX = crypto:strong_rand_bytes(33),
-%     TX = (ar_tx:new())#tx{ 
-%         format = 2, 
-%         last_tx = LastTX },
-%     hb_test_utils:assert_throws(
-%         fun from/3,
-%         [TX, #{}, #{}],
-%         {invalid_field, last_tx, LastTX},
-%         "from/3 failed to enforce_valid_tx"
-%     ).
+test_from_enforce_valid_tx() ->
+    LastTX = crypto:strong_rand_bytes(33),
+    TX = (ar_tx:new())#tx{ 
+        format = 2, 
+        last_tx = LastTX },
+    hb_test_utils:assert_throws(
+        fun from/3,
+        [TX, #{}, #{}],
+        {invalid_field, last_tx, LastTX},
+        "from/3 failed to enforce_valid_tx"
+    ).
 
-% test_from_happy() ->
-%     Wallet = ar_wallet:new(),
+test_from_happy() ->
+    Wallet = ar_wallet:new(),
 
-%     BaseTX = ar_tx:new(),
+    BaseTX = (ar_tx:new())#tx{ last_tx = <<>> },
 
-%     TestCases = [
-%         {default_values,
-%             BaseTX,
-%             #{ include_original_tags => false },
-%             #{
-%                 <<"ao-types">> => <<"format=\"integer\"">>,
-%                 <<"format">> => <<"2">>,
-%                 <<"last_tx">> => BaseTX#tx.last_tx
-%             }
-%         },
-%         {non_default_values, 
-%             BaseTX#tx{
-%                 last_tx = crypto:strong_rand_bytes(32),
-%                 target = crypto:strong_rand_bytes(32),
-%                 quantity = ?AR(5),
-%                 data = <<"test-data">>,
-%                 data_size = byte_size(<<"test-data">>),
-%                 data_root = crypto:strong_rand_bytes(32),
-%                 reward = ?AR(10)
-%             },
-%             #{ include_original_tags => false },
-%             #{}
-%         },
-%         {single_tag,
-%             BaseTX#tx{ tags = [{<<"test-tag">>, <<"test-value">>}] },
-%             #{ include_original_tags => false },
-%             #{ <<"test-tag">> => <<"test-value">> }
-%         },
-%         {not_normalized_tag,
-%             BaseTX#tx{ tags = [{<<"Test-Tag">>, <<"test-value">>}] },
-%             #{ include_original_tags => true },
-%             #{ <<"test-tag">> => <<"test-value">> }
-%         },
-%         {duplicate_tags, 
-%             BaseTX#tx{
-%                 tags = [{<<"Dup-Tag">>, <<"value-1">>}, {<<"dup-tag">>, <<"value-2">>}]
-%             },
-%             #{ include_original_tags => true },
-%             #{ <<"dup-tag">> => <<"\"value-1\", \"value-2\"">> }
-%         }
-%     ],
+    NonDefaultTX = BaseTX#tx{
+        last_tx = crypto:strong_rand_bytes(32),
+        target = crypto:strong_rand_bytes(32),
+        quantity = ?AR(5),
+        data = <<"test-data">>,
+        data_size = byte_size(<<"test-data">>),
+        data_root = ar_tx:data_root(<<"test-data">>),
+        reward = ?AR(10)
+    },
 
-%     %% Iterate over each pair, call from/3, and assert the result matches the
-%     %% expected TABM.
-%     lists:foreach(
-%         fun({Label, UnsignedTX, TestOpts, ExpectedFields}) ->
-%             %% Unsigned test
-%             ExpectedUnsignedTABM = make_expected_tabm(
-%                 UnsignedTX, TestOpts#{ signed => false }, ExpectedFields),
-%             {ok, ActualUnsignedTABM} = from(UnsignedTX, #{}, #{}),
-%             ?assertEqual(ExpectedUnsignedTABM, ActualUnsignedTABM,
-%                 lists:flatten(io_lib:format("~p unsigned", [Label]))),
+    TestCases = [
+        {default_values,
+            BaseTX,
+            #{ include_original_tags => false },
+            #{ }
+        },
+        {non_default_values, 
+            NonDefaultTX,
+            #{ include_original_tags => false },
+            #{
+                <<"ao-types">> => <<"quantity=\"integer\", reward=\"integer\"">>,
+                <<"last_tx">> => NonDefaultTX#tx.last_tx,
+                <<"target">> => NonDefaultTX#tx.target,
+                <<"quantity">> => integer_to_binary(NonDefaultTX#tx.quantity),
+                <<"data">> => NonDefaultTX#tx.data,
+                <<"reward">> => integer_to_binary(NonDefaultTX#tx.reward)
+            }
+        },
+        {single_tag,
+            BaseTX#tx{ tags = [{<<"test-tag">>, <<"test-value">>}] },
+            #{ include_original_tags => false },
+            #{ 
+                <<"test-tag">> => <<"test-value">>
+            }
+        },
+        {not_normalized_tag,
+            BaseTX#tx{ tags = [{<<"Test-Tag">>, <<"test-value">>}] },
+            #{ include_original_tags => true },
+            #{ <<"test-tag">> => <<"test-value">> }
+        },
+        {duplicate_tags, 
+            BaseTX#tx{
+                tags = [{<<"Dup-Tag">>, <<"value-1">>}, {<<"dup-tag">>, <<"value-2">>}]
+            },
+            #{ include_original_tags => true },
+            #{ <<"dup-tag">> => <<"\"value-1\", \"value-2\"">> }
+        }
+    ],
 
-%             ExpectedUnsignedTX = hb_tx:reset_ids(UnsignedTX),
-%             {ok, RoundTripUnsignedTX} = to(ActualUnsignedTABM, #{}, #{}),
-%             ?event(xxx, {round_trip_unsigned,
-%                 {expected, {explicit, ExpectedUnsignedTX}},
-%                 {actual, {explicit, RoundTripUnsignedTX}}}),
-%             ?assertEqual(ExpectedUnsignedTX, RoundTripUnsignedTX,
-%                 lists:flatten(io_lib:format("~p unsigned round-trip", [Label]))),
+    %% Iterate over each pair, call from/3, and assert the result matches the
+    %% expected TABM.
+    lists:foreach(
+        fun({Label, UnsignedTX, TestOpts, ExpectedFields}) ->
+            %% Unsigned test
+            ExpectedUnsignedTABM = make_expected_tabm(
+                UnsignedTX, TestOpts#{ signed => false }, ExpectedFields),
+            {ok, ActualUnsignedTABM} = from(UnsignedTX, #{}, #{}),
+            ?assertEqual(ExpectedUnsignedTABM, ActualUnsignedTABM,
+                lists:flatten(io_lib:format("~p unsigned", [Label]))),
 
-%             %% Signed test
-%             SignedTX = ar_tx:sign(UnsignedTX, Wallet),
-%             ExpectedSignedTABM = make_expected_tabm(
-%                 SignedTX, TestOpts#{ signed => true }, ExpectedFields),
-%             {ok, ActualSignedTABM} = from(SignedTX, #{}, #{}),
-%             ?assertEqual(ExpectedSignedTABM, ActualSignedTABM,
-%                 lists:flatten(io_lib:format("~p signed", [Label]))),
+            ExpectedUnsignedTX = hb_tx:reset_ids(UnsignedTX),
+            {ok, RoundTripUnsignedTX} = to(ActualUnsignedTABM, #{}, #{}),
+            ?assertEqual(ExpectedUnsignedTX, RoundTripUnsignedTX,
+                lists:flatten(io_lib:format("~p unsigned round-trip", [Label]))),
 
-%             ExpectedSignedTX = hb_tx:reset_ids(SignedTX),
-%             {ok, RoundTripSignedTX} = to(ActualSignedTABM, #{}, #{}),
-%             ?assertEqual(ExpectedSignedTX, RoundTripSignedTX,
-%                 lists:flatten(io_lib:format("~p signed round-trip", [Label]))),
-%             ok
-%         end,
-%         TestCases
-%     ).
+            %% Signed test
+            SignedTX = ar_tx:sign(UnsignedTX, Wallet),
+            ExpectedSignedTABM = make_expected_tabm(
+                SignedTX, TestOpts#{ signed => true }, ExpectedFields),
+            {ok, ActualSignedTABM} = from(SignedTX, #{}, #{}),
+            ?assertEqual(ExpectedSignedTABM, ActualSignedTABM,
+                lists:flatten(io_lib:format("~p signed", [Label]))),
+
+            ExpectedSignedTX = hb_tx:reset_ids(SignedTX),
+            {ok, RoundTripSignedTX} = to(ActualSignedTABM, #{}, #{}),
+            ?assertEqual(ExpectedSignedTX, RoundTripSignedTX,
+                lists:flatten(io_lib:format("~p signed round-trip", [Label]))),
+            ok
+        end,
+        TestCases
+    ).
 
 % %%%-------------------------------------------------------------------
 % %%% Tests for `to/3`.
 % %%%-------------------------------------------------------------------
 
-% to_test_() ->
-%     [
-%         fun test_to_multisignatures_not_supported/0,
-%         fun test_to_invalid_original_tags/0,
-%         fun test_to_enforce_valid_tx/0,
-%         {timeout, 30, fun test_to_happy/0}
-%     ].
+to_test_() ->
+    [
+        fun test_to_multisignatures_not_supported/0,
+        fun test_to_invalid_original_tags/0
+        % fun test_to_enforce_valid_tx/0,
+        % {timeout, 30, fun test_to_happy/0}
+    ].
 
-% test_to_multisignatures_not_supported() ->
-%     Wallet = ar_wallet:new(),
-%     SignedTX = ar_tx:sign(ar_tx:new(), Wallet),
-%     ValidTABM = make_expected_tabm(SignedTX, #{ signed => true }, #{}),
+test_to_multisignatures_not_supported() ->
+    Wallet = ar_wallet:new(),
+    SignedTX = ar_tx:sign(ar_tx:new(), Wallet),
+    ValidTABM = make_expected_tabm(SignedTX, #{ signed => true }, #{}),
 
-%     Commitments = maps:get(<<"commitments">>, ValidTABM),
-%     [{_CID, Commitment}] = maps:to_list(Commitments),
-%     MultiSigTABM = ValidTABM#{
-%         <<"commitments">> => Commitments#{ <<"extra-id">> => Commitment }
-%     },
+    Commitments = maps:get(<<"commitments">>, ValidTABM),
+    [{_CID, Commitment}] = maps:to_list(Commitments),
+    MultiSigTABM = ValidTABM#{
+        <<"commitments">> => Commitments#{ <<"extra-id">> => Commitment }
+    },
 
-%     hb_test_utils:assert_throws(
-%         fun to/3,
-%         [MultiSigTABM, #{}, #{}],
-%         {multisignatures_not_supported_by_ans104, MultiSigTABM},
-%         "multisignatures_not_supported_by_ans104"
-%     ).
+    hb_test_utils:assert_throws(
+        fun to/3,
+        [MultiSigTABM, #{}, #{}],
+        {multisignatures_not_supported_by_ans104, MultiSigTABM},
+        "multisignatures_not_supported_by_ans104"
+    ).
 
-% test_to_invalid_original_tags() ->
-%     Wallet = ar_wallet:new(),
+test_to_invalid_original_tags() ->
+    Wallet = ar_wallet:new(),
 
-%     Tag = <<"test-tag">>,
-%     TagVal = <<"test">>,
-%     BadTag = <<"bad-tag">>,
-%     BadVal = <<"bad">>,
+    Tag = <<"test-tag">>,
+    TagVal = <<"test">>,
+    BadTag = <<"bad-tag">>,
+    BadVal = <<"bad">>,
 
-%     SignedTX = ar_tx:sign((ar_tx:new())#tx{ tags = [{Tag, TagVal}] }, Wallet),
-%     ValidTABM = make_expected_tabm(SignedTX, #{ signed => true, include_original_tags => true }, #{ Tag => TagVal }),
+    SignedTX = ar_tx:sign((ar_tx:new())#tx{ tags = [{Tag, TagVal}] }, Wallet),
+    ValidTABM = make_expected_tabm(SignedTX, #{ signed => true, include_original_tags => true }, #{ Tag => TagVal }),
 
-%     InvalidOrigTABM = ValidTABM#{ BadTag => BadVal },
+    InvalidOrigTABM = ValidTABM#{ BadTag => BadVal },
 
-%     OriginalTags = SignedTX#tx.tags,
-%     NormRemaining = #{ Tag => TagVal, BadTag => BadVal },
+    OriginalTags = SignedTX#tx.tags,
+    NormRemaining = #{ Tag => TagVal, BadTag => BadVal },
 
-%     hb_test_utils:assert_throws(
-%         fun to/3,
-%         [InvalidOrigTABM, #{}, #{}],
-%         {invalid_original_tags, OriginalTags, NormRemaining},
-%         "invalid_original_tags"
-%     ).
+    hb_test_utils:assert_throws(
+        fun to/3,
+        [InvalidOrigTABM, #{}, #{}],
+        {invalid_original_tags, OriginalTags, NormRemaining},
+        "invalid_original_tags"
+    ).
 
 % test_to_enforce_valid_tx() ->
 %     LastTX = crypto:strong_rand_bytes(33),
@@ -331,7 +329,7 @@ committed_tags(#tx{ format = 2 }) ->
 %     BaseTX = ar_tx:new(),
 
 %     TestCases = [
-%         {default_values, BaseTX, exclude_original_tags, #{}},
+%         {default_values, BaseTX, #{ include_original_tags => false }, #{}},
 %         {non_default_values,
 %             BaseTX#tx{
 %                 last_tx = crypto:strong_rand_bytes(32),
@@ -373,6 +371,13 @@ committed_tags(#tx{ format = 2 }) ->
 %             ExpectedUnsignedTX = hb_tx:reset_ids(UnsignedTX),
 
 %             {ok, ActualUnsignedTX} = to(ExpectedUnsignedTABM, #{}, #{}),
+
+%             ?event(xxx, {unsigned,
+%                 {input_tx, {explicit, UnsignedTX}},
+%                 {expected_tabm, {explicit, ExpectedUnsignedTABM}},
+%                 {expected_tx, {explicit, ExpectedUnsignedTX}},
+%                 {actual_tx, {explicit, ActualUnsignedTX}}}),
+
 %             ?assertEqual(ExpectedUnsignedTX, ActualUnsignedTX, 
 %                 lists:flatten(io_lib:format("~p unsigned", [Label]))),
 

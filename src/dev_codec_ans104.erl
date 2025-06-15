@@ -17,6 +17,7 @@
     ]
 ).
 
+
 %% The list of tags that a user is explicitly committing to when they sign an
 %% ANS-104 message.
 -define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
@@ -66,7 +67,7 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
     {ok, hb_tx:binary_to_tx(Binary)};
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(InputTABM, Req, Opts) when is_map(InputTABM) ->
-    {ok, hb_tx:tabm_to_tx(InputTABM, Req, Opts)};
+    {ok, hb_tx:tabm_to_tx(#tx{ format = ans104 }, InputTABM, Req, Opts)};
 to(_Other, _Req, _Opts) ->
     throw(invalid_tx).
 
@@ -332,8 +333,7 @@ invalid_fields_test() ->
         { <<"owner_address">>, #{ <<"owner_address">> => hb_util:encode(crypto:strong_rand_bytes(32)) } },
         { <<"tags">>, #{ <<"tags">> => <<"tags">> } },
         { <<"data_size">>, #{ <<"data_size">> => <<"100">> } },
-        { <<"data_tree">>, #{ <<"data_tree">> => hb_util:encode(crypto:strong_rand_bytes(32)) } },
-        { <<"signature">>, #{ <<"signature">> => hb_util:encode(crypto:strong_rand_bytes(512)) } }
+        { <<"data_tree">>, #{ <<"data_tree">> => hb_util:encode(crypto:strong_rand_bytes(32)) } }
     ],
 
     lists:foreach(
@@ -347,6 +347,25 @@ invalid_fields_test() ->
         end,
         TestCases
     ).
+
+invalid_field_test() ->
+    Signature = hb_util:encode(crypto:strong_rand_bytes(512)),
+    TestCases = [
+        { <<"signature">>, #{ <<"signature">> => Signature }, {invalid_field, signature, Signature} }
+    ],
+
+    lists:foreach(
+        fun({InvalidField, TestCase, ExpectedError}) ->
+            hb_test_utils:assert_throws(
+                fun dev_codec_ans104:to/3,
+                [TestCase, #{}, #{}],
+                ExpectedError,
+                InvalidField
+            )
+        end,
+        TestCases
+    ).
+
 
 do_unsigned_roundtrip(UnsignedStructured, UnsignedTX) ->
     StructuredCodec = #{<<"device">> => <<"structured@1.0">>, <<"bundle">> => true},

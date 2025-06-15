@@ -150,16 +150,16 @@ compare_events(Name, OptsName1, OptsName2, Suite, OptsList) ->
 %% @doc Assert that a function throws an expected exception. Needed to work around some
 %% limitations in ?assertException (e.g. no way to attach an error message to the failure)
 assert_throws(Fun, Args, ExpectedException, Label) ->
-	Error = try 
-		apply(Fun, Args),
-		failed_to_throw
-	catch
-		error:ExpectedException -> expected_exception;
-		ExpectedException -> expected_exception;
-		error:Other -> {wrong_exception, Other};
-		Other -> {wrong_exception, Other}
-	end,
-	?assertEqual(expected_exception, Error, Label).
+    Error = try 
+        apply(Fun, Args),
+        failed_to_throw
+    catch
+        error:ExpectedException -> expected_exception;
+        ExpectedException -> expected_exception;
+        error:Other -> {wrong_exception, Other};
+        Other -> {wrong_exception, Other}
+    end,
+    ?assertEqual(expected_exception, Error, Label).
 
 %% @doc Run a function as many times as possible in a given amount of time.
 benchmark(Fun) ->
