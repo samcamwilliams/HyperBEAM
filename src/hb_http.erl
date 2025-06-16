@@ -262,6 +262,16 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             not_found -> Message#{ <<"accept-bundle">> => true };
             _ -> Message
         end,
+    WithSelfPort =
+        WithAcceptBundle#{
+            <<"ao-peer-port">> =>
+                hb_ao:get(
+                    <<"ao-peer-port">>,
+                    WithAcceptBundle,
+                    hb_opts:get(port, undefined, Opts),
+                    Opts
+                )
+        },
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
@@ -269,7 +279,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
         <<"httpsig@1.0">> ->
             FullEncoding =
                 hb_message:convert(
-                    WithAcceptBundle,
+                    WithSelfPort,
                     #{
                         <<"device">> => <<"httpsig@1.0">>,
                         <<"bundle">> => true
@@ -285,9 +295,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             ?event(debug_accept, {request_message, {message, Message}}),
             {ok, FilteredMessage} =
                 case hb_message:signers(Message, Opts) of
-                    [] -> Message;
+                    [] -> WithSelfPort;
                     _ ->
-                        hb_message:with_only_committed(Message, Opts)
+                        hb_message:with_only_committed(WithSelfPort, Opts)
                 end,
             ReqBase#{
                 headers =>
@@ -298,7 +308,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                             hb_util:bin(
                                 hb_ao:get(
                                     <<"accept-bundle">>,
-                                    Message,
+                                    WithSelfPort,
                                     true,
                                     Opts
                                 )
