@@ -38,8 +38,7 @@ estimate(_, EstimateReq, NodeMsg) ->
                 fun(Match) ->
                     MatchTemplate = hb_maps:get(<<"template">>, Match, not_found, NodeMsg),
                     case hb_util:template_matches(UserRequest, MatchTemplate, NodeMsg) of
-                        true -> 
-                            true;
+                        true -> true;
                         false -> false
                     end
                 end,

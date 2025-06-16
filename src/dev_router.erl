@@ -860,9 +860,10 @@ dynamic_router_pricing_test_() ->
 dynamic_router_pricing() ->
     {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
     {ok, ClientScript} = file:read_file("scripts/hyper-token-p4-client.lua"),
+    {ok, TokenScript} = file:read_file("scripts/hyper-token.lua"),
+    {ok, ProcessScript} = file:read_file("scripts/hyper-token-p4.lua"),
     ExecWallet = hb:wallet(<<"test/admissible-report-wallet.json">>),
     ProxyWallet = ar_wallet:new(),
-    ProxyWalletAddr = hb_util:human_id(ar_wallet:to_address(ProxyWallet)),
     ExecNodeAddr = hb_util:human_id(ar_wallet:to_address(ExecWallet)),
     Processor =
         #{
@@ -890,33 +891,25 @@ dynamic_router_pricing() ->
                         <<"authority-match">> => 1,
                         <<"admin">> => ExecNodeAddr,             
                         <<"token">> => <<"iVplXcMZwiu5mn0EZxY-PxAkz_A9KOU0cmRE0rwej3E">>,                 
-                        <<"module">> => <<"W-FoIIxJlBdhO5Z3CbQJg7UKxgawCTT0yVGkJGNWzLs">>,              
+                        <<"module">> => [
+                            #{
+                                <<"content-type">> => <<"text/x-lua">>,
+                                <<"name">> => <<"scripts/hyper-token.lua">>,
+                                <<"body">> => TokenScript
+                            },
+                            #{
+                                <<"content-type">> => <<"text/x-lua">>,
+                                <<"name">> => <<"scripts/hyper-token-p4.lua">>,
+                                <<"body">> => ProcessScript
+                            }
+                        ],              
                         <<"authority">> => ExecNodeAddr              
                     }
                 },
                 p4_recipient => ExecNodeAddr, 
                 p4_non_chargable_routes => [
-                    #{
-                        <<"template">> => <<"/*~node-process@1.0/*">>
-                    },
-                    #{
-                        <<"template">> => <<"/*~greenzone@1.0/*">>
-                    },
-                    #{
-                        <<"template">> => <<"/*~router@1.0/*">>
-                    },
-                    #{
-                        <<"template">> => <<"/*~meta@1.0/*">>
-                    },
-                    #{
-                        <<"template">> => <<"/schedule">>
-                    },
-                    #{
-                        <<"template">> => <<"/push">>
-                    },
-                    #{
-                        <<"template">> => <<"/~hyperbuddy@1.0/*">>
-                    }
+                    #{ <<"template">> => <<"/*~node-process@1.0/*">> },
+                    #{ <<"template">> => <<"/*~router@1.0/*">> }
                 ],
                 on => #{
                     <<"request">> => Processor,
@@ -930,29 +923,19 @@ dynamic_router_pricing() ->
                             <<"template">> => <<"/c">>,  
                             <<"prefix">> => <<"http://localhost:10009">>,                   
                             <<"price">> => 0                   
+                        },
+                        #{
+                            <<"registration-peer">> => <<"http://localhost:10010">>,         
+                            <<"template">> => <<"/b">>,  
+                            <<"prefix">> => <<"http://localhost:10009">>,                   
+                            <<"price">> => 1                   
                         }
                     ]
                 }
             }
         ),
-    Node = hb_http_server:start_node(ProxyOpts = #{
+    Node = hb_http_server:start_node(#{
         port => 10010,
-        snp_trusted => [
-            #{
-                <<"vcpus">> => 32,
-                <<"vcpu_type">> => 5, 
-                <<"vmm_type">> => 1,
-                <<"guest_features">> => 1,
-                <<"firmware">> =>
-                    <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-                <<"kernel">> =>
-                    <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-                <<"initrd">> =>
-                    <<"544045560322dbcd2c454bdc50f35edf0147829ec440e6cb487b4a1503f923c1">>,
-                <<"append">> =>
-                    <<"95a34faced5e487991f9cc2253a41cbd26b708bf00328f98dddbbf6b3ea2892e">>
-            }
-        ],
         store => hb_opts:get(store),
         priv_wallet => ProxyWallet,
         on => 
@@ -994,18 +977,17 @@ dynamic_router_pricing() ->
     }),
     % Register workers with the dynamic router with varied prices.
     {ok, _Res} = hb_http:get(ExecNode, <<"/~router@1.0/register">>, ExecOpts),
-    % Force computation of the current state. This should be done with a 
-    % background worker (ex: a `~cron@1.0/every' task).
-    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now/at-slot">>, #{}),
-    ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
+    % Force computation of the current state.
+    {Status, _NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now/at-slot">>, #{}),
     ?assertEqual(ok, Status),
-    ?assertEqual(
-        {ok, ProxyWalletAddr},
-        hb_http:get(Node, <<"/~meta@1.0/info/address">>, ProxyOpts)
-    ),
-    % Ensure that computation is done by the exec node.
-    {ok, ResMsg} = hb_http:get(Node, <<"/c?c+list=1">>, ExecOpts),
-    ?assertEqual([ExecNodeAddr], hb_message:signers(ResMsg, ExecOpts)).
+    % Check that path /c is free 
+    {ok, CRes} = hb_http:get(Node, <<"/c?c+list=1">>, ExecOpts),
+    ?event(debug_dynrouter, {res_msg, CRes}),
+    ?assertEqual(1, hb_maps:get(<<"1">>, CRes, not_found)),
+    % Check that path /b is not free and returns Insufficient funds
+    {error, BRes} = hb_http:get(Node, <<"/b?b+list=1">>, ExecOpts),
+    ?event(debug_dynrouter, {res_msg, BRes}),
+    ?assertEqual(<<"Insufficient funds">>, hb_maps:get(<<"body">>, BRes, not_found)).
 
 
 %% @doc Example of a Lua module being used as the `route_provider' for a
