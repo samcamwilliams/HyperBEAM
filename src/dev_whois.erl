@@ -7,7 +7,7 @@
 
 %% @doc Return the calculated host information for the requester.
 echo(_, Req, Opts) ->
-    {ok, hb_maps:get(<<"host">>, Req, <<"unknown">>, Opts)}.
+    {ok, hb_maps:get(<<"peer">>, Req, <<"unknown">>, Opts)}.
 
 %% @doc Return the host information for the node. Sets the `host' key in the
 %% node message if it is not already set.
@@ -50,12 +50,11 @@ bootstrap_node_echo(Opts) ->
 find_self_test() ->
     BoostrapNode =
         hb_http_server:start_node(#{
-            priv_wallet => ar_wallet:new(),
-            port => 13337
+            priv_wallet => ar_wallet:new()
         }),
     PeerNode =
         hb_http_server:start_node(#{
-            port => 1111,
+            port => Port = rand:uniform(40000) + 10000,
             priv_wallet => ar_wallet:new(),
             host_bootstrap_node => BoostrapNode,
             http_client => httpc
@@ -63,4 +62,4 @@ find_self_test() ->
     ?event({nodes, {peer, PeerNode}, {bootstrap, BoostrapNode}}),
     {ok, ReceivedPeerHost} = hb_http:get(PeerNode, <<"/~whois@1.0/node">>, #{}),
     ?event({find_self_test, ReceivedPeerHost}),
-    ?assertEqual(PeerNode, ReceivedPeerHost).
+    ?assertEqual(<<"127.0.0.1:", (hb_util:bin(Port))/binary>>, ReceivedPeerHost).

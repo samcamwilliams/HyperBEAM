@@ -878,16 +878,39 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
             ),
             Opts
         ),
-    (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
-        <<"method">> => Method,
-        <<"path">> => MsgPath,
-        <<"accept-bundle">> =>
-            maps:get(
-                <<"accept-bundle">>,
-                Msg,
-                maps:get(<<"accept-bundle">>, RawHeaders, false)
-            )
-    }.
+    WithoutPeer =
+        (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
+            <<"method">> => Method,
+            <<"path">> => MsgPath,
+            <<"accept-bundle">> =>
+                maps:get(
+                    <<"accept-bundle">>,
+                    Msg,
+                    maps:get(<<"accept-bundle">>, RawHeaders, false)
+                )
+        },
+    case hb_ao:get(<<"ao-peer-port">>, WithoutPeer, undefined, Opts) of
+        undefined -> WithoutPeer;
+        P2PPort ->
+            % Calculate the peer address from the request. We honor the 
+            % `x-real-ip' header if it is present.
+            RealIP =
+                case hb_maps:get(<<"x-real-ip">>, RawHeaders, undefined, Opts) of
+                    undefined ->
+                        {{A, B, C, D}, _} = cowboy_req:peer(Req),
+                        hb_util:bin(
+                            io_lib:format(
+                                "~b.~b.~b.~b",
+                                [A, B, C, D]
+                            )
+                        );
+                    IP -> IP
+                end,
+            Peer = <<RealIP/binary, ":", (hb_util:bin(P2PPort))/binary>>,
+            (remove_unless_signed([<<"ao-peer-port">>], WithoutPeer, Opts))#{
+                <<"peer">> => Peer
+            }
+    end.
 
 %% @doc Remove all keys from the message unless they are signed.
 remove_unless_signed(Key, Msg, Opts) when not is_list(Key) ->
