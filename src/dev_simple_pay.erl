@@ -27,14 +27,32 @@ estimate(_, EstimateReq, NodeMsg) ->
                     hb_ao:get(<<"request">>, EstimateReq, NodeMsg),
                     NodeMsg
                 ),
-            % Attempt to find the price from the router registration options,
-            % if it exists. If not, use the simple pay price.
-            RouterOpts = hb_opts:get(router_registration_opts, #{}, NodeMsg),
-            Price =
-                case hb_ao:get(<<"price">>, RouterOpts, not_found, NodeMsg) of
-                    not_found -> hb_opts:get(simple_pay_price, 1, NodeMsg);
-                    P -> P
+            % Get the user's request to match against router registration options
+            UserRequest = hb_maps:get(<<"user-request">>, Req, not_found, NodeMsg),
+            % Get router registration options which may contain route-specific pricing
+            RouterOpts = hb_opts:get(router_opts, #{}, NodeMsg),
+            Routes = hb_maps:get(routes, RouterOpts, [#{}], NodeMsg),
+            % Find the first matching route template and stop searching
+            % Uses lists:search/2 for early termination instead of processing all routes
+            Match = case lists:search(
+                fun(Match) ->
+                    MatchTemplate = hb_maps:get(<<"template">>, Match, not_found, NodeMsg),
+                    case hb_util:template_matches(UserRequest, MatchTemplate, NodeMsg) of
+                        true -> 
+                            true;
+                        false -> false
+                    end
                 end,
+                Routes
+            ) of
+                {value, FoundMatch} -> FoundMatch;
+                false -> []  % No matching route found
+            end,
+            % Use route-specific price if found, otherwise fall back to default price
+            Price =  case hb_maps:get(<<"price">>, Match, not_found, NodeMsg) of
+                not_found -> hb_opts:get(simple_pay_price, 1, NodeMsg);
+                P -> P
+            end,
             {ok, length(Messages) * Price}
     end.
 

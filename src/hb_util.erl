@@ -6,6 +6,7 @@
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
+-export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1]).
 -export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
@@ -261,6 +262,29 @@ deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
         Map2,
 		Opts
     ).
+
+%% @doc Find the target path to route for a request message.
+find_target_path(Msg, Opts) ->
+    case hb_ao:get(<<"route-path">>, Msg, not_found, Opts) of
+        not_found ->
+            ?event({find_target_path, {msg, Msg}, not_found}),
+            hb_ao:get(<<"path">>, Msg, no_path, Opts);
+        RoutePath -> RoutePath
+    end.
+
+%% @doc Check if a message matches a given template.
+%% Templates can be either:
+%% - A map: Uses structural matching against the message
+%% - A binary regex: Matches against the message's target path
+%% Returns true/false for map templates, or regex match result for binary templates.
+template_matches(ToMatch, Template, _Opts) when is_map(Template) ->
+    case hb_message:match(Template, ToMatch, primary) of
+        {value_mismatch, _Key, _Val1, _Val2} -> false;
+        Match -> Match
+    end;
+template_matches(ToMatch, Regex, Opts) when is_binary(Regex) ->
+    MsgPath = find_target_path(ToMatch, Opts),
+    hb_path:regex_matches(MsgPath, Regex).
 
 %% @doc Label a list of elements with a number.
 number(List) ->
@@ -520,7 +544,7 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Opts, Indent);
 do_debug_fmt({X, Y}, Opts, Indent) when is_record(Y, tx) ->
     format_indented("~p: [TX item]~n~s",
-        [X, ar_bundles:format(Y, Opts, Indent + 1)],
+        [X, ar_bundles:format(Y, Indent + 1)],
         Opts,
         Indent
     );

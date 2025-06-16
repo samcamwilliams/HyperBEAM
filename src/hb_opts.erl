@@ -236,7 +236,9 @@ default_message() ->
         % Should the node use persistent processes?
         process_workers => false,
         % Options for the router device
-        router_registration_opts => #{}
+        router_opts => #{
+            routes => []
+        }
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
         % can be used to determine if we should expose metrics instead,
