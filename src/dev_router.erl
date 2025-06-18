@@ -85,7 +85,7 @@ register(_M1, M2, Opts) ->
     %% These values will be used to construct the registration message
     RouterOpts = hb_opts:get(<<"router@1.0">>, #{}, Opts),
     RouterRegMsgs =
-        case hb_maps:get(routes, RouterOpts, #{}, Opts) of
+        case hb_maps:get(<<"offered">>, RouterOpts, #{}, Opts) of
             RegList when is_list(RegList) -> RegList;
             RegMsg when is_map(RegMsg) -> [RegMsg]
         end,
@@ -109,7 +109,7 @@ register(_M1, M2, Opts) ->
             {ok, Res} =
                 hb_http:post(
                     RouterNode,
-                    <<"/router~node-process@1.0/schedule">>,
+                    <<"/~router@1.0/routes">>,
                     hb_message:commit(
                         #{
                             <<"subject">> => <<"self">>,
@@ -134,30 +134,65 @@ routes(M1, M2, Opts) ->
     ?event({routes, Routes}),
     case hb_ao:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
-            Owner = hb_opts:get(operator, undefined, Opts),
-            RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
-            Signers = hb_message:signers(M2, Opts),
-            IsTrusted =
-                lists:any(
-                    fun(Signer) -> lists:member(Signer, Signers) end,
-                    RouteOwners
-                ),
-            case IsTrusted of
-                true ->
-                    % Minimize the work performed by AO-Core to make the sort
-                    % more efficient.
-                    SortOpts = Opts#{ hashpath => ignore },
-                    NewRoutes =
-                        lists:sort(
-                            fun(X, Y) ->
-                                hb_ao:get(<<"priority">>, X, SortOpts)
-                                    < hb_ao:get(<<"priority">>, Y, SortOpts)
-                            end,
-                            [M2|Routes]
+            RouterOpts = hb_opts:get(<<"router@1.0">>, #{}, Opts),
+            ?event(debug_route_reg, {router_opts, RouterOpts}),
+            case hb_maps:get(<<"registrar">>, RouterOpts, not_found, Opts) of
+                not_found ->
+                    % There is no registrar; register if and only if the message
+                    % is signed by an authorized operator.
+                    ?event(debug_route_reg, no_registrar),
+                    Owner = hb_opts:get(operator, undefined, Opts),
+                    RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
+                    Signers = hb_message:signers(M2, Opts),
+                    IsTrusted =
+                        lists:any(
+                            fun(Signer) -> lists:member(Signer, Signers) end,
+                            RouteOwners
                         ),
-                    ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
-                    {ok, <<"Route added.">>};
-                false -> {error, not_authorized}
+                    case IsTrusted of
+                        true ->
+                            % Minimize the work performed by AO-Core to make the sort
+                            % more efficient.
+                            SortOpts = Opts#{ hashpath => ignore },
+                            NewRoutes =
+                                lists:sort(
+                                    fun(X, Y) ->
+                                        hb_ao:get(<<"priority">>, X, SortOpts)
+                                            < hb_ao:get(<<"priority">>, Y, SortOpts)
+                                    end,
+                                    [M2|Routes]
+                                ),
+                            ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                            {ok, <<"Route added.">>};
+                        false -> {error, not_authorized}
+                    end;
+                Registrar ->
+                    % Parse the registrar message and execute the route 
+                    % registration against it.
+                    RegistrarPath =
+                        hb_maps:get(
+                            <<"registrar-path">>,
+                            RouterOpts,
+                            not_found,
+                            Opts
+                        ),
+                    ?event(debug_route_reg,
+                        {registrar_found, {msg, Registrar}, {path, RegistrarPath}}
+                    ),
+                    RegReq =
+                        case RegistrarPath of
+                            not_found -> M2;
+                            RegPath ->
+                                M2#{ <<"path">> => RegPath }
+                        end,
+                    RegistrarMsgs = hb_singleton:from(Registrar, Opts),
+                    ?event(debug_route_reg, {registrar_msgs, RegistrarMsgs}),
+                    case hb_ao:resolve_many(RegistrarMsgs ++ [RegReq], Opts) of
+                        {ok, _} ->
+                            {ok, <<"Route added.">>};
+                        {error, Error} ->
+                            {error, Error}
+                    end
             end;
         _ ->
             {ok, Routes}
@@ -659,86 +694,6 @@ local_process_provider() ->
     ?event({responses, Responses}),
     ?assertEqual(2, length(hb_util:unique(Responses))).
 
-local_dynamic_trusted_peer_test() ->
-    {ok, Module} = file:read_file(<<"scripts/dynamic-router.lua">>),
-    Wallet = ar_wallet:new(),
-    AltWallet = ar_wallet:new(),
-    ?event(
-        {wallets,
-            {main, hb_util:human_id(Wallet)},
-            {alt, hb_util:human_id(AltWallet)}
-        }
-    ),
-    Node =
-        hb_http_server:start_node(#{
-            store => hb_opts:get(store),
-            node_processes => #{
-                <<"router">> => #{
-                    <<"device">> => <<"process@1.0">>,
-                    % Set the caller's alternate ID to be trusted for registration
-                    % on the node.
-                    <<"trusted-peer">> => hb_util:human_id(AltWallet),
-                    <<"execution-device">> => <<"lua@5.3a">>,
-                    <<"scheduler-device">> => <<"scheduler@1.0">>,
-                    <<"module">> => #{
-                        <<"content-type">> => <<"application/lua">>,
-                        <<"name">> => <<"dynamic-router">>,
-                        <<"body">> => Module
-                    },
-                    % Set module-specific factors for the test
-                    <<"pricing-weight">> => 9,
-                    <<"performance-weight">> => 1,
-                    <<"score-preference">> => 4,
-                    <<"is-admissible">> => #{
-                        <<"path">> => <<"default">>,
-                        <<"default">> => <<"false">>
-                    }
-                }
-            }
-        }),
-    % Create the options for the joiner.
-    JoinerOpts = #{
-        priv_wallet => Wallet,
-        <<"router@1.0">> => #{
-            routes => [
-                #{
-                    <<"registration-peer">> => Node,
-                    <<"prefix">> => <<"https://test-node.com">>,
-                    <<"template">> => <<"/.*~process@1.0/.*">>,
-                    <<"price">> => 250
-                }
-            ]
-        },
-        identities => #{
-            <<"alt-id">> => #{ priv_wallet => AltWallet }
-        }
-    },
-    % Validate that signing as the `alt-id` generates the expected commitment.
-    {ok, OptsAsID} = hb_opts:as(<<"alt-id">>, JoinerOpts),
-    SignedAs = hb_message:commit(#{ <<"a">> => 1 }, OptsAsID),
-    AltID = hb_util:human_id(AltWallet),
-    ?assertEqual([AltID], hb_message:signers(SignedAs, OptsAsID)),
-    % Register the joiner with the node using the `alt-id`.
-    {ok, RegResult} =
-        hb_ao:resolve(
-            #{ <<"device">> => <<"router@1.0">> },
-            #{
-                <<"path">> => <<"register">>,
-                <<"as">> => <<"alt-id">>
-            },
-            JoinerOpts
-        ),
-    ?event({reg_res, RegResult}),
-    {ok, ScheduledMsg} =
-        hb_http:get(
-            Node,
-            <<"/router~node-process@1.0/schedule/assignments/1/body">>,
-            JoinerOpts
-        ),
-    [Committer] = hb_message:signers(ScheduledMsg, JoinerOpts),
-    ?event({committer, Committer}),
-    ?assertEqual(AltID, Committer).
-
 %% @doc Example of a Lua module being used as the `<<"provider">>' for a
 %% HyperBEAM node. The module utilized in this example dynamically adjusts the
 %% likelihood of routing to a given node, depending upon price and performance.
@@ -751,14 +706,18 @@ local_dynamic_router() ->
         store => hb_opts:get(store),
         priv_wallet => ar_wallet:new(),
         <<"router@1.0">> => #{
+            <<"registrar">> => #{
+                <<"device">> => <<"router@1.0">>,
+                <<"path">> => <<"/router1~node-process@1.0/schedule">>
+            },
             <<"provider">> => #{
                 <<"path">> =>
                     RouteProvider =
-                        <<"/router~node-process@1.0/compute/routes~message@1.0">>
+                        <<"/router1~node-process@1.0/compute/routes~message@1.0">>
             }
         },
         node_processes => #{
-            <<"router">> => #{
+            <<"router1">> => #{
                 <<"device">> => <<"process@1.0">>,
                 <<"execution-device">> => <<"lua@5.3a">>,
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
@@ -781,7 +740,7 @@ local_dynamic_router() ->
         hb_http:post(
             Node,
             #{
-                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                <<"path">> => <<"/router1~node-process@1.0/schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"body">> =>
                     hb_message:commit(
@@ -873,7 +832,7 @@ dynamic_router_pricing() ->
             <<"device">> => <<"p4@1.0">>,
             <<"ledger-device">> => <<"lua@5.3a">>,
             <<"pricing-device">> => <<"simple-pay@1.0">>,
-            <<"ledger-path">> => <<"/ledger~node-process@1.0">>,
+            <<"ledger-path">> => <<"/ledger2~node-process@1.0">>,
             <<"module">> => #{
                 <<"content-type">> => <<"text/x-lua">>,
                 <<"name">> => <<"scripts/hyper-token-p4-client.lua">>,
@@ -887,13 +846,14 @@ dynamic_router_pricing() ->
                 port => 10009,
                 store => hb_opts:get(store),
                 node_processes => #{
-                    <<"ledger">> => #{
+                    <<"ledger2">> => #{
                         <<"device">> => <<"process@1.0">>,
                         <<"execution-device">> => <<"lua@5.3a">>,
                         <<"scheduler-device">> => <<"scheduler@1.0">>,
                         <<"authority-match">> => 1,
                         <<"admin">> => ExecNodeAddr,             
-                        <<"token">> => <<"iVplXcMZwiu5mn0EZxY-PxAkz_A9KOU0cmRE0rwej3E">>,                 
+                        <<"token">> =>
+                            <<"iVplXcMZwiu5mn0EZxY-PxAkz_A9KOU0cmRE0rwej3E">>,                 
                         <<"module">> => [
                             #{
                                 <<"content-type">> => <<"text/x-lua">>,
@@ -920,7 +880,7 @@ dynamic_router_pricing() ->
                 },
                 node_process_spawn_codec => <<"ans104@1.0">>,
                 <<"router@1.0">> => #{
-                    routes => [
+                    <<"offered">> => [
                         #{
                             <<"registration-peer">> => <<"http://localhost:10010">>,         
                             <<"template">> => <<"/c">>,  
@@ -951,12 +911,17 @@ dynamic_router_pricing() ->
             },
         <<"router@1.0">> => #{
             <<"provider">> => #{
-                <<"path">> => <<"/router~node-process@1.0/compute/routes~message@1.0">>
-            }
+                <<"path">> =>
+                    <<"/router2~node-process@1.0/compute/routes~message@1.0">>
+            },
+            <<"registrar">> => #{
+                <<"path">> => <<"/router2~node-process@1.0">>
+            },
+            <<"registrar-path">> => <<"schedule">>
         },
         relay_allow_commit_request => true,
         node_processes => #{
-            <<"router">> => #{
+            <<"router2">> => #{
                 <<"type">> => <<"Process">>,
                 <<"device">> => <<"process@1.0">>,
                 <<"execution-device">> => <<"lua@5.3a">>,
@@ -978,17 +943,26 @@ dynamic_router_pricing() ->
             }
         }
     }),
+    ?event(
+        debug_load_routes,
+        {node_message, hb_http:get(Node, <<"/~meta@1.0/info">>, #{})}
+    ),
     % Register workers with the dynamic router with varied prices.
-    {ok, _Res} = hb_http:get(ExecNode, <<"/~router@1.0/register">>, ExecOpts),
+    {ok, _Res} = hb_http:post(ExecNode, <<"/~router@1.0/register">>, #{}),
     % Force computation of the current state.
-    {Status, _NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now/at-slot">>, #{}),
+    {Status, _NodeRoutes} =
+        hb_http:get(
+            Node,
+            <<"/router2~node-process@1.0/now/at-slot">>,
+            #{}
+        ),
     ?assertEqual(ok, Status),
     % Check that path /c is free 
-    {ok, CRes} = hb_http:get(Node, <<"/c?c+list=1">>, ExecOpts),
+    {ok, CRes} = hb_http:get(Node, <<"/c?c+list=1">>, #{}),
     ?event(debug_dynrouter, {res_msg, CRes}),
     ?assertEqual(1, hb_maps:get(<<"1">>, CRes, not_found)),
     % Check that path /b is not free and returns Insufficient funds
-    {error, BRes} = hb_http:get(Node, <<"/b?b+list=1">>, ExecOpts),
+    {error, BRes} = hb_http:get(Node, <<"/b?b+list=1">>, #{}),
     ?event(debug_dynrouter, {res_msg, BRes}),
     ?assertEqual(<<"Insufficient funds">>, hb_maps:get(<<"body">>, BRes, not_found)).
 

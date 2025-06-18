@@ -98,11 +98,11 @@ function sandboxed_fail()
     return os.getenv("PWD")
 end
 
---- @function route_provider
+--- @function provider
 --- @tparam table base
 --- @tparam table request
 --- @return table a static set of routes for testing purposes.
-function route_provider(base, req, opts)
+function provider(base, req, opts)
     return {
         {
             node = base.node
