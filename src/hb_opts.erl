@@ -258,39 +258,41 @@ get(Key) -> ?MODULE:get(Key, undefined).
 get(Key, Default) -> ?MODULE:get(Key, Default, #{}).
 get(Key, Default, Opts) when is_binary(Key) ->
     try binary_to_existing_atom(Key, utf8) of
-        AtomKey -> get(AtomKey, Default, Opts)
+        AtomKey -> do_get(AtomKey, Default, Opts)
     catch
-        error:badarg -> Default
+        error:badarg -> do_get(Key, Default, Opts)
     end;
-get(Key, Default, Opts = #{ <<"only">> := Only }) ->
-    get(Key, Default, maps:remove(<<"only">>, Opts#{ only => Only }));
-get(Key, Default, Opts = #{ <<"prefer">> := Prefer }) ->
-    get(Key, Default, maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
-get(Key, Default, Opts = #{ only := local }) ->
+get(Key, Default, Opts) ->
+    do_get(Key, Default, Opts).
+do_get(Key, Default, Opts = #{ <<"only">> := Only }) ->
+    do_get(Key, Default, maps:remove(<<"only">>, Opts#{ only => Only }));
+do_get(Key, Default, Opts = #{ <<"prefer">> := Prefer }) ->
+    do_get(Key, Default, maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
+do_get(Key, Default, Opts = #{ only := local }) ->
     case maps:find(Key, Opts) of
         {ok, Value} -> Value;
         error -> 
             Default
     end;
-get(Key, Default, Opts = #{ only := global }) ->
+do_get(Key, Default, Opts = #{ only := global }) ->
     case global_get(Key, hb_opts_not_found, Opts) of
         hb_opts_not_found -> Default;
         Value -> Value
     end;
-get(Key, Default, Opts = #{ prefer := global }) ->
-    case ?MODULE:get(Key, hb_opts_not_found, #{ only => global }) of
-        hb_opts_not_found -> ?MODULE:get(Key, Default, Opts#{ only => local });
+do_get(Key, Default, Opts = #{ prefer := global }) ->
+    case do_get(Key, hb_opts_not_found, #{ only => global }) of
+        hb_opts_not_found -> do_get(Key, Default, Opts#{ only => local });
         Value -> Value
     end;
-get(Key, Default, Opts = #{ prefer := local }) ->
-    case ?MODULE:get(Key, hb_opts_not_found, Opts#{ only => local }) of
+do_get(Key, Default, Opts = #{ prefer := local }) ->
+    case do_get(Key, hb_opts_not_found, Opts#{ only => local }) of
         hb_opts_not_found ->
-            ?MODULE:get(Key, Default, Opts#{ only => global });
+            do_get(Key, Default, Opts#{ only => global });
         Value -> Value
     end;
-get(Key, Default, Opts) ->
+do_get(Key, Default, Opts) ->
     % No preference was set in Opts, so we default to local.
-    ?MODULE:get(Key, Default, Opts#{ prefer => local }).
+    do_get(Key, Default, Opts#{ prefer => local }).
 
 -ifdef(TEST).
 -define(DEFAULT_PRINT_OPTS, "error,http_error").
