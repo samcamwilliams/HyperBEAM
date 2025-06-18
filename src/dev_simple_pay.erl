@@ -30,7 +30,7 @@ estimate(_, EstimateReq, NodeMsg) ->
             % Get the user's request to match against router registration options
             UserRequest = hb_maps:get(<<"user-request">>, Req, not_found, NodeMsg),
             % Get router registration options which may contain route-specific pricing
-            RouterOpts = hb_opts:get(router_opts, #{}, NodeMsg),
+            RouterOpts = hb_opts:get(<<"router@1.0">>, #{}, NodeMsg),
             Routes = hb_maps:get(routes, RouterOpts, [#{}], NodeMsg),
             % Find the first matching route template and stop searching
             % Uses lists:search/2 for early termination instead of processing all routes
