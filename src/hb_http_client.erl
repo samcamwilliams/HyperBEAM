@@ -462,8 +462,6 @@ inc_prometheus_counter(Name, Labels, Value) ->
 open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
     ?event(http_outbound, {parsed_peer, {peer, Peer}, {host, Host}, {port, Port}}),
-	ConnectTimeout =
-		hb_opts:get(http_connect_timeout, no_connect_timeout, Opts),
     BaseGunOpts =
         #{
             http_opts =>
@@ -476,7 +474,12 @@ open_connection(#{ peer := Peer }, Opts) ->
                         )
                 },
             retry => 0,
-            connect_timeout => ConnectTimeout
+            connect_timeout =>
+                hb_opts:get(
+                    http_connect_timeout,
+                    no_connect_timeout,
+                    Opts
+                )
         },
     Transport =
         case Port of

@@ -390,7 +390,12 @@ get_location(_Msg1, Req, Opts) ->
 
 %% @doc Generate a new scheduler location record and register it. We both send 
 %% the new scheduler-location to the given registry, and return it to the caller.
-post_location(Msg1, RawReq, Opts) ->
+post_location(Msg1, RawReq, RawOpts) ->
+    Opts =
+        case dev_whois:ensure_host(RawOpts) of
+            {ok, NewOpts} -> NewOpts;
+            _ -> RawOpts
+        end,
     % Ensure that the request is signed by the operator.
     Req =
         case hb_ao:get_first(

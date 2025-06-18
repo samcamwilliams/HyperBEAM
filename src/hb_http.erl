@@ -218,7 +218,7 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
     % the host should already be known to the caller.
     MsgWithoutMeta = hb_maps:without([<<"path">>, <<"host">>], M, Opts),
     Port =
-        case hb_maps:get(port, URI, undefined, Opts) of
+        case maps:get(port, URI, undefined) of
             undefined ->
                 % If no port is specified, use 80 for HTTP and 443
                 % for HTTPS.
@@ -228,11 +228,11 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
                 end;
             X -> integer_to_binary(X)
         end,
-    Protocol = hb_maps:get(scheme, URI, <<"https">>, Opts),
-    Host = hb_maps:get(host, URI, <<"localhost">>, Opts),
+    Protocol = maps:get(scheme, URI, <<"https">>),
+    Host = maps:get(host, URI, <<"localhost">>),
     Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
-    PathParts = [hb_maps:get(path, URI, <<"/">>, Opts)] ++
-        case hb_maps:get(query, URI, <<>>, Opts) of
+    PathParts = [maps:get(path, URI, <<"/">>)] ++
+        case maps:get(query, URI, <<>>) of
             <<>> -> [];
             Query -> [<<"?", Query/binary>>]
         end,
@@ -262,6 +262,24 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             not_found -> Message#{ <<"accept-bundle">> => true };
             _ -> Message
         end,
+    % Determine the `ao-peer-port' from the message to send or the node message.
+    % `port_external' can be set in the node message to override the port that
+    % the peer node should receive. This allows users to proxy requests to their
+    % HB node from another port.
+    WithSelfPort =
+        WithAcceptBundle#{
+            <<"ao-peer-port">> =>
+                hb_ao:get(
+                    <<"ao-peer-port">>,
+                    WithAcceptBundle,
+                    hb_opts:get(
+                        port_external,
+                        hb_opts:get(port, undefined, Opts),
+                        Opts
+                    ),
+                    Opts
+                )
+        },
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
@@ -269,7 +287,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
         <<"httpsig@1.0">> ->
             FullEncoding =
                 hb_message:convert(
-                    WithAcceptBundle,
+                    WithSelfPort,
                     #{
                         <<"device">> => <<"httpsig@1.0">>,
                         <<"bundle">> => true
@@ -285,9 +303,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             ?event(debug_accept, {request_message, {message, Message}}),
             {ok, FilteredMessage} =
                 case hb_message:signers(Message, Opts) of
-                    [] -> Message;
+                    [] -> WithSelfPort;
                     _ ->
-                        hb_message:with_only_committed(Message, Opts)
+                        hb_message:with_only_committed(WithSelfPort, Opts)
                 end,
             ReqBase#{
                 headers =>
@@ -298,7 +316,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                             hb_util:bin(
                                 hb_ao:get(
                                     <<"accept-bundle">>,
-                                    Message,
+                                    WithSelfPort,
                                     true,
                                     Opts
                                 )
@@ -878,16 +896,39 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
             ),
             Opts
         ),
-    (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
-        <<"method">> => Method,
-        <<"path">> => MsgPath,
-        <<"accept-bundle">> =>
-            maps:get(
-                <<"accept-bundle">>,
-                Msg,
-                maps:get(<<"accept-bundle">>, RawHeaders, false)
-            )
-    }.
+    WithoutPeer =
+        (remove_unless_signed([<<"content-length">>], Msg, Opts))#{
+            <<"method">> => Method,
+            <<"path">> => MsgPath,
+            <<"accept-bundle">> =>
+                maps:get(
+                    <<"accept-bundle">>,
+                    Msg,
+                    maps:get(<<"accept-bundle">>, RawHeaders, false)
+                )
+        },
+    case hb_ao:get(<<"ao-peer-port">>, WithoutPeer, undefined, Opts) of
+        undefined -> WithoutPeer;
+        P2PPort ->
+            % Calculate the peer address from the request. We honor the 
+            % `x-real-ip' header if it is present.
+            RealIP =
+                case hb_maps:get(<<"x-real-ip">>, RawHeaders, undefined, Opts) of
+                    undefined ->
+                        {{A, B, C, D}, _} = cowboy_req:peer(Req),
+                        hb_util:bin(
+                            io_lib:format(
+                                "~b.~b.~b.~b",
+                                [A, B, C, D]
+                            )
+                        );
+                    IP -> IP
+                end,
+            Peer = <<RealIP/binary, ":", (hb_util:bin(P2PPort))/binary>>,
+            (remove_unless_signed([<<"ao-peer-port">>], WithoutPeer, Opts))#{
+                <<"ao-peer">> => Peer
+            }
+    end.
 
 %% @doc Remove all keys from the message unless they are signed.
 remove_unless_signed(Key, Msg, Opts) when not is_list(Key) ->
