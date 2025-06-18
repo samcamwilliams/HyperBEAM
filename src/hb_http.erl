@@ -262,13 +262,21 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             not_found -> Message#{ <<"accept-bundle">> => true };
             _ -> Message
         end,
+    % Determine the `ao-peer-port' from the message to send or the node message.
+    % `port_external' can be set in the node message to override the port that
+    % the peer node should receive. This allows users to proxy requests to their
+    % HB node from another port.
     WithSelfPort =
         WithAcceptBundle#{
             <<"ao-peer-port">> =>
                 hb_ao:get(
                     <<"ao-peer-port">>,
                     WithAcceptBundle,
-                    hb_opts:get(port, undefined, Opts),
+                    hb_opts:get(
+                        port_external,
+                        hb_opts:get(port, undefined, Opts),
+                        Opts
+                    ),
                     Opts
                 )
         },
