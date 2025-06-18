@@ -31,6 +31,8 @@ get(Node, Message, Opts) ->
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
+post(Node, Path, Opts) when is_binary(Path) ->
+    post(Node, #{ <<"path">> => Path }, Opts);
 post(Node, Message, Opts) ->
     post(Node,
         hb_ao:get(
