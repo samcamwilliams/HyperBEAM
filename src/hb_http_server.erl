@@ -343,7 +343,12 @@ handle_request(RawReq, Body, ServerID) ->
         _ ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
-            ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
+            ?event(http,
+                {
+                    http_inbound,
+                    {cowboy_req, {explicit, Req}, {body, {string, Body}}}
+                }
+            ),
             TracePID = hb_tracer:start_trace(),
             % Parse the HTTP request into HyerBEAM's message format.
             try 
