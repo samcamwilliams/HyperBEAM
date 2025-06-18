@@ -218,7 +218,7 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
     % the host should already be known to the caller.
     MsgWithoutMeta = hb_maps:without([<<"path">>, <<"host">>], M, Opts),
     Port =
-        case hb_maps:get(port, URI, undefined, Opts) of
+        case maps:get(port, URI, undefined) of
             undefined ->
                 % If no port is specified, use 80 for HTTP and 443
                 % for HTTPS.
@@ -228,11 +228,11 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
                 end;
             X -> integer_to_binary(X)
         end,
-    Protocol = hb_maps:get(scheme, URI, <<"https">>, Opts),
-    Host = hb_maps:get(host, URI, <<"localhost">>, Opts),
+    Protocol = maps:get(scheme, URI, <<"https">>),
+    Host = maps:get(host, URI, <<"localhost">>),
     Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
-    PathParts = [hb_maps:get(path, URI, <<"/">>, Opts)] ++
-        case hb_maps:get(query, URI, <<>>, Opts) of
+    PathParts = [maps:get(path, URI, <<"/">>)] ++
+        case maps:get(query, URI, <<>>) of
             <<>> -> [];
             Query -> [<<"?", Query/binary>>]
         end,
