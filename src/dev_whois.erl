@@ -7,7 +7,7 @@
 
 %% @doc Return the calculated host information for the requester.
 echo(_, Req, Opts) ->
-    {ok, hb_maps:get(<<"peer">>, Req, <<"unknown">>, Opts)}.
+    {ok, hb_maps:get(<<"ao-peer">>, Req, <<"unknown">>, Opts)}.
 
 %% @doc Return the host information for the node. Sets the `host' key in the
 %% node message if it is not already set.

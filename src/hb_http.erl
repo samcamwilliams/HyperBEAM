@@ -918,7 +918,7 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                 end,
             Peer = <<RealIP/binary, ":", (hb_util:bin(P2PPort))/binary>>,
             (remove_unless_signed([<<"ao-peer-port">>], WithoutPeer, Opts))#{
-                <<"peer">> => Peer
+                <<"ao-peer">> => Peer
             }
     end.
 
