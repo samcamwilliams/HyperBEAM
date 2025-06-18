@@ -11,7 +11,8 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2]).
--export([set_opts/1, set_opts/2, get_opts/0, get_opts/1, set_default_opts/1, set_proc_server_id/1]).
+-export([set_opts/1, set_opts/2, get_opts/0, get_opts/1]).
+-export([set_default_opts/1, set_proc_server_id/1]).
 -export([start_node/0, start_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -24,7 +25,7 @@ start() ->
     Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
     Loaded =
-        case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>, #{})) of
+        case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>)) of
             {ok, Conf} ->
                 ?event(boot, {loaded_config, Loc, Conf}),
                 Conf;
@@ -265,14 +266,23 @@ http3_conn_sup_loop() ->
 
 start_http2(ServerID, ProtoOpts, NodeMsg) ->
     ?event(http, {start_http2, ServerID}),
-    {ok, Listener} = cowboy:start_clear(
+    StartRes = cowboy:start_clear(
         ServerID,
         [
             {port, Port = hb_opts:get(port, 8734, NodeMsg)}
         ],
         ProtoOpts
     ),
-    {ok, Port, Listener}.
+    case StartRes of
+        {ok, Listener} ->
+            {ok, Port, Listener};
+        {error, {already_started, Listener}} ->
+            ?event(http, {http2_already_started, {listener, Listener}}),
+            cowboy:set_env(ServerID, node_msg, #{}),
+            % {ok, Port, Listener}
+            cowboy:stop_listener(ServerID),
+            start_http2(ServerID, ProtoOpts, NodeMsg)
+    end.
 
 %% @doc Entrypoint for all HTTP requests. Receives the Cowboy request option and
 %% the server ID, which can be used to lookup the node message.
@@ -576,3 +586,16 @@ set_opts_test() ->
     ?event(debug_node_history, {node_history_length, length(NodeHistory3)}),
     ?assert(length(NodeHistory3) == 3),
     ?assert(Key3 == <<"world3">>).
+
+restart_server_test() ->
+    Wallet = ar_wallet:new(),
+    BaseOpts = #{
+        <<"test-key">> => <<"server-1">>,
+        priv_wallet => Wallet
+    },
+    _ = start_node(BaseOpts),
+    N2 = start_node(BaseOpts#{ <<"test-key">> => <<"server-2">> }),
+    ?assertEqual(
+        {ok, <<"server-2">>},
+        hb_http:get(N2, <<"/~meta@1.0/info/test-key">>, #{})
+    ).
