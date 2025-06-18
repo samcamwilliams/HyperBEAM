@@ -757,9 +757,9 @@ server_write(RawState, Key, Value) ->
 %% @param Value Binary value to store
 %% @returns Updated server state with the write added to pending writes
 server_write_dedup(RawState, Key, Value) ->
-    PendingWrites = maps:get(<<"pending_writes">>, RawState, #{}),
+    PendingWrites = maps:get(<<"pending-writes">>, RawState, #{}),
     UpdatedPendingWrites = PendingWrites#{Key => Value},
-    RawState#{<<"pending_writes">> => UpdatedPendingWrites}.
+    RawState#{<<"pending-writes">> => UpdatedPendingWrites}.
 
 %% @doc Commit the current transaction to disk and clean up state.
 %%
@@ -777,7 +777,7 @@ server_write_dedup(RawState, Key, Value) ->
 %% @param RawState Current server state map  
 %% @returns Updated server state with transaction cleared
 server_flush(RawState) ->
-    PendingWrites = maps:get(<<"pending_writes">>, RawState, #{}),
+    PendingWrites = maps:get(<<"pending-writes">>, RawState, #{}),
     case maps:size(PendingWrites) of
         0 ->
             % No pending writes, nothing to flush
@@ -790,11 +790,11 @@ server_flush(RawState) ->
                 {undefined, _} ->
                     % Transaction creation failed, clear pending writes and return
                     ?event(error, {flush_failed_no_transaction}),
-                    RawState#{<<"pending_writes">> => #{}};
+                    RawState#{<<"pending-writes">> => #{}};
                 {_, undefined} ->
                     % Database instance missing, clear pending writes and return
                     ?event(error, {flush_failed_no_db_instance}),
-                    RawState#{<<"pending_writes">> => #{}};
+                    RawState#{<<"pending-writes">> => #{}};
                 {Txn, Dbi} ->
                     % Write all pending writes to the transaction
                     try
@@ -809,7 +809,7 @@ server_flush(RawState) ->
                         notify_flush(StateWithTxn),
                         StateWithTxn#{
                             <<"transaction">> => undefined,
-                            <<"pending_writes">> => #{}
+                            <<"pending-writes">> => #{}
                         }
                     catch
                         Class:Reason:Stacktrace ->
@@ -818,7 +818,7 @@ server_flush(RawState) ->
                             notify_flush(StateWithTxn),
                             StateWithTxn#{
                                 <<"transaction">> => undefined,
-                                <<"pending_writes">> => #{}
+                                <<"pending-writes">> => #{}
                             }
                     end
             end
