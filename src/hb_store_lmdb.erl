@@ -686,8 +686,8 @@ server(State) ->
             From ! {env, maps:get(<<"env">>, State), Ref},
             server(State);
         {write, Key, Value} ->
-            % Write request, accumulate in current transaction
-            server(server_write(State, Key, Value));
+            % Write request, accumulate in pending writes (deduplicating by key)
+            server(server_write_dedup(State, Key, Value));
         {flush, From, Ref} ->
             % Explicit flush request, commit transaction and notify requester
             NewState = server_flush(State),
@@ -745,6 +745,22 @@ server_write(RawState, Key, Value) ->
             end
     end.
 
+%% @doc Add a key-value pair to pending writes, deduplicating by key.
+%%
+%% This function maintains a map of pending writes in the server state,
+%% ensuring that only the latest write for each key is kept. This prevents
+%% multiple duplicate writes to the same key from accumulating in the
+%% transaction, which can cause performance issues and blocking.
+%%
+%% @param RawState Current server state map
+%% @param Key Binary key to write
+%% @param Value Binary value to store
+%% @returns Updated server state with the write added to pending writes
+server_write_dedup(RawState, Key, Value) ->
+    PendingWrites = maps:get(<<"pending_writes">>, RawState, #{}),
+    UpdatedPendingWrites = PendingWrites#{Key => Value},
+    RawState#{<<"pending_writes">> => UpdatedPendingWrites}.
+
 %% @doc Commit the current transaction to disk and clean up state.
 %%
 %% This function handles the critical operation of persisting accumulated writes
@@ -761,23 +777,50 @@ server_write(RawState, Key, Value) ->
 %% @param RawState Current server state map  
 %% @returns Updated server state with transaction cleared
 server_flush(RawState) ->
-    case maps:get(<<"transaction">>, RawState, undefined) of
-        undefined ->
-            % No active transaction, nothing to flush
+    PendingWrites = maps:get(<<"pending_writes">>, RawState, #{}),
+    case maps:size(PendingWrites) of
+        0 ->
+            % No pending writes, nothing to flush
             RawState;
-        Txn ->
-            % Commit the transaction with proper error handling
-            try
-                elmdb:txn_commit(Txn),
-                notify_flush(RawState),
-                RawState#{ <<"transaction">> => undefined }
-            catch
-                Class:Reason:Stacktrace ->
-                    ?event(error, {txn_commit_failed, Class, Reason, Stacktrace}),
-                    % Even if commit fails, clean up the transaction reference
-                    % to prevent trying to use an invalid handle
-                    notify_flush(RawState),
-                    RawState#{ <<"transaction">> => undefined }
+        _ ->
+            % We have pending writes, ensure transaction and commit them
+            StateWithTxn = ensure_transaction(RawState),
+            case {maps:get(<<"transaction">>, StateWithTxn, undefined), 
+                  maps:get(<<"db">>, StateWithTxn, undefined)} of
+                {undefined, _} ->
+                    % Transaction creation failed, clear pending writes and return
+                    ?event(error, {flush_failed_no_transaction}),
+                    RawState#{<<"pending_writes">> => #{}};
+                {_, undefined} ->
+                    % Database instance missing, clear pending writes and return
+                    ?event(error, {flush_failed_no_db_instance}),
+                    RawState#{<<"pending_writes">> => #{}};
+                {Txn, Dbi} ->
+                    % Write all pending writes to the transaction
+                    try
+                        maps:map(
+                            fun(Key, Value) ->
+                                elmdb:txn_put(Txn, Dbi, Key, Value)
+                            end,
+                            PendingWrites
+                        ),
+                        % Commit the transaction
+                        elmdb:txn_commit(Txn),
+                        notify_flush(StateWithTxn),
+                        StateWithTxn#{
+                            <<"transaction">> => undefined,
+                            <<"pending_writes">> => #{}
+                        }
+                    catch
+                        Class:Reason:Stacktrace ->
+                            ?event(error, {txn_commit_failed, Class, Reason, Stacktrace}),
+                            % Even if commit fails, clean up state
+                            notify_flush(StateWithTxn),
+                            StateWithTxn#{
+                                <<"transaction">> => undefined,
+                                <<"pending_writes">> => #{}
+                            }
+                    end
             end
     end.
 
