@@ -139,21 +139,22 @@ stop(_Msg1, Msg2, Opts) ->
 
 every_worker_loop(CronPath, Req, Opts, IntervalMillis) ->
     Req1 = Req#{<<"path">> => CronPath},
-    ?event({cron_every_worker_executing,
+    ?event(
+        {cron_every_worker_executing,
             {path, CronPath},
-            {req_id, hb_message:id(Req, all, Opts)}}),
+            {req_id, hb_message:id(Req, all, Opts)}
+        }
+    ),
     try
         dev_meta:handle(Opts, Req1),
         ?event({cron_every_worker_executed, {path, CronPath}})
     catch
-        error:badarg ->
-            exit(normal);
         Class:Reason:Stack ->
-            ?event({cron_every_worker_error,
+            ?event(cron_error, {cron_every_worker_error,
                     {path, CronPath},
                     {error, Class, Reason, Stack}})
     end,
-    timer:sleep(max(IntervalMillis, 10)),
+    timer:sleep(IntervalMillis),
     every_worker_loop(CronPath, Req, Opts, IntervalMillis).
 
 %% @doc Parse a time string into milliseconds.
