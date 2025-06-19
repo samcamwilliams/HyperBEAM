@@ -185,9 +185,9 @@ routes(M1, M2, Opts) ->
                             RegPath ->
                                 M2#{ <<"path">> => RegPath }
                         end,
-                    RegistrarMsgs = hb_singleton:from(Registrar, Opts),
+                    RegistrarMsgs = hb_singleton:from(Registrar, Opts) ++ [RegReq],
                     ?event(debug_route_reg, {registrar_msgs, RegistrarMsgs}),
-                    case hb_ao:resolve_many(RegistrarMsgs ++ [RegReq], Opts) of
+                    case hb_ao:resolve_many(RegistrarMsgs, Opts) of
                         {ok, _} ->
                             {ok, <<"Route added.">>};
                         {error, Error} ->
@@ -367,14 +367,16 @@ do_apply_route(
 %% path to be specified by either the explicit `path' (for internal use by this
 %% module), or `route-path' for use by external devices and users.
 match(Base, Req, Opts) ->
-    ?event({matching_routes, {req, Req}}),
     ?event(debug_preprocess,
-        {routes,
-            hb_ao:get(<<"routes">>, {as, <<"message@1.0">>, Base}, [], Opts)}
-        ),
+        {matching_routes,
+            {base, Base},
+            {req, Req}
+        }
+    ),
+    TargetPath = hb_util:find_target_path(Req, Opts),
     Match =
         match_routes(
-            Req#{ <<"path">> => hb_util:find_target_path(Req, Opts) },
+            Req#{ <<"path">> => TargetPath },
             hb_ao:get(<<"routes">>, {as, <<"message@1.0">>, Base}, [], Opts),
             Opts
         ),
@@ -948,7 +950,12 @@ dynamic_router_pricing() ->
         {node_message, hb_http:get(Node, <<"/~meta@1.0/info">>, #{})}
     ),
     % Register workers with the dynamic router with varied prices.
-    {ok, _Res} = hb_http:post(ExecNode, <<"/~router@1.0/register">>, #{}),
+    {ok, <<"Routes registered.">>} =
+        hb_http:post(
+            ExecNode,
+            <<"/~router@1.0/register">>,
+            #{}
+        ),
     % Force computation of the current state.
     {Status, _NodeRoutes} =
         hb_http:get(
