@@ -22,6 +22,7 @@
 -export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([count/2, mean/1, stddev/1, variance/1, weighted_random/1]).
 -export([unique/1]).
+-export([all_atoms/0, binary_is_atom/1]).
 -include("include/hb.hrl").
 
 %%% Simple type coercion functions, useful for quickly turning inputs from the
@@ -923,3 +924,22 @@ binary_to_addresses(List) when is_binary(List) ->
                 error({cannot_parse_list, List})
         end
     end.
+
+%% @doc List the loaded atoms in the Erlang VM.
+all_atoms() -> all_atoms(0).
+all_atoms(N) ->
+    case atom_from_int(N) of
+        not_found -> [];
+        A -> [A | all_atoms(N+1)]
+    end.
+
+%% @doc Find the atom with the given integer reference.
+atom_from_int(Int) ->
+    case catch binary_to_term(<<131,75,Int:24>>) of
+        A -> A;
+        _ -> not_found
+    end.
+
+%% @doc Check if a given binary is already an atom.
+binary_is_atom(X) ->
+    lists:member(X, lists:map(fun hb_util:bin/1, all_atoms())).
