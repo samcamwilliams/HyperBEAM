@@ -705,45 +705,6 @@ server(State) ->
         server(server_flush(State))
     end.
 
-%% @doc Add a key-value pair to the current transaction, creating one if needed.
-%%
-%% This function handles write operations by ensuring a transaction is active
-%% and then adding the key-value pair to it using LMDB's native interface.
-%% If no transaction exists, it creates one automatically.
-%%
-%% The function uses LMDB's direct NIF interface for maximum performance,
-%% bypassing higher-level abstractions that might add overhead. The write
-%% is added to the transaction but not committed until a flush occurs.
-%%
-%% @param RawState Current server state map
-%% @param Key Binary key to write
-%% @param Value Binary value to store
-%% @returns Updated server state with the write added to the transaction
-server_write(RawState, Key, Value) ->
-    State = ensure_transaction(RawState),
-    case {maps:get(<<"transaction">>, State, undefined), 
-          maps:get(<<"db">>, State, undefined)} of
-        {undefined, _} ->
-            % Transaction creation failed, return state unchanged
-            ?event(error, {write_failed_no_transaction, Key}),
-            State;
-        {_, undefined} ->
-            % Database instance missing, return state unchanged
-            ?event(error, {write_failed_no_db_instance, Key}),
-            State;
-        {Txn, Dbi} ->
-            % Valid transaction and instance, perform the write
-            try
-                elmdb:txn_put(Txn, Dbi, Key, Value),
-                State
-            catch
-                Class:Reason:Stacktrace ->
-                    ?event(error, {put_failed, Class, Reason, Stacktrace, Key}),
-                    % If put fails, the transaction may be invalid, clean it up
-                    State#{ <<"transaction">> => undefined },
-                ok
-            end
-    end.
 
 %% @doc Add a key-value pair to pending writes, deduplicating by key.
 %%
@@ -783,41 +744,41 @@ server_flush(RawState) ->
             % No pending writes, nothing to flush
             RawState;
         _ ->
-            % We have pending writes, ensure transaction and commit them
-            StateWithTxn = ensure_transaction(RawState),
-            case {maps:get(<<"transaction">>, StateWithTxn, undefined), 
-                  maps:get(<<"db">>, StateWithTxn, undefined)} of
+            % We have pending writes, create transaction and commit them
+            case {maps:get(<<"env">>, RawState, undefined), 
+                  maps:get(<<"db">>, RawState, undefined)} of
                 {undefined, _} ->
-                    % Transaction creation failed, clear pending writes and return
-                    ?event(error, {flush_failed_no_transaction}),
+                    % Environment missing, clear pending writes and return
+                    ?event(error, {flush_failed_no_env}),
                     RawState#{<<"pending-writes">> => #{}};
                 {_, undefined} ->
                     % Database instance missing, clear pending writes and return
                     ?event(error, {flush_failed_no_db_instance}),
                     RawState#{<<"pending-writes">> => #{}};
-                {Txn, Dbi} ->
-                    % Write all pending writes to the transaction
+                {Env, Dbi} ->
+                    % Create a fresh transaction for this batch of writes
                     try
+                        {ok, Txn} = elmdb:txn_begin(Env),
+                        % Write all pending writes to the transaction in a single batch
                         maps:map(
                             fun(Key, Value) ->
                                 elmdb:txn_put(Txn, Dbi, Key, Value)
                             end,
                             PendingWrites
                         ),
-                        % Commit the transaction
+                        % Commit the transaction with all writes
                         elmdb:txn_commit(Txn),
-                        notify_flush(StateWithTxn),
-                        StateWithTxn#{
-                            <<"transaction">> => undefined,
+                        notify_flush(RawState),
+                        % Clear pending writes after successful commit
+                        RawState#{
                             <<"pending-writes">> => #{}
                         }
                     catch
                         Class:Reason:Stacktrace ->
                             ?event(error, {txn_commit_failed, Class, Reason, Stacktrace}),
-                            % Even if commit fails, clean up state
-                            notify_flush(StateWithTxn),
-                            StateWithTxn#{
-                                <<"transaction">> => undefined,
+                            % Even if commit fails, clean up state and notify
+                            notify_flush(RawState),
+                            RawState#{
                                 <<"pending-writes">> => #{}
                             }
                     end
@@ -877,40 +838,6 @@ commit_manager(Opts, Server) ->
         commit_manager(Opts, Server)
     end.
 
-%% @doc Ensure that the server has an active LMDB transaction for writes.
-%%
-%% This function implements lazy transaction creation by checking if a transaction
-%% already exists in the server state. If not, it creates a new read-write
-%% transaction and opens the default database within it.
-%%
-%% The lazy approach improves efficiency by avoiding transaction overhead when
-%% the server is idle, while ensuring that write operations always have a
-%% transaction available when needed.
-%%
-%% Transactions in LMDB are lightweight but still represent a commitment of
-%% resources, so creating them only when needed helps optimize memory usage
-%% and system performance.
-%%
-%% @param State Current server state map
-%% @returns Server state guaranteed to have an active transaction
-ensure_transaction(State) ->
-    case maps:get(<<"transaction">>, State, undefined) of
-        undefined ->
-            % No transaction exists, create one with error handling
-            try
-                {ok, Txn} = elmdb:txn_begin(maps:get(<<"env">>, State)),
-                State#{ <<"transaction">> => Txn }
-            catch
-                Class:Reason:Stacktrace ->
-                    ?event(error, {txn_begin_failed, Class, Reason, Stacktrace}),
-                    % If transaction creation fails, return state unchanged
-                    % This will cause writes to fail but won't crash the server
-                    State
-            end;
-        _ ->
-            % Transaction already exists, return state unchanged
-            State
-    end.
 
 %% @doc Test suite demonstrating basic store operations.
 %%

@@ -138,28 +138,23 @@ stop(_Msg1, Msg2, Opts) ->
 	end.
 
 every_worker_loop(CronPath, Req, Opts, IntervalMillis) ->
-	ReqSingleton = Req#{ <<"path">> => CronPath },
-	?event(
-        {cron_every_worker_executing,
+    Req1 = Req#{<<"path">> => CronPath},
+    ?event({cron_every_worker_executing,
             {path, CronPath},
-            {req_id, hb_message:id(Req, all, Opts)}
-        }
-    ),
-	try
-		Result = dev_meta:handle(Opts, ReqSingleton),
-		?event({cron_every_worker_executed, {path, CronPath}, {result, Result}})
-	catch
-		Class:Reason:Stacktrace ->
-			?event(
-                {cron_every_worker_error,
+            {req_id, hb_message:id(Req, all, Opts)}}),
+    try
+        dev_meta:handle(Opts, Req1),
+        ?event({cron_every_worker_executed, {path, CronPath}})
+    catch
+        error:badarg ->
+            exit(normal);
+        Class:Reason:Stack ->
+            ?event({cron_every_worker_error,
                     {path, CronPath},
-                    {error, Class, Reason, Stacktrace}
-                }
-            ),
-			every_worker_loop(CronPath, Req, Opts, IntervalMillis)
-	end,
-	timer:sleep(IntervalMillis),
-	every_worker_loop(CronPath, Req, Opts, IntervalMillis).
+                    {error, Class, Reason, Stack}})
+    end,
+    timer:sleep(max(IntervalMillis, 10)),
+    every_worker_loop(CronPath, Req, Opts, IntervalMillis).
 
 %% @doc Parse a time string into milliseconds.
 parse_time(BinString) ->
