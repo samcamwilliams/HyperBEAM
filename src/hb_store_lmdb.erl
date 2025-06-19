@@ -759,9 +759,12 @@ server_flush(RawState) ->
                     RawState#{<<"pending-writes">> => #{}};
                 {Env, Dbi} ->
                     % Create a fresh transaction for this batch of writes
-                    try
+                    Parent = self(),
+                    Ref = make_ref(),
+                    % Write all pending writes to the transaction in a
+                    % single batch managed by a separate process.
+                    spawn(fun() ->
                         {ok, Txn} = elmdb:txn_begin(Env),
-                        % Write all pending writes to the transaction in a single batch
                         maps:map(
                             fun(Key, Value) ->
                                 elmdb:txn_put(Txn, Dbi, Key, Value)
@@ -770,43 +773,18 @@ server_flush(RawState) ->
                         ),
                         % Commit the transaction with all writes
                         elmdb:txn_commit(Txn),
-                        notify_flush(RawState),
-                        % Clear pending writes after successful commit
+                        Parent ! {write_complete, Ref}
+                    end),
+                    receive
+                        {write_complete, Ref} ->
+                            RawState#{<<"pending-writes">> => #{}}
+                    after ?CONNECT_TIMEOUT ->
+                        ?event(error, txn_commit_timeout),
                         RawState#{
                             <<"pending-writes">> => #{}
                         }
-                    catch
-                        Class:Reason:Stacktrace ->
-                            ?event(error, {txn_commit_failed, Class, Reason, Stacktrace}),
-                            % Even if commit fails, clean up state and notify
-                            notify_flush(RawState),
-                            RawState#{
-                                <<"pending-writes">> => #{}
-                            }
                     end
             end
-    end.
-
-%% @doc Notify all processes waiting for a flush operation to complete.
-%%
-%% This function handles the coordination between the server's flush operations
-%% and client processes that may be blocked waiting for data to be committed.
-%% It uses a non-blocking receive loop to collect all pending flush requests
-%% and respond to them immediately.
-%%
-%% The non-blocking nature (timeout of 0) ensures that the server doesn't get
-%% stuck waiting for messages that may not exist, while still handling all
-%% queued requests efficiently.
-%%
-%% @param State Current server state (used for context, not modified)
-%% @returns 'ok' when all notifications have been sent
-notify_flush(State) ->
-    receive
-        {flush, From, Ref} ->
-            From ! {flushed, Ref},
-            notify_flush(State)
-    after 0 ->
-        ok
     end.
 
 %% @doc Background process that enforces maximum flush intervals.
