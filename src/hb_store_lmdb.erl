@@ -31,12 +31,52 @@
 
 %% Configuration constants with reasonable defaults
 -define(DEFAULT_SIZE, 16 * 1024 * 1024 * 1024).  % 16GB default database size
--define(CONNECT_TIMEOUT, 3000).                   % 3 second timeout for server communication
+-define(CONNECT_TIMEOUT, 6000).                   % 3 second timeout for server communication
 -define(DEFAULT_IDLE_FLUSH_TIME, 5).              % 5ms idle time before auto-flush
 -define(DEFAULT_MAX_FLUSH_TIME, 50).              % 50ms maximum time between flushes
--define(MAX_RETRIES, 1).                          % 1 retry for read operations
 -define(MAX_REDIRECTS, 1000).                     % Only resolve 1000 links to data
+-define(MAX_PENDING_WRITES, 400).                 % Maximum number of pending writes before flushing
 
+%% @doc Start the LMDB storage system for a given database configuration.
+%%
+%% This function initializes or connects to an existing LMDB database instance.
+%% It uses a singleton pattern, so multiple calls with the same configuration
+%% will return the same server process. The server process manages the LMDB
+%% environment and coordinates all database operations.
+%%
+%% The StoreOpts map must contain a "prefix" key specifying the
+%% database directory path. Also the required configuration includes "capacity" for
+%% the maximum database size and flush timing parameters.
+%%
+%% @param StoreOpts A map containing database configuration options
+%% @returns {ok, ServerPid} on success, {error, Reason} on failure
+-spec start(map()) -> {ok, pid()} | {error, term()}.
+start(Opts = #{ <<"name">> := DataDir }) ->
+    % Create the LMDB environment with specified size limit
+    {ok, Env} =
+        elmdb:env_open(
+            hb_util:list(DataDir),
+            [
+                {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)},
+                no_mem_init, no_read_ahead
+            ]
+        ),
+    {ok, DBInstance} = elmdb:db_open(Env, [create]),
+    % Prepare server state with environment handle
+    ServerOpts = Opts#{ <<"env">> => Env, <<"db">> => DBInstance },
+    % Spawn the main server process with linked commit manager
+    Server = 
+        spawn(
+            fun() ->
+                ServerPID = self(),
+                spawn_link(fun() -> commit_manager(ServerOpts, ServerPID) end),
+                server(ServerOpts)
+            end
+        ),
+    hb_name:register(<<"lmdb-server">>, Server),
+    {ok, #{ <<"pid">> => Server, <<"env">> => Env, <<"db">> => DBInstance }};
+start(_) ->
+    {error, {badarg, <<"StoreOpts must be a map">>}}.
 
 %% @doc Determine whether a key represents a simple value or composite group.
 %%
@@ -53,7 +93,7 @@
 %% @returns 'composite' for group entries, 'simple' for regular values
 -spec type(map(), binary()) -> composite | simple | not_found.
 type(Opts, Key) ->
-    case read_with_flush(Opts, Key) of
+    case read_with_retry(Opts, Key) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -165,31 +205,13 @@ to_path(PathParts) ->
 
 %% @doc Unified read function that handles LMDB reads with retry logic.
 %% Returns {ok, Value}, not_found, or performs flush and retries.
-read_with_retry(Opts, Path) -> 
-    read_with_retry(Opts, Path, ?MAX_RETRIES).
-read_with_retry(_Opts, _Path, 0) -> 
-    not_found;
-read_with_retry(Opts, Path, RetriesRemaining) ->
+read_with_retry(Opts, Path) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
     case elmdb:get(DBInstance, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
-            sync(Opts),
-            read_with_retry(Opts, Path, RetriesRemaining - 1)
-    end.
-
-%% @doc Read with immediate flush for cases where we need to see recent writes.
-%% This is used when we expect the key to exist from a recent write operation.
-read_with_flush(Opts, Path) ->
-    #{ <<"db">> := DBInstance } = find_env(Opts),
-    % First, ensure any pending writes are committed
-    sync(Opts),
-    case elmdb:get(DBInstance, Path) of
-        {ok, Value} ->
-            {ok, Value};
-        not_found ->
-            not_found
+            sync_read(Opts, Path)
     end.
 
 %% @doc Read a value directly from the database with link resolution.
@@ -240,9 +262,8 @@ resolve_path_links_acc(Opts, [Head | Tail], AccPath, Depth) ->
     % Build the accumulated path so far
     CurrentPath = lists:reverse([Head | AccPath]),
     CurrentPathBin = to_path(CurrentPath),
-    #{ <<"db">> := DBInstance } = find_env(Opts),
     % Check if the accumulated path (not just the segment) is a link
-    case elmdb:get(DBInstance, CurrentPathBin) of
+    case read_with_retry(Opts, CurrentPathBin) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -305,7 +326,7 @@ scope(_) -> scope().
 list(Opts, Path) when is_map(Opts), is_binary(Path) ->
     % Check if Path is a link and resolve it if necessary
     ResolvedPath =
-        case read_with_flush(Opts, Path) of
+        case read_with_retry(Opts, Path) of
             {ok, Value} ->
                 case is_link(Value) of
                     {true, Link} ->
@@ -454,7 +475,8 @@ create_parent_groups(Opts, Current, [Next | Rest]) ->
     NewCurrent = Current ++ [Next],
     GroupPath = to_path(NewCurrent),
     #{ <<"db">> := DBInstance } = find_env(Opts),
-    % Only create group if it doesn't already exist - use direct LMDB check to avoid recursion
+    % Only create group if it doesn't already exist - use direct LMDB check to
+    % avoid recursion.
     case elmdb:get(DBInstance, GroupPath) of
         not_found ->
             make_group(Opts, GroupPath);
@@ -517,26 +539,19 @@ add_path(Opts, Path1, Path2) when is_binary(Path1), is_list(Path2) ->
     Parts1 = binary:split(Path1, <<"/">>, [global]),
     path(Opts, Parts1 ++ Path2).
 
-%% @doc Force an immediate flush of all pending writes to disk.
+%% @doc Read a value from the server's in-memory pending writes. This function
+%% does not lookup the value itself from the database.
 %%
-%% This function synchronously forces the database server to commit any
-%% pending writes in the current transaction. It blocks until the flush
-%% operation is complete, ensuring that all previously written data is
-%% durably stored before returning.
-%%
-%% This is useful when you need to ensure data is persisted immediately,
-%% rather than waiting for the automatic flush timers to trigger. Common
-%% use cases include critical checkpoints, before system shutdown, or
-%% when preparing for read operations that must see the latest writes.
-%%
-%% @param StoreOpts Database configuration madbs => 10,p
-%% @returns 'ok' when flush is complete, {error, Reason} on failure
--spec sync(map()) -> ok | {error, term()}.
-sync(Opts) ->
+%% @param StoreOpts Database configuration map
+%% @param Path The path to read
+%% @returns {ok, Value} if the value is found, not_found if not found,
+-spec sync_read(map(), binary()) -> {ok, binary()} | {error, term()}.
+sync_read(Opts, Path) ->
     PID = find_pid(Opts),
-    PID ! {flush, self(), Ref = make_ref()},
+    PID ! {read, self(), Path},
     receive
-        {flushed, Ref} -> ok
+        {read, Path, not_found} -> not_found;
+        {read, Path, Res} -> {ok, Res}
     after ?CONNECT_TIMEOUT -> {error, timeout}
     end.
 
@@ -570,47 +585,6 @@ find_env(Opts) -> hb_store:find(Opts).
 find_pid(StoreOpts) ->
     #{ <<"pid">> := Pid } = hb_store:find(StoreOpts),
     Pid.
-
-%% @doc Start the LMDB storage system for a given database configuration.
-%%
-%% This function initializes or connects to an existing LMDB database instance.
-%% It uses a singleton pattern, so multiple calls with the same configuration
-%% will return the same server process. The server process manages the LMDB
-%% environment and coordinates all database operations.
-%%
-%% The StoreOpts map must contain a "prefix" key specifying the
-%% database directory path. Also the required configuration includes "capacity" for
-%% the maximum database size and flush timing parameters.
-%%
-%% @param StoreOpts A map containing database configuration options
-%% @returns {ok, ServerPid} on success, {error, Reason} on failure
--spec start(map()) -> {ok, pid()} | {error, term()}.
-start(Opts = #{ <<"name">> := DataDir }) ->
-    % Create the LMDB environment with specified size limit
-    {ok, Env} =
-        elmdb:env_open(
-            hb_util:list(DataDir),
-            [
-                {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)},
-                no_mem_init, no_read_ahead
-            ]
-        ),
-    {ok, DBInstance} = elmdb:db_open(Env, [create]),
-    % Prepare server state with environment handle
-    ServerOpts = Opts#{ <<"env">> => Env, <<"db">> => DBInstance },
-    % Spawn the main server process with linked commit manager
-    Server = 
-        spawn(
-            fun() ->
-                ServerPID = self(),
-                spawn_link(fun() -> commit_manager(ServerOpts, ServerPID) end),
-                server(ServerOpts)
-            end
-        ),
-    hb_name:register(<<"lmdb-server">>, Server),
-    {ok, #{ <<"pid">> => Server, <<"env">> => Env, <<"db">> => DBInstance }};
-start(_) ->
-    {error, {badarg, <<"StoreOpts must be a map">>}}.
 
 %% @doc Gracefully shut down the database server and close the environment.
 %%
@@ -690,6 +664,18 @@ server(State) ->
         {write, Key, Value} ->
             % Write request, accumulate in pending writes (deduplicating by key)
             server(server_write_dedup(State, Key, Value));
+        {read, From, Path} ->
+            % Read request: Lookup the path in the `pending-writes` map and 
+            % return the value if it exists.
+            Res =
+                maps:get(
+                    Path,
+                    maps:get(<<"pending-writes">>, State, #{}),
+                    not_found
+                ),
+            ?event(warning, {read, Path, Res}),
+            From ! {read, Path, Res},
+            server(State);
         {flush, From, Ref} ->
             % Explicit flush request, commit transaction and notify requester
             NewState = server_flush(State),
@@ -722,7 +708,14 @@ server(State) ->
 server_write_dedup(RawState, Key, Value) ->
     PendingWrites = maps:get(<<"pending-writes">>, RawState, #{}),
     UpdatedPendingWrites = PendingWrites#{Key => Value},
-    RawState#{<<"pending-writes">> => UpdatedPendingWrites}.
+    NewState = RawState#{<<"pending-writes">> => UpdatedPendingWrites},
+    case maps:size(UpdatedPendingWrites) of
+        ?MAX_PENDING_WRITES ->
+            % If we have too many pending writes, flush the transaction.
+            raw_server_flush(NewState);
+        _ ->
+            NewState
+    end.
 
 %% @doc Commit the current transaction to disk and clean up state.
 %%
@@ -740,6 +733,12 @@ server_write_dedup(RawState, Key, Value) ->
 %% @param RawState Current server state map  
 %% @returns Updated server state with transaction cleared
 server_flush(RawState) ->
+    raw_server_flush(RawState).
+    % {MicroSec, NewState} = timer:tc(fun() -> raw_server_flush(RawState) end),
+    % ?event({flush_time, MicroSec}),
+    % NewState.
+
+raw_server_flush(RawState) ->
     PendingWrites = maps:get(<<"pending-writes">>, RawState, #{}),
     case maps:size(PendingWrites) of
         0 ->
