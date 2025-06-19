@@ -602,10 +602,12 @@ start(Opts = #{ <<"name">> := DataDir }) ->
     Server = 
         spawn(
             fun() ->
-                spawn_link(fun() -> commit_manager(ServerOpts, self()) end),
+                ServerPID = self(),
+                spawn_link(fun() -> commit_manager(ServerOpts, ServerPID) end),
                 server(ServerOpts)
             end
         ),
+    hb_name:register(<<"lmdb-server">>, Server),
     {ok, #{ <<"pid">> => Server, <<"env">> => Env, <<"db">> => DBInstance }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
