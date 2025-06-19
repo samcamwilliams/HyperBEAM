@@ -275,9 +275,16 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
     ),
     case StartRes of
         {ok, Listener} ->
+            ?event(debug_router_info, {http2_started, {listener, Listener}, {port, Port}}),
             {ok, Port, Listener};
         {error, {already_started, Listener}} ->
             ?event(http, {http2_already_started, {listener, Listener}}),
+            ?event(debug_router_info,
+                {restarting,
+                    {id, ServerID},
+                    {node_msg, NodeMsg}
+                }
+            ),
             cowboy:set_env(ServerID, node_msg, #{}),
             % {ok, Port, Listener}
             cowboy:stop_listener(ServerID),
@@ -426,23 +433,27 @@ set_opts(Opts) ->
             ok = cowboy:set_env(ServerRef, node_msg, Opts)
     end.
 set_opts(Request, Opts) ->
-    PerparedOpts = hb_opts:mimic_default_types(
-        Opts,
-        new_atoms,
-        Opts
-    ),
-    PreparedRequest = hb_opts:mimic_default_types(
-        hb_message:uncommitted(Request),
-        new_atoms,
-        Opts
-    ),
+    PreparedOpts =
+        hb_opts:mimic_default_types(
+            Opts,
+            false,
+            Opts
+        ),
+    PreparedRequest =
+        hb_opts:mimic_default_types(
+            hb_message:uncommitted(Request),
+            false,
+            Opts
+        ),
     MergedOpts =
         maps:merge(
-            PerparedOpts,
+            PreparedOpts,
             PreparedRequest
         ),
     ?event(set_opts, {merged_opts, {explicit, MergedOpts}}),
-    History = hb_opts:get(node_history, [], Opts) ++ [ hb_private:reset(maps:without([node_history], PreparedRequest)) ],
+    History =
+        hb_opts:get(node_history, [], Opts)
+            ++ [ hb_private:reset(maps:without([node_history], PreparedRequest)) ],
     FinalOpts = MergedOpts#{
         http_server => hb_opts:get(http_server, no_server, Opts),
         node_history => History
