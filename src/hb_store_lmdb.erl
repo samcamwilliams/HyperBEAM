@@ -63,7 +63,11 @@ start(Opts = #{ <<"name">> := DataDir }) ->
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
     % Prepare server state with environment handle
-    ServerOpts = Opts#{ <<"env">> => Env, <<"db">> => DBInstance },
+    ServerOpts =
+        Opts#{
+            <<"env">> => Env,
+            <<"db">> => DBInstance
+        },
     % Spawn the main server process with linked commit manager
     Server = 
         spawn(
@@ -74,7 +78,14 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             end
         ),
     hb_name:register(<<"lmdb-server">>, Server),
-    {ok, #{ <<"pid">> => Server, <<"env">> => Env, <<"db">> => DBInstance }};
+    {
+        ok,
+        #{
+            <<"pid">> => Server,
+            <<"env">> => Env,
+            <<"db">> => DBInstance
+        }
+    };
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
 
@@ -93,7 +104,9 @@ start(_) ->
 %% @returns 'composite' for group entries, 'simple' for regular values
 -spec type(map(), binary()) -> composite | simple | not_found.
 type(Opts, Key) ->
-    case read_with_retry(Opts, Key) of
+    type(Opts, Key, true).
+type(Opts, Key, MaybeFlush) ->
+    case read_direct(Opts, Key) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -108,7 +121,13 @@ type(Opts, Key) ->
                     end
             end;
         not_found ->
-            not_found
+            case MaybeFlush of
+                true ->
+                    flush(Opts),
+                    type(Opts, Key, false);
+                false ->
+                    not_found
+            end
     end.
 
 %% @doc Write a key-value pair to the database asynchronously.
@@ -164,7 +183,7 @@ read(Opts, PathParts) when is_list(PathParts) ->
     read(Opts, to_path(PathParts));
 read(Opts, Path) ->
     % Try direct read first (fast path for non-link paths)
-    case read_direct(Opts, Path) of
+    case read_with_links(Opts, Path) of
         {ok, Value} -> 
             {ok, Value};
         not_found ->
@@ -173,7 +192,7 @@ read(Opts, Path) ->
                 case resolve_path_links(Opts, PathParts) of
                     {ok, ResolvedPathParts} ->
                         ResolvedPathBin = to_path(ResolvedPathParts),
-                        read_direct(Opts, ResolvedPathBin);
+                        read_with_links(Opts, ResolvedPathBin);
                     {error, _} ->
                         not_found
                 end
@@ -182,9 +201,7 @@ read(Opts, Path) ->
                     ?event(error, {resolve_path_links_failed, Class, Reason, Stacktrace}),
                     % If link resolution fails, return not_found
                     not_found
-            end;
-        Error -> 
-            Error
+            end
     end.
 
 %% @doc Helper function to check if a value is a link and extract the target.
@@ -203,36 +220,35 @@ is_link(Value) ->
 to_path(PathParts) ->
     hb_util:bin(lists:join(<<"/">>, PathParts)).
 
-%% @doc Unified read function that handles LMDB reads with retry logic.
-%% Returns {ok, Value}, not_found, or performs flush and retries.
-read_with_retry(Opts, Path) ->
+%% @doc Unified read function that handles LMDB reads with fallback to the 
+%% in-process pending writes, if necessary.
+%% 
+%% Returns {ok, Value} or not_found.
+read_direct(Opts, Path) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
     case elmdb:get(DBInstance, Path) of
         {ok, Value} ->
             {ok, Value};
         not_found ->
-            sync_read(Opts, Path)
+            read_in_progress(Opts, Path)
     end.
 
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
-read_direct(Opts, Path) ->
-    case read_with_retry(Opts, Path) of
+read_with_links(Opts, Path) ->
+    case read_direct(Opts, Path) of
         {ok, Value} ->
             % Check if this value is actually a link to another key
             case is_link(Value) of
                 {true, Link} -> 
                    % Extract the target key and recursively resolve the link
-                   read_direct(Opts, Link);
+                   read_with_links(Opts, Link);
                 false ->
                     % Check if this is a group marker - groups should not be
                     % readable as simple values
                     case Value of
-                        <<"group">> ->
-                            not_found;
-                        _ ->
-                            % Regular value, return as-is
-                            {ok, Value}
+                        <<"group">> -> not_found;
+                        _ -> {ok, Value}
                     end
             end;
         not_found ->
@@ -265,7 +281,7 @@ resolve_path_links_acc(Opts, [Head | Tail], AccPath, Depth) ->
     CurrentPath = lists:reverse([Head | AccPath]),
     CurrentPathBin = to_path(CurrentPath),
     % Check if the accumulated path (not just the segment) is a link
-    case read_with_retry(Opts, CurrentPathBin) of
+    case read_direct(Opts, CurrentPathBin) of
         {ok, Value} ->
             case is_link(Value) of
                 {true, Link} ->
@@ -320,83 +336,108 @@ scope(_) -> scope().
 %%
 %% This is particularly useful for implementing hierarchical data organization
 %% and providing tree-like navigation interfaces in applications.
+%% 
+%% Supports three modes of operation for handling the write queue:
+%% - `paranoid`: always flush the write queue before reading any data. This
+%%   ensures that all of the keys sent for writing at the time of the call will
+%%   have settled by the time the read is performed. The downside is that it
+%%   introduces a delay before the result is returned.
+%% - `moderate`: flush the write queue if no results are found, but return the
+%%   result as-is if not. This opens the door to a race condition where
+%%   potentially only some of the keys have been written and there are more
+%%   in the queue.
+%% - `extreme`: no flushing, just return the result as-is without writing on
+%%   the write queue. This is the fastest mode and should not cause issues
+%%   _as long as the write queue never grows_. If it does, however, this
+%%   mode creates systemic risk. You have been warned by both this documentation
+%%   and the name of the mode. Do not complain.
 %%
 %% @param StoreOpts Database configuration map
 %% @param Path Binary prefix to search for
 %% @returns {ok, [Key]} list of matching keys, {error, Reason} on failure
 -spec list(map(), binary()) -> {ok, [binary()]} | {error, term()}.
 list(Opts, Path) when is_map(Opts), is_binary(Path) ->
+    list(
+        Opts,
+        Path,
+        case hb_util:bin(maps:get(<<"list-mode">>, Opts, <<"paranoid">>)) of
+            <<"extreme">> -> extreme;
+            <<"moderate">> -> moderate;
+            <<"paranoid">> -> paranoid
+        end
+    ).
+list(Opts, Path, FlushMode) ->
+    % Flush the write queue if we are in `paranoid` mode.
+    if FlushMode == paranoid -> flush(Opts);
+    true -> ok
+    end,
     % Check if Path is a link and resolve it if necessary
     ResolvedPath =
-        case read_with_retry(Opts, Path) of
+        case read_direct(Opts, Path) of
             {ok, Value} ->
                 case is_link(Value) of
                     {true, Link} ->
                         Link;
                     false ->
-                        % Not a link, use original path
+                        % Not a link; use original path
                         Path
                 end;
             not_found ->
                 Path
         end,
-    % try
-       % Ensure the path ends with "/" for proper prefix matching (like directory listing)
-       SearchPath = 
-           case ResolvedPath of
-               <<>> -> <<"">>;  % Root path
-               _ -> <<ResolvedPath/binary, "/">>
-           end,
-       SearchPathSize = byte_size(SearchPath),
-       Res = 
-           fold_after(Opts,
-               SearchPath,
-               fun(Key, _Value, Acc) ->
-                   % Match keys that start with our search path (like dir listing)
-                   case byte_size(Key) > SearchPathSize andalso 
-                        binary:part(Key, 0, SearchPathSize) =:= SearchPath of
-                      true -> 
-                          % Get the part after our search path
-                          Remainder = 
+    SearchPath = 
+        case ResolvedPath of
+            <<>> -> <<"">>;  % Root path
+            _ -> <<ResolvedPath/binary, "/">>
+        end,
+    SearchPathSize = byte_size(SearchPath),
+    Res = 
+        fold_after(Opts,
+            SearchPath,
+            fun(Key, _Value, Acc) ->
+                % Match keys that start with our search path (like dir listing)
+                case byte_size(Key) > SearchPathSize andalso 
+                    binary:part(Key, 0, SearchPathSize) =:= SearchPath of
+                    true -> 
+                        % Get the part after our search path
+                        Remainder = 
                             binary:part(
-                              Key, 
-                              SearchPathSize, 
-                              byte_size(Key) - SearchPathSize
+                                Key,
+                                SearchPathSize, 
+                                byte_size(Key) - SearchPathSize
                             ),
-                          
-                          % Extract only the first path segment (immediate child)
-                          ImmediateChild = 
-                              case binary:split(Remainder, <<"/">>) of
-                                  [Child, _] -> Child;  % Has nested path, take first part
-                                  [Child] -> Child      % No nested path, take the whole thing
-                              end,
-                          
-                          % Add to results if not empty and not already present
-                          case ImmediateChild of
-                              <<>> -> Acc;  % Skip empty children
-                              _ ->
-                                  case lists:member(ImmediateChild, Acc) of
-                                      true -> Acc;
-                                      false -> [ImmediateChild | Acc]
-                                  end
-                          end;
-                      false -> Acc
-                   end
-               end,
-           []
-       ),
-       case Res of
-           {ok, []} ->
-               % No children, return not_found to indicate that the path is
-               % empty
-               not_found;
-           _ ->
-               Res
-       end;
-    % catch
-    %    _:Error -> {error, Error}
-    % end;
-list(_, _) ->
+                        % Extract only the first path segment (immediate child)
+                        [ImmediateChild | _] = binary:split(Remainder, <<"/">>),
+                        % Add to results if not empty and not already present
+                        case ImmediateChild of
+                            <<>> -> Acc;  % Skip empty children
+                            _ ->
+                                case lists:member(ImmediateChild, Acc) of
+                                    true -> Acc;
+                                    false -> [ImmediateChild | Acc]
+                                end
+                        end;
+                    false -> Acc
+                end
+            end,
+        []
+    ),
+    case Res of
+        {ok, []} ->
+            % No children, use the flush mode to determine what to do.
+            % Once the write queue has been flushed for `paranoid` and `moderate`
+            % modes, we recurse using the `extreme` mode to see if the path
+            % exists after without causing further flushes.
+            case FlushMode of
+                extreme -> not_found;
+                _ ->
+                    flush(Opts),
+                    list(Opts, Path, extreme)
+            end;
+        _ ->
+            Res
+    end;
+list(_, _, _) ->
     {error, {badarg, <<"StoreOpts must be a map and Path must be an binary">>}}.
 
 %% @doc Fold over a database after a given path. The `Fun` is called with
@@ -476,10 +517,8 @@ create_parent_groups(_Opts, _Current, []) ->
 create_parent_groups(Opts, Current, [Next | Rest]) ->
     NewCurrent = Current ++ [Next],
     GroupPath = to_path(NewCurrent),
-    #{ <<"db">> := DBInstance } = find_env(Opts),
-    % Only create group if it doesn't already exist - use direct LMDB check to
-    % avoid recursion.
-    case elmdb:get(DBInstance, GroupPath) of
+    % Only create group if it doesn't already exist.
+    case read_direct(Opts, GroupPath) of
         not_found ->
             make_group(Opts, GroupPath);
         {ok, _} ->
@@ -547,14 +586,27 @@ add_path(Opts, Path1, Path2) when is_binary(Path1), is_list(Path2) ->
 %% @param StoreOpts Database configuration map
 %% @param Path The path to read
 %% @returns {ok, Value} if the value is found, not_found if not found,
--spec sync_read(map(), binary()) -> {ok, binary()} | {error, term()}.
-sync_read(Opts, Path) ->
+-spec read_in_progress(map(), binary()) -> {ok, binary()} | not_found.
+read_in_progress(Opts, Path) ->
     PID = find_pid(Opts),
     PID ! {read, self(), Path},
     receive
         {read, Path, not_found} -> not_found;
         {read, Path, Res} -> {ok, Res}
-    after ?CONNECT_TIMEOUT -> {error, timeout}
+    after ?CONNECT_TIMEOUT -> not_found
+    end.
+
+%% @doc Force the caller to wait for the current in-memory pending writes to
+%% be flushed to the database.
+%%
+%% @param StoreOpts Database configuration map
+%% @returns 'ok' when flush is complete
+flush(Opts) ->
+    PID = find_pid(Opts),
+    PID ! {flush, self(), Ref = make_ref()},
+    receive
+        {flushed, Ref} -> ok
+    after ?CONNECT_TIMEOUT -> ok
     end.
 
 %% @doc Resolve a path by following any symbolic links.
