@@ -258,6 +258,8 @@ resolve_path_links(Opts, Path, Depth) ->
 resolve_path_links_acc(_Opts, [], AccPath, _Depth) ->
     % No more segments to process
     {ok, lists:reverse(AccPath)};
+resolve_path_links_acc(_, FullPath = [<<"data">>|_], [], _Depth) ->
+    {ok, FullPath};
 resolve_path_links_acc(Opts, [Head | Tail], AccPath, Depth) ->
     % Build the accumulated path so far
     CurrentPath = lists:reverse([Head | AccPath]),
