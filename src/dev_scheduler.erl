@@ -31,7 +31,7 @@
 %%% The maximum number of assignments that we will query/return at a time.
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 %%% The timeout for a lookahead worker.
--define(LOOKAHEAD_TIMEOUT, 200).
+-define(LOOKAHEAD_TIMEOUT, 1500).
 
 %% @doc Helper to ensure that the environment is started.
 start() ->
@@ -267,7 +267,8 @@ spawn_lookahead_worker(ProcID, Slot, Opts) ->
             ),
             case dev_scheduler_cache:read(ProcID, Slot, Opts) of
                 {ok, Assignment} ->
-                    Caller ! {assignment, ProcID, Slot, Assignment};
+                    LoadedAssignment = hb_cache:ensure_all_loaded(Assignment, Opts),
+                    Caller ! {assignment, ProcID, Slot, LoadedAssignment};
                 not_found ->
                     fail
             end
@@ -309,14 +310,14 @@ check_lookahead_and_local_cache(Worker, ProcID, TargetSlot, Opts) when is_pid(Wo
             ),
             {ok, NewWorker, Assignment}
     after ?LOOKAHEAD_TIMEOUT ->
-        ?event(next_lookahead, {lookahead_worker_timed_out, {slot, TargetSlot}}),
+        ?event(next_lookahead, {lookahead_read_timeout, {slot, TargetSlot}}),
         erlang:exit(Worker, timeout),
         check_lookahead_and_local_cache(undefined, ProcID, TargetSlot, Opts)
     end;
 check_lookahead_and_local_cache(undefined, ProcID, TargetSlot, Opts) ->
     % The lookahead worker has not found an assignment for the target
     % slot yet, so we check our local cache.
-    ?event(next_lookahead, {no_lookahead_worker, {slot, TargetSlot}}),
+    ?event(next_lookahead, {reading_local_cache, {slot, TargetSlot}}),
     case dev_scheduler_cache:read(ProcID, TargetSlot, Opts) of
         not_found -> not_found;
         {ok, Assignment} ->
@@ -326,7 +327,7 @@ check_lookahead_and_local_cache(undefined, ProcID, TargetSlot, Opts) ->
             % if we have them locally, ahead of time.
             Worker =
                 case hb_opts:get(scheduler_lookahead, true, Opts) of
-                    false -> unset;
+                    false -> undefined;
                     true ->
                         % We found the assignment in our local cache, so
                         % optionally spawn a new Erlang process to fetch
@@ -334,7 +335,7 @@ check_lookahead_and_local_cache(undefined, ProcID, TargetSlot, Opts) ->
                         % ahead of time.
                         spawn_lookahead_worker(ProcID, TargetSlot + 1, Opts)
                 end,
-            {ok, Worker, Assignment}
+            {ok, Worker, hb_cache:ensure_all_loaded(Assignment, Opts)}
     end.
 
 %% @doc Returns information about the entire scheduler.
