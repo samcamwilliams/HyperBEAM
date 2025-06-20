@@ -327,7 +327,7 @@ check_lookahead_and_local_cache(undefined, ProcID, TargetSlot, Opts) ->
             % if we have them locally, ahead of time.
             Worker =
                 case hb_opts:get(scheduler_lookahead, true, Opts) of
-                    false -> unset;
+                    false -> undefined;
                     true ->
                         % We found the assignment in our local cache, so
                         % optionally spawn a new Erlang process to fetch
