@@ -430,7 +430,9 @@ list(Opts, Path, FlushMode) ->
             % exists after without causing further flushes.
             case FlushMode of
                 extreme -> not_found;
-                _ ->
+                paranoid ->
+                    list(Opts, Path, extreme);
+                moderate ->
                     flush(Opts),
                     list(Opts, Path, extreme)
             end;
