@@ -31,7 +31,7 @@
 %%% The maximum number of assignments that we will query/return at a time.
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 %%% The timeout for a lookahead worker.
--define(LOOKAHEAD_TIMEOUT, 200).
+-define(LOOKAHEAD_TIMEOUT, 1500).
 
 %% @doc Helper to ensure that the environment is started.
 start() ->
