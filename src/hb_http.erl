@@ -910,7 +910,7 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                     maps:get(<<"accept-bundle">>, RawHeaders, false)
                 )
         },
-    case hb_ao:get(<<"ao-peer-port">>, WithoutPeer, undefined, Opts) of
+    case hb_maps:get(<<"ao-peer-port">>, WithoutPeer, undefined, Opts) of
         undefined -> WithoutPeer;
         P2PPort ->
             % Calculate the peer address from the request. We honor the 
