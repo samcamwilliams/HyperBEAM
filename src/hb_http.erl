@@ -31,6 +31,8 @@ get(Node, Message, Opts) ->
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
+post(Node, Path, Opts) when is_binary(Path) ->
+    post(Node, #{ <<"path">> => Path }, Opts);
 post(Node, Message, Opts) ->
     post(Node,
         hb_ao:get(
@@ -139,8 +141,9 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
             ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
-            case hb_maps:get(Key, Msg, undefined, Opts) of
-                undefined ->
+            case {Key, hb_maps:get(Key, Msg, undefined, Opts)} of
+                {<<"body">>, undefined} -> {BaseStatus, <<>>};
+                {_, undefined} ->
                     {failure,
                         <<
                             "Result key '",
@@ -153,7 +156,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                             Body/binary
                         >>
                     };
-                Value -> {BaseStatus, Value}
+                {_, Value} -> {BaseStatus, Value}
             end;
         false ->
             case hb_maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>, Opts) of

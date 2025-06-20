@@ -40,7 +40,7 @@ httpc_req(Args, _, Opts) ->
         443 -> "https";
         _ -> "http"
     end,
-    ?event(http, {httpc_req, Args}),
+    ?event(http_client, {httpc_req, {explicit, Args}}),
     URL = binary_to_list(iolist_to_binary([Scheme, "://", Host, ":", integer_to_binary(Port), Path])),
     FilteredHeaders = hb_maps:remove(<<"content-type">>, Headers, Opts),
     HeaderKV =
@@ -62,7 +62,7 @@ httpc_req(Args, _, Opts) ->
                     Body
                 }
         end,
-    ?event(http, {httpc_req, Method, URL, Request}),
+    ?event({http_client_outbound, Method, URL, Request}),
     HTTPCOpts = [{full_result, true}, {body_format, binary}],
 	StartTime = os:system_time(millisecond),
     case httpc:request(Method, Request, [], HTTPCOpts) of
@@ -74,7 +74,7 @@ httpc_req(Args, _, Opts) ->
                 ||
                     {Key, Value} <- RawRespHeaders
                 ],
-            ?event(http, {httpc_resp, Status, RespHeaders, RespBody}),
+            ?event(http_client, {httpc_resp, Status, RespHeaders, RespBody}),
             record_duration(#{
                     <<"request-method">> => method_to_bin(Method),
                     <<"request-path">> => hb_util:bin(Path),
@@ -85,7 +85,7 @@ httpc_req(Args, _, Opts) ->
             ),
             {ok, Status, RespHeaders, RespBody};
         {error, Reason} ->
-            ?event(http, {httpc_error, Reason}),
+            ?event(http_client, {httpc_error, Reason}),
             {error, Reason}
     end.
 
@@ -573,7 +573,16 @@ request(PID, Args, Opts) ->
 	Path = hb_maps:get(path, Args, undefined, Opts),
 	Headers = hb_maps:get(headers, Args, [], Opts),
 	Body = hb_maps:get(body, Args, <<>>, Opts),
-    ?event(http, {gun_request, {method, Method}, {path, Path}, {headers, Headers}, {body, Body}}),
+    ?event(
+        http_client,
+        {gun_request,
+            {method, Method},
+            {path, Path},
+            {headers, {explicit, Headers}},
+            {body, {explicit, {body, Body}}}
+        },
+        Opts
+    ),
 	Ref = gun:request(PID, Method, Path, Headers, Body),
 	ResponseArgs =
         #{
