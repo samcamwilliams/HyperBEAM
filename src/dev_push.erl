@@ -970,19 +970,7 @@ nested_push_prompts_encoding_change() ->
     Opts = #{
         priv_wallet => hb:wallet(),
         cache_control => <<"always">>,
-        store => [
-            #{
-                <<"store-module">> => hb_store_fs,
-                <<"name">> => <<"cache-mainnet">>
-            },
-            #{
-                <<"store-module">> => hb_store_gateway,
-                <<"store">> => #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> => <<"cache-mainnet">>
-                }
-            }
-        ]
+        store => hb_opts:get(store)
     },
     ?event(push_debug, {opts, Opts}),
     Msg1 = dev_process:test_aos_process(Opts),
