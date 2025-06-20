@@ -160,13 +160,19 @@ handle_events() ->
         {increment, TopicBin, EventName, Count} ->
             case erlang:process_info(self(), message_queue_len) of
                 {message_queue_len, Len} when Len > ?OVERLOAD_QUEUE_LENGTH ->
-                    ?debug_print(
-                        {warning,
-                            prometheus_event_queue_overloading,
-                            {queue, Len},
-                            {current_message, EventName}
-                        }
-                    );
+                    % Print a warning, but do so less frequently the more 
+                    % overloaded the system is.
+                    case rand:uniform(max(1000, Len - ?OVERLOAD_QUEUE_LENGTH)) of
+                        1 ->
+                            ?debug_print(
+                                {warning,
+                                    prometheus_event_queue_overloading,
+                                    {queue, Len},
+                                    {current_message, EventName}
+                                }
+                            );
+                        _ -> ignored
+                    end;
                 _ -> ignored
             end,
             prometheus_counter:inc(<<"event">>, [TopicBin, EventName], Count),
