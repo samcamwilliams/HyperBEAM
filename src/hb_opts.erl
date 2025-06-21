@@ -295,9 +295,9 @@ do_get(Key, Default, Opts) ->
     do_get(Key, Default, Opts#{ prefer => local }).
 
 -ifdef(TEST).
--define(DEFAULT_PRINT_OPTS, "error,http_error").
+-define(DEFAULT_PRINT_OPTS, [error, http_error]).
 -else.
--define(DEFAULT_PRINT_OPTS, "error,http_error,http_short,compute_short,push_short").
+-define(DEFAULT_PRINT_OPTS, [error, http_error, http_short, compute_short, push_short]).
 -endif.
 
 -define(ENV_KEYS,
@@ -309,12 +309,16 @@ do_get(Key, Default, Opts) ->
         debug_print =>
             {"HB_PRINT",
                 fun
+                    ({preparsed, Parsed}) -> Parsed;
                     (Str) when Str == "1" -> true;
                     (Str) when Str == "true" -> true;
                     (Str) ->
-                        lists:map(fun hb_util:bin/1, string:tokens(Str, ","))
+                        lists:map(
+                            fun(Topic) -> list_to_atom(Topic) end,
+                            string:tokens(Str, ",")
+                        )
                 end,
-                ?DEFAULT_PRINT_OPTS
+                {preparsed, ?DEFAULT_PRINT_OPTS}
             },
         lua_scripts => {"LUA_SCRIPTS", "scripts"},
         lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests}
@@ -380,7 +384,7 @@ normalize_default(Default) -> Default.
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
 %% configuration system.
-config_lookup(Key, Default, Opts) -> hb_maps:get(Key, default_message(), Default, Opts).
+config_lookup(Key, Default, _Opts) -> maps:get(Key, default_message(), Default).
 
 %% @doc Parse a `flat@1.0' encoded file into a map, matching the types of the 
 %% keys to those in the default message.

@@ -36,7 +36,6 @@ get(Key, Msg, Opts) ->
     get(Key, Msg, not_found, Opts).
 get(InputPath, Msg, Default, Opts) ->
     Path = hb_path:term_to_path_parts(remove_private_specifier(InputPath, Opts), Opts),
-    ?event({get_private, {in, InputPath}, {out, Path}}),
     % Resolve the path against the private element of the message.
     Resolve =
         hb_ao:resolve(
