@@ -36,6 +36,7 @@
 -define(DEFAULT_MAX_FLUSH_TIME, 50).            % Maximum time between flushes
 -define(MAX_REDIRECTS, 1000).                   % Only resolve 1000 links to data
 -define(MAX_PENDING_WRITES, 400).               % Force flush after x pending
+-define(FOLD_YIELD_INTERVAL, 100).              % Yield every x keys
 
 %% @doc Start the LMDB storage system for a given database configuration.
 %%
@@ -58,7 +59,7 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             hb_util:list(DataDir),
             [
                 {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)},
-                no_mem_init, no_read_ahead
+                no_mem_init, no_sync
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
@@ -152,9 +153,8 @@ write(Opts, PathParts, Value) when is_list(PathParts) ->
     PathBin = to_path(PathParts),
     write(Opts, PathBin, Value);
 write(Opts, Path, Value) ->
-    PID = find_pid(Opts),
-    PID ! {write, Path, Value},
-    ok.
+    #{ <<"db">> := DBInstance } = find_env(Opts),
+    ok = elmdb:async_put(DBInstance, Path, Value).
 
 %% @doc Read a value from the database by key, with automatic link resolution.
 %%
@@ -400,11 +400,11 @@ list(Opts, Path, FlushMode) ->
     % keys are flushed from the server between the two calls. With this ordering
     % the keys are guaranteed to be found in either the pending set or the DB,
     % with the potential for duplicates. Duplicates are filtered out later.
-    PendingKeys =
-        case FlushMode of
-            yolo -> [];
-            _ -> matching_pending_keys(SearchPath, Opts)
-        end,
+    PendingKeys = [],
+        % case FlushMode of
+        %     yolo -> [];
+        %     _ -> matching_pending_keys(SearchPath, Opts)
+        % end,
     DBKeys =
         case matching_db_keys(SearchPath, Opts) of
             {ok, Keys} -> Keys;
@@ -476,6 +476,8 @@ matching_pending_keys(Prefix, Opts) ->
 %% the key and value, and the accumulator. The `Fun` may return `{stop, Acc}`
 %% to stop the fold early.
 fold_after(Opts, Path, Fun, Acc) ->
+    fold_after(Opts, Path, Fun, Acc, 0).
+fold_after(Opts, Path, Fun, Acc, Count) ->
     #{ <<"db">> := DBInstance, <<"env">> := Env } = find_env(Opts),
     {ok, Txn} = elmdb:ro_txn_begin(Env),
     {ok, Cur} = elmdb:ro_txn_cursor_open(Txn, DBInstance),
@@ -484,7 +486,8 @@ fold_after(Opts, Path, Fun, Acc) ->
         Txn,
         Cur,
         Fun,
-        Acc
+        Acc,
+        Count
     ).
 
 %% @doc Internal helper for `fold_after/4`.
@@ -926,7 +929,6 @@ commit_manager(Opts, Server) ->
         end,
         commit_manager(Opts, Server)
     end.
-
 
 %% @doc Test suite demonstrating basic store operations.
 %%
