@@ -213,7 +213,13 @@ compute(Msg1, Msg2, Opts) ->
 %% we reach the target slot that the user has requested.
 compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
     CurrentSlot = hb_ao:get(<<"at-slot">>, Msg1, Opts#{ hashpath => ignore }),
-    ?event(compute_short, {starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
+    ?event(compute_short,
+        {starting_compute,
+            {proc_id, ProcID},
+            {current, CurrentSlot},
+            {target, TargetSlot}
+        }
+    ),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
             % The cache should already have the result, so we should never end up
@@ -293,7 +299,6 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
     Res = run_as(<<"execution">>, UnsetResults, InputMsg, Opts),
     case Res of
         {ok, NewProcStateMsg} ->
-            ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
             % We have now transformed slot n -> n + 1. Increment the current slot.
             NewProcStateMsgWithSlot =
                 hb_ao:set(
