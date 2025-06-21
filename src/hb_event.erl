@@ -31,12 +31,12 @@ counters() ->
         UnaggregatedCounts
     ).
 
--ifdef(STORE_EVENTS).
-raw_counters() ->
-    ets:tab2list(prometheus_counter_table).
--else.
+-ifdef(NO_EVENTS).
 raw_counters() ->
     [].
+-else.
+raw_counters() ->
+    ets:tab2list(prometheus_counter_table).
 -endif.
 
 -ifdef(NO_EVENTS).
@@ -62,7 +62,8 @@ log(Topic, X, Mod, Func, Line, Opts) ->
         true -> hb_util:debug_print(X, Mod, Func, Line);
         false -> X
     end,
-	handle_tracer(Topic, X, Opts),
+	%handle_tracer(Topic, X, Opts),
+    try increment(Topic, X, Opts) catch _:_ -> ok end,
     % Return the logged value to the caller. This allows callers to insert 
     % `?event(...)' macros into the flow of other executions, without having to
     % break functional style.
@@ -133,7 +134,7 @@ increment(Topic, Message, _Opts, Count) ->
         <<"debug", _/binary>> -> ignored;
         EventName ->
             TopicBin = parse_name(Topic),
-            case hb_name:lookup(?MODULE) of
+            case find_event_server() of
                 Pid when is_pid(Pid) ->
                     Pid ! {increment, TopicBin, EventName, Count};
                 undefined ->
@@ -141,6 +142,24 @@ increment(Topic, Message, _Opts, Count) ->
                     hb_name:register(?MODULE, PID),
                     PID ! {increment, TopicBin, EventName, Count}
             end
+    end.
+
+%% @doc Find the event server, creating it if it doesn't exist. We cache the
+%% result in the process dictionary to avoid looking it up multiple times.
+find_event_server() ->
+    case erlang:get({event_server, ?MODULE}) of
+        {cached, Pid} -> Pid;
+        undefined ->
+            PID =
+                case hb_name:lookup(?MODULE) of
+                    Pid when is_pid(Pid) -> Pid;
+                    undefined ->
+                        NewServer = spawn(fun() -> server() end),
+                        hb_name:register(?MODULE, NewServer),
+                        NewServer
+                end,
+            erlang:put({event_server, ?MODULE}, {cached, PID}),
+            PID
     end.
 
 server() ->
