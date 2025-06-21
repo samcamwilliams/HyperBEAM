@@ -163,7 +163,7 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
-exec_likely_faster_heuristic(M1, M2, _) when (not ?IS_ID(M1)) and (not is_map(M2)) ->
+exec_likely_faster_heuristic(M1, _M2, _) when (not ?IS_ID(M1)) ->
     true;
 exec_likely_faster_heuristic({as, _, Msg1}, Msg2, Opts) ->
     exec_likely_faster_heuristic(Msg1, Msg2, Opts);

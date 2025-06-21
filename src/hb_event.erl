@@ -31,12 +31,12 @@ counters() ->
         UnaggregatedCounts
     ).
 
--ifdef(STORE_EVENTS).
-raw_counters() ->
-    ets:tab2list(prometheus_counter_table).
--else.
+-ifdef(NO_EVENTS).
 raw_counters() ->
     [].
+-else.
+raw_counters() ->
+    ets:tab2list(prometheus_counter_table).
 -endif.
 
 -ifdef(NO_EVENTS).
@@ -56,41 +56,39 @@ log(Topic, X, Mod, Func) -> log(Topic, X, Mod, Func, undefined).
 log(Topic, X, Mod, Func, Line) -> log(Topic, X, Mod, Func, Line, #{}).
 log(Topic, X, Mod, undefined, Line, Opts) -> log(Topic, X, Mod, "", Line, Opts);
 log(Topic, X, Mod, Func, undefined, Opts) -> log(Topic, X, Mod, Func, "", Opts);
-log(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
-    % Increment by message adding Topic as label
-    try increment(Topic, X, Opts) catch _:_ -> ignore_error end,
-    % Check if the module has the `hb_debug' attribute set to `print'.
-    case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
-        true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
-        false -> 
-            % Check if the module has the `hb_debug' attribute set to `no_print'.
-            case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
-                {hb_debug, [no_print]} -> X;
-                _ -> log(Topic, X, hb_util:bin(ModAtom), Func, Line, Opts)
-            end
-    end;
 log(Topic, X, Mod, Func, Line, Opts) ->
     % Check if the debug_print option has the topic in it if set.
-    case hb_opts:get(debug_print, false, Opts) of
-        EventList when is_list(EventList) ->
-            case lists:member(Mod, EventList)
-                orelse lists:member(hb_util:bin(Topic), EventList)
-            of
-                true -> hb_util:debug_print(X, Mod, Func, Line);
-                false -> X
-            end;
+    case should_print(Topic, Opts) orelse should_print(Mod, Opts) of
         true -> hb_util:debug_print(X, Mod, Func, Line);
         false -> X
     end,
-	handle_tracer(Topic, X, Opts),
+	%handle_tracer(Topic, X, Opts),
+    try increment(Topic, X, Opts) catch _:_ -> ok end,
     % Return the logged value to the caller. This allows callers to insert 
     % `?event(...)' macros into the flow of other executions, without having to
     % break functional style.
     X.
 -endif.
 
+%% @doc Determine if the topic should be printed. Uses a cache in the process
+%% dictionary to avoid re-checking the same topic multiple times.
+should_print(Topic, Opts) ->
+    case erlang:get({event_print, Topic}) of
+        {cached, X} -> X;
+        undefined ->
+            Result =
+                case hb_opts:get(debug_print, false, Opts) of
+                    EventList when is_list(EventList) ->
+                        lists:member(Topic, EventList);
+                    true -> true;
+                    false -> false
+                end,
+            erlang:put({event_print, Topic}, {cached, Result}),
+            Result
+    end.
+
 handle_tracer(Topic, X, Opts) ->
-	AllowedTopics = [http, ao_core, ao_result],
+	AllowedTopics = [http, ao_result],
 	case lists:member(Topic, AllowedTopics) of
 		true -> 
 			case hb_opts:get(trace, undefined, Opts) of
@@ -136,7 +134,7 @@ increment(Topic, Message, _Opts, Count) ->
         <<"debug", _/binary>> -> ignored;
         EventName ->
             TopicBin = parse_name(Topic),
-            case hb_name:lookup(?MODULE) of
+            case find_event_server() of
                 Pid when is_pid(Pid) ->
                     Pid ! {increment, TopicBin, EventName, Count};
                 undefined ->
@@ -144,6 +142,24 @@ increment(Topic, Message, _Opts, Count) ->
                     hb_name:register(?MODULE, PID),
                     PID ! {increment, TopicBin, EventName, Count}
             end
+    end.
+
+%% @doc Find the event server, creating it if it doesn't exist. We cache the
+%% result in the process dictionary to avoid looking it up multiple times.
+find_event_server() ->
+    case erlang:get({event_server, ?MODULE}) of
+        {cached, Pid} -> Pid;
+        undefined ->
+            PID =
+                case hb_name:lookup(?MODULE) of
+                    Pid when is_pid(Pid) -> Pid;
+                    undefined ->
+                        NewServer = spawn(fun() -> server() end),
+                        hb_name:register(?MODULE, NewServer),
+                        NewServer
+                end,
+            erlang:put({event_server, ?MODULE}, {cached, PID}),
+            PID
     end.
 
 server() ->
