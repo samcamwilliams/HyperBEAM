@@ -321,33 +321,51 @@ do_get(Key, Default, Opts) ->
     }
 ).
 
-%% @doc Get an environment variable or configuration key.
+%% @doc Get an environment variable or configuration key. Depending on whether
+%% the value is derived from an environment variable, we may be able to cache
+%% the result in the process dictionary.
 global_get(Key, Default, Opts) ->
-    case maps:get(Key, ?ENV_KEYS, Default) of
-        Default -> config_lookup(Key, Default, Opts);
-        {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
-            ValParser(cached_os_env(EnvKey, normalize_default(DefaultValue)));
-        {EnvKey, ValParser} when is_function(ValParser) ->
-            case cached_os_env(EnvKey, not_found) of
-                not_found -> config_lookup(Key, Default, Opts);
-                Value -> ValParser(Value)
-            end;
-        {EnvKey, DefaultValue} ->
-            cached_os_env(EnvKey, DefaultValue)
+    case erlang:get({processed_env, Key}) of
+        {cached, Value} -> Value;
+        undefined ->
+            % Thee value is not cached, so we need to process it.
+            {IsCachable, Value} =
+                case maps:get(Key, ?ENV_KEYS, Default) of
+                    Default -> {false, config_lookup(Key, Default, Opts)};
+                    {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
+                        {true, ValParser(
+                            cached_os_env(
+                                EnvKey,
+                                normalize_default(DefaultValue)
+                            )
+                        )};
+                    {EnvKey, ValParser} when is_function(ValParser) ->
+                        case cached_os_env(EnvKey, not_found) of
+                            not_found -> {false, config_lookup(Key, Default, Opts)};
+                            V -> {true, ValParser(V)}
+                        end;
+                    {EnvKey, DefaultValue} ->
+                        {true, cached_os_env(EnvKey, DefaultValue)}
+                end,
+            % Cache the result if it is immutable and return.
+            if IsCachable -> erlang:put({processed_env, Key}, {cached, Value});
+            true -> ok
+            end,
+            Value
     end.
 
 %% @doc Cache the result of os:getenv/1 in the process dictionary, as it never
 %% changes during the lifetime of a node.
 cached_os_env(Key, DefaultValue) ->
     case erlang:get({os_env, Key}) of
+        {cached, false} -> DefaultValue;
+        {cached, Value} -> Value;
         undefined ->
-            case os:getenv(Key) of
-                false -> DefaultValue;
-                Value ->
-                    erlang:put({os_env, Key}, Value),
-                    Value
-            end;
-        Value -> Value
+            % The process dictionary returns `undefined' for a key that is not
+            % set, so we need to check the environment and store the result.
+            erlang:put({os_env, Key}, {cached, os:getenv(Key)}),
+            % We recurse to follow the normal path.
+            cached_os_env(Key, DefaultValue)
     end.
 
 %% @doc Get an option from environment variables, optionally consulting the
