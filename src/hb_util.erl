@@ -500,13 +500,9 @@ debug_fmt(X, Opts) -> debug_fmt(X, Opts, 0).
 debug_fmt(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
-        eunit_print(
-            "~p:~p:~p",
-            [A, B, C]
-        ),
-        case hb_opts:get(mode, prod) of
-            prod ->
-                format_indented("[!PRINT FAIL!]", Opts, Indent);
+        case hb_opts:get(debug_print_fail_mode, quiet) of
+            quiet ->
+                format_indented("[!Format failed!] ~p", [X], Opts, Indent);
             _ ->
                 format_indented(
                     "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~s",
