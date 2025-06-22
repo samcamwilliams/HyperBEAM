@@ -1,8 +1,15 @@
-%%% @doc Simple utilities for testing HyperBEAM.
+%%% @doc Simple utilities for testing HyperBEAM. Includes functions for 
+%%% generating isolated (fresh) test stores, running suites of tests with
+%%% differing options, as well as executing and reporting benchmarks.
 -module(hb_test_utils).
 -export([suite_with_opts/2, run/4, test_store/0, assert_throws/4]).
+-export([benchmark/1, benchmark/2, benchmark/3]).
+-export([benchmark_print/2, benchmark_print/3, benchmark_print/4]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%%% The number of seconds to run a benchmark for when no time is specified.
+-define(DEFAULT_BENCHMARK_TIME, 1).
 
 %% @doc Generate a new, unique test store as an isolated context for an execution.
 test_store() ->
@@ -30,7 +37,8 @@ suite_with_opts(Suite, OptsList) ->
                     {true, {foreach,
                         fun() ->
                             ?event({starting, Store}),
-                            %Create and set a random server ID for the test process.
+                            % Create and set a random server ID for the test
+                            % process.
                             hb_http_server:set_proc_server_id(
                                 hb_util:human_id(crypto:strong_rand_bytes(32))
                             ),
@@ -104,3 +112,76 @@ assert_throws(Fun, Args, ExpectedException, Label) ->
         Other -> {wrong_exception, Other}
     end,
     ?assertEqual(expected_exception, Error, Label).
+
+%% @doc Run a function as many times as possible in a given amount of time.
+benchmark(Fun) ->
+    benchmark(Fun, ?DEFAULT_BENCHMARK_TIME).
+benchmark(Fun, TLen) ->
+    T0 = erlang:system_time(millisecond),
+    hb_util:until(
+        fun() -> erlang:system_time(millisecond) - T0 > (TLen * 1000) end,
+        Fun,
+        0
+    ).
+
+%% @doc Run multiple instances of a function in parallel for a given amount of time.
+benchmark(Fun, TLen, Procs) ->
+    Parent = self(),
+    receive _ -> worker_synchronized end,
+    StartWorker =
+        fun(_) ->
+            Ref = make_ref(),
+            spawn_link(fun() ->
+                Count = benchmark(Fun, TLen),
+                Parent ! {work_complete, Ref, Count}
+            end),
+            Ref
+        end,
+    CollectRes =
+        fun(R) ->
+            receive
+                {work_complete, R, Count} ->
+                    %?event(benchmark, {work_complete, R, Count}),
+                    Count
+            end
+        end,
+    Refs = lists:map(StartWorker, lists:seq(1, Procs)),
+    lists:sum(lists:map(CollectRes, Refs)).
+
+%% @doc Print benchmark results in a human-readable format that EUnit writes to
+%% the console. Takes a `verb` as a string and an `iterations` count (returned
+%% by the benchmark function), as well as optionally a `noun` to refer to the
+%% objects in the benchmark, and a `time` in seconds. If `time' is not
+%% provided, it defaults to the value of `?DEFAULT_BENCHMARK_TIME'.
+benchmark_print(Verb, Iterations) ->
+    benchmark_print(Verb, Iterations, ?DEFAULT_BENCHMARK_TIME).
+benchmark_print(Verb, Iterations, Time) when is_integer(Iterations) ->
+    hb_util:eunit_print(
+        "~s ~s in ~s (~s/s)",
+        [
+            Verb,
+            hb_util:human_int(Iterations),
+            format_time(Time),
+            hb_util:human_int(Iterations / Time)
+        ]
+    );
+benchmark_print(Verb, Noun, Iterations) ->
+    benchmark_print(Verb, Noun, Iterations, ?DEFAULT_BENCHMARK_TIME).
+benchmark_print(Verb, Noun, Iterations, Time) ->
+    hb_util:eunit_print(
+        "~s ~s ~s in ~s (~s ~s/s)",
+        [
+            Verb,
+            hb_util:human_int(Iterations),
+            Noun,
+            format_time(Time),
+            hb_util:human_int(Iterations / Time),
+            Noun
+        ]
+    ).
+
+%% @doc Format a time in human-readable format. Takes arguments in seconds.
+format_time(Time) when is_integer(Time) ->
+    hb_util:human_int(Time) ++ "s";
+format_time(Time) ->
+    hb_util:human_int(Time * 1000) ++ "ms".

@@ -540,15 +540,13 @@ benchmark_message_read_write(Store, WriteOps, ReadOps) ->
                 )
             end
         ),
-    % Calculate write rate.
-    WriteRate = erlang:round(WriteOps / (WriteTime / 1000000)),
-    hb_util:eunit_print(
-        "Wrote ~s records in ~p ms (~s records/s)",
-        [
-            hb_util:human_int(WriteOps),
-            WriteTime/1000,
-            hb_util:human_int(WriteRate)
-        ]
+    % Print the results. Our write time is in microseconds, so we normalize it
+    % to seconds.
+    hb_test_utils:benchmark_print(
+        <<"Wrote">>,
+        <<"messages">>,
+        WriteOps,
+        WriteTime / 1_000_000
     ),
     % Generate keys to read ahead of time.
     ReadKeys =
@@ -578,14 +576,11 @@ benchmark_message_read_write(Store, WriteOps, ReadOps) ->
                 )
             end
         ),
-    % Calculate read rate.
-    ReadRate = erlang:round(ReadOps / (ReadTime / 1000000)),
-    hb_util:eunit_print(
-        "Read ~s records in ~p ms (~s records/s)",
-        [
-            hb_util:human_int(ReadOps),
-            ReadTime/1000,
-            hb_util:human_int(ReadRate)
-        ]
+    % Print the results.
+    hb_test_utils:benchmark_print(
+        <<"Read">>,
+        <<"messages">>,
+        ReadOps,
+        ReadTime / 1_000_000
     ),
     ?assertEqual(0, NotFoundCount, "Written keys not found in store.").

@@ -2079,7 +2079,7 @@ single_resolution(Opts) ->
         <<"type">> => <<"Message">>,
         <<"test-key">> => <<"test-val">>
     }, Opts),
-    Iterations = hb:benchmark(
+    Iterations = hb_test_utils:benchmark(
         fun(_) ->
             MsgX = #{
                 <<"path">> => <<"schedule">>,
@@ -2100,9 +2100,11 @@ single_resolution(Opts) ->
             when CurrentSlot == Iterations - 1,
         hb_ao:resolve(Msg1, Msg3, Opts)),
     ?event(bench, {res, Iterations - 1}),
-    hb_util:eunit_print(
-        "Scheduled ~p messages through AO-Core in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
+    hb_test_utils:benchmark_print(
+        <<"Scheduled through AO-Core:">>,
+        <<"messages">>,
+        Iterations,
+        BenchTime
     ),
     ?assert(Iterations > 3).
 
@@ -2118,7 +2120,7 @@ many_clients(Opts) ->
         <<"body">> => hb_message:commit(#{ <<"inner">> => <<"test">> }, Opts)
     }, Opts),
     {ok, _} = hb_http:post(Node, Msg1, Opts),
-	    Iterations = hb:benchmark(
+	    Iterations = hb_test_utils:benchmark(
         fun(X) ->
             {ok, _} = hb_http:post(Node, Msg1, Opts),
             ?event(bench, {iteration, X, self()})

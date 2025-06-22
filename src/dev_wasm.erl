@@ -483,16 +483,18 @@ benchmark_test() ->
 			#{}
         ),
     Iterations =
-        hb:benchmark(
+        hb_test_utils:benchmark(
             fun() ->
                 hb_ao:resolve(Msg2, <<"compute">>, #{})
             end,
             BenchTime
         ),
     ?event(benchmark, {scheduled, Iterations}),
-    hb_util:eunit_print(
-        "Evaluated ~p WASM messages through AO-Core in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
+    hb_test_utils:benchmark_print(
+        <<"Through AO-Core:">>,
+        <<"resolutions">>,
+        Iterations,
+        BenchTime
     ),
     ?assert(Iterations > 5),
     ok.

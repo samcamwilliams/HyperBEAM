@@ -557,7 +557,7 @@ direct_benchmark_test() ->
         },
         <<"parameters">> => []
     },
-    Iterations = hb:benchmark(
+    Iterations = hb_test_utils:benchmark(
         fun(X) ->
             {ok, _} = hb_ao:resolve(Base, <<"assoctable">>, #{}),
             ?event({iteration, X})
@@ -565,9 +565,11 @@ direct_benchmark_test() ->
         BenchTime
     ),
     ?event({iterations, Iterations}),
-    hb_util:eunit_print(
-        "Computed ~p Lua executions in ~ps (~.2f calls/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
+    hb_test_utils:benchmark_print(
+        <<"Direct Lua:">>,
+        <<"executions">>,
+        Iterations,
+        BenchTime
     ),
     ?assert(Iterations > 10).
 
@@ -653,14 +655,11 @@ pure_lua_process_benchmark() ->
         #{ hashpath => ignore, process_cache_frequency => 50 }
     ),
     AfterExec = os:system_time(millisecond),
-    ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
-    hb_util:eunit_print(
-        "Computed ~p pure Lua process executions in ~ps (~.2f calls/s)",
-        [
-            BenchMsgs,
-            (AfterExec - BeforeExec) / 1000,
-            BenchMsgs / ((AfterExec - BeforeExec) / 1000)
-        ]
+    hb_test_utils:benchmark_print(
+        <<"Pure Lua process: Computed">>,
+        <<"slots">>,
+        BenchMsgs,
+        (AfterExec - BeforeExec) / 1000
     ).
 
 invoke_aos_test() ->
@@ -728,14 +727,11 @@ aos_process_benchmark_test_() ->
             Opts
         ),
         AfterExec = os:system_time(millisecond),
-        ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
-        hb_util:eunit_print(
-            "Computed ~p AOS process executions in ~ps (~.2f calls/s)",
-            [
-                BenchMsgs,
-                (AfterExec - BeforeExec) / 1000,
-                BenchMsgs / ((AfterExec - BeforeExec) / 1000)
-            ]
+        hb_test_utils:benchmark_print(
+            <<"HyperAOS process: Computed">>,
+            <<"slots">>,
+            BenchMsgs,
+            (AfterExec - BeforeExec) / 1000
         )
     end}.
 

@@ -541,7 +541,7 @@ benchmark_test() ->
 		<<"result">> => <<"INIT">>
 	},
     Iterations =
-        hb:benchmark(
+        hb_test_utils:benchmark(
             fun() ->
                 hb_ao:resolve(Msg,
                     #{
@@ -554,9 +554,11 @@ benchmark_test() ->
             end,
             BenchTime
         ),
-    hb_util:eunit_print(
-        "Evaluated ~p stack messages in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
+    hb_test_utils:benchmark_print(
+        <<"Stack:">>,
+        <<"resolutions">>,
+        Iterations,
+        BenchTime
     ),
     ?assert(Iterations >= 10).
 

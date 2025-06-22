@@ -3,6 +3,7 @@
 -export([counters/0, log/1, log/2, log/3, log/4, log/5, log/6]).
 -export([increment/3, increment/4]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(OVERLOAD_QUEUE_LENGTH, 10000).
 
@@ -214,3 +215,42 @@ parse_name(Name) when is_binary(Name) ->
 parse_name(Name) when is_list(Name) ->
     iolist_to_binary(Name);
 parse_name(_) -> no_event_name.
+
+%%% Benchmark tests
+
+%% @doc Benchmark the performance of a full log of an event.
+benchmark_event_test() ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun() ->
+                log(test_module, {test, 1})
+            end
+        ),
+    hb_test_utils:benchmark_print(<<"Recorded">>, <<"events">>, Iterations),
+    ?assert(Iterations >= 1000),
+    ok.
+
+%% @doc Benchmark the performance of looking up whether a topic and module
+%% should be printed.
+benchmark_print_lookup_test() ->
+    DefaultOpts = hb_opts:default_message(),
+    Iterations =
+        hb_test_utils:benchmark(
+            fun() ->
+                should_print(test_module, DefaultOpts)
+                    orelse should_print(test_event, DefaultOpts)
+            end
+        ),
+    hb_test_utils:benchmark_print(<<"Looked-up">>, <<"topics">>, Iterations),
+    ?assert(Iterations >= 1000),
+    ok.
+
+%% @doc Benchmark the performance of incrementing an event.
+benchmark_increment_test() ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun() -> increment(test_module, {test, 1}, #{}) end
+        ),
+    hb_test_utils:benchmark_print(<<"Incremented">>, <<"events">>, Iterations),
+    ?assert(Iterations >= 1000),
+    ok.
