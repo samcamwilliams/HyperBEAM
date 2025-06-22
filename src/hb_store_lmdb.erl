@@ -727,7 +727,6 @@ server(State) ->
                     maps:get(<<"pending-writes">>, State, #{}),
                     not_found
                 ),
-            ?event(warning, {read, Path, Res}),
             From ! {read, Path, Res},
             server(State);
         {flush, From, Ref} ->

@@ -4,6 +4,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
+%% The time to run the benchmarks for in seconds.
+-define(BENCHMARK_TIME, 0.25).
+
 %% Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_ao_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
@@ -12,8 +15,11 @@ run_test() ->
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
-run_all_test_() ->
+suite_test_() ->
     hb_test_utils:suite_with_opts(test_suite(), test_opts()).
+
+benchmark_test_() ->
+    hb_test_utils:suite_with_opts(benchmark_suite(), test_opts()).
 
 test_suite() ->
     [
@@ -78,8 +84,38 @@ test_suite() ->
             fun step_hook_test/1}
     ].
 
+benchmark_suite() ->
+    [
+        {benchmark_simple, "simple resolution benchmark",
+            fun benchmark_simple_test/1},
+        {benchmark_multistep, "multistep resolution benchmark",
+            fun benchmark_multistep_test/1},
+        {benchmark_get, "get benchmark",
+            fun benchmark_get_test/1},
+        {benchmark_set, "single value set benchmark",
+            fun benchmark_set_test/1},
+        {benchmark_set_multiple, "set two keys benchmark",
+            fun benchmark_set_multiple_test/1},
+        {benchmark_set_multiple_deep, "set two keys deep benchmark",
+            fun benchmark_set_multiple_deep_test/1}
+    ].
+
 test_opts() ->
     [
+        #{
+            name => normal,
+            desc => "Default opts",
+            opts => #{},
+            skip => []
+        },
+        #{
+            name => without_hashpath,
+            desc => "Default without hashpath",
+            opts => #{
+                hashpath => ignore
+            },
+            skip => []
+        },
         #{
             name => no_cache,
             desc => "No cache read or write",
@@ -138,14 +174,6 @@ test_opts() ->
                 % Skip tests that call hb_ao utils (which have their own 
                 % cache settings).
             ]
-        },
-        #{
-            name => normal,
-            desc => "Default opts",
-            opts => #{
-                cache_lookup_hueristics => false
-            },
-            skip => []
         }
     ].
 
@@ -822,3 +850,113 @@ step_hook_test(InitOpts) ->
     ),
     % Test that the step hook was called.
     ?assert(receive {step, Ref} -> true after 100 -> false end).
+
+%%% Benchmark tests
+benchmark_simple_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) -> hb_ao:resolve(#{ <<"a">> => I }, <<"a">>, Opts) end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Single-step resolutions:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
+
+benchmark_multistep_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) ->
+                hb_ao:resolve(
+                    #{
+                        <<"iteration">> => I,
+                        <<"a">> => #{
+                            <<"b">> => #{ <<"return">> => I }
+                        }
+                    },
+                    <<"a/b">>,
+                    Opts
+                )
+            end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Multistep resolutions:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
+
+benchmark_get_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) ->
+                hb_ao:get(
+                    <<"a">>,
+                    #{ <<"a">> => <<"1">>, <<"iteration">> => I },
+                    Opts
+                )
+            end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Get operations:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
+
+benchmark_set_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) ->
+                hb_ao:set(
+                    #{ <<"a">> => <<"1">>, <<"iteration">> => I },
+                    <<"a">>,
+                    <<"2">>,
+                    Opts
+                )
+            end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Single value set operations:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
+
+benchmark_set_multiple_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) ->
+                hb_ao:set(
+                    #{ <<"a">> => <<"1">>, <<"iteration">> => I },
+                    #{ <<"a">> => <<"1a">>, <<"b">> => <<"2">> },
+                    Opts
+                )
+            end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Set two keys operations:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
+
+
+benchmark_set_multiple_deep_test(Opts) ->
+    Iterations =
+        hb_test_utils:benchmark(
+            fun(I) ->
+                hb_ao:set(
+                    #{ <<"a">> => #{ <<"b">> => <<"1">> } },
+                    #{ <<"a">> => #{ <<"b">> => <<"2">>, <<"c">> => I } },
+                    Opts
+                )
+            end,
+            ?BENCHMARK_TIME
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Set two keys operations:">>,
+        Iterations,
+        ?BENCHMARK_TIME
+    ).
