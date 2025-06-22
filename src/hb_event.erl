@@ -118,8 +118,11 @@ handle_tracer(Topic, X, Opts) ->
 %% @doc Increment the counter for the given topic and message. Registers the
 %% counter if it doesn't exist. If the topic is `global', the message is ignored.
 %% This means that events must specify a topic if they want to be counted,
-%% filtering debug messages. Similarly, events with a topic that begins with
-%% `debug' are ignored.
+%% filtering debug messages.
+%% 
+%% This function uses a series of hard-coded topics to ignore explicitly in
+%% order to quickly filter events that are executed so frequently that they
+%% would otherwise cause heavy performance costs.
 increment(Topic, Message, Opts) ->
     increment(Topic, Message, Opts, 1).
 increment(global, _Message, _Opts, _Count) -> ignored;
