@@ -1130,7 +1130,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
             #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
             #{ spawn_worker => true, process_workers => true }
         ),
-    Iterations = hb:benchmark(
+    Iterations = hb_test_utils:benchmark(
         fun(Iteration) ->
             schedule_wasm_call(
                 Initialized,
@@ -1170,7 +1170,7 @@ aos_persistent_worker_benchmark_test_() ->
             {ok, _},
             hb_ao:resolve(Msg1, FirstSlotMsg2, #{ spawn_worker => true })
         ),
-        Iterations = hb:benchmark(
+        Iterations = hb_test_utils:benchmark(
             fun(Iteration) ->
                 schedule_aos_call(
                     Msg1,

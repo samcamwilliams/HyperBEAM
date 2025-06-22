@@ -491,13 +491,15 @@ aos_stack_benchmark_test_() ->
         ),
         Msg = generate_aos_msg(ProcID, <<"return 1+1">>),
         Iterations =
-            hb:benchmark(
+            hb_test_utils:benchmark(
                 fun() -> hb_ao:resolve(Initialized, Msg, #{}) end,
                 BenchTime
             ),
-        hb_util:eunit_print(
-            "Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)",
-            [Iterations, BenchTime, Iterations / BenchTime]
+        hb_test_utils:benchmark_print(
+            <<"(Minimal AOS stack:) Evaluated">>,
+            <<"messages">>,
+            Iterations,
+            BenchTime
         ),
         ?assert(Iterations >= 10),
         ok
