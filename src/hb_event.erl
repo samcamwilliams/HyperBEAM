@@ -2,54 +2,11 @@
 -module(hb_event).
 -export([counters/0, diff/1, diff/2]).
 -export([log/1, log/2, log/3, log/4, log/5, log/6]).
--export([increment/3, increment/4]).
+-export([increment/3, increment/4, increment_callers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(OVERLOAD_QUEUE_LENGTH, 10000).
-
-%% @doc Return a message containing the current counter values for all logged
-%% HyperBEAM events. The result comes in a form as follows:
-%%      /GroupName/EventName -> Count
-%% Where the `EventName` is derived from the value of the first term sent to the
-%% `?event(...)' macros.
-counters() ->
-    UnaggregatedCounts =
-        [
-            {Group, Name, Count}
-        ||
-            {{default, <<"event">>, [Group, Name], _}, Count, _} <- raw_counters()
-        ],
-    lists:foldl(
-        fun({Group, Name, Count}, Acc) -> 
-            Acc#{
-                Group => (maps:get(Group, Acc, #{}))#{
-                    Name => maps:get(Name, maps:get(Group, Acc, #{}), 0) + Count
-                }
-            }
-        end,
-        #{},
-        UnaggregatedCounts
-    ).
-
-%% @doc Return the change in the event counters before and after executing the
-%% given function.
-diff(Fun) ->
-    diff(Fun, #{}).
-diff(Fun, Opts) ->
-    application:ensure_all_started(prometheus),
-    EventsBefore = counters(),
-    Res = Fun(),
-    EventsAfter = counters(),
-    {hb_message:diff(EventsBefore, EventsAfter, Opts), Res}.
-
--ifdef(NO_EVENTS).
-raw_counters() ->
-    [].
--else.
-raw_counters() ->
-    ets:tab2list(prometheus_counter_table).
--endif.
 
 -ifdef(NO_EVENTS).
 log(_X) -> ok.
@@ -158,6 +115,67 @@ increment(Topic, Message, _Opts, Count) ->
                     PID ! {increment, TopicBin, EventName, Count}
             end
     end.
+
+%% @doc Increment the call paths and individual upstream calling functions of
+%% the current execution. This function generates the stacktrace itself. It is
+%% **extremely** expensive, so it should only be used in very specific cases.
+%% Do not ship code that calls this function to prod.
+increment_callers(Topic) ->
+    BinTopic = hb_util:bin(Topic),
+    increment(
+        <<BinTopic/binary, "-call-paths">>,
+        hb_util:format_trace_short(),
+        #{}
+    ),
+    lists:foreach(
+        fun(Caller) ->
+            increment(<<BinTopic/binary, "-callers">>, Caller, #{})
+        end,
+        hb_util:trace_to_list(hb_util:get_trace())
+    ).
+
+%% @doc Return a message containing the current counter values for all logged
+%% HyperBEAM events. The result comes in a form as follows:
+%%      /GroupName/EventName -> Count
+%% Where the `EventName` is derived from the value of the first term sent to the
+%% `?event(...)' macros.
+counters() ->
+    UnaggregatedCounts =
+        [
+            {Group, Name, Count}
+        ||
+            {{default, <<"event">>, [Group, Name], _}, Count, _} <- raw_counters()
+        ],
+    lists:foldl(
+        fun({Group, Name, Count}, Acc) -> 
+            Acc#{
+                Group => (maps:get(Group, Acc, #{}))#{
+                    Name => maps:get(Name, maps:get(Group, Acc, #{}), 0) + Count
+                }
+            }
+        end,
+        #{},
+        UnaggregatedCounts
+    ).
+
+%% @doc Return the change in the event counters before and after executing the
+%% given function.
+diff(Fun) ->
+    diff(Fun, #{}).
+diff(Fun, Opts) ->
+    application:ensure_all_started(prometheus),
+    EventsBefore = counters(),
+    Res = Fun(),
+    EventsAfter = counters(),
+    {hb_message:diff(EventsBefore, EventsAfter, Opts), Res}.
+
+-ifdef(NO_EVENTS).
+raw_counters() ->
+    [].
+-else.
+raw_counters() ->
+    ets:tab2list(prometheus_counter_table).
+-endif.
 
 %% @doc Find the event server, creating it if it doesn't exist. We cache the
 %% result in the process dictionary to avoid looking it up multiple times.
