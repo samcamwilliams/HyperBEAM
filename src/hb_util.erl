@@ -17,7 +17,7 @@
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, debug_fmt/2, debug_fmt/3, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
--export([format_trace/1, format_trace_short/1]).
+-export([format_trace/1, format_trace_short/0, format_trace_short/1]).
 -export([is_hb_module/1, is_hb_module/2, all_hb_modules/0]).
 -export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([count/2, mean/1, stddev/1, variance/1, weighted_random/1]).
@@ -789,6 +789,7 @@ print_trace_short(Trace, Mod, Func, Line) ->
     ).
 
 %% @doc Format a trace to a short string.
+format_trace_short() -> format_trace_short(get_trace()).
 format_trace_short(Trace) -> 
     lists:join(
         " / ",
