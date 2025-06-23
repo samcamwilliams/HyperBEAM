@@ -527,9 +527,10 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
     % Try to execute the function.
     Res = 
         try
+            TruncatedArgs = truncate_args(Func, Args),
             MsgRes =
                 maybe_force_message(
-                    apply(Func, truncate_args(Func, Args)),
+                    maybe_profiled_apply(Func, TruncatedArgs, Msg1, Msg2, Opts),
                     Opts
                 ),
             ?event(
@@ -737,6 +738,76 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
             ),
             Res
     end.
+
+%% @doc If the `AO_PROFILING' macro is defined (set by building/launching with
+%% `rebar3 as ao_profiling') we record statistics about the execution of the
+%% function. This is a costly operation, so if it is not defined, we simply
+%% apply the function and return the result.
+-ifdef(AO_PROFILING).
+maybe_profiled_apply(Func, Args, Msg1, Msg2, Opts) ->
+    CallStack = erlang:get(ao_stack),
+    Key =
+        case hb_maps:get(<<"device">>, Msg1, undefined) of
+            undefined ->
+                hb_util:bin(erlang:fun_to_list(Func));
+            Device ->
+                case hb_maps:get(<<"path">>, Msg2, undefined) of
+                    undefined ->
+                        hb_util:bin(erlang:fun_to_list(Func));
+                    Path ->
+                        MethodStr =
+                            case hb_maps:get(<<"method">>, Msg2, undefined) of
+                                undefined -> <<"">>;
+                                Method -> <<"[", Method/binary, "]">>
+                            end,
+                        << 
+                            (hb_util:bin(Device))/binary,
+                            "/",
+                            (hb_util:bin(Path))/binary,
+                            MethodStr/binary
+                        >>
+                end
+        end,
+    put(
+        ao_stack,
+        case CallStack of
+            undefined -> [Key];
+            Stack -> [Key | Stack]
+        end
+    ),
+    {ExecMicroSecs, Res} = timer:tc(fun() -> apply(Func, Args) end),
+    put(ao_stack, CallStack),
+    hb_event:increment(<<"ao-call-counts">>, Key, Opts),
+    hb_event:increment(<<"ao-total-durations">>, Key, Opts, ExecMicroSecs),
+    case CallStack of
+        undefined -> ok;
+        [Caller|_] ->
+            hb_event:increment(
+                <<"ao-callers:", Key/binary>>,
+                hb_util:bin(
+                    [
+                        <<"duration:">>,
+                        Caller
+                    ]
+                ),
+                Opts,
+                ExecMicroSecs
+            ),
+            hb_event:increment(
+                <<"ao-callers:", Key/binary>>,
+                hb_util:bin(
+                    [
+                        <<"calls:">>,
+                        Caller
+                    ]),
+                Opts
+            )
+    end,
+    Res.
+-else.
+maybe_profiled_apply(Func, Args, _Msg1, _Msg2, _Opts) ->
+    apply(Func, Args).
+-endif.
 
 %% @doc Ensure that a message is loaded from the cache if it is an ID, or 
 %% a link, such that it is ready for execution.
