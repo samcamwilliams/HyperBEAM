@@ -11,7 +11,9 @@
 %% `rebar3 eunit --test hb_ao_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
 run_test() ->
-    hb_test_utils:run(step_hook, normal, test_suite(), test_opts()).
+    hb_test_utils:run(
+        benchmark_multistep, normal, benchmark_suite(), test_opts()
+    ).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -865,27 +867,37 @@ benchmark_simple_test(Opts) ->
     ).
 
 benchmark_multistep_test(Opts) ->
-    Iterations =
-        hb_test_utils:benchmark(
-            fun(I) ->
-                hb_ao:resolve(
-                    #{
-                        <<"iteration">> => I,
-                        <<"a">> => #{
-                            <<"b">> => #{ <<"return">> => I }
-                        }
-                    },
-                    <<"a/b">>,
-                    Opts
+    {Events, Iterations} =
+        hb_event:diff(
+            fun() ->
+                hb_test_utils:benchmark(
+                    fun(I) ->
+                        hb_ao:resolve(
+                            #{
+                                <<"iteration">> => I,
+                                <<"a">> => #{
+                                    <<"b">> => #{ <<"return">> => I }
+                                }
+                            },
+                            <<"a/b">>,
+                            Opts#{ hashpath => ignore }
+                        )
+                    end,
+                    ?BENCHMARK_TIME
                 )
             end,
-            ?BENCHMARK_TIME
+            Opts
         ),
     hb_test_utils:benchmark_print(
         <<"Multistep resolutions:">>,
         Iterations,
         ?BENCHMARK_TIME
-    ).
+    ),
+    ?event(
+        debug_perf,
+        {events, Events}
+    ),
+    ok.
 
 benchmark_get_test(Opts) ->
     Iterations =
@@ -944,19 +956,29 @@ benchmark_set_multiple_test(Opts) ->
 
 
 benchmark_set_multiple_deep_test(Opts) ->
-    Iterations =
-        hb_test_utils:benchmark(
-            fun(I) ->
-                hb_ao:set(
-                    #{ <<"a">> => #{ <<"b">> => <<"1">> } },
-                    #{ <<"a">> => #{ <<"b">> => <<"2">>, <<"c">> => I } },
-                    Opts
+    {Events, Iterations} =
+        hb_event:diff(
+            fun() ->
+                hb_test_utils:benchmark(
+                    fun(I) ->
+                        hb_ao:set(
+                            #{ <<"a">> => #{ <<"b">> => <<"1">> } },
+                            #{ <<"a">> => #{ <<"b">> => <<"2">>, <<"c">> => I } },
+                            Opts
+                        )
+                    end,
+                    ?BENCHMARK_TIME
                 )
             end,
-            ?BENCHMARK_TIME
+            Opts
         ),
     hb_test_utils:benchmark_print(
         <<"Set two keys operations:">>,
         Iterations,
         ?BENCHMARK_TIME
-    ).
+    ),
+    ?event(
+        debug_perf,
+        {events, Events}
+    ),
+    ok.
