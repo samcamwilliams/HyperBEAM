@@ -62,7 +62,7 @@
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
 -export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
 -export([with_commitments/3, without_commitments/3, normalize_commitments/2]).
--export([match/2, match/3, match/4, find_target/3]).
+-export([diff/3, match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, default_tx_keys/0, filter_default_keys/1]).
 %%% Debugging tools:
@@ -673,6 +673,39 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
 	
 matchable_keys(Map) ->
     lists:sort(lists:map(fun hb_ao:normalize_key/1, hb_maps:keys(Map))).
+
+%% @doc Return the numeric differences between two messages, matching deeply
+%% across nested messages. If the values are non-numeric, the new value is 
+%% returned if the values are different. Keys found only in the first message
+%% are dropped, as they have 'changed' to absence.
+diff(Msg1, Msg2, Opts) when is_map(Msg1) andalso is_map(Msg2) ->
+    maps:filtermap(
+        fun(Key, Val2) ->
+            case hb_maps:get(Key, Msg1, not_found, Opts) of
+                Val2 ->
+                    % The key is present in both maps, and the values match.
+                    false;
+                not_found ->
+                    % The key is net-new in Map2.
+                    {true, Val2};
+                Val1 when is_number(Val1) andalso is_number(Val2) ->
+                    % The key is present in both maps, and the values are numbers;
+                    % return the difference.
+                    {true, Val2 - Val1};
+                Val1 when is_map(Val1) andalso is_map(Val2) ->
+                    % The key is present in both maps, and the values are maps;
+                    % return the difference.
+                    {true, diff(Val1, Val2, Opts)};
+                _ ->
+                    % The key is present in both maps, and the values do not 
+                    % match. Return the new value.
+                    {true, Val2}
+            end
+        end,
+        Msg2
+    );
+diff(_Val1, _Val2, _Opts) ->
+    not_found.
 
 %% @doc Filter messages that do not match the 'spec' given. The underlying match
 %% is performed in the `only_present' mode, such that match specifications only
