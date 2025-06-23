@@ -2,7 +2,7 @@
 %%% (potentially multi-layer) paths as their keys, and a normal TABM binary as 
 %%% their value.
 -module(dev_codec_flat).
--export([from/3, to/3, commit/3, verify/3]).
+-export([from/3, to/3, commit/3, verify/3, inject_at_path/4]).
 %%% Testing utilities
 -export([serialize/1, serialize/2, deserialize/1]).
 -include_lib("eunit/include/eunit.hrl").

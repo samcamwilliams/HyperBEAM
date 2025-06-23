@@ -53,13 +53,13 @@ set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath, Opts),
     Priv = from_message(Msg),
     ?event({set_private, {in, InputPath}, {out, Path}, {value, Value}, {opts, Opts}}),
-    NewPriv = hb_ao:set(Priv, Path, Value, priv_ao_opts(Opts)),
+    NewPriv = hb_util:deep_set(Priv, Path, Value, priv_ao_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
     ?event({set_private, {in, PrivMap}, {opts, Opts}}),
-    NewPriv = hb_ao:set(CurrentPriv, PrivMap, priv_ao_opts(Opts)),
+    NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, priv_ao_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 

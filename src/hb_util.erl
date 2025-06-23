@@ -5,10 +5,10 @@
 -export([key_to_atom/2, binary_to_addresses/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
+-export([deep_merge/3, deep_set/4, number/1, list_to_numbered_message/1]).
 -export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1]).
+-export([is_string_list/1, list_replace/3]).
 -export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -262,6 +262,15 @@ deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
         Map1,
         Map2,
 		Opts
+    ).
+
+%% @doc Set a deep value in a message.
+deep_set(Msg, Path, Value, Opts) ->
+    dev_codec_flat:inject_at_path(
+        hb_path:term_to_path_parts(Path, Opts),
+        Value,
+        Msg,
+        Opts
     ).
 
 %% @doc Find the target path to route for a request message.
