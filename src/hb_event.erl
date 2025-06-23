@@ -1,6 +1,7 @@
 %%% @doc Wrapper for incrementing prometheus counters.
 -module(hb_event).
--export([counters/0, log/1, log/2, log/3, log/4, log/5, log/6]).
+-export([counters/0, diff/1, diff/2]).
+-export([log/1, log/2, log/3, log/4, log/5, log/6]).
 -export([increment/3, increment/4]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -17,8 +18,7 @@ counters() ->
         [
             {Group, Name, Count}
         ||
-            {{default, <<"event">>, [Group, Name], _}, Count, _}
-                <- raw_counters()
+            {{default, <<"event">>, [Group, Name], _}, Count, _} <- raw_counters()
         ],
     lists:foldl(
         fun({Group, Name, Count}, Acc) -> 
@@ -31,6 +31,17 @@ counters() ->
         #{},
         UnaggregatedCounts
     ).
+
+%% @doc Return the change in the event counters before and after executing the
+%% given function.
+diff(Fun) ->
+    diff(Fun, #{}).
+diff(Fun, Opts) ->
+    application:ensure_all_started(prometheus),
+    EventsBefore = counters(),
+    Res = Fun(),
+    EventsAfter = counters(),
+    {hb_message:diff(EventsBefore, EventsAfter, Opts), Res}.
 
 -ifdef(NO_EVENTS).
 raw_counters() ->
