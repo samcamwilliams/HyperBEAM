@@ -12,10 +12,22 @@
 %% Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_ao_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
-run_test() ->
-    hb_test_utils:run(
-        benchmark_multistep, normal, benchmark_suite(), test_opts()
-    ).
+run_test_() ->
+    {timeout, 10, fun() ->
+        hb_test_utils:compare_events(
+            fun dev_lua:pure_lua_process_benchmark/1,
+            #{
+                process_cache_frequency => 50,
+                hashpath => ignore
+            },
+            #{
+                process_cache_frequency => 50
+            }
+            % normal,
+            % without_hashpath,
+            % test_opts()
+        )
+    end}.
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.

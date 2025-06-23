@@ -132,7 +132,7 @@ compare_events(Fun, Opts1, Opts2) ->
             {events_diff, EventsDiff}
         }
     ),
-    ok.
+    EventsDiff.
 compare_events(Fun, OptsName1, OptsName2, OptsList) ->
     compare_events(
         Fun,

@@ -3,8 +3,10 @@
 -export([info/1, init/3, snapshot/3, normalize/3, functions/3]).
 %%% Public Utilities
 -export([encode/2, decode/2]).
+-export([pure_lua_process_benchmark/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
 %%% The set of functions that will be sandboxed by default if `sandbox' is set 
 %%% to only `true'. Setting `sandbox' to a map allows the invoker to specify
 %%% which functions should be sandboxed and what to return instead. Providing
@@ -628,32 +630,31 @@ pure_lua_process_test() ->
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
 pure_lua_process_benchmark_test_() ->
-    {timeout, 30, fun pure_lua_process_benchmark/0}.
-pure_lua_process_benchmark() ->
+    {timeout,
+        30,
+        fun() ->
+            pure_lua_process_benchmark(#{
+                process_async_cache => true,
+                hashpath => ignore,
+                process_cache_frequency => 50
+            })
+    end}.
+pure_lua_process_benchmark(Opts) ->
     BenchMsgs = 50,
     hb:init(),
-    Opts = #{
-        process_async_cache => true,
-        hashpath => ignore,
-        process_cache_frequency => 50
-    },
     Process = generate_lua_process("test/test.lua", Opts),
     {ok, _} = hb_cache:write(Process, Opts),
     Message = generate_test_message(Process, Opts),
     lists:foreach(
         fun(X) ->
-            hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+            hb_ao:resolve(Process, Message, Opts#{ hashpath => ignore }),
             ?event(debug_lua, {scheduled, X})
         end,
         lists:seq(1, BenchMsgs)
     ),
     ?event(debug_lua, {executing, BenchMsgs}),
     BeforeExec = os:system_time(millisecond),
-    {ok, _} = hb_ao:resolve(
-        Process,
-        <<"now">>,
-        #{ hashpath => ignore, process_cache_frequency => 50 }
-    ),
+    {ok, _} = hb_ao:resolve(Process, <<"now">>, Opts),
     AfterExec = os:system_time(millisecond),
     hb_test_utils:benchmark_print(
         <<"Pure Lua process: Computed">>,
