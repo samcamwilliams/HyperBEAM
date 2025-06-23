@@ -1136,7 +1136,7 @@ message_to_fun(Msg, Key, Opts) ->
 							?event({found_default_handler, {mod, DefaultMod}}),
                             {Status, Func} =
                                 message_to_fun(
-                                    Msg#{ device => DefaultMod }, Key, Opts
+                                    Msg#{ <<"device">> => DefaultMod }, Key, Opts
                                 ),
                             {Status, Dev, Func};
 						_ ->
@@ -1161,7 +1161,7 @@ message_to_fun(Msg, Key, Opts) ->
                                             {dev, DefaultDev}
                                         }),
                                     message_to_fun(
-                                        Msg#{ device => DefaultDev },
+                                        Msg#{ <<"device">> => DefaultDev },
                                         Key,
                                         Opts
                                     )
@@ -1172,7 +1172,7 @@ message_to_fun(Msg, Key, Opts) ->
 
 %% @doc Extract the device module from a message.
 message_to_device(Msg, Opts) ->
-    case dev_message:get(device, Msg, Opts) of
+    case dev_message:get(<<"device">>, Msg, Opts) of
         {error, not_found} ->
             % The message does not specify a device, so we use the default device.
             default_module();
@@ -1196,7 +1196,7 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 					{ok, MsgWithoutDevice} =
 						dev_message:remove(Msg, #{ item => device }, Opts),
 					message_to_fun(
-						MsgWithoutDevice#{ device => default_module() },
+						MsgWithoutDevice#{ <<"device">> => default_module() },
 						Key,
 						Opts
 					);
