@@ -52,8 +52,8 @@ get(InputPath, Msg, Default, Opts) ->
 set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath, Opts),
     Priv = from_message(Msg),
-    ?event({set_private, {in, InputPath}, {out, Path}, {value, Value}, {opts, Opts}}),
-    NewPriv = hb_util:deep_set(Priv, Path, Value, priv_ao_opts(Opts)),
+    ?event({set_private, {in, Path}, {out, Path}, {value, Value}, {opts, Opts}}),
+    NewPriv = hb_util:deep_set(Path, Value, Priv, priv_ao_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
@@ -126,7 +126,7 @@ set_private_test() ->
     ?assertEqual(#{<<"a">> => 1, <<"priv">> => #{<<"a">> => 1}}, Res),
     ?assertEqual(
         #{<<"a">> => 1, <<"priv">> => #{<<"a">> => 1}},
-        set(Res, a, 1, #{})
+        set(Res, <<"a">>, 1, #{})
     ).
 
 get_private_key_test() ->

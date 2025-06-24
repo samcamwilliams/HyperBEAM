@@ -93,14 +93,14 @@ handle_tracer(Topic, X, Opts) ->
 %% would otherwise cause heavy performance costs.
 increment(Topic, Message, Opts) ->
     increment(Topic, Message, Opts, 1).
-% increment(global, _Message, _Opts, _Count) -> ignored;
-% increment(ao_core, _Message, _Opts, _Count) -> ignored;
-% increment(ao_internal, _Message, _Opts, _Count) -> ignored;
-% increment(ao_devices, _Message, _Opts, _Count) -> ignored;
-% increment(ao_subresolution, _Message, _Opts, _Count) -> ignored;
-% increment(signature_base, _Message, _Opts, _Count) -> ignored;
-% increment(id_base, _Message, _Opts, _Count) -> ignored;
-% increment(parsing, _Message, _Opts, _Count) -> ignored;
+increment(global, _Message, _Opts, _Count) -> ignored;
+increment(ao_core, _Message, _Opts, _Count) -> ignored;
+increment(ao_internal, _Message, _Opts, _Count) -> ignored;
+increment(ao_devices, _Message, _Opts, _Count) -> ignored;
+increment(ao_subresolution, _Message, _Opts, _Count) -> ignored;
+increment(signature_base, _Message, _Opts, _Count) -> ignored;
+increment(id_base, _Message, _Opts, _Count) -> ignored;
+increment(parsing, _Message, _Opts, _Count) -> ignored;
 increment(Topic, Message, _Opts, Count) ->
     case parse_name(Message) of
         <<"debug", _/binary>> -> ignored;

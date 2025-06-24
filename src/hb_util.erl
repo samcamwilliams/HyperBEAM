@@ -249,14 +249,14 @@ to_hex(Bin) when is_binary(Bin) ->
 deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
     hb_maps:fold(
         fun(Key, Value2, AccMap) ->
-            case hb_maps:find(Key, AccMap, Opts) of
+            case deep_get(Key, AccMap, not_found, Opts) of
                 {ok, Value1} when is_map(Value1), is_map(Value2) ->
                     % Both values are maps, recursively merge them
-                    AccMap#{Key => deep_merge(Value1, Value2, Opts)};
+                    deep_set(Key, deep_merge(Value1, Value2, Opts), AccMap, Opts);
                 _ ->
                     % Either the key doesn't exist in Map1 or at least one of 
                     % the values isn't a map. Simply use the value from Map2
-                    AccMap#{ Key => Value2 }
+                    deep_set(Key, Value2, AccMap, Opts)
             end
         end,
         Map1,
@@ -264,14 +264,36 @@ deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
 		Opts
     ).
 
-%% @doc Set a deep value in a message.
-deep_set(Msg, Path, Value, Opts) ->
-    dev_codec_flat:inject_at_path(
-        hb_path:term_to_path_parts(Path, Opts),
-        Value,
-        Msg,
-        Opts
-    ).
+%% @doc Set a deep value in a message by its path, _assuming all messages are
+%% `device: message@1.0`_.
+deep_set(Path, Value, Msg, Opts) when not is_list(Path) ->
+    deep_set(hb_path:term_to_path_parts(Path, Opts), Value, Msg, Opts);
+deep_set([Key], Value, Msg, Opts) ->
+    case hb_maps:get(Key, Msg, not_found, Opts) of
+        ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
+            % If both are maps, merge them
+            Msg#{ Key => hb_maps:merge(ExistingMap, Value, Opts) };
+        _ ->
+            Msg#{ Key => Value }
+    end;
+deep_set([Key|Rest], Value, Map, Opts) ->
+    SubMap = hb_maps:get(Key, Map, #{}, Opts),
+    hb_maps:put(Key, deep_set(Rest, Value, SubMap, Opts), Map, Opts).
+
+%% @doc Get a deep value from a message.
+deep_get(Path, Msg, Default, Opts) when not is_list(Path) ->
+    deep_get(hb_path:term_to_path_parts(Path, Opts), Msg, Default, Opts);
+deep_get([Key], Msg, Default, Opts) ->
+    case hb_maps:find(Key, Msg, Opts) of
+        {ok, Value} -> {ok, Value};
+        error -> Default
+    end;
+deep_get([Key|Rest], Msg, Default, Opts) ->
+    case hb_maps:find(Key, Msg, Opts) of
+        {ok, DeepMsg} when is_map(DeepMsg) ->
+            deep_get(Rest, DeepMsg, Default, Opts);
+        error -> Default
+    end.
 
 %% @doc Find the target path to route for a request message.
 find_target_path(Msg, Opts) ->
