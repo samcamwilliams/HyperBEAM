@@ -321,7 +321,7 @@ subindex_to_tags(Subindex) ->
 ans104_no_data_item_test() ->
     % Start a random node so that all of the services come up.
     _Node = hb_http_server:start_node(#{}),
-    {ok, Res} = read(<<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>, #{}),
+    {ok, Res} = read(<<"BOogk_XAI3bvNWnxNxwxmvOfglZt17o4MOVAdPNZ_ew">>, #{}),
     ?event(gateway, {get_ans104_test, Res}),
     ?event(gateway, {signer, hb_message:signers(Res, #{})}),
     ?assert(true).

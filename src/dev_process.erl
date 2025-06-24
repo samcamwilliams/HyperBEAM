@@ -87,7 +87,7 @@ info(_Msg1) ->
 %% using infrastructure that should not be present on nodes in the future.
 default_device(Msg1, Key, Opts) ->
     NormKey = hb_ao:normalize_key(Key),
-    case {NormKey, hb_ao:get(<<"process/variant">>, {as, dev_message, Msg1}, Opts)} of
+    case {NormKey, hb_util:deep_get(<<"process/variant">>, Msg1, Opts)} of
         {<<"execution">>, <<"ao.TN.1">>} -> <<"genesis-wasm@1.0">>;
         _ -> default_device_index(NormKey)
     end.
@@ -109,7 +109,7 @@ next(Msg1, _Msg2, Opts) ->
 snapshot(RawMsg1, _Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
     {ok, SnapshotMsg} = run_as(
-        <<"Execution">>,
+        <<"execution">>,
         Msg1,
         #{ <<"path">> => <<"snapshot">>, <<"mode">> => <<"Map">> },
         Opts#{
@@ -121,11 +121,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
     Slot = hb_ao:get(<<"at-slot">>, {as, <<"message@1.0">>, Msg1}, Opts),
     {ok,
         hb_private:set(
-            hb_ao:set(
-                SnapshotMsg,
-                #{ <<"cache-control">> => [<<"store">>] },
-                Opts
-            ),
+            SnapshotMsg#{ <<"cache-control">> => [<<"store">>] },
             #{ <<"priv/additional-hashpaths">> =>
                     [
                         hb_path:to_binary([ProcID, <<"snapshot">>, Slot])
@@ -336,8 +332,14 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
 						{snapshot, Snapshot}
 					}
 				),
-                ?event(compute_debug,
-                    {snapshot_generated, {proc_id, ProcID}, {slot, Slot}}, Opts),
+                ?event(snapshot,
+                    {snapshot_generated,
+                        {proc_id, ProcID},
+                        {slot, Slot},
+                        {snapshot, Snapshot}
+                    },
+                    Opts
+                ),
 				Msg3#{ <<"snapshot">> => Snapshot };
             _ -> 
                 Msg3
@@ -463,7 +465,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                             Opts
                         ),
                     LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
-                    ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event(compute, {found_state_checkpoint, ProcID, LoadedSnapshotMsg}),
                     {ok, Normalized} =
                         run_as(
                             <<"execution">>,
@@ -495,34 +497,38 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 %% the device found at `Key'. After execution, the device is swapped back
 %% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
-    BaseDevice = hb_ao:get(<<"device">>, {as, dev_message, Msg1}, Opts),
+    BaseDevice = hb_maps:get(<<"device">>, Msg1, not_found, Opts),
     ?event({running_as, {key, {explicit, Key}}, {req, Msg2}}),
-    {ok, PreparedMsg} =
-        dev_message:set(
+    PreparedMsg =
+        hb_util:deep_merge(
             ensure_process_key(Msg1, Opts),
             #{
                 <<"device">> =>
-                    DeviceSet = hb_ao:get(
-                        << Key/binary, "-device">>,
-                        {as, dev_message, Msg1},
-                        default_device(Msg1, Key, Opts),
-                        Opts
-                    ),
+                    DeviceSet =
+                        hb_maps:get(
+                            << Key/binary, "-device">>,
+                            Msg1,
+                            default_device(Msg1, Key, Opts),
+                            Opts
+                        ),
                 <<"input-prefix">> =>
-                    case hb_ao:get(<<"input-prefix">>, Msg1, Opts) of
+                    case hb_maps:get(<<"input-prefix">>, Msg1, not_found, Opts) of
                         not_found -> <<"process">>;
                         Prefix -> Prefix
                     end,
                 <<"output-prefixes">> =>
-                    hb_ao:get(
+                    hb_maps:get(
                         <<Key/binary, "-output-prefixes">>,
-                        {as, dev_message, Msg1},
+                        Msg1,
                         undefined, % Undefined in set will be ignored.
                         Opts
                     )
             },
             Opts
         ),
+    ?event(debug_prefix,
+        {input_prefix, hb_maps:get(<<"output-prefixes">>, PreparedMsg, not_found, Opts)
+    }),
     {Status, BaseResult} =
         hb_ao:resolve(
             PreparedMsg,
@@ -546,7 +552,7 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
-    case hb_ao:get(<<"process">>, Msg1, Opts#{ hashpath => ignore }) of
+    case hb_maps:get(<<"process">>, Msg1, not_found, Opts) of
         not_found ->
             % If the message has lost its signers, we need to re-read it from
             % the cache. This can happen if the message was 'cast' to a different
@@ -572,7 +578,13 @@ ensure_process_key(Msg1, Opts) ->
                         Msg1
                 end,
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
-            ?event({process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
+            ?event(
+                {process_key_before_set,
+                    {msg1, Msg1},
+                    {process_msg, {explicit, ProcessMsg}},
+                    {committed, Committed}
+                }
+            ),
             Res =
                 hb_ao:set(
                     hb_message:uncommitted(Msg1, Opts),

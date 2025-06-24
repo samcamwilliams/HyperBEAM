@@ -5,10 +5,11 @@
 -export([key_to_atom/2, binary_to_addresses/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, number/1, list_to_numbered_message/1, list_replace/3]).
+-export([deep_merge/3, deep_set/4, deep_get/3, deep_get/4]).
+-export([number/1, list_to_numbered_message/1]).
 -export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1]).
+-export([is_string_list/1, list_replace/3]).
 -export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -16,8 +17,8 @@
 -export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, debug_fmt/2, debug_fmt/3, eunit_print/2]).
--export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
--export([format_trace/1, format_trace_short/1]).
+-export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
+-export([format_trace/1, trace_to_list/1, format_trace_short/0, format_trace_short/1]).
 -export([is_hb_module/1, is_hb_module/2, all_hb_modules/0]).
 -export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([count/2, mean/1, stddev/1, variance/1, weighted_random/1]).
@@ -249,20 +250,55 @@ to_hex(Bin) when is_binary(Bin) ->
 deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
     hb_maps:fold(
         fun(Key, Value2, AccMap) ->
-            case hb_maps:find(Key, AccMap, Opts) of
-                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+            case deep_get(Key, AccMap, Opts) of
+                Value1 when is_map(Value1), is_map(Value2) ->
                     % Both values are maps, recursively merge them
-                    AccMap#{Key => deep_merge(Value1, Value2, Opts)};
+                    deep_set(Key, deep_merge(Value1, Value2, Opts), AccMap, Opts);
                 _ ->
                     % Either the key doesn't exist in Map1 or at least one of 
                     % the values isn't a map. Simply use the value from Map2
-                    AccMap#{ Key => Value2 }
+                    deep_set(Key, Value2, AccMap, Opts)
             end
         end,
         Map1,
         Map2,
 		Opts
     ).
+
+%% @doc Set a deep value in a message by its path, _assuming all messages are
+%% `device: message@1.0`_.
+deep_set(_Path, undefined, Msg, _Opts) -> Msg;
+deep_set(Path, Value, Msg, Opts) when not is_list(Path) ->
+    deep_set(hb_path:term_to_path_parts(Path, Opts), Value, Msg, Opts);
+deep_set([Key], unset, Msg, Opts) ->
+    hb_maps:remove(Key, Msg, Opts);
+deep_set([Key], Value, Msg, Opts) ->
+    case hb_maps:get(Key, Msg, not_found, Opts) of
+        ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
+            % If both are maps, merge them
+            Msg#{ Key => hb_maps:merge(ExistingMap, Value, Opts) };
+        _ ->
+            Msg#{ Key => Value }
+    end;
+deep_set([Key|Rest], Value, Map, Opts) ->
+    SubMap = hb_maps:get(Key, Map, #{}, Opts),
+    hb_maps:put(Key, deep_set(Rest, Value, SubMap, Opts), Map, Opts).
+
+%% @doc Get a deep value from a message.
+deep_get(Path, Msg, Opts) -> deep_get(Path, Msg, not_found, Opts).
+deep_get(Path, Msg, Default, Opts) when not is_list(Path) ->
+    deep_get(hb_path:term_to_path_parts(Path, Opts), Msg, Default, Opts);
+deep_get([Key], Msg, Default, Opts) ->
+    case hb_maps:find(Key, Msg, Opts) of
+        {ok, Value} -> Value;
+        error -> Default
+    end;
+deep_get([Key|Rest], Msg, Default, Opts) ->
+    case hb_maps:find(Key, Msg, Opts) of
+        {ok, DeepMsg} when is_map(DeepMsg) ->
+            deep_get(Rest, DeepMsg, Default, Opts);
+        error -> Default
+    end.
 
 %% @doc Find the target path to route for a request message.
 find_target_path(Msg, Opts) ->
@@ -363,7 +399,7 @@ message_to_ordered_list(List, _Opts) when is_list(List) ->
     List;
 message_to_ordered_list(Message, Opts) ->
     NormMessage = hb_ao:normalize_keys(Message, Opts),
-    Keys = hb_maps:keys(NormMessage, Opts) -- [<<"priv">>],
+    Keys = hb_maps:keys(NormMessage, Opts) -- [<<"priv">>, <<"commitments">>],
     SortedKeys =
         lists:map(
             fun hb_ao:normalize_key/1,
@@ -500,13 +536,9 @@ debug_fmt(X, Opts) -> debug_fmt(X, Opts, 0).
 debug_fmt(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
-        eunit_print(
-            "~p:~p:~p",
-            [A, B, C]
-        ),
-        case hb_opts:get(mode, prod) of
-            prod ->
-                format_indented("[!PRINT FAIL!]", Opts, Indent);
+        case hb_opts:get(debug_print_fail_mode, quiet) of
+            quiet ->
+                format_indented("[!Format failed!] ~p", [X], Opts, Indent);
             _ ->
                 format_indented(
                     "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~s",
@@ -792,16 +824,21 @@ print_trace_short(Trace, Mod, Func, Line) ->
         ]
     ).
 
+%% @doc Return a list of calling modules and lines from a trace.
+trace_to_list(Trace) ->
+    lists:reverse(format_trace_short(
+        hb_opts:get(short_trace_len, 6, #{}),
+        false,
+        Trace,
+        hb_opts:get(stack_print_prefixes, [], #{})
+    )).
+
 %% @doc Format a trace to a short string.
+format_trace_short() -> format_trace_short(get_trace()).
 format_trace_short(Trace) -> 
     lists:join(
         " / ",
-        lists:reverse(format_trace_short(
-            hb_opts:get(short_trace_len, 6, #{}),
-            false,
-            Trace,
-            hb_opts:get(stack_print_prefixes, [], #{})
-        ))
+        trace_to_list(Trace)
     ).
 format_trace_short(_Max, _Latch, [], _Prefixes) -> [];
 format_trace_short(0, _Latch, _Trace, _Prefixes) -> [];
