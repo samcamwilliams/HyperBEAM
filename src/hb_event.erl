@@ -163,7 +163,6 @@ counters() ->
 diff(Fun) ->
     diff(Fun, #{}).
 diff(Fun, Opts) ->
-    application:ensure_all_started(prometheus),
     EventsBefore = counters(),
     Res = Fun(),
     EventsAfter = counters(),

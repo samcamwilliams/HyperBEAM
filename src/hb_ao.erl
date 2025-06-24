@@ -748,9 +748,7 @@ maybe_profiled_apply(Func, Args, Msg1, Msg2, Opts) ->
     CallStack = erlang:get(ao_stack),
     Key =
         case hb_maps:get(<<"device">>, Msg1, undefined) of
-            undefined ->
-                hb_util:bin(erlang:fun_to_list(Func));
-            Device ->
+            Device when is_binary(Device) or is_atom(Device) ->
                 case hb_maps:get(<<"path">>, Msg2, undefined) of
                     undefined ->
                         hb_util:bin(erlang:fun_to_list(Func));
@@ -766,7 +764,9 @@ maybe_profiled_apply(Func, Args, Msg1, Msg2, Opts) ->
                             (hb_util:bin(Path))/binary,
                             MethodStr/binary
                         >>
-                end
+                end;
+            _ ->
+                hb_util:bin(erlang:fun_to_list(Func))
         end,
     put(
         ao_stack,
