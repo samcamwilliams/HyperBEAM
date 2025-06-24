@@ -232,6 +232,7 @@ init(Opts) ->
     end.
 
 init_prometheus(Opts) ->
+    application:ensure_all_started([prometheus, prometheus_cowboy]),
 	prometheus_counter:new([
 		{name, gun_requests_total},
 		{labels, [http_method, route, status_class]},
@@ -443,7 +444,12 @@ terminate(Reason, #state{ status_by_pid = StatusByPID }) ->
 inc_prometheus_gauge(Name) ->
     case application:get_application(prometheus) of
         undefined -> ok;
-        _ -> prometheus_gauge:inc(Name)
+        _ ->
+            try prometheus_gauge:inc(Name)
+            catch _:_ ->
+                init_prometheus(#{}),
+                prometheus_gauge:inc(Name)
+            end
     end.
 
 %% @doc Safe wrapper for prometheus_gauge:dec/2.
