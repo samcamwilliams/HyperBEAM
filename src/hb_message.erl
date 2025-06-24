@@ -512,9 +512,19 @@ format(Map, Opts, Indent) when is_map(Map) ->
             {_, Priv} -> [{<<"!Private!">>, Priv}]
         end,
     % Concatenate the path and device rows with the rest of the key values.
+    UnsortedGeneralKeyVals =
+        maps:to_list(
+            maps:without(
+                [<<"path">>, <<"device">>],
+                Map
+            )
+        ),
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        maps:to_list(maps:without([<<"path">>, <<"device">>], Map)) ++
+        lists:sort(
+            fun({K1, _}, {K2, _}) -> K1 < K2 end,
+            UnsortedGeneralKeyVals
+        ) ++
         FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
