@@ -35,17 +35,16 @@ from_message(_NonMapMessage) -> #{}.
 get(Key, Msg, Opts) ->
     get(Key, Msg, not_found, Opts).
 get(InputPath, Msg, Default, Opts) ->
-    Path = hb_path:term_to_path_parts(remove_private_specifier(InputPath, Opts), Opts),
     % Resolve the path against the private element of the message.
-    Resolve =
-        hb_ao:resolve(
+    Resolved =
+        hb_util:deep_get(
+            remove_private_specifier(InputPath, Opts),
             from_message(Msg),
-            #{ <<"path">> => Path },
             priv_ao_opts(Opts)
         ),
-    case Resolve of
-        {error, _} -> Default;
-        {ok, Value} -> Value
+    case Resolved of
+        not_found -> Default;
+        Value -> Value
     end.
 
 %% @doc Helper function for setting a key in the private element of a message.
@@ -136,3 +135,8 @@ get_private_key_test() ->
     ?assertEqual(2, get(<<"b">>, M1, #{})),
     {error, _} = hb_ao:resolve(M1, <<"priv/a">>, #{}),
     {error, _} = hb_ao:resolve(M1, <<"priv">>, #{}).
+
+
+get_deep_key_test() ->
+    M1 = #{<<"a">> => 1, <<"priv">> => #{<<"b">> => #{<<"c">> => 3}}},
+    ?assertEqual(3, get(<<"b/c">>, M1, #{})).

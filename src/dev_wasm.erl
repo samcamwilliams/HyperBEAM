@@ -290,7 +290,7 @@ terminate(M1, M2, Opts) ->
     hb_beamr:stop(Instance),
     {ok, hb_private:set(M1,
         #{
-            <<Prefix/binary, "/Instance">> => unset
+            <<Prefix/binary, "/instance">> => unset
         },
         Opts
     )}.
@@ -323,13 +323,7 @@ import(Msg1, Msg2, Opts) ->
             "/",
             FuncName/binary
         >>,
-    StatePath =
-        <<
-            Prefix/binary,
-            "/stdlib/",
-            ModName/binary,
-            "/state"
-        >>,
+    StatePath = << Prefix/binary, "/stdlib/", ModName/binary, "/state" >>,
     AdjustedMsg2 = Msg2#{ <<"path">> => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =

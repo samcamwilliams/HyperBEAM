@@ -5,7 +5,8 @@
 -export([key_to_atom/2, binary_to_addresses/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/3, deep_set/4, number/1, list_to_numbered_message/1]).
+-export([deep_merge/3, deep_set/4, deep_get/3, deep_get/4]).
+-export([number/1, list_to_numbered_message/1]).
 -export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, list_replace/3]).
@@ -249,8 +250,8 @@ to_hex(Bin) when is_binary(Bin) ->
 deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
     hb_maps:fold(
         fun(Key, Value2, AccMap) ->
-            case deep_get(Key, AccMap, not_found, Opts) of
-                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+            case deep_get(Key, AccMap, Opts) of
+                Value1 when is_map(Value1), is_map(Value2) ->
                     % Both values are maps, recursively merge them
                     deep_set(Key, deep_merge(Value1, Value2, Opts), AccMap, Opts);
                 _ ->
@@ -266,8 +267,11 @@ deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
 
 %% @doc Set a deep value in a message by its path, _assuming all messages are
 %% `device: message@1.0`_.
+deep_set(_Path, undefined, Msg, _Opts) -> Msg;
 deep_set(Path, Value, Msg, Opts) when not is_list(Path) ->
     deep_set(hb_path:term_to_path_parts(Path, Opts), Value, Msg, Opts);
+deep_set([Key], unset, Msg, Opts) ->
+    hb_maps:remove(Key, Msg, Opts);
 deep_set([Key], Value, Msg, Opts) ->
     case hb_maps:get(Key, Msg, not_found, Opts) of
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
@@ -281,11 +285,12 @@ deep_set([Key|Rest], Value, Map, Opts) ->
     hb_maps:put(Key, deep_set(Rest, Value, SubMap, Opts), Map, Opts).
 
 %% @doc Get a deep value from a message.
+deep_get(Path, Msg, Opts) -> deep_get(Path, Msg, not_found, Opts).
 deep_get(Path, Msg, Default, Opts) when not is_list(Path) ->
     deep_get(hb_path:term_to_path_parts(Path, Opts), Msg, Default, Opts);
 deep_get([Key], Msg, Default, Opts) ->
     case hb_maps:find(Key, Msg, Opts) of
-        {ok, Value} -> {ok, Value};
+        {ok, Value} -> Value;
         error -> Default
     end;
 deep_get([Key|Rest], Msg, Default, Opts) ->
