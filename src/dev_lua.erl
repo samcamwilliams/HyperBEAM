@@ -707,7 +707,7 @@ aos_process_benchmark_test_() ->
     {timeout, 30, fun() ->
         BenchMsgs = 10,
         Opts = #{
-            process_async_cache => false,
+            process_async_cache => true,
             hashpath => ignore,
             process_cache_frequency => 50
         },
