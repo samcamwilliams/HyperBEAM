@@ -260,7 +260,10 @@ apply_to_structured(Structured, TX) ->
                             case coerce_value(Field, TXValue, DefaultValue) of
                                 {ok, CoercedValue} ->
                                     set_map_value_or_throw(
-                                        hb_ao:normalize_key(Field), CoercedValue, AccStructured);
+                                        hb_util:to_lower(hb_ao:normalize_key(Field)),
+                                        CoercedValue,
+                                        AccStructured
+                                    );
                                 error ->
                                     AccStructured
                             end
@@ -278,7 +281,7 @@ add_commitments(Structured, TX, Opts) ->
             hb_util:unique(
                 ?BASE_COMMITTED_TAGS ++
                 [
-                    hb_ao:normalize_key(Tag)
+                    hb_util:to_lower(hb_ao:normalize_key(Tag))
                 ||
                     {Tag, _} <- TX#tx.tags
                 ] ++
@@ -405,7 +408,7 @@ encoded_tags_to_map(Tags) ->
 normal_tags(Tags) ->
     lists:all(
         fun({Key, _}) ->
-            hb_ao:normalize_key(Key) =:= Key
+            hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
         end,
         Tags
     ).
@@ -690,7 +693,7 @@ deduplicating_from_list(Tags, Opts) ->
     Aggregated =
         lists:foldl(
             fun({Key, Value}, Acc) ->
-                NormKey = hb_ao:normalize_key(Key),
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
                 case hb_maps:get(NormKey, Acc, undefined, Opts) of
                     undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->
