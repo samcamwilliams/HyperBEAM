@@ -1012,3 +1012,10 @@ do_signed_roundtrip(UnsignedStructured, UnsignedTX) ->
     ?assert(hb_message:match(TABM0, UnsignedTABM0)),
     ?assertEqual(SignedTX, DataItem),
     ok.
+
+codec_insensitive_get_test() ->
+    Msg = #{ << "Data">> => <<"hello">>},
+    Committed = hb_message:commit(Msg, ar_wallet:new(), #{ <<"device">> => <<"ans104@1.0">> }),
+    Encoded = hb_message:convert(Committed, <<"ans104@1.0">>, #{}),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?assertEqual(hb_ao:get(<<"data">>, Decoded, #{}), <<"hello">>).

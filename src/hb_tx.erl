@@ -803,12 +803,13 @@ deduplicating_from_list(Tags, Opts) ->
         lists:foldl(
             fun({Key, Value}, Acc) ->
                 NormKey = hb_ao:normalize_key(Key),
-                case hb_maps:get(NormKey, Acc, undefined, Opts) of
-                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
+                LowerKey = hb_util:to_lower(NormKey),
+                case hb_maps:get(LowerKey, Acc, undefined, Opts) of
+                    undefined -> hb_maps:put(LowerKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->
-                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
+                        hb_maps:put(LowerKey, Existing ++ [Value], Acc, Opts);
                     ExistingSingle ->
-                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
+                        hb_maps:put(LowerKey, [ExistingSingle, Value], Acc, Opts)
                 end
             end,
             #{},
