@@ -362,7 +362,7 @@ add_commitments(TABM, TX, Device, CommittedTags, Opts) ->
             hb_util:unique(
                 CommittedTags ++
                 [
-                    hb_ao:normalize_key(Tag)
+                    hb_util:to_lower(hb_ao:normalize_key(Tag))
                 ||
                     {Tag, _} <- TX#tx.tags
                 ] ++
@@ -494,7 +494,7 @@ encoded_tags_to_map(Tags) ->
 normal_tags(Tags) ->
     lists:all(
         fun({Key, _}) ->
-            hb_ao:normalize_key(Key) =:= Key
+            hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
         end,
         Tags
     ).
@@ -607,7 +607,9 @@ apply_tabm_to_tx(TX, InputTABM, Req,  Opts) ->
     % Return any remaining TABM keys that were not applied. These will be processed later.
     InputAOTypes = hb_ao:get(<<"ao-types">>, InputTABM, <<>>, Opts),
     DecodedAOTypes = dev_codec_structured:decode_ao_types(InputAOTypes, Opts),
-    UnappliedAOTypes = hb_maps:without(AppliedSimpleFields, DecodedAOTypes),
+    UnappliedAOTypes = hb_maps:fold(fun(K, V, Acc) ->
+        maps:put(hb_util:to_lower(K), V, Acc)
+    end, #{}, hb_maps:without(AppliedSimpleFields, DecodedAOTypes), Opts),
     UnappliedTABM0 = hb_maps:without(
         AppliedSimpleFields ++ AppliedDataField ++ [<<"commitments">>, <<"ao-types">>],
         InputTABM
@@ -757,7 +759,9 @@ set_tags(TX, Tags, OriginalTags, Opts) ->
     % original tags. We do this by re-calculating the expected tags from the
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
-        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags, Opts),
+        ExpectedTagsFromOriginal = hb_maps:fold(
+            fun(Key, Value, Acc) -> maps:put(hb_util:to_lower(Key), Value, Acc) end, 
+            #{}, deduplicating_from_list(OriginalTags, Opts)),
         case Tags == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
@@ -802,7 +806,7 @@ deduplicating_from_list(Tags, Opts) ->
     Aggregated =
         lists:foldl(
             fun({Key, Value}, Acc) ->
-                NormKey = hb_ao:normalize_key(Key),
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
                 case hb_maps:get(NormKey, Acc, undefined, Opts) of
                     undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->

@@ -606,19 +606,27 @@ match(Map1, Map2, Mode, Opts) ->
     end.
 
 unsafe_match(Map1, Map2, Mode, Path, Opts) ->
-     Keys1 =
+    Keys1 =
         hb_maps:keys(
-            NormMap1 = minimize(
+            NormMap1 = hb_maps:fold(
+                fun
+                    (K, V, Acc) -> 
+                        maps:put(hb_util:to_lower(K), V, Acc)
+                end, #{}, minimize(
                 normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
                 [<<"content-type">>, <<"ao-body-key">>]
-            )
+            ), Opts)
         ),
     Keys2 =
         hb_maps:keys(
-            NormMap2 = minimize(
+            NormMap2 = hb_maps:fold(fun
+                (K, V, Acc) -> 
+                    ?event(match, {key, K, V}),
+                    maps:put(hb_util:to_lower(K), V, Acc)
+            end, #{}, minimize(
                 normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
                 [<<"content-type">>, <<"ao-body-key">>]
-            )
+            ), Opts)
         ),
     PrimaryKeysPresent =
         (Mode == primary) andalso

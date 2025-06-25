@@ -111,7 +111,7 @@ make_expected_tabm(TX, TestOpts, ExpectedFields) ->
                 <<"committed">> => hb_ao:normalize_keys(
                     hb_util:unique(
                         committed_tags(TX)
-                            ++ [ hb_ao:normalize_key(Tag) || {Tag, _} <- TX#tx.tags ]
+                            ++ [hb_util:to_lower(hb_ao:normalize_key(Tag)) || {Tag, _} <- TX#tx.tags ]
                             ++ hb_util:to_sorted_keys(ExpectedFields)
                     )
                 ),
