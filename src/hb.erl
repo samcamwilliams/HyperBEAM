@@ -283,32 +283,47 @@ build() ->
 %% @doc Utility function to start a profiling session and run a function,
 %% then analyze the results. Obviously -- do not use in production. Uses `eflame`
 %% if available, otherwise uses `eprof'.
--ifdef(ERL_PROFILING).
 profile(Fun) ->
-    File = <<"stacks.out">>,
-    Res = eflame:apply(Fun, []),
+    File =
+        <<
+            "profile-",
+            (integer_to_binary(os:system_time(microsecond)))/binary,
+            ".out"
+        >>,
+    profile(Fun, File).
+
+-ifdef(EFLAME).
+profile(Fun, File) ->
+    Res = eflame:apply(normal, File, Fun, []),
     EflameDir = code:lib_dir(eflame),
     StackToFlameScript = filename:join(EflameDir, "stack_to_flame.sh"),
-    os:cmd(
-        StackToFlameScript ++
-            " < "
-            ++ hb_util:list(File)
-            ++ " > flame.svg"),
-    os:cmd("open flame.svg"),
-    {File, Res}.
+    Flame = hb_util:bin(os:cmd(StackToFlameScript ++ " < " ++ hb_util:list(File))),
+    file:delete(File),
+    {
+        #{
+            <<"content-type">> => <<"image/svg+xml">>,
+            <<"body">> => Flame
+        },
+        Res
+    }.
 -else.
-profile(Fun) ->
-    eprof_profile(Fun).
+profile(Fun, File) ->
+    eprof_profile(Fun, File).
 -endif.
 
-eprof_profile(Fun) ->
+eprof_profile(Fun, File) ->
     eprof:start_profiling([self()]),
-    try
-        Fun()
-    after
-        eprof:stop_profiling()
-    end,
-    eprof:analyze(total).
+    Res = try Fun() after eprof:stop_profiling() end,
+    eprof:log(File),
+    eprof:analyze(total),
+    {ok, Log} = file:read_file(File),
+    {
+        #{
+            <<"content-type">> => <<"text/plain">>,
+            <<"body">> => Log
+        },
+        Res
+    }.
 
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
