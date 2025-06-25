@@ -1,6 +1,7 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
--export([info/0, format/3, metrics/3, events/3, return_file/2, return_error/1]).
+-export([info/0, format/3, return_file/2, return_error/1]).
+-export([metrics/3, events/3, profile/3]).
 -export([throw/3]).
 -include_lib("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -61,6 +62,21 @@ metrics(_, Req, Opts) ->
 %% @doc Return the current event counters as a message.
 events(_, _Req, _Opts) ->
     {ok, hb_event:counters()}.
+
+%% @doc Profile an AO-Core resolution and return an SVB flame graph.
+profile(_, Req, Opts) ->
+    case hb_maps:get(<<"profile-path">>, Req, not_found, Opts) of
+        not_found ->
+            {error, <<"No profile path provided.">>};
+        ProfilePath ->
+            {Output, _Res} =
+                hb:profile(
+                    fun() ->
+                        hb_ao:resolve(Req#{ <<"path">> => ProfilePath }, Opts)
+                    end
+                ),
+            {ok, Output}
+    end.
 
 %% @doc Employ HyperBEAM's internal pretty printer to format a message.
 format(Base, Req, Opts) ->
