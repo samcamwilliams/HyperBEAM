@@ -804,7 +804,7 @@ generate_stack(File) ->
     Wallet = hb:wallet(),
     {ok, Module} = file:read_file(File),
     Msg1 = #{
-        <<"device">> => <<"Stack@1.0">>,
+        <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
                 <<"json-iface@1.0">>,

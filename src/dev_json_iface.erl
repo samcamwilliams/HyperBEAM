@@ -425,13 +425,13 @@ generate_stack(File, _Mode) ->
     Msg0 = dev_wasm:cache_wasm_image(File),
     Image = hb_ao:get(<<"image">>, Msg0, #{}),
     Msg1 = Msg0#{
-        <<"device">> => <<"Stack@1.0">>,
+        <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
-                <<"WASI@1.0">>,
-                <<"JSON-Iface@1.0">>,
-                <<"WASM-64@1.0">>,
-                <<"Multipass@1.0">>
+                <<"wasi@1.0">>,
+                <<"json-iface@1.0">>,
+                <<"wasm-64@1.0">>,
+                <<"multipass@1.0">>
             ],
         <<"input-prefix">> => <<"process">>,
         <<"output-prefix">> => <<"wasm">>,
