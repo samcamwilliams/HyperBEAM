@@ -284,7 +284,18 @@ do_call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) 
             Result
     catch
         Class:Reason:Stacktrace ->
-            ?event(warning, {store_call_failed, {Class, Reason, Stacktrace}}),
+            ?event(store_error,
+                {store_call_failed,
+                    #{
+                        store => Store,
+                        function => Function,
+                        args => Args,
+                        class => Class,
+                        reason => Reason,
+                        stacktrace => Stacktrace
+                    }
+                }
+            ),
             do_call_function(Rest, Function, Args)
     end.
 
