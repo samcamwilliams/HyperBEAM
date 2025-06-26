@@ -169,8 +169,38 @@ eflame_profile(Fun, Req, Opts) ->
     File = temp_file(),
     Res = eflame:apply(normal, File, Fun, []),
     EflameDir = code:lib_dir(eflame),
-    StackToFlameScript = filename:join(EflameDir, "stack_to_flame.sh"),
-    Flame = hb_util:bin(os:cmd(StackToFlameScript ++ " < " ++ hb_util:list(File))),
+    % Get the name of the function to profile. If the path in the request is
+    % set, attempt to find it. If that is not found, we use the bare path.
+    % This follows the semantics of the request evaluation scheme, in which the
+    % user's provided path is a pointer to the actual path to resolve. If the
+    % path is not set, we use Erlang's short string encoding of the function.
+    Name =
+        case hb_maps:get(<<"path">>, Req, undefined, Opts) of
+            undefined -> hb_util:bin(io_lib:format("~p", [Fun]));
+            Path ->
+                case hb_maps:get(Path, Req, undefined, Opts) of
+                    undefined -> hb_util:bin(Path);
+                    EvalPath -> hb_util:bin(EvalPath)
+                end
+        end,
+    StackToFlameScript = hb_util:bin(filename:join(EflameDir, "flamegraph.pl")),
+    PreparedCommand = 
+        hb_util:list(
+            <<
+                "cat ", (hb_util:bin(File))/binary,
+                " | uniq -c | awk '{print $2, \" \", $1}' | ",
+                StackToFlameScript/binary,
+                " --title=\"", Name/binary, "\""
+            >>
+        ),
+    Flame = hb_util:bin(os:cmd(PreparedCommand)),
+    ?event(debug_profile,
+        {flame_graph,
+            {name, Name},
+            {command, PreparedCommand},
+            {flame, Flame}
+        }
+    ),
     file:delete(File),
     case return_mode(Req, Opts) of
         <<"open">> ->
