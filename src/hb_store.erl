@@ -59,7 +59,7 @@
 -define(STORE_BENCH_READ_OPS, 100_000).
 -define(STORE_BENCH_LIST_KEYS, 500_000).
 -define(STORE_BENCH_LIST_GROUP_SIZE, 10).
--define(STORE_BENCH_LIST_OPS, 100).
+-define(STORE_BENCH_LIST_OPS, 100_000).
 -define(BENCH_MSG_WRITE_OPS, 250).
 -define(BENCH_MSG_READ_OPS, 250).
 -define(BENCH_MSG_DATA_SIZE, 1024).
@@ -422,6 +422,7 @@ store_suite_test_() ->
 benchmark_suite_test_() ->
     generate_test_suite([
         {"benchmark key read write", fun benchmark_key_read_write/1},
+        {"benchmark list", fun benchmark_list/1},
         {"benchmark message read write", fun benchmark_message_read_write/1}
     ]).
 
@@ -568,13 +569,17 @@ benchmark_list(Store, WriteOps, ListOps, GroupSize) ->
                         )
                     end,
                     Groups
-                )
+                ),
+                % Perform one list operation to ensure that the write queue is
+                % flushed.
+                {LastGroupID, _} = lists:last(Groups),
+                list(Store, LastGroupID)
             end
         ),
     % Print the results. Our write time is in microseconds, so we normalize it
     % to seconds.
     hb_test_utils:benchmark_print(
-        <<"Wrote">>,
+        <<"Wrote and flushed">>,
         <<"keys">>,
         WriteOps,
         WriteTime / 1_000_000
