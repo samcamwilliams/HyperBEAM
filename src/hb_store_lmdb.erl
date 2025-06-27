@@ -239,12 +239,7 @@ to_path(PathParts) ->
 %% Returns {ok, Value} or not_found.
 read_direct(Opts, Path) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
-    case elmdb:get(DBInstance, Path) of
-        {ok, Value} ->
-            {ok, Value};
-        not_found ->
-            read_in_progress(Opts, Path)
-    end.
+    elmdb:get(DBInstance, Path).
 
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
@@ -458,7 +453,7 @@ matching_db_keys(Prefix, Opts) ->
             % Match keys that start with our search path (like dir listing)
             case match_path(Prefix, Key) of
                 {true, Child} -> [Child | Acc];
-                false -> Acc
+                false -> {stop, Acc}
             end
         end,
         []
@@ -476,8 +471,6 @@ matching_pending_keys(Prefix, Opts) ->
 %% the key and value, and the accumulator. The `Fun` may return `{stop, Acc}`
 %% to stop the fold early.
 fold_after(Opts, Path, Fun, Acc) ->
-    fold_after(Opts, Path, Fun, Acc, 0).
-fold_after(Opts, Path, Fun, Acc, Count) ->
     #{ <<"db">> := DBInstance, <<"env">> := Env } = find_env(Opts),
     {ok, Txn} = elmdb:ro_txn_begin(Env),
     {ok, Cur} = elmdb:ro_txn_cursor_open(Txn, DBInstance),
@@ -486,8 +479,7 @@ fold_after(Opts, Path, Fun, Acc, Count) ->
         Txn,
         Cur,
         Fun,
-        Acc,
-        Count
+        Acc
     ).
 
 %% @doc Internal helper for `fold_after/4`.
