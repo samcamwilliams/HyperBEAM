@@ -398,6 +398,9 @@ list(Opts, Path, FlushMode) ->
                 % Match keys that start with our search path (like dir listing)
                 case byte_size(Key) > SearchPathSize andalso 
                     binary:part(Key, 0, SearchPathSize) =:= SearchPath of
+                    false ->
+                        % We have surpassed the search path, stop the fold
+                        {stop, Acc};
                     true -> 
                         % Get the part after our search path
                         Remainder = 
@@ -416,8 +419,7 @@ list(Opts, Path, FlushMode) ->
                                     true -> Acc;
                                     false -> [ImmediateChild | Acc]
                                 end
-                        end;
-                    false -> Acc
+                        end
                 end
             end,
         []
@@ -441,7 +443,8 @@ list(_, _, _) ->
     {error, {badarg, <<"StoreOpts must be a map and Path must be an binary">>}}.
 
 %% @doc Fold over a database after a given path. The `Fun` is called with
-%% the key and value, and the accumulator.
+%% the key and value, and the accumulator. The `Fun` may return `{stop, Acc}`
+%% to stop the fold early.
 fold_after(Opts, Path, Fun, Acc) ->
     #{ <<"db">> := DBInstance, <<"env">> := Env } = find_env(Opts),
     {ok, Txn} = elmdb:ro_txn_begin(Env),
@@ -454,18 +457,28 @@ fold_after(Opts, Path, Fun, Acc) ->
         Acc
     ).
 
+%% @doc Internal helper for `fold_after/4`.
 fold_cursor(not_found, Txn, Cur, _Fun, Acc) ->
+    fold_stop(Txn, Cur, Acc);
+fold_cursor({ok, Key, Value}, Txn, Cur, Fun, Acc) ->
+    case Fun(Key, Value, Acc) of
+        {stop, Acc} ->
+            fold_stop(Txn, Cur, Acc);
+        NewAcc ->
+            fold_cursor(
+                elmdb:ro_txn_cursor_get(Cur, next),
+                Txn,
+                Cur,
+                Fun,
+                NewAcc
+            )
+    end.
+
+%% @doc Terminate a fold early.
+fold_stop(Txn, Cur, Acc) ->
     ok = elmdb:ro_txn_cursor_close(Cur),
     ok = elmdb:ro_txn_abort(Txn),
-    {ok, Acc};
-fold_cursor({ok, Key, Value}, Txn, Cur, Fun, Acc) ->
-    fold_cursor(
-        elmdb:ro_txn_cursor_get(Cur, next),
-        Txn,
-        Cur,
-        Fun,
-        Fun(Key, Value, Acc)
-    ).
+    {ok, Acc}.
 
 %% @doc Create a group entry that can contain other keys hierarchically.
 %%
