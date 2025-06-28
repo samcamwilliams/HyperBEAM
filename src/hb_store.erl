@@ -72,11 +72,30 @@ behavior_info(callbacks) ->
     ].
 
 -define(DEFAULT_SCOPE, local).
+-define(DEFAULT_RETRIES, 1).
 
 %%% Store named terms registry functions.
 
--ifdef(STORE_EVENTS).
+%% @doc Set the instance options for a given store module and name combination.
+set(StoreOpts, InstanceTerm) ->
+    Mod = maps:get(<<"store-module">>, StoreOpts),
+    set(
+        Mod,
+        maps:get(<<"name">>, StoreOpts, Mod),
+        InstanceTerm
+    ).
+set(StoreMod, Name, undefined) ->
+    StoreRef = {store, StoreMod, Name},
+    erlang:erase(StoreRef),
+    persistent_term:erase(StoreRef);
+set(StoreMod, Name, InstanceTerm) ->
+    StoreRef = {store, StoreMod, Name},
+    put(StoreRef, InstanceTerm),
+    persistent_term:put(StoreRef, InstanceTerm),
+    ok.
+
 %% @doc Find or spawn a store instance by its store opts.
+-ifdef(STORE_EVENTS).
 find(StoreOpts) ->
     {Time, Result} = timer:tc(fun() -> do_find(StoreOpts) end),
     hb_event:increment(<<"store_duration">>, <<"find">>, #{}, Time),
@@ -110,8 +129,7 @@ spawn_instance(StoreOpts = #{ <<"store-module">> := Mod }) ->
     try Mod:start(StoreOpts) of
         ok -> ok;
         {ok, InstanceMessage} ->
-            put({store, Mod, Name}, InstanceMessage),
-            persistent_term:put({store, Mod, Name}, InstanceMessage),
+            set(Mod, Name, InstanceMessage),
             InstanceMessage;
         {error, Reason} ->
             ?event(error, {store_start_failed, {Mod, Name, Reason}}),
@@ -139,7 +157,8 @@ start([StoreOpts | Rest]) ->
     find(StoreOpts),
     start(Rest).
 
-stop(Modules) -> call_function(Modules, stop, []).
+stop(Modules) ->
+    call_function(Modules, stop, []).
 
 %% @doc Takes a store object and a filter function or match spec, returning a
 %% new store object with only the modules that match the filter. The filter
@@ -274,33 +293,55 @@ call_function(X, Function, Args) ->
 call_function(X, Function, Args) ->
     do_call_function(X, Function, Args).
 -endif.
-
 do_call_function(X, _Function, _Args) when not is_list(X) ->
     do_call_function([X], _Function, _Args);
 do_call_function([], _Function, _Args) ->
     not_found;
 do_call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
-    try apply(Mod, Function, [Store | Args]) of
+    try apply_store_function(Mod, Store, Function, Args) of
         not_found ->
             do_call_function(Rest, Function, Args);
         Result ->
             Result
-    catch
-        Class:Reason:Stacktrace ->
-            ?event(store_error,
-                {store_call_failed,
-                    #{
-                        store => Store,
-                        function => Function,
-                        args => Args,
-                        class => Class,
-                        reason => Reason,
-                        stacktrace => Stacktrace
-                    }
-                }
-            ),
-            do_call_function(Rest, Function, Args)
+    catch _:_:_ -> do_call_function(Rest, Function, Args)
     end.
+
+%% @doc Apply a store function, checking if the store returns a retry request or
+%% errors. If it does, attempt to start the store again and retry, up to the
+%% given maximum number of times.
+apply_store_function(Mod, Store, Function, Args) ->
+    MaxAttempts = maps:get(<<"max-retries">>, Store, ?DEFAULT_RETRIES) + 1,
+    apply_store_function(Mod, Store, Function, Args, MaxAttempts).
+apply_store_function(_Mod, _Store, _Function, _Args, 0) ->
+    % Too many attempts have already failed. Bail.
+    not_found;
+apply_store_function(Mod, Store, Function, Args, AttemptsRemaining) ->
+    try apply(Mod, Function, [Store | Args]) of
+        retry -> retry(Mod, Store, Function, Args, AttemptsRemaining);
+        Other -> Other
+    catch Class:Reason:Stacktrace ->
+        ?event(store_error,
+            {store_call_failed_attempting_retrying,
+                #{
+                    store => Store,
+                    function => Function,
+                    args => Args,
+                    class => Class,
+                    reason => Reason,
+                    stacktrace => Stacktrace
+                }
+            }
+        ),
+        retry(Mod, Store, Function, Args, AttemptsRemaining)
+    end.
+
+%% @doc Stop and start the store, then retry.
+retry(Mod, Store, Function, Args, AttemptsRemaining) ->
+    % Attempt to stop the store and start it again, then retry.
+    try Mod:stop(Store) catch _:_ -> ignore_errors end,
+    set(Store, undefined),
+    start(Store),
+    apply_store_function(Mod, Store, Function, Args, AttemptsRemaining - 1).
 
 %% @doc Call a function on all modules in the store.
 call_all(X, _Function, _Args) when not is_list(X) ->
@@ -308,8 +349,7 @@ call_all(X, _Function, _Args) when not is_list(X) ->
 call_all([], _Function, _Args) ->
     ok;
 call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
-    try
-        apply(Mod, Function, [Store | Args])
+    try apply_store_function(Mod, Function, Store, Args)
     catch
         Class:Reason:Stacktrace ->
             ?event(warning, {store_call_failed, {Class, Reason, Stacktrace}}),
