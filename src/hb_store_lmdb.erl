@@ -121,7 +121,18 @@ write(Opts, PathParts, Value) when is_list(PathParts) ->
     write(Opts, PathBin, Value);
 write(Opts, Path, Value) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
-    ok = elmdb:async_put(DBInstance, Path, Value).
+    case elmdb:async_put(DBInstance, Path, Value) of
+        ok -> ok;
+        {error, Type, Description} ->
+            ?event(
+                error,
+                {lmdb_error,
+                    {type, Type},
+                    {description, Description}
+                }
+            ),
+            retry
+    end.
 
 %% @doc Read a value from the database by key, with automatic link resolution.
 %%
