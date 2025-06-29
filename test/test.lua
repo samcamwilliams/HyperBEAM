@@ -150,3 +150,9 @@ function compute_routes(base, req, opts)
     end
     return base
 end
+
+function inc(base, req, opts)
+    base.count = base.count or 0
+    base.count = base.count + 1
+    return base
+end
