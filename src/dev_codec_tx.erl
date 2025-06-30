@@ -21,21 +21,6 @@
     ]
 ).
 
-%%% The list of keys that should be forced into the tag list, rather than being
-%%% encoded as fields in the TX record.
--define(BASE_INVALID_FIELDS,
-    [
-        <<"id">>,
-        <<"unsigned_id">>,
-        <<"owner">>,
-        <<"owner_address">>,
-        <<"tags">>,
-        <<"data_tree">>,
-        <<"signature">>,
-        <<"signature_type">>
-    ]
-).
-
 %% Default #tx format to use if no format is provided. Limited to formats that are valid
 %% for Arweave L1 transcations (1 and 2 as of June 2025)
 -define(DEFAULT_FORMAT, 2).
