@@ -344,7 +344,7 @@ normalize(Base, _Req, RawOpts) ->
                     not_found -> [];
                     Key -> [Key]
                 end,
-            ?event(
+            ?event(snapshot,
                 {attempting_to_restore_lua_state,
                     {msg1, Base}, {device_key, DeviceKey}
                 }
@@ -360,10 +360,11 @@ normalize(Base, _Req, RawOpts) ->
                 State ->
                     ExternalizedState = binary_to_term(State),
                     InternalizedState = luerl:internalize(ExternalizedState),
+                    ?event(snapshot, loaded_state_from_snapshot),
                     {ok, hb_private:set(Base, <<"state">>, InternalizedState, Opts)}
             end;
         _ ->
-            ?event(state_already_initialized),
+            ?event(snapshot, state_already_initialized),
             {ok, Base}
     end.
 
@@ -629,13 +630,28 @@ pure_lua_process_test() ->
     {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
+%% @doc Call a process whose `execution-device' is set to `lua@5.3a'.
+pure_lua_restore_test() ->
+    Opts = #{ process_cache_frequency => 1 },
+    Process = generate_lua_process("test/test.lua", Opts),
+    {ok, _} = hb_cache:write(Process, Opts),
+    Message = generate_test_message(Process, Opts, #{ <<"path">> => <<"inc">>}),
+    {ok, _} = hb_ao:resolve(Process, Message, Opts#{ hashpath => ignore }),
+    {ok, Count1} = hb_ao:resolve(Process, <<"now/count">>, Opts),
+    ?assertEqual(1, Count1),
+    hb_ao:resolve(
+        Process,
+        generate_test_message(Process, #{}, #{ <<"path">> => <<"inc">>}),
+        Opts
+    ),
+    {ok, Count2} = hb_ao:resolve(Process, <<"now/count">>, Opts),
+    ?assertEqual(2, Count2).
+
 pure_lua_process_benchmark_test_() ->
     {timeout,
         30,
         fun() ->
             pure_lua_process_benchmark(#{
-                process_async_cache => true,
-                hashpath => ignore,
                 process_cache_frequency => 50
             })
     end}.
@@ -767,31 +783,43 @@ generate_lua_process(File, Opts) ->
 
 %% @doc Generate a test message for a Lua process.
 generate_test_message(Process, Opts) ->
+    generate_test_message(
+        Process,
+        Opts,
+        <<""" 
+        Count = 0
+        function add() 
+            Send({Target = 'Foo', Data = 'Bar' });
+            Count = Count + 1 
+        end
+        add()
+        return Count
+        """>>
+    ).
+generate_test_message(Process, Opts, ToEval) when is_binary(ToEval) ->
+    generate_test_message(
+        Process,
+        Opts,
+        #{
+            <<"action">> => <<"Eval">>,
+            <<"body">> => #{
+                <<"content-type">> => <<"application/lua">>,
+                <<"body">> => hb_util:bin(ToEval) 
+            }
+        }
+    );
+generate_test_message(Process, Opts, MsgBase) ->
     ProcID = hb_message:id(Process, all),
     NormOpts = Opts#{ priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts) },
-    Code = """ 
-      Count = 0
-      function add() 
-        Send({Target = 'Foo', Data = 'Bar' });
-        Count = Count + 1 
-      end
-      add()
-      return Count
-    """,
     hb_message:commit(#{
             <<"path">> => <<"schedule">>,
             <<"method">> => <<"POST">>,
             <<"body">> =>
                 hb_message:commit(
-                    #{
+                    MsgBase#{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"body">> => #{
-                            <<"content-type">> => <<"application/lua">>,
-                            <<"body">> => hb_util:bin(Code) 
-                        },
-                        <<"random-seed">> => rand:uniform(1337),
-                        <<"action">> => <<"Eval">>
+                        <<"random-seed">> => rand:uniform(1337)
                     },
                     NormOpts
                 )

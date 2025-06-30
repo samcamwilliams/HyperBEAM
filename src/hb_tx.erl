@@ -45,6 +45,21 @@
     ]
 ).
 
+%% List of fields that should be forced into the tag list, rather than being
+%% encoded as fields in the TX record.
+-define(FORCED_TAG_FIELDS,
+    [
+        <<"quantity">>,
+        <<"manifest">>,
+        <<"data_size">>,
+        <<"data_tree">>,
+        <<"data_root">>,
+        <<"reward">>,
+        <<"denomination">>,
+        <<"signature_type">>
+    ]
+).
+
 %% @doc Return the address of the signer of an item, if it is signed.
 signer(#tx { owner = ?DEFAULT_OWNER }) -> undefined;
 signer(Item) -> crypto:hash(sha256, Item#tx.owner).
@@ -578,6 +593,9 @@ apply_tabm_to_tx(TX, InputTABM, Req,  Opts) ->
     % 2. Commitments
     % 3. The data field
     
+    % Extract forced tag fields - these should never be applied to TX record
+    ForcedTagFields = hb_maps:with(?FORCED_TAG_FIELDS, InputTABM),
+    
     % 1. Convert simple TABM fields to their native type, and apply to the #tx record.
     %    Simple fields are: the default #tx fields *excluding* data.
     DefaultTXTABM= hb_maps:with(hb_message:default_tx_keys(), InputTABM),
@@ -614,15 +632,16 @@ apply_tabm_to_tx(TX, InputTABM, Req,  Opts) ->
         AppliedSimpleFields ++ AppliedDataField ++ [<<"commitments">>, <<"ao-types">>],
         InputTABM
     ),
-    UnappliedTABM = case UnappliedAOTypes of
-        _ when map_size(UnappliedAOTypes) =:= 0 ->
-            UnappliedTABM0;
-        _ ->
-            UnappliedTABM0#{
-                <<"ao-types">> => dev_codec_structured:encode_ao_types(UnappliedAOTypes, Opts)
-            }
+    
+    % Add forced tag fields back to unapplied TABM so they become tags
+    UnappliedTABMWithForced = hb_maps:merge(UnappliedTABM0, ForcedTagFields, Opts),
+    
+    UnappliedTABM = case hb_maps:size(UnappliedAOTypes, Opts) of
+        0 -> UnappliedTABMWithForced;
+        _ -> UnappliedTABMWithForced#{
+            <<"ao-types">> => dev_codec_structured:encode_ao_types(UnappliedAOTypes, Opts)
+        }
     end,
-
     {TX3, UnappliedTABM, OriginalTags}.
 
 apply_to_tx(TX, Structured) ->
