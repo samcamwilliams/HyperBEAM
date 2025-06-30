@@ -5,7 +5,8 @@ for partitioning, formatting, mounting, and managing encrypted volumes.
 """.
 -export([list_partitions/0, create_partition/2]).
 -export([format_disk/2, mount_disk/4, change_node_store/2]).
--export([check_for_device/1]).
+-export([check_for_device/1, check_lmdb_exists/1]).
+-export([copy_lmdb_store/2]).
 -include("include/hb.hrl").
 
 -doc """
@@ -410,14 +411,60 @@ update_store_config(#{<<"store-module">> := Module} = StoreConfig, NewPath)
             % For filesystem store, prefix the existing path with the new path
             ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
             NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
-            ?event(debug_volume, {update_store_config, fs, StoreConfig, NewPath, NewName}),
+            ?event(debug_volume, {fs, StoreConfig, NewPath, NewName}),
             StoreConfig#{<<"name">> => NewName};
         hb_store_lmdb ->
-            % For LMDB store, prefix the existing path with the new path
+            % For LMDB store, handle migration to new encrypted mount location
             ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
             NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
-            ?event(debug_volume, {update_store_config, lmdb, StoreConfig, NewPath, NewName}),
-            StoreConfig#{<<"name">> => NewName};
+            ?event(debug_volume, 
+                {migrate_start, ExistingPath, NewName}
+            ),
+            % Step 1: Stop current LMDB store to ensure clean migration
+            ?event(debug_volume, {stopping_current_store, StoreConfig}),
+            try 
+                hb_store_lmdb:stop(StoreConfig)
+            catch 
+                error:StopReason ->
+                    ?event(debug_volume, {stop_error, StopReason})
+            end,
+            % Step 2: Check if new location already contains an LMDB store
+            NewLocationExists = check_lmdb_exists(NewName),
+            ?event(debug_volume, 
+                {new_location_exists, NewLocationExists}
+            ),
+            case NewLocationExists of
+                true ->
+                    % LMDB store already exists at new location, just use it
+                    ?event(debug_volume, 
+                        {using_existing_store, NewName}
+                    ),
+                    StoreConfig#{<<"name">> => NewName};
+                false ->
+                    % No LMDB store at new location, copy existing data
+                    ?event(debug_volume, 
+                        {copying_store, ExistingPath, NewName}
+                    ),
+                    case copy_lmdb_store(ExistingPath, NewName) of
+                        ok ->
+                            ?event(debug_volume, 
+                                {copy_success, NewName}
+                            ),
+                            StoreConfig#{<<"name">> => NewName};
+                        {error, Reason} ->
+                            ?event(debug_volume, 
+                                {copy_error, Reason}
+                            ),
+                            % Fall back to original path if copy fails
+                            ?event(debug_volume, 
+                                {fallback_to_original, ExistingPath}
+                            ),
+                            StoreConfig
+                    end
+            end,
+            % Step 3: Start the new LMDB store
+            ?event(debug_volume, {starting_new_store, NewName}),
+            hb_store_lmdb:start(StoreConfig#{<<"name">> => NewName});
         hb_store_rocksdb ->
             StoreConfig;
         hb_store_gateway ->
@@ -429,7 +476,7 @@ update_store_config(#{<<"store-module">> := Module} = StoreConfig, NewPath)
         _ ->
             % For any other store type, update the prefix
             % StoreConfig#{<<"name">> => NewPath}
-            ?event(debug_volume, {update_store_config, other, StoreConfig, NewPath}),
+            ?event(debug_volume, {other, StoreConfig, NewPath}),
             StoreConfig
     end;
 update_store_config({Type, _OldPath, Opts}, NewPath) ->
@@ -449,7 +496,105 @@ Check if a device exists on the system.
 """.
 -spec check_for_device(Device :: binary()) -> boolean().
 check_for_device(Device) ->
-    Command = io_lib:format("ls -l ~s 2>/dev/null || echo 'not_found'", [binary_to_list(Device)]),
+    Command = io_lib:format(
+        "ls -l ~s 2>/dev/null || echo 'not_found'", 
+        [binary_to_list(Device)]
+    ),
 	?event(disk, {check_for_device, command, Command}),
     Result = os:cmd(Command),
-    string:find(Result, "not_found") =:= nomatch. 
+    string:find(Result, "not_found") =:= nomatch.
+
+%% @doc Check if an LMDB database exists at the given path.
+%%
+%% LMDB databases consist of at least a data.mdb file and optionally a lock.mdb file.
+%% This function checks for the presence of these files to determine if a valid
+%% LMDB database exists at the specified location.
+%%
+%% @param Path Binary path to check for LMDB database
+%% @returns true if LMDB database exists, false otherwise
+-spec check_lmdb_exists(Path :: binary()) -> boolean().
+check_lmdb_exists(Path) ->
+    PathStr = binary_to_list(Path),
+    DataFile = PathStr ++ "/data.mdb",    
+    % Check if the directory exists first
+    case filelib:is_dir(PathStr) of
+        false -> 
+            false;
+        true ->
+            % Check if data.mdb exists (required for LMDB)
+            % lock.mdb is optional and might not exist when DB is not in use
+            filelib:is_regular(DataFile)
+    end.
+
+%% @doc Copy an LMDB database from source to destination.
+%%
+%% This function performs a safe copy of an LMDB database by copying all
+%% the database files (data.mdb, lock.mdb if present) from the source
+%% directory to the destination directory. It ensures the destination
+%% directory exists before copying.
+%%
+%% @param SourcePath Binary path to source LMDB database
+%% @param DestPath Binary path to destination location
+%% @returns ok on success, {error, Reason} on failure
+-spec copy_lmdb_store(
+    SourcePath :: binary(), 
+    DestPath :: binary()
+) -> ok | {error, term()}.
+copy_lmdb_store(SourcePath, DestPath) ->
+    SourceStr = binary_to_list(SourcePath),
+    DestStr = binary_to_list(DestPath),
+    ?event(debug_volume, {start, SourceStr, DestStr}),
+    % Check if source LMDB database exists
+    case check_lmdb_exists(SourcePath) of
+        false ->
+            ?event(debug_volume, {source_not_found, SourceStr}),
+            {error, <<"Source LMDB database not found">>};
+        true ->
+            % Ensure destination directory exists
+            ok = filelib:ensure_dir(DestStr ++ "/"),
+            
+            % Copy the LMDB database files
+            case copy_lmdb_files(SourceStr, DestStr) of
+                ok ->
+                    ?event(debug_volume, {success}),
+                    ok;
+                {error, Reason} ->
+                    ?event(debug_volume, {error, Reason}),
+                    {error, Reason}
+            end
+    end.
+
+%% @doc Helper function to copy LMDB database files.
+%%
+%% This function copies the actual LMDB files (data.mdb and lock.mdb if present)
+%% from source to destination using system commands for reliability.
+%%
+%% @param SourceDir String path to source directory
+%% @param DestDir String path to destination directory
+%% @returns ok on success, {error, Reason} on failure
+-spec copy_lmdb_files(
+    SourceDir :: string(), 
+    DestDir :: string()
+) -> ok | {error, term()}.
+copy_lmdb_files(SourceDir, DestDir) ->
+    % Use rsync for reliable copying of LMDB files
+    % --archive preserves permissions and timestamps
+    % --sparse handles sparse files efficiently
+    CopyCommand = io_lib:format(
+        "rsync -av --sparse '~s/' '~s/'", 
+        [SourceDir, DestDir]
+    ),
+    ?event(debug_volume, {copy_lmdb_files, CopyCommand}),
+    case os:cmd(CopyCommand) of
+        Result ->
+            % Check if rsync completed successfully by looking for error indicators
+            case {
+                    string:find(Result, "rsync error"), 
+                    string:find(Result, "failed")
+                } of
+                {nomatch, nomatch} ->
+                    ok;
+                _ ->
+                    {error, list_to_binary(Result)}
+            end
+    end. 
