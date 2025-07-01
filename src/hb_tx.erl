@@ -599,7 +599,7 @@ apply_tabm_to_tx(TX, InputTABM, Req,  Opts) ->
     % 1. Convert simple TABM fields to their native type, and apply to the #tx record.
     %    Simple fields are: the default #tx fields *excluding* data.
     DefaultTXTABM= hb_maps:with(hb_message:default_tx_keys(), InputTABM),
-    SimpleTABM = hb_maps:without([<<"data">>], DefaultTXTABM),
+    SimpleTABM = hb_maps:without([<<"data">> | ?FORCED_TAG_FIELDS], DefaultTXTABM),
     Structured = hb_message:convert(
         SimpleTABM,
         <<"structured@1.0">>,

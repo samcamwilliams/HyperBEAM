@@ -162,11 +162,13 @@ test_from_happy() ->
     NonDefaultTX = BaseTX#tx{
         last_tx = crypto:strong_rand_bytes(32),
         target = crypto:strong_rand_bytes(32),
-        quantity = ?AR(5),
         data = <<"test-data">>,
         data_size = byte_size(<<"test-data">>),
         data_root = ar_tx:data_root(<<"test-data">>),
-        reward = ?AR(10)
+        tags = [
+            {<<"quantity">>, integer_to_binary(?AR(5))},
+            {<<"reward">>, integer_to_binary(?AR(10))}
+        ]
     },
 
     TestCases = [
@@ -179,12 +181,11 @@ test_from_happy() ->
             NonDefaultTX,
             #{ include_original_tags => false },
             #{
-                <<"ao-types">> => <<"quantity=\"integer\", reward=\"integer\"">>,
                 <<"last_tx">> => NonDefaultTX#tx.last_tx,
                 <<"target">> => NonDefaultTX#tx.target,
-                <<"quantity">> => integer_to_binary(NonDefaultTX#tx.quantity),
+                <<"quantity">> => integer_to_binary(?AR(5)),
                 <<"data">> => NonDefaultTX#tx.data,
-                <<"reward">> => integer_to_binary(NonDefaultTX#tx.reward)
+                <<"reward">> => integer_to_binary(?AR(10))
             }
         },
         {single_tag,
