@@ -62,6 +62,9 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
+    % Store the environment handle in persistent_term for later cleanup
+    StoreKey = {lmdb, ?MODULE, DataDir},
+    persistent_term:put(StoreKey, {Env, DataDir}),
     {ok, #{ <<"env">> => Env, <<"db">> => DBInstance }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
@@ -583,19 +586,55 @@ resolve(_,_) -> not_found.
 %% @doc Retrieve or create the LMDB environment handle for a database.
 find_env(Opts) -> hb_store:find(Opts).
 
-%% @doc Gracefully shut down the database server and close the environment.
-%%
-%% This function performs an orderly shutdown of the database system by first
-%% stopping the server process (which flushes any pending writes) and then
-%% closing the LMDB environment to release system resources.
-%%
-%% The shutdown process ensures that no data is lost and all file handles
-%% are properly closed. After calling stop, the database can be restarted
-%% by calling any other function that triggers server creation.
-%%
-%% @param StoreOpts Database configuration map
-%% @returns 'ok' when shutdown is complete
-stop(_) -> ok.
+%% Shutdown LMDB environment and cleanup resources
+stop(#{ <<"store-module">> := ?MODULE, <<"name">> := DataDir }) ->
+    StoreKey = {lmdb, ?MODULE, DataDir},
+    close_environment(StoreKey, DataDir);
+stop(_InvalidStoreOpts) ->
+    ok.
+
+%% Close environment using persistent_term lookup with fallback
+close_environment(StoreKey, DataDir) ->
+    case safe_get_persistent_term(StoreKey) of
+        {ok, Env} ->
+            close_and_cleanup(Env, StoreKey, DataDir);
+        not_found ->
+            ?event(debug, {lmdb_stop_not_found_in_persistent_term, DataDir}),
+            safe_close_by_name(DataDir)
+    end,
+    ok.
+
+%% Get environment from persistent_term without exceptions
+safe_get_persistent_term(Key) ->
+    case persistent_term:get(Key, undefined) of
+        {Env, _DataDir} -> {ok, Env};
+        _ -> not_found
+    end.
+
+%% Close environment and cleanup persistent_term entry
+close_and_cleanup(Env, StoreKey, DataDir) ->
+    CloseResult = safe_close_env(Env),
+    persistent_term:erase(StoreKey),
+    case CloseResult of
+        ok -> ?event(debug, {lmdb_stop_success, DataDir});
+        {error, Reason} -> ?event(debug, {lmdb_stop_error, Reason})
+    end.
+
+%% Close environment handle with error capture
+safe_close_env(Env) ->
+    try
+        elmdb:env_close(Env)
+    catch
+        error:Reason -> {error, Reason}
+    end.
+
+%% Fallback close by name with error suppression
+safe_close_by_name(DataDir) ->
+    try
+        elmdb:env_close_by_name(binary_to_list(DataDir))
+    catch
+        error:_ -> ok
+    end.
 
 %% @doc Completely delete the database directory and all its contents.
 %%
@@ -617,7 +656,7 @@ reset(Opts) ->
             ok;
         DataDir ->
             % Stop the store and remove the database.
-            stop(Opts),
+            % stop(Opts),
             os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
             ok
     end.
@@ -1148,3 +1187,81 @@ list_with_link_test() ->
     ?assertEqual(ExpectedChildren, lists:sort(LinkChildren)),
     
     stop(StoreOpts).
+
+%% @doc Test the persistent_term-based environment management with migration scenario
+persistent_term_environment_management_test() ->
+    SourcePath = <<"cache-mainnet/pt-test-1">>,
+    DestPath = <<"cache-mainnet/pt-test-2">>,
+    StoreOpts1 = #{
+        <<"store-module">> => ?MODULE,
+        <<"name">> => SourcePath
+    },
+    StoreOpts2 = #{
+        <<"store-module">> => ?MODULE,
+        <<"name">> => DestPath
+    },
+    % Clean up any existing environments
+    reset(StoreOpts1),
+    reset(StoreOpts2),
+    % Step 1: Start first store and write some test data
+    ?event(migration_test, {step, 1, starting_source_store}),
+    start(StoreOpts1),
+    % Write some test data to the first store
+    TestData = [
+        {<<"key1">>, <<"value1">>},
+        {<<"key2">>, <<"value2">>},
+        {<<"nested/key3">>, <<"value3">>},
+        {<<"nested/key4">>, <<"value4">>}
+    ],
+    lists:foreach(fun({Key, Value}) ->
+        write(StoreOpts1, Key, Value)
+    end, TestData),
+    % Create a group to test hierarchical data
+    make_group(StoreOpts1, <<"test-group">>),
+    write(StoreOpts1, <<"test-group/member1">>, <<"group-value1">>),
+    % Verify the data was written
+    {ok, ReadValue1} = read(StoreOpts1, <<"key1">>),
+    ?assertEqual(<<"value1">>, ReadValue1),
+    % Step 2: Stop the first store (simulating preparation for migration)
+    ?event(migration_test, {step, 2, stopping_source_store}),
+    stop(StoreOpts1),
+    % Step 3: Copy the database files to the new location 
+    % (simulating volume migration)
+    ?event(migration_test, {step, 3, copying_database}),
+    % First verify the source database exists
+    ?assert(hb_volume:check_lmdb_exists(SourcePath)),
+    ?event(migration_test, {source_database_exists, SourcePath}),
+    % Copy the database files
+    case hb_volume:copy_lmdb_store(SourcePath, DestPath) of
+        ok ->
+            ?event(migration_test, {copy_success});
+        {error, Reason} ->
+            ?event(migration_test, {copy_error, Reason}),
+            ?assert(false) % Fail the test if copy fails
+    end,
+    % Verify the destination database now exists
+    ?assert(hb_volume:check_lmdb_exists(DestPath)),
+    % Step 4: Start the store from the new location
+    ?event(migration_test, {step, 4, starting_dest_store}),
+    start(StoreOpts2),
+    % Step 5: Verify all the data is intact in the new location
+    ?event(migration_test, {step, 5, verifying_migrated_data}),
+    % Test all the data we wrote earlier
+    lists:foreach(fun({Key, ExpectedValue}) ->
+        {ok, ActualValue} = read(StoreOpts2, Key),
+        ?assertEqual(ExpectedValue, ActualValue)
+    end, TestData),
+    % Test the group and its member
+    ?assertEqual(composite, type(StoreOpts2, <<"test-group">>)),
+    {ok, GroupMemberValue} = read(StoreOpts2, <<"test-group/member1">>),
+    ?assertEqual(<<"group-value1">>, GroupMemberValue),
+    % Test listing functionality
+    {ok, NestedList} = list(StoreOpts2, <<"nested">>),
+    ?event({migrated_nested_list, NestedList}),
+    ExpectedNestedKeys = [<<"key3">>, <<"key4">>],
+    ?assert(lists:all(fun(Key) -> 
+        lists:member(Key, ExpectedNestedKeys) 
+    end, NestedList)),
+    ?event(migration_test, {step, 6, migration_test_complete}),
+    % Clean up
+    stop(StoreOpts2).
