@@ -671,7 +671,8 @@ stop(StoreOpts) ->
             Mod = ?MODULE,
             LookupName = {store, Mod, DataDir},
             try erase(LookupName) catch _:_ -> ok end,
-            try persistent_term:erase(LookupName) catch _:_ -> ok end;
+            try persistent_term:erase(LookupName) catch _:_ -> ok end,
+            ok;
         _ ->
             % Invalid or missing store options
             ok
