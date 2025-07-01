@@ -586,54 +586,54 @@ resolve(_,_) -> not_found.
 %% @doc Retrieve or create the LMDB environment handle for a database.
 find_env(Opts) -> hb_store:find(Opts).
 
-%% @doc Gracefully shut down the database server and close the environment.
-%%
-%% This function performs an orderly shutdown of the database system by first
-%% stopping the server process (which flushes any pending writes) and then
-%% closing the LMDB environment to release system resources.
-%%
-%% The shutdown process ensures that no data is lost and all file handles
-%% are properly closed. After calling stop, the database can be restarted
-%% by calling any other function that triggers server creation.
-%%
-%% @param StoreOpts Database configuration map
-%% @returns 'ok' when shutdown is complete
-stop(StoreOpts) ->
-    case StoreOpts of
-        #{ <<"store-module">> := ?MODULE, <<"name">> := DataDir } ->
-            % Build the lookup key
-            StoreKey = {lmdb, ?MODULE, DataDir},
-            % Try to find and close the LMDB environment from persistent_term
-            try 
-              Value = persistent_term:get(StoreKey),
-              case Value of
-                  {Env, _DataDir} ->
-                      % Found the environment, close it
-                      try
-                          elmdb:env_close(Env),
-                          persistent_term:erase(StoreKey),
-                          ?event(debug, {lmdb_stop_success, DataDir})
-                      catch
-                          error:Reason ->
-                              ?event(debug, {lmdb_stop_error, Reason}),
-                              % Still remove from persistent_term even if close failed
-                              persistent_term:erase(StoreKey)
-                      end,
-                      ok;
-                  _ ->
-                      % Environment not found in persistent_term, try fallback close by name
-                      ?event(debug, {lmdb_stop_not_found_in_persistent_term, DataDir}),
-                      try elmdb:env_close_by_name(binary_to_list(DataDir))
-                      catch error:_ -> ok
-                      end
-              end
-            catch 
-              error:_ ->
-              ok
-            end;
-        _ ->
-            % Invalid or missing store options
-            ok
+%% Shutdown LMDB environment and cleanup resources
+stop(#{ <<"store-module">> := ?MODULE, <<"name">> := DataDir }) ->
+    StoreKey = {lmdb, ?MODULE, DataDir},
+    close_environment(StoreKey, DataDir);
+stop(_InvalidStoreOpts) ->
+    ok.
+
+%% Close environment using persistent_term lookup with fallback
+close_environment(StoreKey, DataDir) ->
+    case safe_get_persistent_term(StoreKey) of
+        {ok, Env} ->
+            close_and_cleanup(Env, StoreKey, DataDir);
+        not_found ->
+            ?event(debug, {lmdb_stop_not_found_in_persistent_term, DataDir}),
+            safe_close_by_name(DataDir)
+    end,
+    ok.
+
+%% Get environment from persistent_term without exceptions
+safe_get_persistent_term(Key) ->
+    case persistent_term:get(Key, undefined) of
+        {Env, _DataDir} -> {ok, Env};
+        _ -> not_found
+    end.
+
+%% Close environment and cleanup persistent_term entry
+close_and_cleanup(Env, StoreKey, DataDir) ->
+    CloseResult = safe_close_env(Env),
+    persistent_term:erase(StoreKey),
+    case CloseResult of
+        ok -> ?event(debug, {lmdb_stop_success, DataDir});
+        {error, Reason} -> ?event(debug, {lmdb_stop_error, Reason})
+    end.
+
+%% Close environment handle with error capture
+safe_close_env(Env) ->
+    try
+        elmdb:env_close(Env)
+    catch
+        error:Reason -> {error, Reason}
+    end.
+
+%% Fallback close by name with error suppression
+safe_close_by_name(DataDir) ->
+    try
+        elmdb:env_close_by_name(binary_to_list(DataDir))
+    catch
+        error:_ -> ok
     end.
 
 %% @doc Completely delete the database directory and all its contents.

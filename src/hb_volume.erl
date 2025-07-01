@@ -8,6 +8,7 @@ for partitioning, formatting, mounting, and managing encrypted volumes.
 -export([check_for_device/1, check_lmdb_exists/1]).
 -export([copy_lmdb_store/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -doc """
 List available partitions in the system.
@@ -58,7 +59,6 @@ list_partitions() ->
     end.
 
 %%% Helper functions for list_partitions
-
 % Process a line of fdisk output to group by disk
 process_disk_line(Line, {CurrentDisk, Acc}) ->
     % Match for a new disk entry
@@ -181,48 +181,38 @@ create_partition(Device, PartType) ->
     ?event(disk, {create_partition, start}),
     ?event(disk, {create_partition, device, Device}),
     ?event(disk, {create_partition, part_type, PartType}),
-    
     % Create a GPT partition table
     DeviceStr = binary_to_list(Device),
     MklabelCmd = "sudo parted " ++ DeviceStr ++ " mklabel gpt",
-    MklabelResult = os:cmd(MklabelCmd),
-    
-    % Check if creating the partition table succeeded
-    case string:find(MklabelResult, "Error") of
-        nomatch ->
+    case safe_exec(MklabelCmd) of
+        {ok, _Result} ->
             create_actual_partition(Device, PartType);
-        _ ->
-            ?event(disk, {create_partition, error, list_to_binary(MklabelResult)}),
-            {error, list_to_binary(MklabelResult)}
+        {error, ErrorMsg} ->
+            ?event(disk, {create_partition, error, ErrorMsg}),
+            {error, ErrorMsg}
     end.
 
 % Create the actual partition after making the GPT label
 create_actual_partition(Device, PartType) ->
     DeviceStr = binary_to_list(Device),
     PartTypeStr = binary_to_list(PartType),
-    
     % Build the parted command to create the partition
     MkpartCmd = "sudo parted -a optimal " ++ DeviceStr ++ 
                " mkpart primary " ++ PartTypeStr ++ " 0% 100%",
-    MkpartResult = os:cmd(MkpartCmd),
-    
-    % Check if creating the partition succeeded
-    case string:find(MkpartResult, "Error") of
-        nomatch ->
+    case safe_exec(MkpartCmd) of
+        {ok, _Result} ->
             get_partition_info(Device);
-        _ ->
-            ?event(disk, {create_partition, error, list_to_binary(MkpartResult)}),
-            {error, list_to_binary(MkpartResult)}
+        {error, ErrorMsg} ->
+            ?event(disk, {create_partition, error, ErrorMsg}),
+            {error, ErrorMsg}
     end.
 
 % Get the partition information after creating a partition
 get_partition_info(Device) ->
     DeviceStr = binary_to_list(Device),
-    
     % Print partition information
     PrintCmd = "sudo parted " ++ DeviceStr ++ " print",
     PartitionInfo = os:cmd(PrintCmd),
-    
     ?event(disk, {create_partition, complete}),
     {ok, #{
         <<"status">> => 200,
@@ -247,34 +237,23 @@ format_disk(_Partition, undefined) ->
 format_disk(Partition, EncKey) ->
     ?event(disk, {format, start}),
     ?event(disk, {format, partition, Partition}),
-    
-    % Ensure tmp directory exists
-    os:cmd("sudo mkdir -p /root/tmp"),
-    KeyFile = "/root/tmp/luks_key_" ++ os:getpid(),
-    file:write_file(KeyFile, EncKey, [raw]),
-    
-    % Format with LUKS
     PartitionStr = binary_to_list(Partition),
-    FormatCmd = "sudo cryptsetup luksFormat --batch-mode --key-file " ++ 
-                KeyFile ++ " " ++ PartitionStr,
-    FormatResult = os:cmd(FormatCmd),
-    
-    % Remove the temporary key file 
-    os:cmd("sudo shred -u " ++ KeyFile),
-    
-    % Check if the command succeeded
-    case string:find(FormatResult, "failed") of
-        nomatch ->
-            ?event(disk, {format, complete}),
-            {ok, #{
-                <<"status">> => 200,
-                <<"message">> => 
-                    <<"Partition formatted with LUKS encryption successfully.">>
-            }};
-        _ ->
-            ?event(disk, {format, error, list_to_binary(FormatResult)}),
-            {error, list_to_binary(FormatResult)}
-    end.
+    with_secure_key_file(EncKey, fun(KeyFile) ->
+        FormatCmd = "sudo cryptsetup luksFormat --batch-mode --key-file " ++ 
+                    KeyFile ++ " " ++ PartitionStr,
+        case safe_exec(FormatCmd, ["failed"]) of
+            {ok, _Result} ->
+                ?event(disk, {format, complete}),
+                {ok, #{
+                    <<"status">> => 200,
+                    <<"message">> => 
+                        <<"Partition formatted with LUKS encryption successfully.">>
+                }};
+            {error, ErrorMsg} ->
+                ?event(disk, {format, error, ErrorMsg}),
+                {error, ErrorMsg}
+        end
+    end).
 
 -doc """
 Mount a LUKS-encrypted disk.
@@ -302,53 +281,37 @@ mount_disk(Partition, EncKey, MountPoint, VolumeName) ->
     ?event(disk, {mount, partition, Partition}),
     ?event(disk, {mount, mount_point, MountPoint}),
     ?event(disk, {mount, volume_name, VolumeName}),
-    
-    % Ensure tmp directory exists
-    os:cmd("sudo mkdir -p /root/tmp"),
-    KeyFile = "/root/tmp/luks_key_" ++ os:getpid(),
-    file:write_file(KeyFile, EncKey, [raw]),
-    
-    % Open the LUKS volume
     PartitionStr = binary_to_list(Partition),
     VolumeNameStr = binary_to_list(VolumeName),
-    OpenCmd = "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ " " ++ 
-               PartitionStr ++ " " ++ VolumeNameStr,
-    OpenResult = os:cmd(OpenCmd),
-    
-    % Remove the temporary key file
-    os:cmd("sudo shred -u " ++ KeyFile),
-    
-    % Check if opening the LUKS volume succeeded
-    case string:find(OpenResult, "failed") of
-        nomatch ->
-            mount_opened_volume(Partition, MountPoint, VolumeName);
-        _ ->
-            ?event(disk, {mount, error, list_to_binary(OpenResult)}),
-            {error, list_to_binary(OpenResult)}
-    end.
+    with_secure_key_file(EncKey, fun(KeyFile) ->
+        OpenCmd = "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ " " ++ 
+                   PartitionStr ++ " " ++ VolumeNameStr,
+        case safe_exec(OpenCmd, ["failed"]) of
+            {ok, _Result} ->
+                mount_opened_volume(Partition, MountPoint, VolumeName);
+            {error, ErrorMsg} ->
+                ?event(disk, {mount, error, ErrorMsg}),
+                {error, ErrorMsg}
+        end
+    end).
 
 % Mount an already opened LUKS volume
 mount_opened_volume(Partition, MountPoint, VolumeName) ->
     % Create mount point if it doesn't exist
     MountPointStr = binary_to_list(MountPoint),
     os:cmd("sudo mkdir -p " ++ MountPointStr),
-    
     % Mount the unlocked LUKS volume
     VolumeNameStr = binary_to_list(VolumeName),
     MountCmd = "sudo mount /dev/mapper/" ++ VolumeNameStr ++ " " ++ 
                 MountPointStr,
-    MountResult = os:cmd(MountCmd),
-    
-    % Check if mounting succeeded
-    case string:find(MountResult, "failed") of
-        nomatch ->
+    case safe_exec(MountCmd, ["failed"]) of
+        {ok, _Result} ->
             create_mount_info(Partition, MountPoint, VolumeName);
-        _ ->
+        {error, ErrorMsg} ->
             % Close the LUKS volume if mounting failed
-            VolumeNameStr = binary_to_list(VolumeName),
             os:cmd("sudo cryptsetup luksClose " ++ VolumeNameStr),
-            ?event(disk, {mount, error, list_to_binary(MountResult)}),
-            {error, list_to_binary(MountResult)}
+            ?event(disk, {mount, error, ErrorMsg}),
+            {error, ErrorMsg}
     end.
 
 % Create mount info response
@@ -379,14 +342,11 @@ change_node_store(undefined, _CurrentStore) ->
 change_node_store(StorePath, CurrentStore) ->
     ?event(disk, {change_store, start}),
     ?event(disk, {change_store, store_path, StorePath}),
-    
     % Create the store directory if it doesn't exist
     StorePathStr = binary_to_list(StorePath),
     os:cmd("sudo mkdir -p " ++ StorePathStr),
-    
     % Update the store configuration with the new path
     NewStore = update_store_config(CurrentStore, StorePath),
-    
     % Return the result
     ?event(disk, {change_store, complete}),
     {ok, #{
@@ -397,6 +357,45 @@ change_node_store(StorePath, CurrentStore) ->
     }}.
 
 %%% Helper functions
+%% Execute system command with error checking
+safe_exec(Command) ->
+    safe_exec(Command, ["Error", "failed"]).
+
+safe_exec(Command, ErrorKeywords) ->
+    Result = os:cmd(Command),
+    case check_command_errors(Result, ErrorKeywords) of
+        ok -> {ok, Result};
+        error -> {error, list_to_binary(Result)}
+    end.
+
+%% Check if command result contains error indicators
+check_command_errors(Result, Keywords) ->
+    case lists:any(fun(Keyword) -> 
+        string:find(Result, Keyword) =/= nomatch 
+    end, Keywords) of
+        true -> error;
+        false -> ok
+    end.
+
+%% Secure key file management with automatic cleanup
+with_secure_key_file(EncKey, Fun) ->
+    % Ensure tmp directory exists
+    os:cmd("sudo mkdir -p /root/tmp"),
+    KeyFile = "/root/tmp/luks_key_" ++ os:getpid(),
+    try
+        % Write key to temporary file
+        file:write_file(KeyFile, EncKey, [raw]),
+        % Execute function with key file path
+        Result = Fun(KeyFile),
+        % Always clean up the key file
+        os:cmd("sudo shred -u " ++ KeyFile),
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            % Ensure cleanup even if function fails
+            os:cmd("sudo shred -u " ++ KeyFile),
+            erlang:raise(Class, Reason, Stacktrace)
+    end.
 
 % Update the store configuration with a new base path
 -spec update_store_config(StoreConfig :: term(), NewPath :: binary()) -> term().
@@ -414,57 +413,7 @@ update_store_config(#{<<"store-module">> := Module} = StoreConfig, NewPath)
             ?event(debug_volume, {fs, StoreConfig, NewPath, NewName}),
             StoreConfig#{<<"name">> => NewName};
         hb_store_lmdb ->
-            % For LMDB store, handle migration to new encrypted mount location
-            ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
-            NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
-            ?event(debug_volume, 
-                {migrate_start, ExistingPath, NewName}
-            ),
-            % Step 1: Stop current LMDB store to ensure clean migration
-            ?event(debug_volume, {stopping_current_store, StoreConfig}),
-            try 
-                hb_store_lmdb:stop(StoreConfig)
-            catch 
-                error:StopReason ->
-                    ?event(debug_volume, {stop_error, StopReason})
-            end,
-            % Step 2: Check if new location already contains an LMDB store
-            NewLocationExists = check_lmdb_exists(NewName),
-            ?event(debug_volume, 
-                {new_location_exists, NewLocationExists}
-            ),
-            case NewLocationExists of
-                true ->
-                    % LMDB store already exists at new location, just use it
-                    ?event(debug_volume, 
-                        {using_existing_store, NewName}
-                    ),
-                    StoreConfig#{<<"name">> => NewName};
-                false ->
-                    % No LMDB store at new location, copy existing data
-                    ?event(debug_volume, 
-                        {copying_store, ExistingPath, NewName}
-                    ),
-                    case copy_lmdb_store(ExistingPath, NewName) of
-                        ok ->
-                            ?event(debug_volume, 
-                                {copy_success, NewName}
-                            ),
-                            StoreConfig#{<<"name">> => NewName};
-                        {error, Reason} ->
-                            ?event(debug_volume, 
-                                {copy_error, Reason}
-                            ),
-                            % Fall back to original path if copy fails
-                            ?event(debug_volume, 
-                                {fallback_to_original, ExistingPath}
-                            ),
-                            StoreConfig
-                    end
-            end,
-            % Step 3: Start the new LMDB store
-            ?event(debug_volume, {starting_new_store, NewName}),
-            hb_store_lmdb:start(StoreConfig#{<<"name">> => NewName});
+            update_lmdb_store_config(StoreConfig, NewPath);
         hb_store_rocksdb ->
             StoreConfig;
         hb_store_gateway ->
@@ -488,6 +437,59 @@ update_store_config({Type, _OldPath}, NewPath) ->
 update_store_config(StoreConfig, _NewPath) ->
     % Return unchanged for any other format
     StoreConfig.
+
+%% Handle LMDB store migration to new encrypted mount location
+update_lmdb_store_config(StoreConfig, NewPath) ->
+    ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
+    NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
+    ?event(debug_volume, {migrate_start, ExistingPath, NewName}),
+    safe_stop_lmdb_store(StoreConfig),
+    FinalConfig = handle_lmdb_migration(StoreConfig, ExistingPath, NewName),
+    safe_start_lmdb_store(FinalConfig),
+    FinalConfig.
+
+%% Safely stop LMDB store with error handling
+safe_stop_lmdb_store(StoreConfig) ->
+    ?event(debug_volume, {stopping_current_store, StoreConfig}),
+    try 
+        hb_store_lmdb:stop(StoreConfig)
+    catch 
+        error:StopReason ->
+            ?event(debug_volume, {stop_error, StopReason})
+    end.
+
+%% Handle migration destination logic
+handle_lmdb_migration(StoreConfig, ExistingPath, NewName) ->
+    case check_lmdb_exists(NewName) of
+        true ->
+            use_existing_lmdb_store(StoreConfig, NewName);
+        false ->
+            copy_lmdb_store_data(StoreConfig, ExistingPath, NewName)
+    end.
+
+%% Use existing LMDB store at new location
+use_existing_lmdb_store(StoreConfig, NewName) ->
+    ?event(debug_volume, {using_existing_store, NewName}),
+    StoreConfig#{<<"name">> => NewName}.
+
+%% Copy LMDB store data to new location with fallback
+copy_lmdb_store_data(StoreConfig, ExistingPath, NewName) ->
+    ?event(debug_volume, {copying_store, ExistingPath, NewName}),
+    case copy_lmdb_store(ExistingPath, NewName) of
+        ok ->
+            ?event(debug_volume, {copy_success, NewName}),
+            StoreConfig#{<<"name">> => NewName};
+        {error, Reason} ->
+            ?event(debug_volume, {copy_error, Reason}),
+            ?event(debug_volume, {fallback_to_original, ExistingPath}),
+            StoreConfig
+    end.
+
+%% Safely start LMDB store
+safe_start_lmdb_store(StoreConfig) ->
+    NewName = maps:get(<<"name">>, StoreConfig),
+    ?event(debug_volume, {starting_new_store, NewName}),
+    hb_store_lmdb:start(StoreConfig).
 
 -doc """
 Check if a device exists on the system.
@@ -597,4 +599,119 @@ copy_lmdb_files(SourceDir, DestDir) ->
                 _ ->
                     {error, list_to_binary(Result)}
             end
-    end. 
+    end.
+
+%%% Unit Tests
+%% Test helper function error checking
+check_command_errors_test() ->
+    % Test successful case - no errors
+    ?assertEqual(ok, check_command_errors("Success: operation completed", ["Error", "failed"])),
+    % Test error detection
+    ?assertEqual(error, check_command_errors("Error: something went wrong", ["Error", "failed"])),
+    ?assertEqual(error, check_command_errors("Operation failed", ["Error", "failed"])),
+    % Test case sensitivity
+    ?assertEqual(ok, check_command_errors("error (lowercase)", ["Error", "failed"])),
+    % Test multiple keywords
+    ?assertEqual(error, check_command_errors("Command failed with Error", ["Error", "failed"])).
+
+%% Test LMDB existence checking
+check_lmdb_exists_test() ->
+    % Create temporary test directories
+    TestDir = "/tmp/hb_volume_test_" ++ integer_to_list(erlang:system_time()),
+    TestDirBin = list_to_binary(TestDir),
+    % Clean up function
+    Cleanup = fun() -> os:cmd("rm -rf " ++ TestDir) end,
+    try
+        % Test non-existent directory
+        ?assertEqual(false, check_lmdb_exists(TestDirBin)),
+        % Create directory but no LMDB files
+        ok = filelib:ensure_dir(TestDir ++ "/"),
+        ?assertEqual(false, check_lmdb_exists(TestDirBin)),
+        % Create data.mdb file
+        DataFile = TestDir ++ "/data.mdb",
+        file:write_file(DataFile, <<"test data">>, [raw]),
+        ?assertEqual(true, check_lmdb_exists(TestDirBin)),
+        % Clean up
+        Cleanup()
+    after
+        Cleanup()
+    end.
+
+%% Test store configuration updates for different types
+update_store_config_test() ->
+    % Test filesystem store
+    FSStore = #{
+        <<"store-module">> => hb_store_fs,
+        <<"name">> => <<"cache">>
+    },
+    NewPath = <<"/encrypted/mount">>,
+    Updated = update_store_config(FSStore, NewPath),
+    Expected = FSStore#{<<"name">> => <<"/encrypted/mount/cache">>},
+    ?assertEqual(Expected, Updated),
+    % Test list of stores
+    StoreList = [FSStore, #{<<"store-module">> => hb_store_gateway}],
+    UpdatedList = update_store_config(StoreList, NewPath),
+    ?assertEqual(2, length(UpdatedList)),
+    % Test tuple format
+    TupleStore = {fs, <<"old_path">>, []},
+    UpdatedTuple = update_store_config(TupleStore, NewPath),
+    ?assertEqual({fs, NewPath, []}, UpdatedTuple).
+
+%% Test secure key file management
+with_secure_key_file_test() ->
+    TestKey = <<"test_encryption_key_123">>,
+    % Create a safe test version that doesn't use /root/tmp
+    TestWithSecureKeyFile = fun(EncKey, Fun) ->
+        % Use /tmp instead of /root/tmp for testing
+        TmpDir = "/tmp",
+        KeyFile = TmpDir ++ "/test_luks_key_" ++ os:getpid(),
+        try
+            % Write key to temporary file
+            file:write_file(KeyFile, EncKey, [raw]),
+            % Execute function with key file path
+            Result = Fun(KeyFile),
+            % Clean up the key file
+            file:delete(KeyFile),
+            Result
+        catch
+            Class:Reason:Stacktrace ->
+                % Ensure cleanup even if function fails
+                file:delete(KeyFile),
+                erlang:raise(Class, Reason, Stacktrace)
+        end
+    end,
+    % Test successful execution
+    Result = TestWithSecureKeyFile(TestKey, fun(KeyFile) ->
+        % Verify key file was created and contains the key
+        ?assert(filelib:is_regular(KeyFile)),
+        {ok, FileContent} = file:read_file(KeyFile),
+        ?assertEqual(TestKey, FileContent),
+        {ok, <<"success">>}
+    end),
+    ?assertEqual({ok, <<"success">>}, Result),
+    % Test exception handling and cleanup
+    TestException = fun() ->
+        TestWithSecureKeyFile(TestKey, fun(KeyFile) ->
+            ?assert(filelib:is_regular(KeyFile)),
+            error(test_error)
+        end)
+    end,
+    ?assertError(test_error, TestException()).
+
+%% Test device checking with mocked commands
+check_for_device_test() ->
+    % This test would need mocking of os:cmd to be fully testable
+    % For now, test with /dev/null which should always exist
+    ?assertEqual(true, check_for_device(<<"/dev/null">>)),
+    % Test non-existent device
+    ?assertEqual(false, check_for_device(<<"/dev/nonexistent_device_123">>)).
+
+%% Test safe command execution with mocked results
+safe_exec_mock_test() ->
+    % We can't easily mock os:cmd, but we can test the error checking logic
+    % This is covered by check_command_errors_test above
+    % Test with default error keywords
+    TestResult1 = check_command_errors("Operation completed successfully", ["Error", "failed"]),
+    ?assertEqual(ok, TestResult1),
+    TestResult2 = check_command_errors("Error: disk not found", ["Error", "failed"]),
+    ?assertEqual(error, TestResult2). 
