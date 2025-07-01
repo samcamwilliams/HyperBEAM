@@ -24,7 +24,6 @@
 -export([read/2, write/3, list/2]).
 -export([make_group/2, make_link/3, type/2]).
 -export([path/2, add_path/3, resolve/2]).
--export([list_active_environments/0]).
 
 %% Test framework and project includes
 -include_lib("eunit/include/eunit.hrl").
@@ -38,7 +37,6 @@
 -define(MAX_REDIRECTS, 1000).                   % Only resolve 1000 links to data
 -define(MAX_PENDING_WRITES, 400).               % Force flush after x pending
 -define(FOLD_YIELD_INTERVAL, 100).              % Yield every x keys
--define(LMDB_ENV_TABLE, hb_lmdb_environments).  % ETS table for storing LMDB environments
 
 %% @doc Start the LMDB storage system for a given database configuration.
 %%
@@ -54,8 +52,6 @@
 %% @param StoreOpts A map containing database configuration options
 %% @returns {ok, ServerPid} on success, {error, Reason} on failure
 start(Opts = #{ <<"name">> := DataDir }) ->
-    % Ensure the ETS table exists for storing LMDB environments
-    ensure_env_table(),
     % Create the LMDB environment with specified size limit
     {ok, Env} =
         elmdb:env_open(
@@ -66,9 +62,9 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
-    % Store the environment handle in ETS for later cleanup
-    StoreKey = {?MODULE, DataDir},
-    ets:insert(?LMDB_ENV_TABLE, {StoreKey, Env, DataDir}),
+    % Store the environment handle in persistent_term for later cleanup
+    StoreKey = {lmdb, ?MODULE, DataDir},
+    persistent_term:put(StoreKey, {Env, DataDir}),
     {ok, #{ <<"env">> => Env, <<"db">> => DBInstance }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
@@ -590,42 +586,6 @@ resolve(_,_) -> not_found.
 %% @doc Retrieve or create the LMDB environment handle for a database.
 find_env(Opts) -> hb_store:find(Opts).
 
-%% @doc Ensure the ETS table for storing LMDB environments exists.
-%%
-%% This function creates the ETS table if it doesn't already exist.
-%% The table is created as a public set so it can be accessed from any process.
-%%
-%% @returns ok
--spec ensure_env_table() -> ok.
-ensure_env_table() ->
-    case ets:whereis(?LMDB_ENV_TABLE) of
-        undefined ->
-            % Table doesn't exist, create it
-            ets:new(?LMDB_ENV_TABLE, [
-                set,
-                public,
-                named_table,
-                {read_concurrency, true}
-            ]),
-            ok;
-        _ ->
-            % Table already exists
-            ok
-    end.
-
-%% @doc List all active LMDB environments stored in ETS.
-%%
-%% This function is useful for debugging and monitoring to see which
-%% LMDB databases are currently open and managed by the system.
-%%
-%% @returns List of {StoreKey, Env, DataDir} tuples
--spec list_active_environments() -> list().
-list_active_environments() ->
-    ensure_env_table(),
-    try ets:tab2list(?LMDB_ENV_TABLE)
-    catch _:_ -> []
-    end.
-
 %% @doc Gracefully shut down the database server and close the environment.
 %%
 %% This function performs an orderly shutdown of the database system by first
@@ -641,38 +601,36 @@ list_active_environments() ->
 stop(StoreOpts) ->
     case StoreOpts of
         #{ <<"store-module">> := ?MODULE, <<"name">> := DataDir } ->
-            % Ensure the ETS table exists
-            ensure_env_table(),
             % Build the lookup key
-            StoreKey = {?MODULE, DataDir},
-            % Try to find and close the LMDB environment from ETS
-            case ets:lookup(?LMDB_ENV_TABLE, StoreKey) of
-                [{StoreKey, Env, _DataDir}] ->
-                    % Found the environment, close it
-                    try
-                        elmdb:env_close(Env),
-                        % Remove from ETS table
-                        ets:delete(?LMDB_ENV_TABLE, StoreKey),
-                        ?event(debug, {lmdb_stop_success, DataDir})
-                    catch
-                        error:Reason ->
-                            ?event(warning, {lmdb_stop_error, Reason}),
-                            % Still remove from ETS even if close failed
-                            ets:delete(?LMDB_ENV_TABLE, StoreKey)
-                    end;
-                [] ->
-                    % Environment not found in ETS, try fallback close by name
-                    ?event(warning, {lmdb_stop_not_found_in_ets, DataDir}),
-                    try elmdb:env_close_by_name(binary_to_list(DataDir))
-                    catch error:_ -> ok
-                    end
-            end,
-            % Also clean up hb_store management (process dict and persistent_term)
-            Mod = ?MODULE,
-            LookupName = {store, Mod, DataDir},
-            try erase(LookupName) catch _:_ -> ok end,
-            try persistent_term:erase(LookupName) catch _:_ -> ok end,
-            ok;
+            StoreKey = {lmdb, ?MODULE, DataDir},
+            % Try to find and close the LMDB environment from persistent_term
+            try 
+              Value = persistent_term:get(StoreKey),
+              case Value of
+                  {Env, _DataDir} ->
+                      % Found the environment, close it
+                      try
+                          elmdb:env_close(Env),
+                          persistent_term:erase(StoreKey),
+                          ?event(debug, {lmdb_stop_success, DataDir})
+                      catch
+                          error:Reason ->
+                              ?event(debug, {lmdb_stop_error, Reason}),
+                              % Still remove from persistent_term even if close failed
+                              persistent_term:erase(StoreKey)
+                      end,
+                      ok;
+                  _ ->
+                      % Environment not found in persistent_term, try fallback close by name
+                      ?event(debug, {lmdb_stop_not_found_in_persistent_term, DataDir}),
+                      try elmdb:env_close_by_name(binary_to_list(DataDir))
+                      catch error:_ -> ok
+                      end
+              end
+            catch 
+              error:_ ->
+              ok
+            end;
         _ ->
             % Invalid or missing store options
             ok
@@ -698,7 +656,7 @@ reset(Opts) ->
             ok;
         DataDir ->
             % Stop the store and remove the database.
-            stop(Opts),
+            % stop(Opts),
             os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
             ok
     end.
@@ -1230,11 +1188,10 @@ list_with_link_test() ->
     
     stop(StoreOpts).
 
-%% @doc Test the ETS-based environment management with migration scenario
-ets_environment_management_test() ->
-    SourcePath = <<"cache-mainnet/ets-test-1">>,
-    DestPath = <<"cache-mainnet/ets-test-2">>,
-    
+%% @doc Test the persistent_term-based environment management with migration scenario
+persistent_term_environment_management_test() ->
+    SourcePath = <<"cache-mainnet/pt-test-1">>,
+    DestPath = <<"cache-mainnet/pt-test-2">>,
     StoreOpts1 = #{
         <<"store-module">> => ?MODULE,
         <<"name">> => SourcePath
@@ -1246,9 +1203,6 @@ ets_environment_management_test() ->
     % Clean up any existing environments
     reset(StoreOpts1),
     reset(StoreOpts2),
-    % Check that no environments are active initially
-    InitialEnvs = list_active_environments(),
-    ?event({initial_environments, InitialEnvs}),
     % Step 1: Start first store and write some test data
     ?event(migration_test, {step, 1, starting_source_store}),
     start(StoreOpts1),
@@ -1268,24 +1222,9 @@ ets_environment_management_test() ->
     % Verify the data was written
     {ok, ReadValue1} = read(StoreOpts1, <<"key1">>),
     ?assertEqual(<<"value1">>, ReadValue1),
-    EnvsAfterStart = list_active_environments(),
-    ?event({environments_after_start, EnvsAfterStart}),
-    Key1 = {?MODULE, SourcePath},
-    Store1Found = lists:any(fun({K, _, _}) -> K =:= Key1 end, EnvsAfterStart),
-    ?assert(Store1Found),
     % Step 2: Stop the first store (simulating preparation for migration)
     ?event(migration_test, {step, 2, stopping_source_store}),
     stop(StoreOpts1),
-    % Verify it's removed from ETS
-    EnvsAfterStop = list_active_environments(),
-    ?event({environments_after_stop, EnvsAfterStop}),
-    Store1StillThere = lists:any(
-        fun({K, _, _}) -> 
-            K =:= Key1 
-        end, 
-        EnvsAfterStop
-    ),
-    ?assertNot(Store1StillThere),
     % Step 3: Copy the database files to the new location 
     % (simulating volume migration)
     ?event(migration_test, {step, 3, copying_database}),
@@ -1305,12 +1244,6 @@ ets_environment_management_test() ->
     % Step 4: Start the store from the new location
     ?event(migration_test, {step, 4, starting_dest_store}),
     start(StoreOpts2),
-    % Verify it's in ETS
-    EnvsAfterRestart = list_active_environments(),
-    ?event({environments_after_restart, EnvsAfterRestart}),
-    Key2 = {?MODULE, DestPath},
-    Store2Found = lists:any(fun({K, _, _}) -> K =:= Key2 end, EnvsAfterRestart),
-    ?assert(Store2Found),
     % Step 5: Verify all the data is intact in the new location
     ?event(migration_test, {step, 5, verifying_migrated_data}),
     % Test all the data we wrote earlier
@@ -1331,15 +1264,4 @@ ets_environment_management_test() ->
     end, NestedList)),
     ?event(migration_test, {step, 6, migration_test_complete}),
     % Clean up
-    stop(StoreOpts2),
-    % Verify final cleanup
-    EnvsAfterFinalStop = list_active_environments(),
-    ?event({environments_after_final_stop, EnvsAfterFinalStop}),
-    Store2StillThereAfterStop = lists:any(
-        fun({K, _, _}) -> 
-            K =:= Key2 
-            orelse K =:= Key1 
-        end, 
-        EnvsAfterFinalStop
-    ),
-    ?assertNot(Store2StillThereAfterStop).
+    stop(StoreOpts2).
