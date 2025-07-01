@@ -349,7 +349,7 @@ normalize_results(#{ <<"Error">> := Error }) ->
 normalize_results(Msg) ->
     try
         Output = maps:get(<<"Output">>, Msg, #{}),
-        Data = maps:get(<<"data">>, Output, <<>>),
+        Data = maps:get(<<"data">>, Output, maps:get(<<"Data">>, Msg, <<>>)),
         {ok,
             Data,
             maps:get(<<"Messages">>, Msg, []),
