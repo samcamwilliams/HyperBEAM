@@ -405,7 +405,7 @@ enforce_valid_tx(TX) ->
     ),
     % last_tx can't be empty
     hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.last_tx, [32]),
+        hb_util:check_size(TX#tx.last_tx, [0, 32]),
         {invalid_field, last_tx, TX#tx.last_tx}
     ),
     % owner can't be empty
@@ -425,11 +425,6 @@ enforce_valid_tx(TX) ->
         TX,
         hb_util:check_type(TX#tx.data, binary),
         {invalid_field, data, TX#tx.data}
-    ),
-    hb_util:ok_or_throw(
-        TX,
-        hb_util:check_value(TX#tx.manifest, [tx, undefined]),
-        {invalid_field, manifest, TX#tx.manifest}
     ),
     hb_util:ok_or_throw(TX,
         hb_util:check_type(TX#tx.data_size, integer),
@@ -1020,7 +1015,7 @@ test_enforce_valid_tx_failure() ->
         {id_too_long_33, BaseTX#tx{id = BadID33}, {invalid_field, id, BadID33}},
         % {id_empty, BaseTX#tx{id = <<>>}, {invalid_field, id, <<>>}},
         {unsigned_id_invalid_val, BaseTX#tx{unsigned_id = InvalidUnsignedID}, {invalid_field, unsigned_id, InvalidUnsignedID}},
-        {last_tx_empty, BaseTX#tx{last_tx = <<>>}, {invalid_field, last_tx, <<>>}},
+        %{last_tx_empty, BaseTX#tx{last_tx = <<>>}, {invalid_field, last_tx, <<>>}},
         {last_tx_too_short_31, BaseTX#tx{last_tx = BadID31}, {invalid_field, last_tx, BadID31}},
         {last_tx_too_long_33, BaseTX#tx{last_tx = BadID33}, {invalid_field, last_tx, BadID33}},
         {owner_wrong_size, BaseTX#tx{owner = BadOwnerSize}, {invalid_field, owner, BadOwnerSize}},
@@ -1029,7 +1024,7 @@ test_enforce_valid_tx_failure() ->
         {target_too_long_33, BaseTX#tx{target = BadID33}, {invalid_field, target, BadID33}},
         {quantity_not_integer, BaseTX#tx{quantity = <<"100">>}, {invalid_field, quantity, <<"100">>}},
         {data_not_binary, BaseTX#tx{data = an_atom}, {invalid_field, data, an_atom}},
-        {manifest_not_undefined, BaseTX#tx{manifest = <<>>}, {invalid_field, manifest, <<>>}},
+        %{manifest_not_undefined, BaseTX#tx{manifest = <<>>}, {invalid_field, manifest, <<>>}},
         {data_size_not_integer, BaseTX#tx{data_size = an_atom}, {invalid_field, data_size, an_atom}},
         {data_root_too_short_31, BaseTX#tx{data_root = BadID31}, {invalid_field, data_root, BadID31}},
         {data_root_too_long_33, BaseTX#tx{data_root = BadID33}, {invalid_field, data_root, BadID33}},
