@@ -183,7 +183,17 @@ do_push(PrimaryProcess, Assignment, Opts) ->
                                 <<"message">> => Msg
                             }
                     end,
-                    hb_ao:normalize_keys(hb_private:reset(Outbox)),
+                    hb_maps:fold(fun(K,V, Acc) ->
+                        NormV = case V of
+                          VMap when is_map(VMap) ->
+                                hb_maps:fold(fun(K1,V2, Acc2) ->
+                                    hb_maps:put(hb_util:to_lower(K1),V2,Acc2,Opts)
+                                end, #{}, V);
+                            _ -> V
+                        end,
+
+                        hb_maps:put(hb_util:to_lower(K),NormV,Acc,Opts)
+                    end, #{}, hb_ao:normalize_keys(hb_private:reset(Outbox)), Opts),
                     Opts
                 ),
             {ok, maps:merge(Downstream, AdditionalRes#{
@@ -203,8 +213,11 @@ do_push(PrimaryProcess, Assignment, Opts) ->
 %% functional components of the evaluation.
 maybe_evaluate_message(Message, Opts) ->
     case hb_ao:get(<<"resolve">>, Message, Opts) of
-        not_found -> {ok, Message};
+        not_found -> 
+            ?event(x, {not_found, {msg, Message}    }),
+            {ok, Message};
         ResolvePath ->
+            ?event(x, {resolve_path, ResolvePath, {msg, Message}}),
             ReqMsg =
                 maps:without(
                     [<<"target">>],
@@ -233,7 +246,10 @@ maybe_evaluate_message(Message, Opts) ->
 %% the slot number from which it was sent, and the outbox key of the message,
 %% and the depth to which downstream results should be included in the message.
 push_result_message(TargetProcess, MsgToPush, Origin, Opts) ->
-    case hb_ao:get(<<"target">>, MsgToPush, undefined, Opts) of
+    NormMsgToPush =hb_maps:fold(fun(K,V, Acc) ->
+       hb_maps:put(hb_util:to_lower(K),V,Acc, Opts) 
+    end, #{}, MsgToPush, Opts),
+    case hb_ao:get(<<"target">>, NormMsgToPush, undefined, Opts) of
         undefined ->
             ?event(push,
                 {skip_no_target, {msg, MsgToPush}, {origin, Origin}},

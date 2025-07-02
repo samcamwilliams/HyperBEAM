@@ -386,7 +386,9 @@ preprocess_results(Msg, Opts) ->
 
 %% @doc Convert a message with tags into a map of their key-value pairs.
 tags_to_map(Msg, Opts) ->
-    NormMsg = hb_ao:normalize_keys(Msg, Opts),
+    NormMsg = hb_maps:fold(fun(K, V, Acc) ->
+        hb_maps:put(hb_util:to_lower(K), V, Acc)
+    end, #{}, hb_ao:normalize_keys(Msg, Opts), Opts),
     RawTags = hb_maps:get(<<"tags">>, NormMsg, [], Opts),
     TagList =
         [
@@ -454,9 +456,9 @@ generate_aos_msg(ProcID, Code) ->
         <<"path">> => <<"compute">>,
         <<"body">> => 
             hb_message:commit(#{
-                <<"Action">> => <<"Eval">>,
-                <<"Data">> => Code,
-                <<"Target">> => ProcID
+                <<"action">> => <<"Eval">>,
+                <<"data">> => Code,
+                <<"target">> => ProcID
             }, Wallet),
         <<"block-height">> => 1
     }, Wallet).
