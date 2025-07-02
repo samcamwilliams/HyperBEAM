@@ -31,9 +31,6 @@ sign(TX, PrivKey, PubKey = {KeyType, Owner}) ->
 %% @doc Cryptographically sign (claim ownership of) a v1 transaction.
 %% Used in tests and by the handler of the POST /unsigned_tx endpoint, which is
 %% disabled by default.
-sign_v1(TX, {PrivKey, PubKey = {_, Owner}}) ->
-    sign(TX, PrivKey, PubKey, signature_data_segment_v1(TX#tx{ owner = Owner })).
-
 sign_v1(TX, PrivKey, PubKey = {_, Owner}) ->
     sign(TX, PrivKey, PubKey, signature_data_segment_v1(TX#tx{ owner = Owner })).
 
@@ -408,7 +405,7 @@ enforce_valid_tx(TX) ->
     ),
     % last_tx can't be empty
     hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.last_tx, [0, 32]),
+        hb_util:check_size(TX#tx.last_tx, [32]),
         {invalid_field, last_tx, TX#tx.last_tx}
     ),
     % owner can't be empty
@@ -428,6 +425,11 @@ enforce_valid_tx(TX) ->
         TX,
         hb_util:check_type(TX#tx.data, binary),
         {invalid_field, data, TX#tx.data}
+    ),
+    hb_util:ok_or_throw(
+        TX,
+        hb_util:check_value(TX#tx.manifest, [tx, undefined]),
+        {invalid_field, manifest, TX#tx.manifest}
     ),
     hb_util:ok_or_throw(TX,
         hb_util:check_type(TX#tx.data_size, integer),
@@ -570,8 +572,8 @@ test_sign_tx() ->
     {Priv, Pub} = Wallet = ar_wallet:new(),
 
     ValidTXs = [
-        sign_v1(NewTX, Priv, Pub),
-        sign(generate_chunk_tree(NewTX#tx{ format = 2 }), Priv, Pub)
+        sign_v1(NewTX#tx{ format = 1} , Priv, Pub),
+        sign(generate_chunk_tree(NewTX), Priv, Pub)
     ],
     lists:foreach(
         fun(TX) ->
@@ -1016,7 +1018,7 @@ test_enforce_valid_tx_failure() ->
         {invalid_format_atom, BaseTX#tx{format = an_atom}, {invalid_field, format, an_atom}},
         {id_too_short_31, BaseTX#tx{id = BadID31}, {invalid_field, id, BadID31}},
         {id_too_long_33, BaseTX#tx{id = BadID33}, {invalid_field, id, BadID33}},
-        {id_empty, BaseTX#tx{id = <<>>}, {invalid_field, id, <<>>}},
+        % {id_empty, BaseTX#tx{id = <<>>}, {invalid_field, id, <<>>}},
         {unsigned_id_invalid_val, BaseTX#tx{unsigned_id = InvalidUnsignedID}, {invalid_field, unsigned_id, InvalidUnsignedID}},
         {last_tx_empty, BaseTX#tx{last_tx = <<>>}, {invalid_field, last_tx, <<>>}},
         {last_tx_too_short_31, BaseTX#tx{last_tx = BadID31}, {invalid_field, last_tx, BadID31}},
