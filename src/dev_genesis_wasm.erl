@@ -62,10 +62,7 @@ ensure_started(Opts) ->
     {ok, Cwd} = file:get_cwd(),
     ?event({ensure_started, cwd, Cwd}),
     % Determine path based on whether we're in a release or development
-    GenesisWasmServerDir = case string:str(Cwd, "rel/hb") of
-        0 -> filename:join([Cwd, "genesis-wasm-server"]); % Development
-        _ -> filename:join([Cwd, "..", "..", "genesis-wasm-server"]) % Release
-    end,
+    GenesisWasmServerDir = filename:join([Cwd, "genesis-wasm-server"]),
     ?event({ensure_started, genesis_wasm_server_dir, GenesisWasmServerDir}),
     ?event({ensure_started, genesis_wasm, self()}),
     IsRunning = is_genesis_wasm_server_running(Opts),
