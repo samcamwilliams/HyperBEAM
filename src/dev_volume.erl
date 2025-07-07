@@ -398,7 +398,7 @@ update_store_path(StorePath, Opts) ->
     case hb_volume:change_node_store(StorePath, CurrentStore) of
         {ok, #{<<"store">> := NewStore} = StoreResult} ->
             ?event(debug_mount, {store_update, success, StoreResult}),
-            update_node_config(NewStore, Opts);
+            update_node_config(StorePath, NewStore, Opts);
         {error, StoreError} ->
             ?event(debug_mount, {store_update, error, StoreError}),
             {error, <<"Failed to update store">>}
@@ -409,9 +409,10 @@ update_store_path(StorePath, Opts) ->
 %% @param Opts The options to update the node's configuration with.
 %% @returns `{ok, Binary}' on success with operation result message, or
 %% `{error, Binary}' on failure with error message.
--spec update_node_config(term(), map()) -> {ok, binary()} | {error, binary()}.
-update_node_config(NewStore, Opts) ->
+-spec update_node_config(term(), term(), map()) -> {ok, binary()} | {error, binary()}.
+update_node_config(StorePath, NewStore, Opts) ->
     ?event(debug_mount, {update_node_config, new_store, NewStore}),
-    ok = hb_http_server:set_opts(Opts#{store => NewStore}),
+    GenesisWasmDBDir = hb_opts:get(genesis_wasm_db_dir, "cache-mainnet/genesis-wasm", Opts),
+    ok = hb_http_server:set_opts(Opts#{store => NewStore, genesis_wasm_db_dir => StorePath ++ "/" ++ GenesisWasmDBDir}),
     ?event(debug_mount, {store_update, config_updated}),
     {ok, <<"Volume mounted and store updated successfully">>}.
