@@ -462,8 +462,10 @@ safe_stop_lmdb_store(StoreConfig) ->
 handle_lmdb_migration(StoreConfig, ExistingPath, NewName) ->
     case check_lmdb_exists(NewName) of
         true ->
+            ?event(debug_volume, {using_existing_store, NewName}),
             use_existing_lmdb_store(StoreConfig, NewName);
         false ->
+            ?event(debug_volume, {copying_store, ExistingPath, NewName}),
             copy_lmdb_store_data(StoreConfig, ExistingPath, NewName)
     end.
 
