@@ -117,7 +117,7 @@ ensure_started(Opts) ->
                                         "--prefix",
                                         GenesisWasmServerDir,
                                         "run",
-                                        "dev"
+                                        "start"
                                     ]},
                                     {env,
                                         [
@@ -133,7 +133,7 @@ ensure_started(Opts) ->
                                                 )
                                             },
                                             {"DB_URL", DatabaseUrl},
-                                            {"NODE_CONFIG_ENV", "development"},
+                                            {"NODE_CONFIG_ENV", "production"},
                                             {"DEFAULT_LOG_LEVEL",
                                                 hb_util:list(
                                                     hb_opts:get(
