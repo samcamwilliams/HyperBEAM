@@ -414,7 +414,7 @@ update_node_config(StorePath, NewStore, Opts) ->
     ?event(debug_mount, {update_node_config, new_store, NewStore}),
     GenesisWasmDBDir = hb_opts:get(genesis_wasm_db_dir, "cache-mainnet/genesis-wasm", Opts),
     BinaryGenesisWasmDBDir = list_to_binary(GenesisWasmDBDir),
-    FullGenesisPath = <<StorePath/binary, BinaryGenesisWasmDBDir/binary>>,
+    FullGenesisPath = <<StorePath/binary, "/", BinaryGenesisWasmDBDir/binary>>,
     ok = hb_http_server:set_opts(Opts#{store => NewStore, genesis_wasm_db_dir => FullGenesisPath}),
     ?event(debug_mount, {store_update, config_updated}),
     {ok, <<"Volume mounted and store updated successfully">>}.
