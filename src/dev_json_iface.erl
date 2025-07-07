@@ -386,9 +386,9 @@ preprocess_results(Msg, Opts) ->
 
 %% @doc Convert a message with tags into a map of their key-value pairs.
 tags_to_map(Msg, Opts) ->
-    NormMsg = hb_maps:fold(fun(K, V, Acc) ->
-        hb_maps:put(hb_util:to_lower(K), V, Acc)
-    end, #{}, hb_ao:normalize_keys(Msg, Opts), Opts),
+    NormMsg = hb_util:lower_case_key_map(
+        hb_ao:normalize_keys(Msg, Opts), 
+    Opts),
     RawTags = hb_maps:get(<<"tags">>, NormMsg, [], Opts),
     TagList =
         [

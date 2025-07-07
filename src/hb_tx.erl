@@ -778,9 +778,9 @@ set_tags(TX, Tags, OriginalTags, Opts) ->
     % original tags. We do this by re-calculating the expected tags from the
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
-        ExpectedTagsFromOriginal = hb_maps:fold(
-            fun(Key, Value, Acc) -> maps:put(hb_util:to_lower(Key), Value, Acc) end, 
-            #{}, deduplicating_from_list(OriginalTags, Opts)),
+        ExpectedTagsFromOriginal = hb_util:lower_case_key_map(
+            deduplicating_from_list(OriginalTags, Opts), 
+        Opts),
         case Tags == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
