@@ -466,7 +466,8 @@ handle_lmdb_migration(StoreConfig, ExistingPath, NewName) ->
             use_existing_lmdb_store(StoreConfig, NewName);
         false ->
             ?event(debug_volume, {copying_store, ExistingPath, NewName}),
-            copy_lmdb_store_data(StoreConfig, ExistingPath, NewName)
+            % copy_lmdb_store_data(StoreConfig, ExistingPath, NewName)
+            use_existing_lmdb_store(StoreConfig, NewName)
     end.
 
 %% Use existing LMDB store at new location
