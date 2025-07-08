@@ -468,18 +468,18 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                             Opts
                         ),
                     Process = hb_maps:get(<<"process">>, LoadedSnapshotMsg, Opts),
-                    #{ <<"commitments">> := HmacCommit} =
+                    #{ <<"commitments">> := HmacCommits} =
                         hb_message:with_commitments(
                           #{ <<"type">> => <<"hmac-sha256">>},
                           Process,
                           Opts),
-                    #{ <<"commitments">> := SignCommit } =
+                    #{ <<"commitments">> := SignCommits } =
                         hb_message:with_commitments(ProcID,
                                                     Process,
                                                     Opts),
                     UpdateProcess = hb_maps:put(
                                       <<"commitments">>,
-                                      hb_maps:merge(HmacCommit, SignCommit),
+                                      hb_maps:merge(HmacCommits, SignCommits),
                                       Process,
                                       Opts),
                     LoadedSnapshotMsg2 = LoadedSnapshotMsg#{ <<"process">> => UpdateProcess },
