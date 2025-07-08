@@ -388,14 +388,17 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
             priv_wallet => GreenZoneWallet
         }
     },
+    NewOpts = Opts#{
+        identities => UpdatedIdentities
+    },
     ok = 
         hb_http_server:set_opts(
-            Opts#{
-                identities => UpdatedIdentities
-            }
+            NewOpts
         ),
     % Print the updated wallet address
     Wallet = hb_opts:get(priv_wallet, undefined, Opts),
+    ?event(successfully_joined_greenzone),
+    try_mount_encrypted_volume(GreenZoneWallet, NewOpts),
     ?event(green_zone,
         {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
     ),
@@ -487,8 +490,7 @@ join_peer(PeerLocation, PeerID, _M1, _M2, InitOpts) ->
                                 priv_green_zone_aes => AESKey
                             },
                             hb_http_server:set_opts(NewOpts),
-                            ?event(successfully_joined_greenzone),
-                            try_mount_encrypted_volume(AESKey, NewOpts),
+
                             {ok, #{ 
                                 <<"body">> => 
                                     <<"Node joined green zone successfully.">>, 
@@ -730,17 +732,17 @@ decrypt_zone_key(EncZoneKey, Opts) ->
 %% The encryption key used for the volume is the same AES key used for green zone
 %% communication, ensuring that only nodes in the green zone can access the data.
 %%
-%% @param AESKey The AES key obtained from joining the green zone.
+%% @param Key The password for the encrypted volume.
 %% @param Opts A map of configuration options.
 %% @returns ok (implicit) in all cases, with detailed event logs of the results.
-try_mount_encrypted_volume(AESKey, Opts) ->
+try_mount_encrypted_volume(Key, Opts) ->
     ?event(debug_volume, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
-        priv_volume_key => AESKey,
+        priv_volume_key => Key,
         volume_skip_decryption => <<"true">>
     },
-    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, AESKey}),
+    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, Key}),
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
         {ok, Result} ->
