@@ -315,11 +315,11 @@ mount_disk(Partition, EncKey, MountPoint, VolumeName) ->
     with_secure_key_file(EncKey, fun(KeyFile) ->
         OpenCmd = "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ 
                    " " ++ PartitionStr ++ " " ++ VolumeNameStr,
-        ?event(debug_volume, {mount_disk, executing_luks_open, command}),
+        ?event(debug_volume, {mount_disk, executing_luks_open, {command, OpenCmd}}),
         case safe_exec(OpenCmd, ["failed"]) of
-            {ok, _Result} ->
+            {ok, Result} ->
                 ?event(debug_volume, {mount_disk, luks_open_success, 
-                       proceeding_to_mount}),
+                       proceeding_to_mount, {result, Result}}),
                 mount_opened_volume(Partition, MountPoint, VolumeName);
             {error, ErrorMsg} ->
                 ?event(debug_volume, {mount_disk, luks_open_error, ErrorMsg}),
