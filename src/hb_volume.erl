@@ -338,11 +338,36 @@ mount_opened_volume(Partition, MountPoint, VolumeName) ->
     ?event(debug_volume, {mount_opened_volume, creating_mount_point, 
            MountPoint}),
     os:cmd("sudo mkdir -p " ++ MountPointStr),
-    % Mount the unlocked LUKS volume
+    % Check if filesystem exists on the opened LUKS volume
     VolumeNameStr = binary_to_list(VolumeName),
-    MountCmd = "sudo mount /dev/mapper/" ++ VolumeNameStr ++ 
-                " " ++ MountPointStr,
-    ?event(debug_volume, {mount_opened_volume, executing_mount, {command, MountCmd}}),
+    DeviceMapperPath = "/dev/mapper/" ++ VolumeNameStr,
+    % Check filesystem type
+    FSCheckCmd = "sudo blkid " ++ DeviceMapperPath,
+    ?event(debug_volume, {mount_opened_volume, checking_filesystem, 
+           {command, FSCheckCmd}}),
+    FSCheckResult = os:cmd(FSCheckCmd),
+    ?event(debug_volume, {mount_opened_volume, filesystem_check_result, 
+           FSCheckResult}),
+    % Create filesystem if none exists
+    case string:find(FSCheckResult, "TYPE=") of
+        nomatch ->
+            % No filesystem found, create ext4
+            ?event(debug_volume, {mount_opened_volume, creating_filesystem, 
+                   ext4}),
+            MkfsCmd = "sudo mkfs.ext4 -F " ++ DeviceMapperPath,
+            ?event(debug_volume, {mount_opened_volume, executing_mkfs, 
+                   {command, MkfsCmd}}),
+            MkfsResult = os:cmd(MkfsCmd),
+            ?event(debug_volume, {mount_opened_volume, mkfs_result, 
+                   MkfsResult});
+        _ ->
+            ?event(debug_volume, {mount_opened_volume, filesystem_exists, 
+                   skipping_creation})
+    end,
+    % Mount the unlocked LUKS volume
+    MountCmd = "sudo mount " ++ DeviceMapperPath ++ " " ++ MountPointStr,
+    ?event(debug_volume, {mount_opened_volume, executing_mount, 
+           {command, MountCmd}}),
     case safe_exec(MountCmd, ["failed"]) of
         {ok, Result} ->
             ?event(debug_volume, {mount_opened_volume, mount_success, 
