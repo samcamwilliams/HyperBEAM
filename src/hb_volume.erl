@@ -444,9 +444,21 @@ with_secure_key_file(EncKey, Fun) ->
     DirCheck = os:cmd("ls -la /root/tmp/"),
     ?event(debug_volume, {with_secure_key_file, directory_check, DirCheck}),
     try
-        % Write key to temporary file
-        ?event(debug_volume, {with_secure_key_file, writing_key, to_file}),
-        WriteResult = file:write_file(KeyFile, EncKey, [raw]),
+        % Debug the EncKey parameter
+        EncKeyType = case is_binary(EncKey) of
+            true -> binary;
+            false -> case is_list(EncKey) of
+                true -> list;
+                false -> other
+            end
+        end,
+        ?event(debug_volume, {with_secure_key_file, enckey_type, EncKeyType}),
+        ?event(debug_volume, {with_secure_key_file, enckey_value, EncKey}),
+        % Convert EncKey to binary using hb_util
+        BinaryEncKey = hb_util:bin(EncKey),
+        ?event(debug_volume, {with_secure_key_file, converted_to_binary, 
+               {size, byte_size(BinaryEncKey)}}),
+        WriteResult = file:write_file(KeyFile, BinaryEncKey, [raw]),
         ?event(debug_volume, {with_secure_key_file, write_result, WriteResult}),
         % Check if file was created
         FileExists = filelib:is_regular(KeyFile),
