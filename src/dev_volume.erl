@@ -103,10 +103,7 @@ mount(_M1, _M2, Opts) ->
     ?event(debug_volume, {mount, entry, starting}),
     % Check if an encrypted key was sent in the request
     EncryptedKey = hb_opts:get(priv_volume_key, not_found, Opts),
-    ?event(debug_volume, 
-           {mount, encrypted_key_retrieved, EncryptedKey}),
     % Determine if we need to decrypt a key or use one from config
-    ?event(debug_mount, {mount, encrypted_key, EncryptedKey}),
     SkipDecryption = hb_opts:get(volume_skip_decryption, 
                                    <<"false">>, Opts),
     Key = case SkipDecryption of
@@ -114,14 +111,13 @@ mount(_M1, _M2, Opts) ->
             ?event(debug_mount, {mount, skip_decryption, true}),
             EncryptedKey;
         _ ->
+            ?event(debug_volume, {decrypt_volume_key}),
             case decrypt_volume_key(EncryptedKey, Opts) of
-                {ok, DecryptedKey} ->
-                    ?event(debug_mount, 
-                           {mount, decrypted_key, DecryptedKey}),
-                    DecryptedKey;
+                {ok, DecryptedKey} -> DecryptedKey;
                 {error, DecryptError} ->
                     ?event(debug_mount, 
-                           {mount, key_decrypt_error, DecryptError}),
+                        {mount, key_decrypt_error, DecryptError}
+                    ),
                     not_found
             end
     end,
@@ -132,9 +128,14 @@ mount(_M1, _M2, Opts) ->
     MountPoint = hb_opts:get(volume_mount_point, not_found, Opts),
     StorePath = hb_opts:get(volume_store_path, not_found, Opts),
     ?event(debug_volume, 
-           {mount, options_extracted, 
-            {Device, Partition, PartitionType, VolumeName, 
-             MountPoint, StorePath}}),
+        {mount, options_extracted, 
+            {
+                device, Device, partition, Partition, 
+                partition_type, PartitionType, volume_name, VolumeName, 
+                mount_point, MountPoint, store_path, StorePath
+            }
+        }
+    ),
     % Check for missing required node options
     case hb_opts:check_required_opts([
         {<<"priv_volume_key">>, Key},
@@ -175,19 +176,18 @@ mount(_M1, _M2, Opts) ->
 -spec public_key(term(), term(), map()) -> 
     {ok, map()} | {error, binary()}.
 public_key(_M1, _M2, Opts) ->
-    ?event(debug_volume, {public_key, entry, starting}),
     % Retrieve the node's wallet
-    ?event(debug_volume, 
-           {public_key, wallet_retrieval, attempting}),
     case hb_opts:get(priv_wallet, undefined, Opts) of
         undefined ->
             % Node doesn't have a wallet yet
             ?event(debug_volume, 
-                   {public_key, wallet_error, no_wallet_found}),
+                {public_key, wallet_error, no_wallet_found}
+            ),
             {error, <<"Node wallet not available">>};
         {{_KeyType, _Priv, Pub}, _PubKey} ->
             ?event(debug_volume, 
-                   {public_key, wallet_found, key_conversion_starting}),
+                {public_key, wallet_found, key_conversion_starting}
+            ),
             % Convert to a standard RSA format (PKCS#1 or X.509)
             RsaPubKey = #'RSAPublicKey'{
                 publicExponent = 65537,  % Common RSA exponent
@@ -219,22 +219,23 @@ public_key(_M1, _M2, Opts) ->
 -spec decrypt_volume_key(binary(), map()) -> 
     {ok, binary()} | {error, binary()}.
 decrypt_volume_key(EncryptedKeyBase64, Opts) ->
-    ?event(debug_volume, {decrypt_volume_key, entry, starting}),
     % Decode the encrypted key
     try
         EncryptedKey = base64:decode(EncryptedKeyBase64),
         ?event(debug_volume, 
-               {decrypt_volume_key, base64_decoded, success}),
+            {decrypt_volume_key, base64_decoded, success}
+        ),
         % Retrieve the node's wallet with private key
         case hb_opts:get(priv_wallet, undefined, Opts) of
             undefined ->
                 ?event(debug_volume, 
-                       {decrypt_volume_key, wallet_error, no_wallet}),
+                    {decrypt_volume_key, wallet_error, no_wallet}
+                ),
                 {error, <<"Node wallet not available for decryption">>};
             {{_KeyType = {rsa, E}, Priv, Pub}, _PubKey} ->
                 ?event(debug_volume, 
-                       {decrypt_volume_key, wallet_found, 
-                        creating_private_key}),
+                    {decrypt_volume_key, wallet_found, creating_private_key}
+                ),
                 % Create RSA private key record for decryption
                 RsaPrivKey = #'RSAPrivateKey'{
                     publicExponent = E,
@@ -242,17 +243,21 @@ decrypt_volume_key(EncryptedKeyBase64, Opts) ->
                     privateExponent = crypto:bytes_to_integer(Priv)
                 },
                 % Decrypt the key
-                DecryptedKey = public_key:decrypt_private(EncryptedKey, 
-                                                          RsaPrivKey),
+                DecryptedKey = 
+                    public_key:decrypt_private(
+                        EncryptedKey, 
+                        RsaPrivKey
+                    ),
                 ?event(debug_volume, 
-                       {decrypt_volume_key, decryption_success, 
-                        key_decrypted}),
+                    {decrypt_volume_key, decryption_success, key_decrypted}
+                ),
                 {ok, DecryptedKey}
         end
     catch
         _:Error ->
             ?event(debug_volume, 
-                   {decrypt_volume_key, decryption_error, Error}),
+                {decrypt_volume_key, decryption_error, Error}
+            ),
             {error, <<"Failed to decrypt volume key">>}
     end.
 
@@ -276,16 +281,21 @@ check_base_device(
     Key, Opts
 ) ->
     ?event(debug_volume, 
-           {check_base_device, entry, {checking_device, Device}}),
+        {check_base_device, entry, {checking_device, Device}}
+    ),
     case hb_volume:check_for_device(Device) of
         false ->
             % Base device doesn't exist
-            ?event(debug_volume, {check_base_device, device_not_found, Device}),
+            ?event(debug_volume, 
+                {check_base_device, device_not_found, Device}
+            ),
             {error, <<"Base device not found">>};
         true ->
             ?event(debug_volume, 
-                   {check_base_device, device_found, 
-                    {proceeding_to_partition_check, Device}}),
+                {check_base_device, device_found, 
+                    {proceeding_to_partition_check, Device}
+                }
+            ),
             check_partition(
                 Device, Partition, PartitionType, VolumeName, 
                 MountPoint, StorePath, Key, Opts
@@ -312,20 +322,25 @@ check_partition(
     Key, Opts
 ) ->
     ?event(debug_volume, 
-           {check_partition, entry, {checking_partition, Partition}}),
+        {check_partition, entry, {checking_partition, Partition}}
+    ),
     case hb_volume:check_for_device(Partition) of
         true ->
             ?event(debug_volume, 
-                   {check_partition, partition_exists, 
-                    {mounting_existing, Partition}}),
+                {check_partition, partition_exists, 
+                    {mounting_existing, Partition}
+                }
+            ),
             % Partition exists, try mounting it
             mount_existing_partition(
                 Partition, Key, MountPoint, VolumeName, StorePath, Opts
             );
         false ->
             ?event(debug_volume, 
-                   {check_partition, partition_not_exists, 
-                    {creating_new, Partition}}),
+                {check_partition, partition_not_exists, 
+                    {creating_new, Partition}
+                }
+            ),
             % Partition doesn't exist, create it
             create_and_mount_partition(
                 Device, Partition, PartitionType, Key, 
@@ -349,16 +364,22 @@ mount_existing_partition(
     Partition, Key, MountPoint, VolumeName, StorePath, Opts
 ) ->
     ?event(debug_volume, 
-           {mount_existing_partition, entry, 
-            {attempting_mount, Partition, MountPoint}}),
+        {mount_existing_partition, entry, 
+            {attempting_mount, Partition, MountPoint}
+        }
+    ),
     case hb_volume:mount_disk(Partition, Key, MountPoint, VolumeName) of
         {ok, MountResult} ->
             ?event(debug_volume, 
-                   {mount_existing_partition, mount_success, MountResult}),
+                {mount_existing_partition, mount_success, MountResult}
+            ),
             update_store_path(StorePath, Opts);
         {error, MountError} ->
             ?event(debug_volume, 
-                   {mount_existing_partition, mount_error, MountError}),
+                {mount_existing_partition, mount_error, 
+                    {error, MountError}
+                }
+            ),
             {error, <<"Failed to mount volume">>}
     end.
 
@@ -381,20 +402,26 @@ create_and_mount_partition(
     MountPoint, VolumeName, StorePath, Opts
 ) ->
     ?event(debug_volume, 
-           {create_and_mount_partition, entry, 
-            {creating_partition, Device, PartitionType}}),
+        {create_and_mount_partition, entry, 
+            {creating_partition, Device, PartitionType}
+        }
+    ),
     case hb_volume:create_partition(Device, PartitionType) of
         {ok, PartitionResult} ->
             ?event(debug_volume, 
-                   {create_and_mount_partition, partition_created, 
-                    PartitionResult}),
+                {create_and_mount_partition, partition_created, 
+                    PartitionResult
+                }
+            ),
             format_and_mount(
                 Partition, Key, MountPoint, VolumeName, StorePath, Opts
             );
         {error, PartitionError} ->
             ?event(debug_volume, 
-                   {create_and_mount_partition, partition_error, 
-                    PartitionError}),
+                {create_and_mount_partition, partition_error, 
+                    {error, PartitionError}
+                }
+            ),
             {error, <<"Failed to create partition">>}
     end.
 
@@ -414,17 +441,24 @@ format_and_mount(
     Partition, Key, MountPoint, VolumeName, StorePath, Opts
 ) ->
     ?event(debug_volume, 
-           {format_and_mount, entry, {formatting_partition, Partition}}),
+        {format_and_mount, entry, {formatting_partition, Partition}}
+    ),
     case hb_volume:format_disk(Partition, Key) of
         {ok, FormatResult} ->
             ?event(debug_volume, 
-                   {format_and_mount, format_success, FormatResult}),
+                {format_and_mount, format_success, 
+                    {result, FormatResult}
+                }
+            ),
             mount_formatted_partition(
                 Partition, Key, MountPoint, VolumeName, StorePath, Opts
             );
         {error, FormatError} ->
             ?event(debug_volume, 
-                   {format_and_mount, format_error, FormatError}),
+                {format_and_mount, format_error, 
+                    {error, FormatError}
+                }
+            ),
             {error, <<"Failed to format disk">>}
     end.
 
@@ -444,18 +478,24 @@ mount_formatted_partition(
     Partition, Key, MountPoint, VolumeName, StorePath, Opts
 ) ->
     ?event(debug_volume, 
-           {mount_formatted_partition, entry, 
-            {mounting_formatted, Partition, MountPoint}}),
+        {mount_formatted_partition, entry, 
+            {mounting_formatted, Partition, MountPoint}
+        }
+    ),
     case hb_volume:mount_disk(Partition, Key, MountPoint, VolumeName) of
         {ok, RetryMountResult} ->
             ?event(debug_volume, 
-                   {mount_formatted_partition, mount_success, 
-                    RetryMountResult}),
+                {mount_formatted_partition, mount_success, 
+                    {result, RetryMountResult}
+                }
+            ),
             update_store_path(StorePath, Opts);
         {error, RetryMountError} ->
             ?event(debug_volume, 
-                   {mount_formatted_partition, mount_error, 
-                    RetryMountError}),
+                {mount_formatted_partition, mount_error, 
+                    {error, RetryMountError}
+                }
+            ),
             {error, <<"Failed to mount newly formatted volume">>}
     end.
 
@@ -468,18 +508,26 @@ mount_formatted_partition(
     {ok, binary()} | {error, binary()}.
 update_store_path(StorePath, Opts) ->
     ?event(debug_volume, 
-           {update_store_path, entry, {updating_store, StorePath}}),
+        {update_store_path, entry, {updating_store, StorePath}}
+    ),
     CurrentStore = hb_opts:get(store, [], Opts),
     ?event(debug_volume, 
-           {update_store_path, current_store, CurrentStore}),
+        {update_store_path, current_store, CurrentStore}
+    ),
     case hb_volume:change_node_store(StorePath, CurrentStore) of
         {ok, #{<<"store">> := NewStore} = StoreResult} ->
             ?event(debug_volume, 
-                   {update_store_path, store_change_success, StoreResult}),
+                {update_store_path, store_change_success, 
+                    {result, StoreResult}
+                }
+            ),
             update_node_config(StorePath, NewStore, Opts);
         {error, StoreError} ->
             ?event(debug_volume, 
-                   {update_store_path, store_change_error, StoreError}),
+                {update_store_path, store_change_error, 
+                    {error, StoreError}
+                }
+            ),
             {error, <<"Failed to update store">>}
     end.
 
@@ -492,19 +540,33 @@ update_store_path(StorePath, Opts) ->
     {ok, binary()} | {error, binary()}.
 update_node_config(StorePath, NewStore, Opts) ->
     ?event(debug_volume, 
-           {update_node_config, entry, 
-            {updating_config, StorePath, NewStore}}),
-    GenesisWasmDBDir = hb_opts:get(genesis_wasm_db_dir, 
-                                   "cache-mainnet/genesis-wasm", Opts),
+        {update_node_config, entry, 
+            {updating_config, StorePath, NewStore}
+        }
+    ),
+    GenesisWasmDBDir = 
+        hb_opts:get(
+            genesis_wasm_db_dir,
+            "cache-mainnet/genesis-wasm", 
+            Opts
+        ),
     ?event(debug_volume, 
-           {update_node_config, genesis_dir, GenesisWasmDBDir}),
+        {update_node_config, genesis_dir, GenesisWasmDBDir}
+    ),
     BinaryGenesisWasmDBDir = list_to_binary(GenesisWasmDBDir),
-    FullGenesisPath = <<StorePath/binary, "/", 
-                       BinaryGenesisWasmDBDir/binary>>,
+    FullGenesisPath = 
+        <<StorePath/binary, "/", BinaryGenesisWasmDBDir/binary>>,
     ?event(debug_volume, 
-           {update_node_config, full_path_created, FullGenesisPath}),
-    ok = hb_http_server:set_opts(Opts#{store => NewStore, 
-                                       genesis_wasm_db_dir => FullGenesisPath}),
+        {update_node_config, full_path_created, FullGenesisPath}
+    ),
+    ok = 
+        hb_http_server:set_opts(
+            Opts#{
+                store => NewStore, 
+                genesis_wasm_db_dir => FullGenesisPath
+            }
+        ),
     ?event(debug_volume, 
-           {update_node_config, config_updated, success}),
+        {update_node_config, config_updated, success}
+    ),
     {ok, <<"Volume mounted and store updated successfully">>}.

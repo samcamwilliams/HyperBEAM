@@ -5,8 +5,7 @@ for partitioning, formatting, mounting, and managing encrypted volumes.
 """.
 -export([list_partitions/0, create_partition/2]).
 -export([format_disk/2, mount_disk/4, change_node_store/2]).
--export([check_for_device/1, check_lmdb_exists/1]).
--export([copy_lmdb_store/2]).
+-export([check_for_device/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -49,8 +48,11 @@ list_partitions() ->
                 DiskData
             ),
             % Return the partition information
-            ?event(debug_volume, {list_partitions, success, 
-                   {disk_count, length(DiskObjects)}}),
+            ?event(debug_volume, 
+                {list_partitions, success, 
+                   {disk_count, length(DiskObjects)}
+                }
+            ),
             {ok, #{
                 <<"status">> => 200,
                 <<"content-type">> => <<"application/json">>,
@@ -178,44 +180,73 @@ create_partition(undefined, _PartType) ->
     ?event(debug_volume, {create_partition, error, device_undefined}),
     {error, <<"Device path not specified">>};
 create_partition(Device, PartType) ->
-    ?event(debug_volume, {create_partition, entry, 
-           {device, Device, part_type, PartType}}),
+    ?event(debug_volume, 
+        {create_partition, entry, 
+           {device, Device, part_type, PartType}
+        }
+    ),
     % Create a GPT partition table
     DeviceStr = binary_to_list(Device),
     MklabelCmd = "sudo parted " ++ DeviceStr ++ " mklabel gpt",
-    ?event(debug_volume, {create_partition, creating_gpt_label, 
-           {device, Device}}),
-    ?event(debug_volume, {create_partition, executing_mklabel, {command, MklabelCmd}}),
+    ?event(debug_volume, 
+        {create_partition, creating_gpt_label, 
+            {device, Device}
+        }
+    ),
+    ?event(debug_volume, 
+        {create_partition, executing_mklabel, 
+            {command, MklabelCmd}
+        }
+    ),
     case safe_exec(MklabelCmd) of
         {ok, Result} ->
-            ?event(debug_volume, {create_partition, gpt_label_success, 
-                   proceeding_to_partition, {result, Result}}),
+            ?event(debug_volume, 
+                {create_partition, gpt_label_success, 
+                    {result, Result}
+                }
+            ),
             create_actual_partition(Device, PartType);
         {error, ErrorMsg} ->
-            ?event(debug_volume, {create_partition, gpt_label_error, 
-                   ErrorMsg}),
+            ?event(debug_volume, 
+                {create_partition, gpt_label_error, 
+                    {error, ErrorMsg}
+                }
+            ),
             {error, ErrorMsg}
     end.
 
 % Create the actual partition after making the GPT label
 create_actual_partition(Device, PartType) ->
-    ?event(debug_volume, {create_actual_partition, entry, 
-           {device, Device, part_type, PartType}}),
+    ?event(debug_volume, 
+        {create_actual_partition, entry, 
+           {device, Device, part_type, PartType}
+        }
+    ),
     DeviceStr = binary_to_list(Device),
     PartTypeStr = binary_to_list(PartType),
     % Build the parted command to create the partition
-    MkpartCmd = "sudo parted -a optimal " ++ DeviceStr ++ 
-               " mkpart primary " ++ PartTypeStr ++ " 0% 100%",
-    ?event(debug_volume, {create_actual_partition, executing_mkpart, 
-           {command, MkpartCmd}}),
+    MkpartCmd = 
+        "sudo parted -a optimal " ++ DeviceStr ++ 
+        " mkpart primary " ++ PartTypeStr ++ " 0% 100%",
+    ?event(debug_volume, 
+        {create_actual_partition, executing_mkpart, 
+           {command, MkpartCmd}
+        }
+    ),
     case safe_exec(MkpartCmd) of
         {ok, Result} ->
-            ?event(debug_volume, {create_actual_partition, mkpart_success, 
-                   getting_info, {result, Result}}),    
+            ?event(debug_volume, 
+                {create_actual_partition, mkpart_success, 
+                   {result, Result}
+                }
+            ),
             get_partition_info(Device);
         {error, ErrorMsg} ->
-            ?event(debug_volume, {create_actual_partition, mkpart_error, 
-                   ErrorMsg}),
+            ?event(debug_volume, 
+                {create_actual_partition, mkpart_error, 
+                    {error, ErrorMsg}
+                }
+            ),
             {error, ErrorMsg}
     end.
 
@@ -225,9 +256,15 @@ get_partition_info(Device) ->
     DeviceStr = binary_to_list(Device),
     % Print partition information
     PrintCmd = "sudo parted " ++ DeviceStr ++ " print",
-    ?event(debug_volume, {get_partition_info, executing_print, {command, PrintCmd}}),
+    ?event(debug_volume, 
+        {get_partition_info, executing_print, {command, PrintCmd}}
+    ),
     PartitionInfo = os:cmd(PrintCmd),
-    ?event(debug_volume, {get_partition_info, success, partition_created, {result, PartitionInfo}}),
+    ?event(debug_volume, 
+        {get_partition_info, success, partition_created, 
+            {result, PartitionInfo}
+        }
+    ),
     {ok, #{
         <<"status">> => 200,
         <<"message">> => <<"Partition created successfully.">>,
@@ -251,20 +288,30 @@ format_disk(_Partition, undefined) ->
     ?event(debug_volume, {format_disk, error, key_undefined}),
     {error, <<"Encryption key not specified">>};
 format_disk(Partition, EncKey) ->
-    ?event(debug_volume, {format_disk, entry, 
-           {partition, Partition, key_present, true}}),
-    ?event(disk, {format, start}),
-    ?event(disk, {format, partition, Partition}),
+    ?event(debug_volume, 
+        {format_disk, entry, 
+            {
+                partition, Partition, 
+                key_present, true
+            }
+        }
+    ),
     PartitionStr = binary_to_list(Partition),
     ?event(debug_volume, {format_disk, creating_secure_key_file, starting}),
     with_secure_key_file(EncKey, fun(KeyFile) ->
-        FormatCmd = "sudo cryptsetup luksFormat --batch-mode " ++
-                    "--key-file " ++ KeyFile ++ " " ++ PartitionStr,
-        ?event(debug_volume, {format_disk, executing_luks_format, {command, FormatCmd}}),
+        FormatCmd = 
+            "sudo cryptsetup luksFormat --batch-mode " ++
+            "--key-file " ++ KeyFile ++ " " ++ PartitionStr,
+        ?event(debug_volume, 
+            {format_disk, executing_luks_format, {command, FormatCmd}}
+        ),
         case safe_exec(FormatCmd, ["failed"]) of
             {ok, Result} ->
-                ?event(debug_volume, {format_disk, luks_format_success, 
-                       completed, {result, Result}}),
+                ?event(debug_volume, 
+                    {format_disk, luks_format_success, completed, 
+                        {result, Result}
+                    }
+                ),
                 {ok, #{
                     <<"status">> => 200,
                     <<"message">> => 
@@ -272,8 +319,9 @@ format_disk(Partition, EncKey) ->
                           "successfully.">>
                 }};
             {error, ErrorMsg} ->
-                ?event(debug_volume, {format_disk, luks_format_error, 
-                       ErrorMsg}),
+                ?event(debug_volume, 
+                    {format_disk, luks_format_error, ErrorMsg}
+                ),
                 {error, ErrorMsg}
         end
     end).
@@ -303,24 +351,29 @@ mount_disk(_Partition, _EncKey, undefined, _VolumeName) ->
     ?event(debug_volume, {mount_disk, error, mount_point_undefined}),
     {error, <<"Mount point not specified">>};
 mount_disk(Partition, EncKey, MountPoint, VolumeName) ->
-    ?event(debug_volume, {mount_disk, entry, 
-           {partition, Partition, mount_point, MountPoint, 
-            volume_name, VolumeName}}),
-    ?event(disk, {mount, start}),
-    ?event(disk, {mount, partition, Partition}),
-    ?event(disk, {mount, mount_point, MountPoint}),
-    ?event(disk, {mount, volume_name, VolumeName}),
+    ?event(debug_volume, 
+        {mount_disk, entry, 
+            {
+                partition, Partition,
+                mount_point, MountPoint, 
+                volume_name, VolumeName}
+        }
+    ),
     PartitionStr = binary_to_list(Partition),
     VolumeNameStr = binary_to_list(VolumeName),
     ?event(debug_volume, {mount_disk, opening_luks_volume, starting}),
     with_secure_key_file(EncKey, fun(KeyFile) ->
-        OpenCmd = "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ 
-                   " " ++ PartitionStr ++ " " ++ VolumeNameStr,
+        OpenCmd = 
+            "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ 
+            " " ++ PartitionStr ++ " " ++ VolumeNameStr,
         ?event(debug_volume, {mount_disk, executing_luks_open, {command, OpenCmd}}),
         case safe_exec(OpenCmd, ["failed"]) of
             {ok, Result} ->
-                ?event(debug_volume, {mount_disk, luks_open_success, 
-                       proceeding_to_mount, {result, Result}}),
+                ?event(debug_volume, 
+                    {mount_disk, luks_open_success, proceeding_to_mount, 
+                        {result, Result}
+                    }
+                ),
                 mount_opened_volume(Partition, MountPoint, VolumeName);
             {error, ErrorMsg} ->
                 ?event(debug_volume, {mount_disk, luks_open_error, ErrorMsg}),
@@ -330,52 +383,74 @@ mount_disk(Partition, EncKey, MountPoint, VolumeName) ->
 
 % Mount an already opened LUKS volume
 mount_opened_volume(Partition, MountPoint, VolumeName) ->
-    ?event(debug_volume, {mount_opened_volume, entry, 
-           {partition, Partition, mount_point, MountPoint, 
-            volume_name, VolumeName}}),
+    ?event(debug_volume, 
+        {mount_opened_volume, entry, 
+            {
+                partition, Partition, 
+                mount_point, MountPoint, 
+                volume_name, VolumeName
+            }
+        }
+    ),
     % Create mount point if it doesn't exist
     MountPointStr = binary_to_list(MountPoint),
-    ?event(debug_volume, {mount_opened_volume, creating_mount_point, 
-           MountPoint}),
+    ?event(debug_volume, 
+        {mount_opened_volume, creating_mount_point, MountPoint}
+    ),
     os:cmd("sudo mkdir -p " ++ MountPointStr),
     % Check if filesystem exists on the opened LUKS volume
     VolumeNameStr = binary_to_list(VolumeName),
     DeviceMapperPath = "/dev/mapper/" ++ VolumeNameStr,
     % Check filesystem type
     FSCheckCmd = "sudo blkid " ++ DeviceMapperPath,
-    ?event(debug_volume, {mount_opened_volume, checking_filesystem, 
-           {command, FSCheckCmd}}),
+    ?event(debug_volume, 
+        {mount_opened_volume, checking_filesystem, {command, FSCheckCmd}}
+    ),
     FSCheckResult = os:cmd(FSCheckCmd),
-    ?event(debug_volume, {mount_opened_volume, filesystem_check_result, 
-           FSCheckResult}),
+    ?event(debug_volume, 
+        {mount_opened_volume, filesystem_check_result, FSCheckResult}
+    ),
     % Create filesystem if none exists
     case string:find(FSCheckResult, "TYPE=") of
         nomatch ->
             % No filesystem found, create ext4
-            ?event(debug_volume, {mount_opened_volume, creating_filesystem, 
-                   ext4}),
+            ?event(debug_volume, 
+                {mount_opened_volume, creating_filesystem, ext4}
+            ),
             MkfsCmd = "sudo mkfs.ext4 -F " ++ DeviceMapperPath,
-            ?event(debug_volume, {mount_opened_volume, executing_mkfs, 
-                   {command, MkfsCmd}}),
+            ?event(debug_volume, 
+                {mount_opened_volume, executing_mkfs, {command, MkfsCmd}}
+            ),
             MkfsResult = os:cmd(MkfsCmd),
-            ?event(debug_volume, {mount_opened_volume, mkfs_result, 
-                   MkfsResult});
+            ?event(debug_volume, 
+                {mount_opened_volume, mkfs_result, MkfsResult}
+            );
         _ ->
-            ?event(debug_volume, {mount_opened_volume, filesystem_exists, 
-                   skipping_creation})
+            ?event(debug_volume, 
+                {mount_opened_volume, filesystem_exists, skipping_creation}
+            )
     end,
     % Mount the unlocked LUKS volume
     MountCmd = "sudo mount " ++ DeviceMapperPath ++ " " ++ MountPointStr,
-    ?event(debug_volume, {mount_opened_volume, executing_mount, 
-           {command, MountCmd}}),
+    ?event(debug_volume, 
+        {mount_opened_volume, executing_mount, 
+           {command, MountCmd}
+        }
+    ),
     case safe_exec(MountCmd, ["failed"]) of
         {ok, Result} ->
-            ?event(debug_volume, {mount_opened_volume, mount_success, 
-                   creating_info, {result, Result}}),
+            ?event(debug_volume, 
+                {mount_opened_volume, mount_success, 
+                   creating_info, {result, Result}
+                }
+            ),
             create_mount_info(Partition, MountPoint, VolumeName);
         {error, ErrorMsg} ->
-            ?event(debug_volume, {mount_opened_volume, mount_error, 
-                   {error, ErrorMsg, closing_luks}}),
+            ?event(debug_volume, 
+                {mount_opened_volume, mount_error, 
+                   {error, ErrorMsg, closing_luks}
+                }
+            ),
             % Close the LUKS volume if mounting failed
             os:cmd("sudo cryptsetup luksClose " ++ VolumeNameStr),
             {error, ErrorMsg}
@@ -383,10 +458,15 @@ mount_opened_volume(Partition, MountPoint, VolumeName) ->
 
 % Create mount info response
 create_mount_info(Partition, MountPoint, VolumeName) ->
-    ?event(debug_volume, {create_mount_info, success, 
-           {partition, Partition, mount_point, MountPoint, 
-            volume_name, VolumeName}}),
-    ?event(disk, {mount, complete}),
+    ?event(debug_volume, 
+        {create_mount_info, success, 
+            {
+                partition, Partition, 
+                mount_point, MountPoint, 
+                volume_name, VolumeName
+            }
+        }
+    ),
     {ok, #{
         <<"status">> => 200,
         <<"message">> => 
@@ -413,19 +493,26 @@ change_node_store(undefined, _CurrentStore) ->
     ?event(debug_volume, {change_node_store, error, store_path_undefined}),
     {error, <<"Store path not specified">>};
 change_node_store(StorePath, CurrentStore) ->
-    ?event(debug_volume, {change_node_store, entry, 
-           {store_path, StorePath, current_store, CurrentStore}}),
+    ?event(debug_volume, 
+        {change_node_store, entry, 
+           {store_path, StorePath, current_store, CurrentStore}
+        }
+    ),
     % Create the store directory if it doesn't exist
     StorePathStr = binary_to_list(StorePath),
     ?event(debug_volume, {change_node_store, creating_directory, StorePath}),
     os:cmd("sudo mkdir -p " ++ StorePathStr),
     % Update the store configuration with the new path
-    ?event(debug_volume, {change_node_store, updating_config, 
-           current_store}),
+    ?event(debug_volume, 
+        {change_node_store, updating_config, 
+           {current_store, CurrentStore}
+        }
+    ),
     NewStore = update_store_config(CurrentStore, StorePath),
     % Return the result
-    ?event(debug_volume, {change_node_store, success, 
-           {new_store_config, NewStore}}),
+    ?event(debug_volume,
+        {change_node_store, success, {new_store_config, NewStore}}
+    ),
     {ok, #{
         <<"status">> => 200,
         <<"message">> => 
@@ -437,7 +524,7 @@ change_node_store(StorePath, CurrentStore) ->
 %%% Helper functions
 %% Execute system command with error checking
 safe_exec(Command) ->
-    safe_exec(Command, ["Error", "failed"]).
+    safe_exec(Command, ["Error", "failed", "bad", "error"]).
 
 safe_exec(Command, ErrorKeywords) ->
     Result = os:cmd(Command),
@@ -458,8 +545,6 @@ check_command_errors(Result, Keywords) ->
 %% Secure key file management with automatic cleanup
 with_secure_key_file(EncKey, Fun) ->
     ?event(debug_volume, {with_secure_key_file, entry, creating_temp_file}),
-    % Ensure tmp directory exists
-    ?event(debug_volume, {with_secure_key_file, creating_directory, "/root/tmp"}),
     os:cmd("sudo mkdir -p /root/tmp"),
     % Get process ID and create filename
     PID = os:getpid(),
@@ -470,21 +555,10 @@ with_secure_key_file(EncKey, Fun) ->
     DirCheck = os:cmd("ls -la /root/tmp/"),
     ?event(debug_volume, {with_secure_key_file, directory_check, DirCheck}),
     try
-        % Debug the EncKey parameter
-        EncKeyType = case is_binary(EncKey) of
-            true -> binary;
-            false -> case is_list(EncKey) of
-                true -> list;
-                false -> other
-            end
-        end,
-        ?event(debug_volume, {with_secure_key_file, enckey_type, EncKeyType}),
-        ?event(debug_volume, {with_secure_key_file, enckey_value, EncKey}),
         % Convert EncKey to binary using hb_util
         BinaryEncKey = case EncKey of
             % Handle RSA wallet tuples - extract private key or use hash
             {{rsa, _}, PrivKey, _PubKey} when is_binary(PrivKey) ->
-                ?event(debug_volume, {with_secure_key_file, wallet_detected, extracting_private_key}),
                 % Use first 32 bytes of private key for AES-256
                 case byte_size(PrivKey) of
                     Size when Size >= 32 ->
@@ -499,47 +573,59 @@ with_secure_key_file(EncKey, Fun) ->
                     hb_util:bin(EncKey)
                 catch
                     _:_ ->
-                        ?event(debug_volume, {with_secure_key_file, using_term_to_binary, complex_term}),
-                        % Fallback to term_to_binary and hash to get consistent key size
+                        % Fallback to term_to_binary and hash to get consistent
+                        % key size
                         crypto:hash(sha256, term_to_binary(EncKey))
                 end;
             % Simple cases handled by hb_util:bin
             _ ->
                 hb_util:bin(EncKey)
         end,
-        ?event(debug_volume, {with_secure_key_file, converted_to_binary, 
-               {size, byte_size(BinaryEncKey)}}),
         WriteResult = file:write_file(KeyFile, BinaryEncKey, [raw]),
-        ?event(debug_volume, {with_secure_key_file, write_result, WriteResult}),
+        ?event(debug_volume, 
+            {with_secure_key_file, write_result, WriteResult}
+        ),
         % Check if file was created
         FileExists = filelib:is_regular(KeyFile),
-        ?event(debug_volume, {with_secure_key_file, file_exists_check, FileExists}),
+        ?event(debug_volume, 
+            {with_secure_key_file, file_exists_check, FileExists}
+        ),
         % If file exists, get its info
         case FileExists of
             true ->
                 FileInfo = file:read_file_info(KeyFile),
-                ?event(debug_volume, {with_secure_key_file, file_info, FileInfo});
+                ?event(debug_volume, 
+                    {with_secure_key_file, file_info, FileInfo}
+                );
             false ->
-                ?event(debug_volume, {with_secure_key_file, file_not_found, KeyFile})
+                ?event(debug_volume, 
+                    {with_secure_key_file, file_not_found, KeyFile}
+                )
         end,
         % Execute function with key file path
-        ?event(debug_volume, {with_secure_key_file, executing_function, 
-               with_key_file}),
+        ?event(debug_volume, 
+            {with_secure_key_file, executing_function, with_key_file}
+        ),
         Result = Fun(KeyFile),
         % Always clean up the key file
-        % ?event(debug_volume, {with_secure_key_file, cleanup, 
-        %        shredding_key_file}),
-        % os:cmd("sudo shred -u " ++ KeyFile),
+        ?event(debug_volume, 
+            {with_secure_key_file, cleanup, shredding_key_file}
+        ),
+        os:cmd("sudo shred -u " ++ KeyFile),
         ?event(debug_volume, {with_secure_key_file, success, completed}),
         Result
     catch
         Class:Reason:Stacktrace ->
-            ?event(debug_volume, {with_secure_key_file, exception, 
-                   {class, Class, reason, Reason, cleanup, starting}}),
+            ?event(debug_volume, 
+                {with_secure_key_file, exception, 
+                   {class, Class, reason, Reason, cleanup, starting}
+                }
+            ),
             % Ensure cleanup even if function fails
-            % os:cmd("sudo shred -u " ++ KeyFile),
-            ?event(debug_volume, {with_secure_key_file, exception_cleanup, 
-                   completed}),
+            os:cmd("sudo shred -u " ++ KeyFile),
+            ?event(debug_volume, 
+                {with_secure_key_file, exception_cleanup, completed}
+            ),
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
@@ -549,19 +635,27 @@ with_secure_key_file(EncKey, Fun) ->
 update_store_config(StoreConfig, NewPath) when is_list(StoreConfig) ->
     % For a list, update each element
     [update_store_config(Item, NewPath) || Item <- StoreConfig];
-update_store_config(#{<<"store-module">> := Module} = StoreConfig, 
-                     NewPath) when is_map(StoreConfig) ->
+update_store_config(
+    #{<<"store-module">> := Module} = StoreConfig, 
+    NewPath
+) when is_map(StoreConfig) ->
     % Handle various store module types differently
     case Module of
         hb_store_fs ->
             % For filesystem store, prefix the existing path with the new path
             ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
             NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
-            ?event(debug_volume, 
-                   {fs, StoreConfig, NewPath, NewName}),
+            ?event(debug_volume, {fs, StoreConfig, NewPath, NewName}),
             StoreConfig#{<<"name">> => NewName};
         hb_store_lmdb ->
-            update_lmdb_store_config(StoreConfig, NewPath);
+            ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
+            NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
+            ?event(debug_volume, {migrate_start, ExistingPath, NewName}),
+            safe_stop_lmdb_store(StoreConfig),
+            ?event(debug_volume, {using_existing_store, NewName}),
+            FinalConfig = StoreConfig#{<<"name">> => NewName},
+            safe_start_lmdb_store(FinalConfig),
+            FinalConfig;
         hb_store_rocksdb ->
             StoreConfig;
         hb_store_gateway ->
@@ -586,16 +680,6 @@ update_store_config(StoreConfig, _NewPath) ->
     % Return unchanged for any other format
     StoreConfig.
 
-%% Handle LMDB store migration to new encrypted mount location
-update_lmdb_store_config(StoreConfig, NewPath) ->
-    ExistingPath = maps:get(<<"name">>, StoreConfig, <<"">>),
-    NewName = <<NewPath/binary, "/", ExistingPath/binary>>,
-    ?event(debug_volume, {migrate_start, ExistingPath, NewName}),
-    safe_stop_lmdb_store(StoreConfig),
-    FinalConfig = handle_lmdb_migration(StoreConfig, ExistingPath, NewName),
-    safe_start_lmdb_store(FinalConfig),
-    FinalConfig.
-
 %% Safely stop LMDB store with error handling
 safe_stop_lmdb_store(StoreConfig) ->
     ?event(debug_volume, {stopping_current_store, StoreConfig}),
@@ -604,36 +688,6 @@ safe_stop_lmdb_store(StoreConfig) ->
     catch 
         error:StopReason ->
             ?event(debug_volume, {stop_error, StopReason})
-    end.
-
-%% Handle migration destination logic
-handle_lmdb_migration(StoreConfig, ExistingPath, NewName) ->
-    case check_lmdb_exists(NewName) of
-        true ->
-            ?event(debug_volume, {using_existing_store, NewName}),
-            use_existing_lmdb_store(StoreConfig, NewName);
-        false ->
-            ?event(debug_volume, {copying_store, ExistingPath, NewName}),
-            % copy_lmdb_store_data(StoreConfig, ExistingPath, NewName)
-            use_existing_lmdb_store(StoreConfig, NewName)
-    end.
-
-%% Use existing LMDB store at new location
-use_existing_lmdb_store(StoreConfig, NewName) ->
-    ?event(debug_volume, {using_existing_store, NewName}),
-    StoreConfig#{<<"name">> => NewName}.
-
-%% Copy LMDB store data to new location with fallback
-copy_lmdb_store_data(StoreConfig, ExistingPath, NewName) ->
-    ?event(debug_volume, {copying_store, ExistingPath, NewName}),
-    case copy_lmdb_store(ExistingPath, NewName) of
-        ok ->
-            ?event(debug_volume, {copy_success, NewName}),
-            StoreConfig#{<<"name">> => NewName};
-        {error, Reason} ->
-            ?event(debug_volume, {copy_error, Reason}),
-            ?event(debug_volume, {fallback_to_original, ExistingPath}),
-            StoreConfig
     end.
 
 %% Safely start LMDB store
@@ -650,178 +704,63 @@ Check if a device exists on the system.
 -spec check_for_device(Device :: binary()) -> boolean().
 check_for_device(Device) ->
     ?event(debug_volume, {check_for_device, entry, {device, Device}}),
-    Command = io_lib:format(
-        "ls -l ~s 2>/dev/null || echo 'not_found'", 
-        [binary_to_list(Device)]
-    ),
+    Command = 
+        io_lib:format(
+            "ls -l ~s 2>/dev/null || echo 'not_found'", 
+            [binary_to_list(Device)]
+        ),
     ?event(debug_volume, {check_for_device, executing_command, ls_check}),
     Result = os:cmd(Command),
     DeviceExists = string:find(Result, "not_found") =:= nomatch,
-    ?event(debug_volume, {check_for_device, result, 
-           {device, Device, exists, DeviceExists}}),
-    DeviceExists.
-
-%% @doc Check if an LMDB database exists at the given path.
-%%
-%% LMDB databases consist of at least a data.mdb file and optionally a 
-%% lock.mdb file. This function checks for the presence of these files to 
-%% determine if a valid LMDB database exists at the specified location.
-%%
-%% @param Path Binary path to check for LMDB database
-%% @returns true if LMDB database exists, false otherwise
--spec check_lmdb_exists(Path :: binary()) -> boolean().
-check_lmdb_exists(Path) ->
-    ?event(debug_volume, {check_lmdb_exists, entry, {path, Path}}),
-    PathStr = binary_to_list(Path),
-    DataFile = PathStr ++ "/data.mdb",    
-    % Check if the directory exists first
-    ?event(debug_volume, {check_lmdb_exists, checking_directory, PathStr}),
-    case filelib:is_dir(PathStr) of
-        false -> 
-            ?event(debug_volume, {check_lmdb_exists, directory_not_found, 
-                   false}),
-            false;
-        true ->
-            ?event(debug_volume, {check_lmdb_exists, directory_found, 
-                   checking_data_file}),
-            % Check if data.mdb exists (required for LMDB)
-            % lock.mdb is optional and might not exist when DB is not in use
-            DataExists = filelib:is_regular(DataFile),
-            ?event(debug_volume, {check_lmdb_exists, result, 
-                   {path, Path, data_file_exists, DataExists}}),
-            DataExists
-    end.
-
-%% @doc Copy an LMDB database from source to destination.
-%%
-%% This function performs a safe copy of an LMDB database by copying all
-%% the database files (data.mdb, lock.mdb if present) from the source
-%% directory to the destination directory. It ensures the destination
-%% directory exists before copying.
-%%
-%% @param SourcePath Binary path to source LMDB database
-%% @param DestPath Binary path to destination location
-%% @returns ok on success, {error, Reason} on failure
--spec copy_lmdb_store(
-    SourcePath :: binary(), 
-    DestPath :: binary()
-) -> ok | {error, term()}.
-copy_lmdb_store(SourcePath, DestPath) ->
-    ?event(debug_volume, {copy_lmdb_store, entry, 
-           {source, SourcePath, dest, DestPath}}),
-    SourceStr = binary_to_list(SourcePath),
-    DestStr = binary_to_list(DestPath),
-    ?event(debug_volume, {copy_lmdb_store, paths_converted, 
-           {source_str, SourceStr, dest_str, DestStr}}),
-    % Check if source LMDB database exists
-    ?event(debug_volume, {copy_lmdb_store, checking_source, SourcePath}),
-    case check_lmdb_exists(SourcePath) of
-        false ->
-            ?event(debug_volume, {copy_lmdb_store, source_not_found, 
-                   SourcePath}),
-            {error, <<"Source LMDB database not found">>};
-        true ->
-            ?event(debug_volume, {copy_lmdb_store, source_found, 
-                   ensuring_dest_dir}),
-            % Ensure destination directory exists
-            ok = filelib:ensure_dir(DestStr ++ "/"),
-            % Copy the LMDB database files
-            ?event(debug_volume, {copy_lmdb_store, copying_files, starting}),
-            case copy_lmdb_files(SourceStr, DestStr) of
-                ok ->
-                    ?event(debug_volume, {copy_lmdb_store, copy_success, 
-                           completed}),
-                    ok;
-                {error, Reason} ->
-                    ?event(debug_volume, {copy_lmdb_store, copy_error, 
-                           Reason}),
-                    {error, Reason}
-            end
-    end.
-
-%% @doc Helper function to copy LMDB database files.
-%%
-%% This function copies the actual LMDB files (data.mdb and lock.mdb if 
-%% present) from source to destination using system commands for reliability.
-%%
-%% @param SourceDir String path to source directory
-%% @param DestDir String path to destination directory
-%% @returns ok on success, {error, Reason} on failure
--spec copy_lmdb_files(
-    SourceDir :: string(), 
-    DestDir :: string()
-) -> ok | {error, term()}.
-copy_lmdb_files(SourceDir, DestDir) ->
-    ?event(debug_volume, {copy_lmdb_files, entry, 
-           {source_dir, SourceDir, dest_dir, DestDir}}),
-    % Use rsync for reliable copying of LMDB files
-    % --archive preserves permissions and timestamps
-    % --sparse handles sparse files efficiently
-    CopyCommand = io_lib:format(
-        "rsync -av --sparse '~s/' '~s/'", 
-        [SourceDir, DestDir]
+    ?event(debug_volume, 
+        {check_for_device, result, 
+           {device, Device, exists, DeviceExists}
+        }
     ),
-    ?event(debug_volume, {copy_lmdb_files, executing_rsync, command}),
-    case os:cmd(CopyCommand) of
-        Result ->
-            ?event(debug_volume, {copy_lmdb_files, rsync_completed, 
-                   checking_errors}),
-            % Check if rsync completed successfully by looking for error indicators
-            case {
-                    string:find(Result, "rsync error"), 
-                    string:find(Result, "failed")
-                } of
-                {nomatch, nomatch} ->
-                    ?event(debug_volume, {copy_lmdb_files, rsync_success, 
-                           no_errors}),
-                    ok;
-                _ ->
-                    ?event(debug_volume, {copy_lmdb_files, rsync_error, 
-                           Result}),
-                    {error, list_to_binary(Result)}
-            end
-    end.
+    DeviceExists.
 
 %%% Unit Tests
 %% Test helper function error checking
 check_command_errors_test() ->
     % Test successful case - no errors
-    ?assertEqual(ok, check_command_errors("Success: operation completed", ["Error", "failed"])),
+    ?assertEqual(
+        ok, 
+        check_command_errors(
+            "Success: operation completed", 
+            ["Error", "failed"]
+        )
+    ),
     % Test error detection
-    ?assertEqual(error, check_command_errors("Error: something went wrong", 
-                                             ["Error", "failed"])),
-    ?assertEqual(error, check_command_errors("Operation failed", 
-                                             ["Error", "failed"])),
+    ?assertEqual(
+        error, 
+        check_command_errors(
+            "Error: something went wrong", 
+            ["Error", "failed"]
+        )
+    ),
+    ?assertEqual(
+        error,
+        check_command_errors(
+            "Operation failed", 
+            ["Error", "failed"]
+        )
+    ),
     % Test case sensitivity
-    ?assertEqual(ok, check_command_errors("error (lowercase)", 
-                                          ["Error", "failed"])),
+    ?assertEqual(
+        ok, 
+        check_command_errors(
+            "error (lowercase)", 
+            ["Error", "failed"]
+        )
+    ),
     % Test multiple keywords
-    ?assertEqual(error, check_command_errors("Command failed with Error", 
-                                             ["Error", "failed"])).
-
-%% Test LMDB existence checking
-check_lmdb_exists_test() ->
-    % Create temporary test directories
-    TestDir = "/tmp/hb_volume_test_" ++ 
-               integer_to_list(erlang:system_time()),
-    TestDirBin = list_to_binary(TestDir),
-    % Clean up function
-    Cleanup = fun() -> os:cmd("rm -rf " ++ TestDir) end,
-    try
-        % Test non-existent directory
-        ?assertEqual(false, check_lmdb_exists(TestDirBin)),
-        % Create directory but no LMDB files
-        ok = filelib:ensure_dir(TestDir ++ "/"),
-        ?assertEqual(false, check_lmdb_exists(TestDirBin)),
-        % Create data.mdb file
-        DataFile = TestDir ++ "/data.mdb",
-        file:write_file(DataFile, <<"test data">>, [raw]),
-        ?assertEqual(true, check_lmdb_exists(TestDirBin)),
-        % Clean up
-        Cleanup()
-    after
-        Cleanup()
-    end.
+    ?assertEqual(
+        error, 
+        check_command_errors(
+            "Command failed with Error", 
+            ["Error", "failed"]
+        )
+    ).
 
 %% Test store configuration updates for different types
 update_store_config_test() ->
@@ -890,17 +829,25 @@ check_for_device_test() ->
     % For now, test with /dev/null which should always exist
     ?assertEqual(true, check_for_device(<<"/dev/null">>)),
     % Test non-existent device
-    ?assertEqual(false, 
-                 check_for_device(<<"/dev/nonexistent_device_123">>)).
+    ?assertEqual(
+        false, 
+        check_for_device(<<"/dev/nonexistent_device_123">>)
+    ).
 
 %% Test safe command execution with mocked results
 safe_exec_mock_test() ->
     % We can't easily mock os:cmd, but we can test the error checking logic
     % This is covered by check_command_errors_test above
     % Test with default error keywords
-    TestResult1 = check_command_errors("Operation completed successfully", 
-                                       ["Error", "failed"]),
+    TestResult1 = 
+        check_command_errors(
+            "Operation completed successfully", 
+            ["Error", "failed"]
+        ),
     ?assertEqual(ok, TestResult1),
-    TestResult2 = check_command_errors("Error: disk not found", 
-                                       ["Error", "failed"]),
+    TestResult2 = 
+        check_command_errors(
+            "Error: disk not found", 
+            ["Error", "failed"]
+        ),
     ?assertEqual(error, TestResult2). 

@@ -395,13 +395,7 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
         hb_http_server:set_opts(
             NewOpts
         ),
-    % Print the updated wallet address
-    Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-    ?event(successfully_joined_greenzone),
     try_mount_encrypted_volume(GreenZoneWallet, NewOpts),
-    ?event(green_zone,
-        {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
-    ),
     ?event(green_zone, {become, update_wallet, complete}),
     {ok, #{
         <<"body">> => #{
@@ -742,7 +736,6 @@ try_mount_encrypted_volume(Key, Opts) ->
         priv_volume_key => Key,
         volume_skip_decryption => <<"true">>
     },
-    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, {explicit, Key}}),
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
         {ok, Result} ->
