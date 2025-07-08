@@ -433,13 +433,32 @@ check_command_errors(Result, Keywords) ->
 with_secure_key_file(EncKey, Fun) ->
     ?event(debug_volume, {with_secure_key_file, entry, creating_temp_file}),
     % Ensure tmp directory exists
+    ?event(debug_volume, {with_secure_key_file, creating_directory, "/root/tmp"}),
     os:cmd("sudo mkdir -p /root/tmp"),
-    KeyFile = "/root/tmp/luks_key_" ++ os:getpid(),
-    ?event(debug_volume, {with_secure_key_file, key_file_created, KeyFile}),
+    % Get process ID and create filename
+    PID = os:getpid(),
+    ?event(debug_volume, {with_secure_key_file, process_id, PID}),
+    KeyFile = "/root/tmp/luks_key_" ++ PID,
+    ?event(debug_volume, {with_secure_key_file, key_file_path, KeyFile}),
+    % Check if directory was created successfully
+    DirCheck = os:cmd("ls -la /root/tmp/"),
+    ?event(debug_volume, {with_secure_key_file, directory_check, DirCheck}),
     try
         % Write key to temporary file
         ?event(debug_volume, {with_secure_key_file, writing_key, to_file}),
-        file:write_file(KeyFile, EncKey, [raw]),
+        WriteResult = file:write_file(KeyFile, EncKey, [raw]),
+        ?event(debug_volume, {with_secure_key_file, write_result, WriteResult}),
+        % Check if file was created
+        FileExists = filelib:is_regular(KeyFile),
+        ?event(debug_volume, {with_secure_key_file, file_exists_check, FileExists}),
+        % If file exists, get its info
+        case FileExists of
+            true ->
+                FileInfo = file:read_file_info(KeyFile),
+                ?event(debug_volume, {with_secure_key_file, file_info, FileInfo});
+            false ->
+                ?event(debug_volume, {with_secure_key_file, file_not_found, KeyFile})
+        end,
         % Execute function with key file path
         ?event(debug_volume, {with_secure_key_file, executing_function, 
                with_key_file}),
