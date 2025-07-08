@@ -455,7 +455,32 @@ with_secure_key_file(EncKey, Fun) ->
         ?event(debug_volume, {with_secure_key_file, enckey_type, EncKeyType}),
         ?event(debug_volume, {with_secure_key_file, enckey_value, EncKey}),
         % Convert EncKey to binary using hb_util
-        BinaryEncKey = hb_util:bin(EncKey),
+        BinaryEncKey = case EncKey of
+            % Handle RSA wallet tuples - extract private key or use hash
+            {{rsa, _}, PrivKey, _PubKey} when is_binary(PrivKey) ->
+                ?event(debug_volume, {with_secure_key_file, wallet_detected, extracting_private_key}),
+                % Use first 32 bytes of private key for AES-256
+                case byte_size(PrivKey) of
+                    Size when Size >= 32 ->
+                        binary:part(PrivKey, 0, 32);
+                    _ ->
+                        % If private key is too short, hash it to get 32 bytes
+                        crypto:hash(sha256, PrivKey)
+                end;
+            % Handle other complex terms
+            _ when not is_binary(EncKey) andalso not is_list(EncKey) ->
+                try
+                    hb_util:bin(EncKey)
+                catch
+                    _:_ ->
+                        ?event(debug_volume, {with_secure_key_file, using_term_to_binary, complex_term}),
+                        % Fallback to term_to_binary and hash to get consistent key size
+                        crypto:hash(sha256, term_to_binary(EncKey))
+                end;
+            % Simple cases handled by hb_util:bin
+            _ ->
+                hb_util:bin(EncKey)
+        end,
         ?event(debug_volume, {with_secure_key_file, converted_to_binary, 
                {size, byte_size(BinaryEncKey)}}),
         WriteResult = file:write_file(KeyFile, BinaryEncKey, [raw]),
