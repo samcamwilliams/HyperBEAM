@@ -470,18 +470,17 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     Process = hb_maps:get(<<"process">>, LoadedSnapshotMsg, Opts),
                     #{ <<"commitments">> := HmacCommits} =
                         hb_message:with_commitments(
-                          #{ <<"type">> => <<"hmac-sha256">>},
-                          Process,
-                          Opts),
+                            #{ <<"type">> => <<"hmac-sha256">>},
+                            Process,
+                            Opts),
                     #{ <<"commitments">> := SignCommits } =
-                        hb_message:with_commitments(ProcID,
-                                                    Process,
-                                                    Opts),
+                        hb_message:with_commitments(ProcID, Process, Opts),
                     UpdateProcess = hb_maps:put(
-                                      <<"commitments">>,
-                                      hb_maps:merge(HmacCommits, SignCommits),
-                                      Process,
-                                      Opts),
+                        <<"commitments">>,
+                        hb_maps:merge(HmacCommits, SignCommits),
+                        Process,
+                        Opts
+                    ),
                     LoadedSnapshotMsg2 = LoadedSnapshotMsg#{ <<"process">> => UpdateProcess },
                     LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
                     ?event(compute, {found_state_checkpoint, ProcID, LoadedSnapshotMsg2}),
