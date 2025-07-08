@@ -775,12 +775,12 @@ with_secure_key_file_test() ->
             % Execute function with key file path
             Result = Fun(KeyFile),
             % Clean up the key file
-            file:delete(KeyFile),
+            % file:delete(KeyFile),
             Result
         catch
             Class:Reason:Stacktrace ->
                 % Ensure cleanup even if function fails
-                file:delete(KeyFile),
+                % file:delete(KeyFile),
                 erlang:raise(Class, Reason, Stacktrace)
         end
     end,
