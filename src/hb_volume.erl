@@ -447,7 +447,7 @@ with_secure_key_file(EncKey, Fun) ->
         % Always clean up the key file
         ?event(debug_volume, {with_secure_key_file, cleanup, 
                shredding_key_file}),
-        os:cmd("sudo shred -u " ++ KeyFile),
+        % os:cmd("sudo shred -u " ++ KeyFile),
         ?event(debug_volume, {with_secure_key_file, success, completed}),
         Result
     catch
@@ -455,7 +455,7 @@ with_secure_key_file(EncKey, Fun) ->
             ?event(debug_volume, {with_secure_key_file, exception, 
                    {class, Class, reason, Reason, cleanup, starting}}),
             % Ensure cleanup even if function fails
-            os:cmd("sudo shred -u " ++ KeyFile),
+            % os:cmd("sudo shred -u " ++ KeyFile),
             ?event(debug_volume, {with_secure_key_file, exception_cleanup, 
                    completed}),
             erlang:raise(Class, Reason, Stacktrace)

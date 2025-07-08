@@ -742,7 +742,7 @@ try_mount_encrypted_volume(Key, Opts) ->
         priv_volume_key => Key,
         volume_skip_decryption => <<"true">>
     },
-    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, Key}),
+    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, {explicit, Key}}),
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
         {ok, Result} ->
