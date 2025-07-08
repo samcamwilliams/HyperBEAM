@@ -734,19 +734,20 @@ decrypt_zone_key(EncZoneKey, Opts) ->
 %% @param Opts A map of configuration options.
 %% @returns ok (implicit) in all cases, with detailed event logs of the results.
 try_mount_encrypted_volume(AESKey, Opts) ->
-    ?event(green_zone, {try_mount_encrypted_volume, start}),
+    ?event(debug_volume, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
         priv_volume_key => AESKey,
         volume_skip_decryption => <<"true">>
     },
+    ?event(debug_volume, {try_mount_encrypted_volume, aes_key, AESKey}),
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
         {ok, Result} ->
-            ?event(green_zone, {volume_mount, success, Result}),
+            ?event(debug_volume, {volume_mount, success, Result}),
             ok;
         {error, Error} ->
-            ?event(green_zone, {volume_mount, error, Error}),
+            ?event(debug_volume, {volume_mount, error, Error}),
             ok % Still return ok as this is an optional operation
     end.
 
