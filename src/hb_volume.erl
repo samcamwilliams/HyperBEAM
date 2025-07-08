@@ -185,10 +185,11 @@ create_partition(Device, PartType) ->
     MklabelCmd = "sudo parted " ++ DeviceStr ++ " mklabel gpt",
     ?event(debug_volume, {create_partition, creating_gpt_label, 
            {device, Device}}),
+    ?event(debug_volume, {create_partition, executing_mklabel, {command, MklabelCmd}}),
     case safe_exec(MklabelCmd) of
-        {ok, _Result} ->
+        {ok, Result} ->
             ?event(debug_volume, {create_partition, gpt_label_success, 
-                   proceeding_to_partition}),
+                   proceeding_to_partition, {result, Result}}),
             create_actual_partition(Device, PartType);
         {error, ErrorMsg} ->
             ?event(debug_volume, {create_partition, gpt_label_error, 
@@ -206,11 +207,11 @@ create_actual_partition(Device, PartType) ->
     MkpartCmd = "sudo parted -a optimal " ++ DeviceStr ++ 
                " mkpart primary " ++ PartTypeStr ++ " 0% 100%",
     ?event(debug_volume, {create_actual_partition, executing_mkpart, 
-           command}),
+           {command, MkpartCmd}}),
     case safe_exec(MkpartCmd) of
-        {ok, _Result} ->
+        {ok, Result} ->
             ?event(debug_volume, {create_actual_partition, mkpart_success, 
-                   getting_info}),
+                   getting_info, {result, Result}}),    
             get_partition_info(Device);
         {error, ErrorMsg} ->
             ?event(debug_volume, {create_actual_partition, mkpart_error, 
@@ -224,9 +225,9 @@ get_partition_info(Device) ->
     DeviceStr = binary_to_list(Device),
     % Print partition information
     PrintCmd = "sudo parted " ++ DeviceStr ++ " print",
-    ?event(debug_volume, {get_partition_info, executing_print, command}),
+    ?event(debug_volume, {get_partition_info, executing_print, {command, PrintCmd}}),
     PartitionInfo = os:cmd(PrintCmd),
-    ?event(debug_volume, {get_partition_info, success, partition_created}),
+    ?event(debug_volume, {get_partition_info, success, partition_created, {result, PartitionInfo}}),
     {ok, #{
         <<"status">> => 200,
         <<"message">> => <<"Partition created successfully.">>,
@@ -259,11 +260,11 @@ format_disk(Partition, EncKey) ->
     with_secure_key_file(EncKey, fun(KeyFile) ->
         FormatCmd = "sudo cryptsetup luksFormat --batch-mode " ++
                     "--key-file " ++ KeyFile ++ " " ++ PartitionStr,
-        ?event(debug_volume, {format_disk, executing_luks_format, command}),
+        ?event(debug_volume, {format_disk, executing_luks_format, {command, FormatCmd}}),
         case safe_exec(FormatCmd, ["failed"]) of
-            {ok, _Result} ->
+            {ok, Result} ->
                 ?event(debug_volume, {format_disk, luks_format_success, 
-                       completed}),
+                       completed, {result, Result}}),
                 {ok, #{
                     <<"status">> => 200,
                     <<"message">> => 
@@ -341,11 +342,11 @@ mount_opened_volume(Partition, MountPoint, VolumeName) ->
     VolumeNameStr = binary_to_list(VolumeName),
     MountCmd = "sudo mount /dev/mapper/" ++ VolumeNameStr ++ 
                 " " ++ MountPointStr,
-    ?event(debug_volume, {mount_opened_volume, executing_mount, command}),
+    ?event(debug_volume, {mount_opened_volume, executing_mount, {command, MountCmd}}),
     case safe_exec(MountCmd, ["failed"]) of
-        {ok, _Result} ->
+        {ok, Result} ->
             ?event(debug_volume, {mount_opened_volume, mount_success, 
-                   creating_info}),
+                   creating_info, {result, Result}}),
             create_mount_info(Partition, MountPoint, VolumeName);
         {error, ErrorMsg} ->
             ?event(debug_volume, {mount_opened_volume, mount_error, 
