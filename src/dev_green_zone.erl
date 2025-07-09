@@ -388,17 +388,14 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
             priv_wallet => GreenZoneWallet
         }
     },
+    NewOpts = Opts#{
+        identities => UpdatedIdentities
+    },
     ok = 
         hb_http_server:set_opts(
-            Opts#{
-                identities => UpdatedIdentities
-            }
+            NewOpts
         ),
-    % Print the updated wallet address
-    Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-    ?event(green_zone,
-        {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
-    ),
+    try_mount_encrypted_volume(GreenZoneWallet, NewOpts),
     ?event(green_zone, {become, update_wallet, complete}),
     {ok, #{
         <<"body">> => #{
@@ -487,8 +484,6 @@ join_peer(PeerLocation, PeerID, _M1, _M2, InitOpts) ->
                                 priv_green_zone_aes => AESKey
                             },
                             hb_http_server:set_opts(NewOpts),
-                            ?event(successfully_joined_greenzone),
-                            try_mount_encrypted_volume(AESKey, NewOpts),
                             {ok, #{ 
                                 <<"body">> => 
                                     <<"Node joined green zone successfully.">>, 
@@ -614,13 +609,20 @@ validate_peer_opts(Req, Opts) ->
     RequiredConfig =
         hb_ao:normalize_keys(
             hb_opts:get(green_zone_required_opts, #{}, Opts)),
-    ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
+    ConvertedRequiredConfig = 
+        hb_message:uncommitted(
+            hb_cache:ensure_all_loaded(
+                hb_message:commit(RequiredConfig, Opts),
+                Opts
+            )
+        ),
+    ?event(green_zone, {validate_peer_opts, required_config, ConvertedRequiredConfig}),
     PeerOpts =
         hb_ao:normalize_keys(
             hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
     % Validate each item in node_history has required options
     Result = try
-        case hb_opts:ensure_node_history(PeerOpts, RequiredConfig) of
+        case hb_opts:ensure_node_history(PeerOpts, ConvertedRequiredConfig) of
             {ok, _} -> 
                 ?event(green_zone, {validate_peer_opts, history_items_check, valid}),
                 true;
@@ -730,23 +732,23 @@ decrypt_zone_key(EncZoneKey, Opts) ->
 %% The encryption key used for the volume is the same AES key used for green zone
 %% communication, ensuring that only nodes in the green zone can access the data.
 %%
-%% @param AESKey The AES key obtained from joining the green zone.
+%% @param Key The password for the encrypted volume.
 %% @param Opts A map of configuration options.
 %% @returns ok (implicit) in all cases, with detailed event logs of the results.
-try_mount_encrypted_volume(AESKey, Opts) ->
-    ?event(green_zone, {try_mount_encrypted_volume, start}),
+try_mount_encrypted_volume(Key, Opts) ->
+    ?event(debug_volume, {try_mount_encrypted_volume, start}),
     % Set up options for volume mounting with default paths
     VolumeOpts = Opts#{
-        priv_volume_key => AESKey,
+        priv_volume_key => Key,
         volume_skip_decryption => <<"true">>
     },
     % Call the dev_volume:mount function to handle the complete process
     case dev_volume:mount(undefined, undefined, VolumeOpts) of
         {ok, Result} ->
-            ?event(green_zone, {volume_mount, success, Result}),
+            ?event(debug_volume, {volume_mount, success, Result}),
             ok;
         {error, Error} ->
-            ?event(green_zone, {volume_mount, error, Error}),
+            ?event(debug_volume, {volume_mount, error, Error}),
             ok % Still return ok as this is an optional operation
     end.
 
