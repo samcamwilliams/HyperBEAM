@@ -610,13 +610,20 @@ validate_peer_opts(Req, Opts) ->
     RequiredConfig =
         hb_ao:normalize_keys(
             hb_opts:get(green_zone_required_opts, #{}, Opts)),
-    ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
+    ConvertedRequiredConfig = 
+        hb_message:uncommitted(
+            hb_cache:ensure_all_loaded(
+                hb_message:commit(RequiredConfig, Opts),
+                Opts
+            )
+        ),
+    ?event(green_zone, {validate_peer_opts, required_config, ConvertedRequiredConfig}),
     PeerOpts =
         hb_ao:normalize_keys(
             hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
     % Validate each item in node_history has required options
     Result = try
-        case hb_opts:ensure_node_history(PeerOpts, RequiredConfig) of
+        case hb_opts:ensure_node_history(PeerOpts, ConvertedRequiredConfig) of
             {ok, _} -> 
                 ?event(green_zone, {validate_peer_opts, history_items_check, valid}),
                 true;
