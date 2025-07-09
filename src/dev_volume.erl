@@ -105,7 +105,7 @@ mount(_M1, _M2, Opts) ->
     EncryptedKey = hb_opts:get(priv_volume_key, not_found, Opts),
     % Determine if we need to decrypt a key or use one from config
     SkipDecryption = hb_opts:get(volume_skip_decryption, 
-                                   <<"false">>, Opts),
+        <<"false">>, Opts),
     Key = case SkipDecryption of
         <<"true">> ->
             ?event(debug_mount, {mount, skip_decryption, true}),

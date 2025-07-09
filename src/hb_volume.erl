@@ -277,7 +277,7 @@ Format a disk or partition with LUKS encryption.
 @param Partition The path to the partition, e.g. "/dev/sdc1".
 @param EncKey The encryption key to use for LUKS.
 @returns {ok, Map} on success where Map includes the status and 
-         confirmation message, or {error, Reason} if the operation fails.
+    confirmation message, or {error, Reason} if the operation fails.
 """.
 -spec format_disk(Partition :: binary(), EncKey :: binary()) ->
     {ok, map()} | {error, binary()}.
@@ -631,7 +631,7 @@ with_secure_key_file(EncKey, Fun) ->
 
 % Update the store configuration with a new base path
 -spec update_store_config(StoreConfig :: term(), 
-                           NewPath :: binary()) -> term().
+    NewPath :: binary()) -> term().
 update_store_config(StoreConfig, NewPath) when is_list(StoreConfig) ->
     % For a list, update each element
     [update_store_config(Item, NewPath) || Item <- StoreConfig];

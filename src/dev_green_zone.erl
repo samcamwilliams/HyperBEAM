@@ -484,7 +484,6 @@ join_peer(PeerLocation, PeerID, _M1, _M2, InitOpts) ->
                                 priv_green_zone_aes => AESKey
                             },
                             hb_http_server:set_opts(NewOpts),
-
                             {ok, #{ 
                                 <<"body">> => 
                                     <<"Node joined green zone successfully.">>, 
