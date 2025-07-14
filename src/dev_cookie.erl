@@ -144,9 +144,23 @@ generate(Base, Request, RawOpts) ->
 %% message. If a name key is provided in the request message, it is used instead
 %% of the name key in the request's cookie. This allows a caller to take a
 %% user-given message containing a cookie and verify it was created using a
-%% specific name during the `generate' call.
-verify(Base, Request, RawOpts) ->
+%% specific name during the `generate' call. The request message is returned
+%% with the cookie removed.
+verify(RawBase, Request, RawOpts) ->
     Opts = cookie_opts(RawOpts),
+    % If the `cookie' key is not set in the base, but the `set-cookie' key is,
+    % we swap it.
+    Base =
+        case hb_maps:get(<<"cookie">>, RawBase, not_found, Opts) of
+            not_found ->
+                RawBase#{
+                    <<"cookie">> =>
+                        hb_maps:get(<<"set-cookie">>, RawBase, <<>>, Opts)
+                };
+            _ ->
+                RawBase
+        end,
+    ?event({verify, {base, Base}, {request, Request}}),
     maybe
         % Parse the commitment from the base message.
         {ok, BaseCookieMsg} = parse(Base, Opts),
@@ -167,7 +181,7 @@ verify(Base, Request, RawOpts) ->
                 N -> N
             end,
         ExpectedCommitment ?= calculate_commitment(Secret, Name, Opts),
-        without(Base, Opts)
+        without(Request, Opts)
     else
         _ ->
             % If any of the above patterns fail, return a failure.
