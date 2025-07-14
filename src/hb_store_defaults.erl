@@ -44,121 +44,18 @@ apply_type_defaults(StoreOpt, TypeKey, Defaults) ->
     end.
 %% @doc Apply defaults to sub-stores recursively.
 apply_defaults_to_substores(StoreOpt, Defaults) ->
-    UpdatedWithStore =
-        case maps:get(<<"store">>, StoreOpt, undefined) of
-            SubStores when is_list(SubStores) ->
-                UpdatedSubStores = 
-                    lists:map(
-                        fun(SubStore) ->
-                            apply_defaults_to_store(SubStore, Defaults)
-                        end,
-                        SubStores
-                    ),
-                maps:put(<<"store">>, UpdatedSubStores, StoreOpt);
-            _ ->
-                StoreOpt
-        end,
-    case maps:get(<<"subindex">>, UpdatedWithStore, undefined) of
-        SubIndex when is_list(SubIndex) ->
-            UpdatedSubIndex =
+    case maps:get(<<"store">>, StoreOpt, undefined) of
+        SubStores when is_list(SubStores) ->
+            UpdatedSubStores = 
                 lists:map(
                     fun(SubStore) ->
                         apply_defaults_to_store(SubStore, Defaults)
                     end,
-                    SubIndex
+                    SubStores
                 ),
-            maps:put(<<"subindex">>, UpdatedSubIndex, UpdatedWithStore);
+            maps:put(<<"store">>, UpdatedSubStores, StoreOpt);
         _ ->
-            UpdatedWithStore
-    end.
-
-%% @doc Test function to verify the apply/2 function works correctly.
-test() ->
-    StoreOpts = 
-        [
-            #{
-                <<"name">> => <<"cache-mainnet/lmdb">>,
-                <<"store-module">> => hb_store_lmdb
-            },
-            #{
-                <<"name">> => <<"cache-mainent">>,
-                <<"store-module">> => hb_store_fs
-            },
-            #{
-                <<"store-module">> => hb_store_gateway,
-                <<"subindex">> => [
-                    #{
-                        <<"Data-Protocol">> => <<"ao">>
-                    }
-                ],
-                <<"store">> => [
-                    #{
-                        <<"name">> => <<"cache-mainnet/lmdb">>,
-                        <<"store-module">> => hb_store_lmdb
-                    }
-                ]
-            },
-            #{
-                <<"store-module">> => hb_store_gateway,
-                <<"store">> => [
-                    #{
-                        <<"name">> => <<"cache-mainnet/lmdb">>,
-                        <<"store-module">> => hb_store_lmdb
-                    }
-                ]
-            }
-        ],
-    Defaults = 
-        #{
-            <<"lmdb">> => #{
-                <<"capacity">> => 1073741824
-            }
-        },
-    Expected = 
-        [
-            #{
-                <<"name">> => <<"cache-mainnet/lmdb">>,
-                <<"store-module">> => hb_store_lmdb,
-                <<"capacity">> => 1073741824
-            },
-            #{
-                <<"name">> => <<"cache-mainent">>,
-                <<"store-module">> => hb_store_fs
-            },
-            #{
-                <<"store-module">> => hb_store_gateway,
-                <<"subindex">> => [
-                    #{
-                        <<"Data-Protocol">> => <<"ao">>
-                    }
-                ],
-                <<"store">> => [
-                    #{
-                        <<"name">> => <<"cache-mainnet/lmdb">>,
-                        <<"store-module">> => hb_store_lmdb,
-                        <<"capacity">> => 1073741824
-                    }
-                ]
-            },
-            #{
-                <<"store-module">> => hb_store_gateway,
-                <<"store">> => [
-                    #{
-                        <<"name">> => <<"cache-mainnet/lmdb">>,
-                        <<"store-module">> => hb_store_lmdb,
-                        <<"capacity">> => 1073741824
-                    }
-                ]
-            }
-        ],
-    Result = apply(StoreOpts, Defaults),
-    case Result =:= Expected of
-        true ->
-            ?event({test_passed, apply_function_works_correctly}),
-            ok;
-        false ->
-            ?event({test_failed, {expected, Expected}, {got, Result}}),
-            error
+            StoreOpt
     end.
 
 %% EUnit tests
