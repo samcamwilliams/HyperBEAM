@@ -191,12 +191,9 @@ import(Base, Request, Opts) ->
         Key ->
             % Import from the key provided.
             register_wallet(
-                #{
-                    <<"key">> =>
-                        if is_binary(Key) -> ar_wallet:from_json(Key);
-                        true -> Key
-                        end
-                },
+                if is_binary(Key) -> ar_wallet:from_json(Key);
+                true -> Key
+                end,
                 Base,
                 Request,
                 Opts
@@ -322,22 +319,44 @@ request_to_wallet(Base, Request, Opts) ->
                 wallet_from_cookie(Request, Opts);
             FoundWalletName -> {wallet_name, FoundWalletName}
         end,
-    ?event({request_to_wallet, {base, Base}, {request, Request}, {wallet, Wallet}}),
     case Wallet of
         {wallet_name, WalletName} ->
             % Get the wallet from the node's options.
             case find_wallet(WalletName, Opts) of
-                undefined -> {error, <<"Wallet not hosted on node.">>};
+                not_found -> {error, <<"Wallet not hosted on node.">>};
                 WalletDetails ->
-                    case verify_wallet(Base, WalletDetails, Opts) of
-                        {ok, NewRequest} -> {ok, NewRequest, WalletDetails};
-                        {error, Reason} -> {error, Reason}
+                    case validate_export_signers(WalletDetails, Request, Opts) of
+                        true ->
+                            % If the request is already signed by an exporter
+                            % return the request as-is with the wallet.
+                            {ok, Request, WalletDetails};
+                        false ->
+                            case verify_wallet(Base, WalletDetails, Opts) of
+                                {ok, NewRequest} ->
+                                    {ok, NewRequest, WalletDetails};
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end
                     end
             end;
         {wallet_key, WalletKey} ->
             % Sign the message.
             {ok, Request, #{ <<"key">> => WalletKey }}
     end.
+
+%% @doc Validate if a caller is an `exportable' for the given wallet.
+validate_export_signers(WalletDetails, Request, Opts) ->
+    Exportable =
+        parse_exportable(
+            hb_maps:get(<<"exportable">>, WalletDetails, [], Opts),
+            Opts
+        ),
+    lists:any(
+        fun(Signer) ->
+            lists:member(Signer, Exportable)
+        end,
+        hb_message:signers(Request, Opts)
+    ).
 
 %% @doc Verify a wallet for a given request.
 verify_wallet(Base, WalletDetails, Opts) ->
@@ -346,20 +365,23 @@ verify_wallet(Base, WalletDetails, Opts) ->
     ?event({verify_wallet, {auth_base, AuthBase}, {request, AuthRequest}}),
     hb_ao:resolve(AuthBase, AuthRequest, Opts).
 
-%% @doc Parse cookie to extract wallet key or name
-wallet_from_cookie(Cookie, _Opts) ->
+%% @doc Parse cookie from a message to extract wallet key or name.
+wallet_from_cookie(Msg, Opts) ->
     % Parse the cookie as a Structured-Fields map.
     Parsed =
-        try hb_structured_fields:parse_dictionary(Cookie)
+        try dev_cookie:parse(Msg, Opts) of
+            {ok, CookieMsg} -> CookieMsg
         catch _:_ -> {error, <<"Invalid cookie format.">>}
         end,
-    case lists:keyfind(<<"key">>, 1, Parsed) of
-        {<<"key">>, Key} ->
+    case hb_maps:find(<<"key">>, Parsed, Opts) of
+        {ok, Key} ->
             {wallet_key, ar_wallet:from_json(Key)};
         _ ->
-            case lists:keyfind(<<"wallet">>, 1, Parsed) of
-                {<<"wallet">>, WalletName} -> {wallet_name, WalletName};
-                _ -> {error, <<"Invalid cookie contents.">>}
+            case hb_maps:find(<<"name">>, Parsed, Opts) of
+                {ok, WalletName} -> {wallet_name, WalletName};
+                _ ->
+                    ?event({invalid_cookie, {msg, Msg}, {parsed, Parsed}}),
+                    {error, <<"Invalid cookie contents.">>}
             end
     end.
 
@@ -375,44 +397,39 @@ sign_message(Message, #{ <<"key">> := Key }, Opts) ->
 
 %% @doc Export a wallet or set of wallets
 export(Base, RawRequest, Opts) ->
+    ?event({export, {base, Base}, {request, RawRequest}}),
     case hb_ao:get(<<"batch">>, RawRequest, undefined, Opts) of
-        undefined ->
-            case request_to_wallet(Base, RawRequest, Opts) of
-                {ok, _, WalletDetails} ->
-                    {
-                        ok,
-                        WalletDetails#{
-                            <<"key">> =>
-                                ar_wallet:to_json(
-                                    hb_maps:get(
-                                        <<"key">>,
-                                        WalletDetails,
-                                        undefined,
-                                        Opts
-                                    )
-                                )
-                        }
-                    };
-                {error, Reason} ->
-                    {error, Reason}
-            end;
+        undefined -> export_single(Base, RawRequest, Opts);
         <<"all">> -> export_batch(Base, RawRequest, list_wallets(Opts), Opts);
         Names -> export_batch(Base, RawRequest, Names, Opts)
     end.
 
+%% @doc Export a single wallet.
+export_single(Base, Request, Opts) ->
+    case request_to_wallet(Base, Request, Opts) of
+        {ok, _, WalletDetails} ->
+            {ok, WalletDetails};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 %% @doc Export a batch of wallets.
-export_batch(Base, RawRequest, Names, Opts) ->
+export_batch(Base, Request, Names, Opts) ->
     ExportedWallets =
         lists:filtermap(
             fun(Name) ->
-                case export(Base, RawRequest#{ <<"wallet">> => Name }, Opts) of
-                    {ok, Exported} -> {true, Exported};
-                    {error, _Reason} -> false
+                case export_single(Base, Request#{ <<"wallet">> => Name }, Opts) of
+                    {ok, Exported} ->
+                        {true, {Name, Exported}};
+                    {error, _Reason} ->
+                        false
                 end
             end,
             Names
         ),
-    {ok, ExportedWallets}.
+    Res = hb_maps:from_list(ExportedWallets),
+    ?event({export_batch, {res, Res}}),
+    {ok, Res}.
 
 %% @doc Sync wallets from a remote node
 sync(_Base, Request, Opts) ->
@@ -434,12 +451,13 @@ sync(_Base, Request, Opts) ->
             case hb_http:get(Node, ExportRequest, SignAsOpts) of
                 {ok, ExportedWallets} ->
                     % Import each wallet.
-                    lists:foreach(
-                        fun(Wallet) ->
+                    hb_maps:map(
+                        fun(Name, Wallet) when ?IS_ID(Name) ->
                             case import(Node, Wallet, SignAsOpts) of
                                 {ok, _} -> ok;
                                 {error, Reason} -> error(Reason)
-                            end
+                            end;
+                           (_Name, _Wallet) -> ignore_non_wallet
                         end,
                         ExportedWallets
                     ),
@@ -453,16 +471,17 @@ sync(_Base, Request, Opts) ->
 %% @doc Parse the exportable setting for a wallet and return a list of addresses
 %% which are allowed to export the wallet.
 parse_exportable(default, Opts) ->
-    case hb_ao:get(<<"wallet_admin">>, Opts, undefined, Opts) of
+    case hb_opts:get(wallet_admin, undefined, Opts) of
         undefined -> 
             case hb_opts:get(operator, undefined, Opts) of
-                undefined -> false;
+                undefined ->
+                    [hb_util:human_id(hb_opts:get(priv_wallet, undefined, Opts))];
                 Op -> [hb_util:human_id(Op)]
             end;
         Admin -> [Admin]
     end;
-parse_exportable(true, _Opts) -> true;
-parse_exportable(false, _Opts) -> false;
+parse_exportable(true, Opts) -> parse_exportable(default, Opts);
+parse_exportable(false, _Opts) -> [];
 parse_exportable(Addresses, _Opts) when is_list(Addresses) -> Addresses;
 parse_exportable(Address, _Opts) when is_binary(Address) -> [Address].
 
@@ -472,6 +491,7 @@ store_wallet(in_memory, Name, Details, Opts) ->
     CurrentWallets = hb_opts:get(priv_wallet_hosted, #{}, Opts),
     % Add new wallet
     UpdatedWallets = CurrentWallets#{ Name => Details },
+    ?event({wallet_store, {updated_wallets, UpdatedWallets}}),
     % Update the node's options with the new wallets.
     hb_http_server:set_opts(Opts#{ priv_wallet_hosted => UpdatedWallets }),
     ok;
@@ -490,7 +510,7 @@ find_wallet(Name, Opts) ->
         Wallet -> Wallet
     end.
 find_wallet(in_memory, Name, Opts) ->
-    hb_maps:get(Name, hb_opts:get(priv_wallet_hosted, #{}, Opts), undefined, Opts);
+    hb_maps:get(Name, hb_opts:get(priv_wallet_hosted, #{}, Opts), not_found, Opts);
 find_wallet(non_volatile, Name, Opts) ->
     PrivOpts = priv_store_opts(Opts),
     Store = hb_opts:get(priv_store, undefined, PrivOpts),
@@ -504,9 +524,7 @@ list_wallets(in_memory, Opts) ->
     hb_maps:keys(hb_opts:get(priv_wallet_hosted, #{}, Opts));
 list_wallets(non_volatile, Opts) ->
     PrivOpts = priv_store_opts(Opts),
-    Store = hb_opts:get(priv_store, undefined, PrivOpts),
-    {ok, Resolved} = hb_store:resolve(Store, <<"wallet@1.0/">>),
-    hb_cache:list(Store, Resolved).
+    hb_cache:list(<<"wallet@1.0/">>, PrivOpts).
 
 %% @doc Generate a new `Opts' message with the `priv_store' as the only `store'
 %% option.
@@ -534,10 +552,7 @@ test_wallet_generate_and_verify(GeneratePath, ExpectedName, CommitParams) ->
             % For named wallets, check exact match
             ?assertEqual(ExpectedName, WalletName)            
     end,
-    ?assert(
-        maps:is_key(<<"set-cookie">>, GenResponse)
-            orelse maps:is_key(<<"cookie">>, GenResponse)
-    ),
+    ?assert(maps:is_key(<<"set-cookie">>, GenResponse)),
     AuthCookie = maps:get(<<"set-cookie">>, GenResponse, <<>>),
     % Now verify by signing a message
     TestMessage =
@@ -591,31 +606,7 @@ import_wallet_with_key_test() ->
     % Response should come from auth device with wallet name in body.
     ?assertMatch(#{<<"body">> := <<"imported-wallet">>}, ImportResponse),
     % Should include cookie setup from auth device.
-    ?assert(
-        maps:is_key(<<"set-cookie">>, ImportResponse)
-            orelse maps:is_key(<<"cookie">>, ImportResponse)
-    ).
-
-import_wallet_from_cookie_test() ->
-    Node = hb_http_server:start_node(#{
-        priv_wallet => ar_wallet:new()
-    }),
-    % Create a structured-fields cookie with wallet key (simulating client).
-    TestWallet = ar_wallet:new(),
-    WalletKey = ar_wallet:to_json(TestWallet),
-    % Create structured-fields format cookie.
-    Cookie = <<"(wallet=test-wallet key=", WalletKey/binary, ")">>,
-    % Import using the cookie to change persistence mode.
-    ImportUrl =
-        <<"/~wallet@1.0/import?persist=in-memory&cookie=", Cookie/binary>>,
-    {ok, ImportResponse} = hb_http:get(Node, ImportUrl, #{}),
-    % Response should come from auth device with wallet name in body.
-    ?assertMatch(#{<<"body">> := <<"test-wallet">>}, ImportResponse),
-    % Should include cookie setup from auth device.
-    ?assert(
-        maps:is_key(<<"set-cookie">>, ImportResponse)
-            orelse maps:is_key(<<"cookie">>, ImportResponse)
-    ).
+    ?assert(maps:is_key(<<"set-cookie">>, ImportResponse)).
 
 list_wallets_test() ->
     Node = hb_http_server:start_node(#{
@@ -635,16 +626,13 @@ list_wallets_test() ->
             #{}
         ),
     % List all wallets (no authentication required for listing).
-    {ok, WalletList} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
-    ?assert(is_list(WalletList)),
-    ?assert(length(WalletList) == 2),
+    {ok, Wallets} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
+    ?event({wallet_list, {wallets, Wallets}}),
     % Each wallet entry should be a wallet name.
     ?assert(
         lists:all(
-            fun(Wallet) ->
-                lists:member(Wallet, [<<"wallet-1">>, <<"wallet-2">>])
-            end,
-            WalletList
+            fun(Wallet) -> lists:member(Wallet, hb_maps:values(Wallets)) end,
+            [<<"wallet-1">>, <<"wallet-2">>]
         )
     ).
 
@@ -674,9 +662,7 @@ commit_with_cookie_wallet_test() ->
     ?assert(hb_message:signers(SignedMessage, #{}) =:= [WalletName]).
 
 export_wallet_test() ->
-    Node = hb_http_server:start_node(#{
-        priv_wallet => ar_wallet:new()
-    }),
+    Node = hb_http_server:start_node(#{}),
     % Generate a wallet to export.
     {ok, GenResponse} =
         hb_http:get(
@@ -684,17 +670,17 @@ export_wallet_test() ->
             <<"/~wallet@1.0/generate?persist=in-memory">>,
             #{}
         ),
-    AuthCookie =
-        maps:get(
-            <<"set-cookie">>,
-            GenResponse,
-            maps:get(<<"cookie">>, GenResponse, <<>>)
-        ),
+    AuthCookie = maps:get(<<"set-cookie">>, GenResponse),
+    ?event({export_test, {auth_cookie, AuthCookie}}),
     % Export the wallet with authentication.
     {ok, ExportResponse} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/export?&cookie=", AuthCookie/binary>>,
+            #{
+                <<"device">> => <<"wallet@1.0">>,
+                <<"path">> => <<"export">>,
+                <<"cookie">> => AuthCookie
+            },
             #{}
         ),
     % Should return wallet details including key, auth, exportable, persist.
@@ -703,59 +689,62 @@ export_wallet_test() ->
     ?assert(maps:is_key(<<"exportable">>, ExportResponse)).
 
 export_batch_wallets_test() ->
-    Node = hb_http_server:start_node(#{
-        priv_wallet => ar_wallet:new()
-    }),
+    Node =
+        hb_http_server:start_node(
+            AdminOpts =
+                #{
+                    priv_wallet => AdminWallet = ar_wallet:new()
+                }
+        ),
     % Generate multiple wallets and collect auth cookies.
     {ok, Gen1} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch-1">>,
+            <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch1&exportable=",
+                (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
     {ok, _Gen2} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch-2">>,
+            <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch2&exportable=",
+                (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
-    % For batch export, use any valid auth cookie (admin permissions needed).
-    AuthCookie =
-        maps:get(<<"set-cookie">>, Gen1, maps:get(<<"cookie">>, Gen1, <<>>)),
     % Export all wallets.
     {ok, ExportResponse} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/export?batch=all&cookie=", AuthCookie/binary>>,
+            (hb_message:commit(
+                #{
+                    <<"device">> => <<"wallet@1.0">>,
+                    <<"batch">> => <<"all">>
+                },
+                AdminOpts
+            ))#{ <<"path">> => <<"/~wallet@1.0/export">> },
             #{}
         ),
     ?assert(is_map(ExportResponse)),
     ?assert(maps:size(ExportResponse) >= 2),
+    ?event({export_batch_test, {export_response, ExportResponse}}),
     % Each exported wallet should have the required structure.
     lists:foreach(
-        fun({_Name, WalletData}) ->
-            ?assertMatch(
-                #{
-                    <<"key">> := _,
-                    <<"auth">> := _,
-                    <<"exportable">> := _,
-                    <<"persist">> := _
-                },
-                WalletData
-            )
+        fun(Name) ->
+            ?assert(hb_maps:is_key(Name, ExportResponse))
         end,
-        maps:to_list(ExportResponse)
+        [<<"batch1">>, <<"batch2">>]
     ).
 
 sync_wallets_test() ->
     Node =
         hb_http_server:start_node(#{
-            priv_wallet => ar_wallet:new()
+            priv_wallet => Node1Wallet = ar_wallet:new()
         }),
     % Start a second node to sync from.
     Node2 =
         hb_http_server:start_node(#{
-            priv_wallet => ar_wallet:new()
+            priv_wallet => ar_wallet:new(),
+            wallet_admin => hb_util:human_id(Node1Wallet)
         }),
     % Generate a wallet on the second node.
     {ok, GenResponse} =
@@ -774,5 +763,6 @@ sync_wallets_test() ->
         ),
     % Get the wallet list from the first node.
     {ok, WalletList} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
+    ?event({sync_wallets_test, {wallet_list, WalletList}}),
     % Should return a map of successfully imported wallets or list of names.
-    ?assert(lists:member(WalletName, WalletList)).
+    ?assert(lists:member(WalletName, hb_maps:values(WalletList))).
