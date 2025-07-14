@@ -74,12 +74,12 @@ cookie_opts(Opts) ->
 set_cookie(Base, Req, RawOpts) ->
     Opts = cookie_opts(RawOpts),
     {ok, CookieMsg} = parse(Base, Opts),
-    NewCookieMsg = hb_ao:set(CookieMsg, Req#{ <<"path">> => unset}, Opts),
+    NewCookieMsg = hb_ao:set(CookieMsg, Req#{ <<"path">> => unset }, Opts),
     TABM = hb_message:convert(NewCookieMsg, tabm, <<"structured@1.0">>, Opts),
     Cookie = hb_util:bin(cow_cookie:cookie(hb_maps:to_list(TABM))),
-    Res = {ok, Base#{ <<"set-cookie">> => Cookie }},
-    ?event({set_cookie, {base, Base}, {req, Req}, {res, Res}}, Opts),
-    Res.
+    Res = Base#{ <<"set-cookie">> => Cookie },
+    ?event({set_cookie, {base, Base}, {req, Req}, {res, Res}}),
+    {ok, Res}.
 
 %% @doc Remove the cookie from the given message.
 without(Base, RawOpts) ->
@@ -183,7 +183,13 @@ calculate_commitment(Secret, Name, _Opts) ->
 %% @doc Set keys in a cookie and verify that they can be parsed into a message.
 set_cookie_test() ->
     Node = hb_http_server:start_node(#{}),
-    {ok, SetRes} = hb_http:get(Node, <<"/~cookie@1.0/set-cookie?k1=v1&k2=v2">>, #{}),
+    {ok, SetRes} =
+        hb_http:get(
+            Node,
+            <<"/~cookie@1.0&normal=keyval/set-cookie?k1=v1&k2=v2">>,
+            #{}
+        ),
+    ?assertMatch(#{ <<"set-cookie">> := _, <<"normal">> := <<"keyval">> }, SetRes),
     Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/parse">> }, SetRes, #{}),
     {ok, Res} = hb_http:get(Node, Req, #{}),
     ?assertMatch(#{ <<"k1">> := <<"v1">>, <<"k2">> := <<"v2">> }, Res),

@@ -552,15 +552,16 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     % Cowboy handles cookies in headers separately, so we need to parse the
     % field if it is present and call `cowboy_req:set_resp_cookie/3' to set
     % them.
+    BaseReq = Req#{ resp_headers => EncodedHeaders },
     SetCookiesReq =
         case hb_maps:get(<<"set-cookie">>, EncodedHeaders, undefined, Opts) of
-            undefined -> Req#{ resp_headers => EncodedHeaders };
+            undefined -> BaseReq;
             Cookies ->
                 lists:foldl(
                     fun({K, V}, ReqAcc) ->
                         cowboy_req:set_resp_cookie(K, V, ReqAcc)
                     end,
-                    Req,
+                    BaseReq,
                     cow_cookie:parse_cookie(Cookies)
                 )
         end,
