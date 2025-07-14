@@ -112,7 +112,22 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         },
         Opts
     ),
-    HeaderMap = hb_maps:from_list(Headers),
+    HeaderMapWithoutSetCookie = hb_maps:from_list(Headers),
+    HeaderMap =
+        case hb_maps:is_key(<<"set-cookie">>, HeaderMapWithoutSetCookie, Opts) of
+            false -> HeaderMapWithoutSetCookie;
+            true ->
+                HeaderMapWithoutSetCookie#{
+                    <<"set-cookie">> =>
+                        hb_util:bin(cow_cookie:cookie(
+                            [
+                                {<<>>, KeyVal}
+                            ||
+                                {<<"set-cookie">>, KeyVal} <- Headers
+                            ]
+                        ))
+                }
+        end,
     NormHeaderMap = hb_ao:normalize_keys(HeaderMap, Opts),
     ?event(http_outbound,
         {normalized_response_headers, {norm_header_map, NormHeaderMap}},
@@ -534,17 +549,20 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {enc_body, EncodedBody}
         }
     ),
-    % Cowboy handles cookies in headers separately, so we need to manipulate
-    % the request to set the cookies such that they will be sent over the wire
-    % unmodified.
+    % Cowboy handles cookies in headers separately, so we need to parse the
+    % field if it is present and call `cowboy_req:set_resp_cookie/3' to set
+    % them.
     SetCookiesReq =
         case hb_maps:get(<<"set-cookie">>, EncodedHeaders, undefined, Opts) of
             undefined -> Req#{ resp_headers => EncodedHeaders };
             Cookies ->
-                Req#{
-                    resp_headers => EncodedHeaders,
-                    resp_cookies => #{ <<"__HB_SET_COOKIE">> => Cookies }
-                }
+                lists:foldl(
+                    fun({K, V}, ReqAcc) ->
+                        cowboy_req:set_resp_cookie(K, V, ReqAcc)
+                    end,
+                    Req,
+                    cow_cookie:parse_cookie(Cookies)
+                )
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     cowboy_req:stream_body(EncodedBody, nofin, Req2),
