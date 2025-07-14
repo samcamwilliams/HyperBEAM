@@ -50,7 +50,7 @@
 %%% caller.
 -module(dev_cookie).
 %%% Public set/parse API.
--export([set_cookie/3, parse/3]).
+-export([set_cookie/3, parse/2, parse/3]).
 %%% Public verification API.
 -export([generate/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
@@ -75,7 +75,12 @@ set_cookie(Base, Req, RawOpts) ->
     Opts = cookie_opts(RawOpts),
     {ok, CookieMsg} = parse(Base, Opts),
     NewCookieMsg = hb_ao:set(CookieMsg, Req#{ <<"path">> => unset }, Opts),
-    TABM = hb_message:convert(NewCookieMsg, tabm, <<"structured@1.0">>, Opts),
+    RawTABM = hb_message:convert(NewCookieMsg, tabm, <<"structured@1.0">>, Opts),
+    TABM =
+        hb_maps:map(
+            fun(_, V) -> hb_escape:encode(V) end,
+            RawTABM
+        ),
     Cookie = hb_util:bin(cow_cookie:cookie(hb_maps:to_list(TABM))),
     Res = Base#{ <<"set-cookie">> => Cookie },
     ?event({set_cookie, {base, Base}, {req, Req}, {res, Res}}),
@@ -88,6 +93,8 @@ without(Base, RawOpts) ->
 
 %% @doc Parse the cookies in the base message and return them to the caller.
 parse(Base, Opts) -> parse(Base, #{}, Opts).
+parse(RawCookie, _Req, RawOpts) when is_binary(RawCookie) ->
+    parse(#{ <<"cookie">> => RawCookie }, #{}, RawOpts);
 parse(Base, _Req, RawOpts) ->
     Opts = cookie_opts(RawOpts),
     case hb_ao:get(<<"cookie">>, Base, Opts) of
@@ -95,7 +102,12 @@ parse(Base, _Req, RawOpts) ->
         Cookies ->
             try cow_cookie:parse_cookie(Cookies) of
                 CookiePairs ->
-                    {ok, maps:from_list(CookiePairs)}
+                    {ok,
+                        hb_maps:map(
+                            fun(_, V) -> hb_escape:decode(V) end,
+                            maps:from_list(CookiePairs)
+                        )
+                    }
             catch
                 _:Reason ->
                     {ok, #{}}
