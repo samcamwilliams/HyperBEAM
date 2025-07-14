@@ -5,6 +5,7 @@
 -export([apply/2]).
 -compile({no_auto_import,[apply/2]}).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Apply store defaults to store options.
 %% Takes StoreOpts (list of store configuration maps) and Defaults (map of defaults)
@@ -169,12 +170,10 @@ test() ->
     %% Verify the result matches expected
     case Result =:= Expected of
         true ->
-            io:format("Test passed: apply/2 function works correctly~n"),
+            ?event({test_passed, apply_function_works_correctly}),
             ok;
         false ->
-            io:format("Test failed:~n"),
-            io:format("Expected: ~p~n", [Expected]),
-            io:format("Got: ~p~n", [Result]),
+            ?event({test_failed, {expected, Expected}, {got, Result}}),
             error
     end.
 
@@ -353,7 +352,7 @@ test_lmdb_capacity_integration() ->
     %% Verify fs store does not have capacity (not applicable)
     ?assertEqual(false, maps:is_key(<<"capacity">>, FsStore)),
     
-    io:format("Integration test passed: LMDB capacity ~p correctly applied to store options~n", [CustomCapacity]).
+    ?event({integration_test_passed, {lmdb_capacity, CustomCapacity}, {note, "correctly applied to store options"}}).
 
 %% @doc Full integration test simulating the hb_http_server flow
 %% This test verifies that the complete flow from config loading to store defaults
@@ -430,4 +429,4 @@ test_full_integration_flow() ->
     %% Verify the updated store options are ready for hb_store:start/1
     ?assertEqual(3, length(UpdatedStoreOpts)),
     
-    io:format("Full integration test passed: Store defaults correctly applied through complete flow~n").
+    ?event({full_integration_test_passed, store_defaults_correctly_applied_through_complete_flow}).
