@@ -224,6 +224,13 @@ default_message() ->
                         ]
                 }
             ],
+        priv_store =>
+            [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"name">> => <<"cache-priv">>
+                }
+            ],
         default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
         % Should we use the latest cached state of a process when computing?
         process_now_from_cache => false,
