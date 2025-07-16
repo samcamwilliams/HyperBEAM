@@ -54,7 +54,7 @@ default_message() ->
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
             #{<<"name">> => <<"cacheviz@1.0">>, <<"module">> => dev_cacheviz},
-            #{<<"name">> => <<"cookie@1.0">>, <<"module">> => dev_cookie},
+            #{<<"name">> => <<"cookie@1.0">>, <<"module">> => dev_codec_cookie},
             #{<<"name">> => <<"cron@1.0">>, <<"module">> => dev_cron},
             #{<<"name">> => <<"dedup@1.0">>, <<"module">> => dev_dedup},
             #{<<"name">> => <<"delegated-compute@1.0">>, <<"module">> => dev_delegated_compute},
