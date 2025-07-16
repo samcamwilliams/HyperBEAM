@@ -112,22 +112,29 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         },
         Opts
     ),
-    HeaderMapWithoutSetCookie = hb_maps:from_list(Headers),
-    HeaderMap =
-        case hb_maps:is_key(<<"set-cookie">>, HeaderMapWithoutSetCookie, Opts) of
-            false -> HeaderMapWithoutSetCookie;
-            true ->
-                HeaderMapWithoutSetCookie#{
-                    <<"set-cookie">> =>
-                        hb_util:bin(cow_cookie:cookie(
-                            [
-                                {<<>>, KeyVal}
-                            ||
-                                {<<"set-cookie">>, KeyVal} <- Headers
-                            ]
-                        ))
-                }
+    % Convert the set-cookie headers into a cookie message, if they are present.
+    % We do this by extracting the set-cookie headers and converting them into a
+    % cookie message if they are present.
+    SetCookieLines =
+        [
+            {<<"set-cookie">>, KeyVal}
+        ||
+            {<<"set-cookie">>, KeyVal} <- Headers
+        ],
+    MaybeSetCookie =
+        case SetCookieLines of
+            [] -> #{};
+            _ ->
+                ?event(
+                    debug_cookie,
+                    {normalizing_setcookie_headers, SetCookieLines}
+                ),
+                {ok, CookieMsg} = dev_codec_cookie:from(SetCookieLines, #{}, Opts),
+                #{ <<"set-cookie">> => CookieMsg }
         end,
+    % Merge the set-cookie message into the header map, which itself is
+    % constructed from the header key-value pair list.
+    HeaderMap = hb_maps:merge(hb_maps:from_list(Headers), MaybeSetCookie, Opts),
     NormHeaderMap = hb_ao:normalize_keys(HeaderMap, Opts),
     ?event(http_outbound,
         {normalized_response_headers, {norm_header_map, NormHeaderMap}},
@@ -554,12 +561,51 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     % them.
     BaseReq = Req#{ resp_headers => EncodedHeaders },
     SetCookiesReq =
-        case hb_maps:get(<<"set-cookie">>, EncodedHeaders, undefined, Opts) of
+        case hb_maps:get(<<"cookies">>, EncodedHeaders, undefined, Opts) of
             undefined -> BaseReq;
             Cookies ->
+                ?event(debug_cookie, {base_req, Cookies}),
+                % Use the `~cookie@1.0' codec to convert the cookies message into
+                % a list of cookie header lines.
+                {ok, ParsedCookies} =
+                    dev_codec_cookie:to(
+                        Cookies,
+                        #{ <<"bundle">> => false },
+                        Opts
+                    ),
+                ?event(debug_cookie, {parsed_cookies, {lines, ParsedCookies}}),
                 lists:foldl(
-                    fun({K, V}, ReqAcc) ->
-                        cowboy_req:set_resp_cookie(K, V, ReqAcc)
+                    fun(CookieLine, ReqAcc) ->
+                        % NOTE: Cowboy has an extremely strange way of handling
+                        % cookies, which we encounter here.
+                        % 
+                        % It needs the cookies to be in a map in `resp_cookies',
+                        % with `key => cookie_line'. Note that the value is not
+                        % simply the value of the cookie, but a full cookie line
+                        % with the key and attributes.
+                        % 
+                        % Under-the-hood it strips the keys from this map and
+                        % only uses the values. Subsequently, we could in theory
+                        % key the map with any term we want (as a prior version
+                        % of HyperBEAM did).
+                        % 
+                        % In order to be better `cowboy' citizens we attempt to
+                        % split the cookie on the first `=' character and use
+                        % that as the key. Beware however, dear reader, that
+                        % the key used here is not actually sent over the wire.
+                        % It is just a reference to the cookie line, keeping them
+                        % unique.
+                        % 
+                        % Do not be surprised if proxying received cookies has
+                        % high WTF/min issues with these keys. We tried.
+                        [CookieRef, _] = binary:split(CookieLine, <<"=">>),
+                        RespCookies = maps:get(resp_cookies, ReqAcc, #{}),
+                        ReqAcc#{
+                            resp_cookies =>
+                                RespCookies#{
+                                    CookieRef => CookieLine
+                                }
+                        }
                     end,
                     BaseReq,
                     cow_cookie:parse_cookie(Cookies)

@@ -232,7 +232,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
     % Call authentication device to set up auth.
     AuthRequest =
         Request#{
-            <<"path">> => <<"generate">>,
+            <<"path">> => <<"commit">>,
             <<"name">> => FinalWalletName
         },
     ?event({register_wallet, {auth_msg, AuthMsg}, {request, AuthRequest}}),
@@ -369,7 +369,7 @@ verify_wallet(Base, WalletDetails, Opts) ->
 wallet_from_cookie(Msg, Opts) ->
     % Parse the cookie as a Structured-Fields map.
     Parsed =
-        try dev_cookie:parse(Msg, Opts) of
+        try dev_codec_cookie:from(Msg, #{}, Opts) of
             {ok, CookieMsg} -> CookieMsg
         catch _:_ -> {error, <<"Invalid cookie format.">>}
         end,
@@ -697,14 +697,14 @@ export_batch_wallets_test() ->
                 }
         ),
     % Generate multiple wallets and collect auth cookies.
-    {ok, Gen1} =
+    {ok, _} =
         hb_http:get(
             Node,
             <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch1&exportable=",
                 (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
-    {ok, _Gen2} =
+    {ok, _} =
         hb_http:get(
             Node,
             <<"/~wallet@1.0/generate?persist=in-memory&wallet=batch2&exportable=",
