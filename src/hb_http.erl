@@ -117,7 +117,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     % cookie message if they are present.
     SetCookieLines =
         [
-            {<<"set-cookie">>, KeyVal}
+            KeyVal
         ||
             {<<"set-cookie">>, KeyVal} <- Headers
         ],
