@@ -75,12 +75,12 @@ verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 %% are generated from downstream AO-Core resolutions.
 opts(Opts) ->
     Opts#{
-        store =>
-            case hb_opts:get(priv_store, undefined, Opts) of
-                undefined -> hb_opts:get(store, undefined, Opts);
-                PrivStore -> PrivStore
-            end,
-        cache_control => [<<"no-store">>, <<"no-cache">>]
+        % store =>
+        %     case hb_opts:get(priv_store, undefined, Opts) of
+        %         undefined -> hb_opts:get(store, undefined, Opts);
+        %         PrivStore -> PrivStore
+        %     end,
+        % cache_control => [<<"no-store">>, <<"no-cache">>]
     }.
 
 %% @doc Get the cookie with the given key from the base message.

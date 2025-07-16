@@ -542,7 +542,12 @@ reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, TABMReq, Status, RawMessage, Opts) ->
     Message = hb_ao:normalize_keys(RawMessage, Opts),
-    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(Status, TABMReq, Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(
+        Status,
+        % Set `accept-bundle' to false to ensure extraction of the 'set-cookie' header.
+        TABMReq#{ <<"accept-bundle">> => false },
+        Message,
+        Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr, Opts),
@@ -560,8 +565,9 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     % field if it is present and call `cowboy_req:set_resp_cookie/3' to set
     % them.
     BaseReq = Req#{ resp_headers => EncodedHeaders },
+    StructuredHeaders = hb_message:convert(EncodedHeaders, <<"structured@1.0">>, <<"httpsig@1.0">>, Opts),
     SetCookiesReq =
-        case hb_maps:get(<<"cookies">>, EncodedHeaders, undefined, Opts) of
+        case hb_maps:get(<<"set-cookie">>, StructuredHeaders, undefined, Opts) of
             undefined -> BaseReq;
             Cookies ->
                 ?event(debug_cookie, {base_req, Cookies}),
@@ -608,7 +614,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
                         }
                     end,
                     BaseReq,
-                    cow_cookie:parse_cookie(Cookies)
+                    ParsedCookies
                 )
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
