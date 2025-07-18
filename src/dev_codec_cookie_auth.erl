@@ -42,7 +42,7 @@ commit(Base, Request, RawOpts) ->
             Opts
         ),
     % Set the cookie on the base message and return the name.
-    dev_codec_cookie:set(Base, CookieParams, Opts).
+    dev_codec_cookie:set_cookie(Base, CookieParams, Opts).
 
 %% @doc Verify the cookie in the request message against the cookie in the base
 %% message. If a name key is provided in the request message, it is used instead
@@ -85,7 +85,7 @@ verify(RawBase, Request, RawOpts) ->
                 N -> N
             end,
         ExpectedCommitment ?= calculate_commitment(Secret, Name, Opts),
-        dev_codec_cookie:without(Request, Opts)
+        {ok, dev_codec_cookie:without(Request, Opts)}
     else
         _ ->
             % If any of the above patterns fail, return a failure.
@@ -105,10 +105,11 @@ set_cookie_test() ->
     {ok, SetRes} =
         hb_http:get(
             Node,
-            <<"/~cookie@1.0&normal=keyval/set?k1=v1&k2=v2">>,
+            <<"/~cookie@1.0/set_cookie?k1=v1&k2=v2">>,
             #{}
         ),
-    ?assertMatch(#{ <<"set-cookie">> := _, <<"normal">> := <<"keyval">> }, SetRes),
+    ?event(debug_cookie, {set_cookie_test, {set_res, SetRes}}),
+    ?assertMatch(#{ <<"set-cookie">> := _ }, SetRes),
     Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/from">> }, SetRes, #{}),
     {ok, Res} = hb_http:get(Node, Req, #{}),
     ?assertMatch(#{ <<"k1">> := <<"v1">>, <<"k2">> := <<"v2">> }, Res),
@@ -194,12 +195,16 @@ generate_verify_hidden_name_test() ->
 %% `Target' message.
 apply_cookie(Target, GenerateResponse, Opts) ->
     ?event({apply_cookie, {target, Target}, {generate, GenerateResponse}}),
+    ?event({opts, Opts}),
     {ok, Cookie} = hb_maps:find(<<"set-cookie">>, GenerateResponse, Opts),
+    {ok, CookiesEncoded} = dev_codec_cookie:to(Cookie, Target#{ <<"bundle">> => true },Opts),
+    ?event(debug_cookie, {cookies_encoded, CookiesEncoded}),
     hb_ao:set(
         Target,
-        #{ <<"cookie">> => Cookie, <<"set-cookie">> => unset },
+        #{ <<"cookie">> => CookiesEncoded, <<"set-cookie">> => unset },
         dev_codec_cookie:opts(Opts)
     ).
+
 
 %% @doc Assert that the response is a valid verification.
 assert_valid_verification(Res, Opts) ->

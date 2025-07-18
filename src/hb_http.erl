@@ -564,59 +564,55 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     % Cowboy handles cookies in headers separately, so we need to parse the
     % field if it is present and call `cowboy_req:set_resp_cookie/3' to set
     % them.
-    BaseReq = Req#{ resp_headers => EncodedHeaders },
+    BaseReq = Req#{ resp_headers => hb_maps:without([<<"set-cookie+link">>], EncodedHeaders) },
     StructuredHeaders = hb_message:convert(EncodedHeaders, <<"structured@1.0">>, <<"httpsig@1.0">>, Opts),
-    SetCookiesReq =
-        case hb_maps:get(<<"set-cookie">>, StructuredHeaders, undefined, Opts) of
-            undefined -> BaseReq;
-            Cookies ->
-                ?event(debug_cookie, {base_req, Cookies}),
-                % Use the `~cookie@1.0' codec to convert the cookies message into
-                % a list of cookie header lines.
-                {ok, ParsedCookies} =
-                    dev_codec_cookie:to(
-                        Cookies,
-                        #{ <<"bundle">> => false },
-                        Opts
-                    ),
-                ?event(debug_cookie, {parsed_cookies, {lines, ParsedCookies}}),
-                lists:foldl(
-                    fun(CookieLine, ReqAcc) ->
-                        % NOTE: Cowboy has an extremely strange way of handling
-                        % cookies, which we encounter here.
-                        % 
-                        % It needs the cookies to be in a map in `resp_cookies',
-                        % with `key => cookie_line'. Note that the value is not
-                        % simply the value of the cookie, but a full cookie line
-                        % with the key and attributes.
-                        % 
-                        % Under-the-hood it strips the keys from this map and
-                        % only uses the values. Subsequently, we could in theory
-                        % key the map with any term we want (as a prior version
-                        % of HyperBEAM did).
-                        % 
-                        % In order to be better `cowboy' citizens we attempt to
-                        % split the cookie on the first `=' character and use
-                        % that as the key. Beware however, dear reader, that
-                        % the key used here is not actually sent over the wire.
-                        % It is just a reference to the cookie line, keeping them
-                        % unique.
-                        % 
-                        % Do not be surprised if proxying received cookies has
-                        % high WTF/min issues with these keys. We tried.
-                        [CookieRef, _] = binary:split(CookieLine, <<"=">>),
-                        RespCookies = maps:get(resp_cookies, ReqAcc, #{}),
-                        ReqAcc#{
-                            resp_cookies =>
-                                RespCookies#{
-                                    CookieRef => CookieLine
-                                }
-                        }
-                    end,
-                    BaseReq,
-                    ParsedCookies
-                )
-        end,
+    SetCookiesReq = case hb_maps:get(<<"set-cookie">>, StructuredHeaders, undefined, Opts) of
+        undefined -> BaseReq;
+        Cookies ->
+            {ok, ParsedCookies} =
+                dev_codec_cookie:to(
+                    Cookies,
+                    #{ <<"bundle">> => false },
+                    Opts
+                ),
+            ?event(debug_cookie, {parsed_cookies, {lines, ParsedCookies}}),
+            lists:foldl(
+                fun(CookieLine, ReqAcc) ->
+                    % NOTE: Cowboy has an extremely strange way of handling
+                    % cookies, which we encounter here.
+                    % 
+                    % It needs the cookies to be in a map in `resp_cookies',
+                    % with `key => cookie_line'. Note that the value is not
+                    % simply the value of the cookie, but a full cookie line
+                    % with the key and attributes.
+                    % 
+                    % Under-the-hood it strips the keys from this map and
+                    % only uses the values. Subsequently, we could in theory
+                    % key the map with any term we want (as a prior version
+                    % of HyperBEAM did).
+                    % 
+                    % In order to be better `cowboy' citizens we attempt to
+                    % split the cookie on the first `=' character and use
+                    % that as the key. Beware however, dear reader, that
+                    % the key used here is not actually sent over the wire.
+                    % It is just a reference to the cookie line, keeping them
+                    % unique.
+                    % 
+                    % Do not be surprised if proxying received cookies has
+                    % high WTF/min issues with these keys. We tried.
+                    [CookieRef, _] = binary:split(CookieLine, <<"=">>),
+                    RespCookies = maps:get(resp_cookies, ReqAcc, #{}),
+                    ReqAcc#{
+                        resp_cookies =>
+                            RespCookies#{
+                                CookieRef => CookieLine
+                            }
+                    }
+                end,
+                BaseReq,
+                ParsedCookies
+            )
+    end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     cowboy_req:stream_body(EncodedBody, nofin, Req2),
     EndTime = os:system_time(millisecond),

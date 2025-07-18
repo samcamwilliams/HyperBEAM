@@ -55,13 +55,13 @@
 %%% caller.
 -module(dev_codec_cookie).
 %%% Public cookie manipulation API.
--export([get/3, set/3]).
+-export([get_cookie/3, set_cookie/3]).
 %%% Public codec API.
 -export([to/3, from/3]).
 %%% Public commit/verify API.
 -export([commit/3, verify/3]).
 %%% Public utility functions.
--export([opts/1, reset/2]).
+-export([opts/1, reset/2, without/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -84,7 +84,7 @@ opts(Opts) ->
     }.
 
 %% @doc Get the cookie with the given key from the base message.
-get(Base, Req, RawOpts) ->
+get_cookie(Base, Req, RawOpts) ->
     Opts = opts(RawOpts),
     {ok, ParsedBase} = from(Base, Req, Opts),
     Key = hb_maps:get(<<"key">>, Req, undefined, Opts),
@@ -95,11 +95,18 @@ get(Base, Req, RawOpts) ->
     end.
 
 %% @doc Set the keys in the request message in the cookies of the caller.
-set(_, Req, RawOpts) ->
+set_cookie(_, Req, RawOpts) ->
     Opts = opts(RawOpts),
     RawTABM =
         hb_maps:without(
-            [<<"path">>],
+            [
+                <<"path">>,
+                <<"accept-bundle">>,
+                <<"ao-peer">>,
+                <<"host">>,
+                <<"method">>,
+                <<"body">>
+            ],
             hb_message:convert(Req, tabm, <<"structured@1.0">>, Opts),
             Opts
         ),
@@ -149,7 +156,7 @@ to(Cookies = [Cookie|_], Req, RawOpts) when is_binary(Cookie) ->
         true ->
             {ok, join(Cookies, <<", ">>)}
     end;
-to(CookiesMsg, Req, RawOpts) ->
+to(CookiesMsg, Req, RawOpts) when is_map(CookiesMsg) ->
     % The cookie set is in message form: A map of key => [binary|cookie-message]
     % pairs. Key=>cookie-message pairs represent the cookie as:
     % - `value': The raw binary cookie value.
@@ -211,17 +218,20 @@ from(CookiesMsg, Req, Opts) when is_binary(CookiesMsg) ->
     % recurse to convert the lines into `~cookie@1.0' messages.
     from(split(lines, CookiesMsg), Req, opts(Opts));
 from(CookiesMsg, _Req, _Opts) when is_list(CookiesMsg) ->
-    {ok, maps:from_list(lists:map(fun from_line/1, CookiesMsg))}.
+    {ok, maps:from_list(lists:map(fun from_line/1, CookiesMsg))};
+from(#{ <<"cookie">> := Cookie}, Req, Opts) ->
+    from(Cookie, Req, Opts).
 
 %% @doc Convert a cookie header line into a cookie message.
 from_line(Line) ->
     {[Key, Value], Rest} = split(pair, Line),
+    ValueDecoded = hb_escape:decode(Value),
     % If there is no remaining binary after the pair, we have a simple key-value
     % pair, returning just the binary as the value. Otherwise, we split the
     % remaining binary into attributes and flags and return a message with the
     % value and those parsed elements.
     case Rest of
-        <<>> -> {Key, Value};
+        <<>> -> {Key, ValueDecoded};
         _ ->
             AllAttrs = split(attributes, Rest),
             % We partition the attributes into pairs and flags, where flags are
@@ -265,7 +275,7 @@ from_line(Line) ->
                 true -> #{}
                 end,
             MaybeAllAttributes = maps:merge(MaybeAttributes, MaybeFlags),
-            {Key, MaybeAllAttributes#{ <<"value">> => Value }}
+            {Key, MaybeAllAttributes#{ <<"value">> => ValueDecoded }}
     end.
 
 %%% Internal helpers
@@ -316,6 +326,10 @@ unquote(<< $\", Rest/binary>>) ->
     {Unquoted, _} = hb_util:split_escaped_single($\", Rest),
     Unquoted;
 unquote(Bin) -> Bin.
+
+%% @doc Remove the cookie from the given message.
+without(Req, Opts) ->
+    hb_maps:without([<<"cookie">>], Req, Opts).
 
 %%% Tests
 
