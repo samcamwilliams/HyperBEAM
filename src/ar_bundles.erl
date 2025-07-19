@@ -652,21 +652,29 @@ test_encode_tags() ->
     TestCases = [
         {simple_string_tags, [{<<"tag1">>, <<"value1">>}]},
         {binary_value_tag, [{<<"binary-tag">>, BinValue}]},
-        {mixed_tags, [{<<"string-tag">>, <<"string-value">>}, {<<"binary-tag">>, BinValue}]},
+        {mixed_tags,
+            [
+                {<<"string-tag">>, <<"string-value">>},
+                {<<"binary-tag">>, BinValue}
+            ]
+        },
         {empty_value_tag, [{<<"empty-value-tag">>, <<>>}]},
         {unicode_tag, [{<<"unicode-tag">>, <<"你好世界">>}]}
     ],
-
     lists:foreach(
         fun({Label, InputTags}) ->
             Encoded = encode_tags(InputTags),
-            Wrapped = <<(length(InputTags)):64/little, (byte_size(Encoded)):64/little, Encoded/binary>>,
+            Wrapped =
+                <<
+                    (length(InputTags)):64/little,
+                    (byte_size(Encoded)):64/little,
+                    Encoded/binary
+                >>,
             {DecodedTags, <<>>} = decode_tags(Wrapped),
             ?assertEqual(InputTags, DecodedTags, Label)
         end,
         TestCases
     ),
-
     % Test case: Empty tags list
     EmptyTags = [],
     EncodedEmpty = encode_tags(EmptyTags),
@@ -684,12 +692,9 @@ test_no_tags() ->
     Anchor = crypto:strong_rand_bytes(32),
     DataItem = new_item(Target, Anchor, [], <<"data">>),
     SignedDataItem = sign_item(DataItem, {Priv, Pub}),
-
     ?assertEqual(true, verify_item(SignedDataItem)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem),
-
     SignedDataItem2 = deserialize(serialize(SignedDataItem)),
-
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem2).
@@ -702,12 +707,9 @@ test_with_tags() ->
     Tags = [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
     DataItem = new_item(Target, Anchor, Tags, <<"taggeddata">>),
     SignedDataItem = sign_item(DataItem, {Priv, Pub}),
-
     ?assertEqual(true, verify_item(SignedDataItem)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem),
-
     SignedDataItem2 = deserialize(serialize(SignedDataItem)),
-
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
