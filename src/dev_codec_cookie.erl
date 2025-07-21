@@ -75,12 +75,12 @@ verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 %% are generated from downstream AO-Core resolutions.
 opts(Opts) ->
     Opts#{
-        % store =>
-        %     case hb_opts:get(priv_store, undefined, Opts) of
-        %         undefined -> hb_opts:get(store, undefined, Opts);
-        %         PrivStore -> PrivStore
-        %     end,
-        % cache_control => [<<"no-store">>, <<"no-cache">>]
+        store =>
+            case hb_opts:get(priv_store, undefined, Opts) of
+                undefined -> hb_opts:get(store, undefined, Opts);
+                PrivStore -> PrivStore
+            end,
+        cache_control => [<<"no-store">>, <<"no-cache">>]
     }.
 
 %% @doc Get the cookie with the given key from the base message.
@@ -95,7 +95,7 @@ get_cookie(Base, Req, RawOpts) ->
     end.
 
 %% @doc Set the keys in the request message in the cookies of the caller.
-set_cookie(_, Req, RawOpts) ->
+set_cookie(Base, Req, RawOpts) ->
     Opts = opts(RawOpts),
     RawTABM =
         hb_maps:without(
@@ -115,7 +115,7 @@ set_cookie(_, Req, RawOpts) ->
             fun(_, V) -> hb_escape:encode(V) end,
             RawTABM
         ),
-    Res = to(#{ <<"cookie">> => TABM }, Req, Opts),
+    Res = to(Base#{ <<"cookie">> => TABM }, Req, Opts),
     ?event({set, {req, Req}, {res, Res}}),
     Res.
 
