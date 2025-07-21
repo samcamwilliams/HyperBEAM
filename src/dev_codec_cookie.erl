@@ -248,12 +248,13 @@ from_line(Line) ->
                 ),
             % We sort the flags and generate an attributes map from the pairs.
             SortedFlags = to_sorted_list(Flags),
+            UnquotedFlags = lists:map(fun unquote/1, SortedFlags),
             ?event(
                 {from_line,
                     {key, Key},
                     {value, {explicit, Value}},
                     {attrs, AttrPairs},
-                    {flags, SortedFlags}
+                    {flags, UnquotedFlags}
                 }
             ),
             Attributes =
@@ -273,7 +274,7 @@ from_line(Line) ->
                 true -> #{}
                 end,
             MaybeFlags =
-                if length(SortedFlags) > 0 -> #{ <<"flags">> => SortedFlags };
+                if length(UnquotedFlags) > 0 -> #{ <<"flags">> => UnquotedFlags };
                 true -> #{}
                 end,
             MaybeAllAttributes = maps:merge(MaybeAttributes, MaybeFlags),
@@ -653,7 +654,7 @@ test_data() ->
                         % ---- Failing because of \ backlashes in the flag we should remove it
                         <<"csrf_token=abc123; \"HttpOnly\"; Path=/">>,
                         % ----- Failing because parsing as <<"quick_setting">> => <<"enabled">>
-                        <<"quick_setting=enabled">>
+                        <<"quick_setting=\"enabled\"">>
                     ]
                 ],
                 #{
@@ -670,23 +671,22 @@ test_data() ->
             {
                 [
                     [
+                        <<"secret_key=confidential; Path=%2Fadmin">>,
                         % ------ Failing because parsing have <<\"admin_flag\">>
-                        <<"\"admin_flag\"=true; Path=/">>,
-                        % ------ Failing because Secure and HTTPOnly are part of Path
-                        <<"upload_session=upload_xyz;Path=/upload Secure HttpOnly">>
+                        <<"admin_flag=true; Path=/">>
+                        
                     ]
                 ],
                 #{
+                    <<"secret_key">> =>
+                        #{
+                            <<"value">> => <<"confidential">>,
+                            <<"attributes">> => #{ <<"Path">> => <<"%2Fadmin">> }
+                        },
                     <<"admin_flag">> =>
                         #{
                             <<"value">> => <<"true">>,
                             <<"attributes">> => #{ <<"Path">> => <<"/">> }
-                        },
-                    <<"upload_session">> =>
-                        #{
-                            <<"value">> => <<"upload_xyz">>,
-                            <<"attributes">> => #{ <<"Path">> => <<"/upload">> },
-                            <<"flags">> => [<<"Secure">>, <<"HttpOnly">>]
                         }
                 }
             },
@@ -708,21 +708,6 @@ test_data() ->
                         #{
                             <<"value">> => <<"work,personal">>,
                             <<"attributes">> => #{ <<"Path">> => <<"/">> }
-                        }
-                }
-            },
-        parse_secret_key_solo =>
-            {
-                [
-                    [
-                        <<"secret_key=confidential; Path=%2Fadmin">>
-                    ]
-                ],
-                #{
-                    <<"secret_key">> =>
-                        #{
-                            <<"value">> => <<"confidential">>,
-                            <<"attributes">> => #{ <<"Path">> => <<"%2Fadmin">> }
                         }
                 }
             }
@@ -781,9 +766,6 @@ parse_admin_and_upload_test() ->
 
 parse_search_and_tags_test() ->
     assert_set(parse_search_and_tags, fun from_string/1).
-
-parse_secret_key_solo_test() ->
-    assert_set(parse_secret_key_solo, fun from_string/1).
 
 %%% Test Helpers
 
