@@ -22,13 +22,11 @@ apply(StoreOpts, Defaults) when is_list(StoreOpts), is_map(Defaults) ->
     ).
 
 %% @doc Apply defaults to a single store configuration.
-
 apply_defaults_to_store(StoreOpt, Defaults) when is_map(StoreOpt), is_map(Defaults) ->
     UpdatedStore = apply_defaults_by_module_type(StoreOpt, Defaults),
     apply_defaults_to_substores(UpdatedStore, Defaults).
 
 %% @doc Apply defaults based on store-module.
-
 apply_defaults_by_module_type(StoreOpt, Defaults) ->
     case maps:get(<<"store-module">>, StoreOpt, undefined) of
         hb_store_lmdb ->
@@ -44,7 +42,6 @@ apply_defaults_by_module_type(StoreOpt, Defaults) ->
     end.
 
 %% @doc Apply type-specific defaults to a store.
-
 apply_type_defaults(StoreOpt, TypeKey, Defaults) ->
     case maps:get(TypeKey, Defaults, #{}) of
         TypeDefaults when is_map(TypeDefaults) ->
@@ -54,7 +51,6 @@ apply_type_defaults(StoreOpt, TypeKey, Defaults) ->
     end.
 
 %% @doc Apply defaults to sub-stores recursively.
-
 apply_defaults_to_substores(StoreOpt, Defaults) ->
     case maps:get(<<"store">>, StoreOpt, undefined) of
         SubStores when is_list(SubStores) ->
@@ -71,17 +67,8 @@ apply_defaults_to_substores(StoreOpt, Defaults) ->
     end.
 
 %% EUnit tests
-apply_test_() ->
-    [
-        ?_test(test_basic_apply()),
-        ?_test(test_empty_defaults()),
-        ?_test(test_empty_store_opts()),
-        ?_test(test_nested_stores()),
-        ?_test(test_lmdb_capacity_integration()),
-        ?_test(test_full_integration_flow())
-    ].
 
-test_basic_apply() ->
+basic_apply_test() ->
     StoreOpts = 
         [
             #{
@@ -106,7 +93,7 @@ test_basic_apply() ->
     Result = apply(StoreOpts, Defaults),
     ?assertEqual(Expected, Result).
 
-test_empty_defaults() ->
+empty_defaults_test() ->
     StoreOpts = 
         [
             #{
@@ -125,7 +112,7 @@ test_empty_defaults() ->
     Result = apply(StoreOpts, Defaults),
     ?assertEqual(Expected, Result).
 
-test_empty_store_opts() ->
+empty_store_opts_test() ->
     StoreOpts = [],
     Defaults = 
         #{
@@ -137,7 +124,7 @@ test_empty_store_opts() ->
     Result = apply(StoreOpts, Defaults),
     ?assertEqual(Expected, Result).
 
-test_nested_stores() ->
+nested_stores_test() ->
     StoreOpts = 
         [
             #{
@@ -175,7 +162,7 @@ test_nested_stores() ->
 %% @doc Integration test to verify that capacity is properly set for hb_store_lmdb
 %% This test verifies that the capacity value is correctly applied and accessible
 %% to the hb_store_lmdb module before environment creation.
-test_lmdb_capacity_integration() ->
+lmdb_capacity_integration_test() ->
     CustomCapacity = 5000,
     StoreOpts = 
         [
@@ -220,8 +207,7 @@ test_lmdb_capacity_integration() ->
 %% @doc Full integration test simulating the hb_http_server flow
 %% This test verifies that the complete flow from config loading to store defaults
 %% application works correctly, simulating what happens in hb_http_server:start/0
-
-test_full_integration_flow() ->
+full_integration_flow_test() ->
     LoadedConfig = #{
         <<"store_defaults">> => #{
             <<"lmdb">> => #{
