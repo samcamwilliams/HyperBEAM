@@ -153,8 +153,7 @@ to(Cookies = [Cookie|_], Req, RawOpts) when is_binary(Cookie) ->
     % return either the list as-is, or join them into a comma-separated string.
     case hb_maps:get(<<"bundle">>, Req, false, Opts) of
         false -> {ok, Cookies};
-        true ->
-            {ok, join(Cookies, <<", ">>)}
+        true -> {ok, join(Cookies, <<", ">>)}
     end;
 to(CookiesMsg, Req, RawOpts) when is_map(CookiesMsg) ->
     % The cookie set is in message form: A map of key => [binary|cookie-message]
@@ -539,7 +538,7 @@ test_data() ->
                 #{
                     <<"$app_config$">> =>
                         #{
-                            <<"value">> => <<"theme@dark!%20mode">>,
+                            <<"value">> => <<"theme@dark! mode">>,
                             <<"attributes">> => #{ <<"Path">> => <<"/">> }
                         },
                     <<"analytics_session_data_with_very_long_name_for_tracking_purposes">> =>
@@ -1079,10 +1078,16 @@ from_string(String) ->
 %% all equal to the expected value when the function is applied to them.
 assert_set(TestSet, Fun) ->
     {Inputs, Expected} = maps:get(TestSet, test_data()),
+    ?event(match_cookie, {starting_group_match, {inputs, {explicit, Inputs}}}),
     lists:foreach(
         fun(Input) ->
             Res = Fun(Input),
-            ?event(cookie, {output, {explicit, Res}}),
+            ?event(
+                match_cookie,
+                {matching,
+                    {expected, {explicit, Expected}, {output, {explicit, Res}}}
+                }
+            ),
             ?assertEqual(Expected, Res)
         end,
         Inputs

@@ -545,7 +545,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     SetCookie = hb_maps:get(<<"set-cookie">>, Message, undefined, Opts),
     {ok, HeadersBeforeCors, EncodedBody} = encode_reply(
         Status,
-        TABMReq#{ <<"accept-bundle">> => true },
+        TABMReq,
         Message,
         Opts),
     % Get the CORS request headers from the message, if they exist.
