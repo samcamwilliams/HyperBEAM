@@ -3,7 +3,7 @@
 %%% This module takes store options and store defaults and returns a new list
 %%% of stores with default properties applied based on the store-module type.
 %%% Supports recursive application to nested store configurations.
--module(hb_store_defaults).
+-module(hb_store_opts).
 -export([apply/2]).
 -compile({no_auto_import,[apply/2]}).
 -include_lib("eunit/include/eunit.hrl").

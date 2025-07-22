@@ -42,7 +42,7 @@ start() ->
     UpdatedStoreOpts = 
         case StoreOpts of
             no_store -> no_store;
-            _ when is_list(StoreOpts) -> hb_store_defaults:apply(StoreOpts, StoreDefaults);
+            _ when is_list(StoreOpts) -> hb_store_opts:apply(StoreOpts, StoreDefaults);
             _ -> StoreOpts
         end,
     hb_store:start(UpdatedStoreOpts),
