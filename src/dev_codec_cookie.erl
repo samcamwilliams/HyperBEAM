@@ -218,7 +218,7 @@ from(CookiesMsg, Req, Opts) when is_binary(CookiesMsg) ->
     from(split(lines, CookiesMsg), Req, opts(Opts));
 from(CookiesMsg, _Req, _Opts) when is_list(CookiesMsg) ->
     {ok, maps:from_list(lists:map(fun from_line/1, CookiesMsg))};
-from(#{ <<"cookie">> := Cookie}, Req, Opts) ->
+from(#{ <<"cookie">> := Cookie }, Req, Opts) ->
     from(Cookie, Req, Opts).
 
 %% @doc Convert a cookie header line into a cookie message.

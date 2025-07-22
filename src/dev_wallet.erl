@@ -237,21 +237,21 @@ register_wallet(Wallet, _Base, Request, Opts) ->
         },
     ?event({register_wallet, {auth_msg, AuthMsg}, {request, AuthRequest}}),
     case hb_ao:resolve(AuthMsg, AuthRequest, Opts) of
-        {ok, AuthResponse} ->
+        {ok, InitializedAuthMsg} ->
             % Store wallet details.
             WalletDetails =
                 #{
                     <<"key">> => JSONKey = ar_wallet:to_json(PrivKey),
                     <<"address">> => hb_util:human_id(Address),
                     <<"persist">> => PersistMode,
-                    <<"auth">> => AuthResponse,
+                    <<"auth">> => InitializedAuthMsg,
                     <<"exportable">> => parse_exportable(Exportable, Opts)
                 },
             case PersistMode of
                 <<"client">> ->
                     % Don't store, set the cookie in the response.
                     hb_ao:resolve(
-                        AuthResponse#{
+                        InitializedAuthMsg#{
                             <<"device">> => <<"cookie@1.0">>,
                             <<"body">> => FinalWalletName,
                             <<"wallet-address">> => hb_util:human_id(Address)
@@ -271,7 +271,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                         Opts
                     ),
                     ModResponse =
-                        AuthResponse#{
+                        InitializedAuthMsg#{
                             <<"body">> => FinalWalletName,
                             <<"wallet-address">> => hb_util:human_id(Address)
                         },

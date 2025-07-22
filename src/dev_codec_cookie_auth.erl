@@ -10,39 +10,23 @@
 commit(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     % Generate a random nonce.
-    Secret = crypto:strong_rand_bytes(32),
-    Name =
-        case hb_ao:get(<<"name">>, Request, Opts) of
-            not_found ->
-                % If no name is provided, use the hash of the secret such that
-                % providing the secret could be used to verify the caller and
-                % re-calculate the name if necessary.
-                hb_util:human_id(crypto:hash(sha256, Secret));
-            N ->
-                % If the name is provided use it as a salt for the secret.
-                N
-        end,
-    Commitment = calculate_commitment(Secret, Name, Opts),
+    Key = crypto:strong_rand_bytes(32),
+    CommittedMsg =
+        hb_message:commit(
+            Key,
+            Opts,
+            Request#{
+                <<"commitment-device">> => <<"cookie@1.0">>,
+                <<"type">> => <<"hmac-sha256">>,
+                <<"key">> => Key
+            }
+        ),
+    Name = hb_maps:get(<<"name">>, Request, undefined, Opts),
     % Create the cookie parameters, omitting the keys specified in the `omit'
     % parameter if any.
-    CookieParams =
-        hb_maps:without(
-            case hb_ao:get(<<"omit">>, Request, Opts) of
-                not_found -> [];
-                KeyList when is_list(KeyList) ->
-                    lists:map(fun hb_util:bin/1, KeyList);
-                Key ->
-                    [hb_util:bin(Key)]
-            end,
-            #{
-                <<"name">> => Name,
-                <<"secret">> => hb_util:human_id(Secret),
-                <<"commitment">> => hb_util:human_id(Commitment)
-            },
-            Opts
-        ),
+    CookieParams = #{ Name => hb_util:human_id(Key) },
     % Set the cookie on the base message and return the name.
-    dev_codec_cookie:set_cookie(Base, CookieParams, Opts).
+    dev_codec_cookie:set_cookie(CommittedMsg, CookieParams, Opts).
 
 %% @doc Verify the cookie in the request message against the cookie in the base
 %% message. If a name key is provided in the request message, it is used instead
@@ -50,52 +34,15 @@ commit(Base, Request, RawOpts) ->
 %% user-given message containing a cookie and verify it was created using a
 %% specific name during the `generate' call. The request message is returned
 %% with the cookie removed.
-verify(RawBase, Request, RawOpts) ->
+verify(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
-    % If the `cookie' key is not set in the base, but the `set-cookie' key is,
-    % we swap it.
-    Base =
-        case hb_maps:get(<<"cookie">>, RawBase, not_found, Opts) of
-            not_found ->
-                RawBase#{
-                    <<"cookie">> =>
-                        hb_maps:get(<<"set-cookie">>, RawBase, <<>>, Opts)
-                };
-            _ ->
-                RawBase
-        end,
-    ?event({verify, {base, Base}, {request, Request}}),
-    maybe
-        % Parse the commitment from the base message.
-        {ok, BaseCookieMsg} = dev_codec_cookie:from(Base, Request, RawOpts),
-        {ok, ExpectedCommitment} ?=
-            hb_maps:find(
-                <<"commitment">>,
-                BaseCookieMsg,
-                Opts
-            ),
-        % Parse the secret and name from the request message, favoring the name
-        % provided in the request.
-        {ok, RequestCookieMsg} = dev_codec_cookie:from(Request, Request, RawOpts),
-        {ok, EncSecret} ?= hb_maps:find(<<"secret">>, RequestCookieMsg, Opts),
-        Secret = hb_util:decode(EncSecret),
-        {ok, Name} ?=
-            case hb_maps:find(<<"name">>, Request, Opts) of
-                error -> hb_maps:find(<<"name">>, RequestCookieMsg, Opts);
-                N -> N
-            end,
-        ExpectedCommitment ?= calculate_commitment(Secret, Name, Opts),
-        {ok, dev_codec_cookie:without(Request, Opts)}
-    else
-        _ ->
-            % If any of the above patterns fail, return a failure.
-            {error, <<"false">>}
+    {ok, Cookie} = dev_codec_cookie:from(Request, #{}, Opts),
+    {ok, Name} = hb_maps:find(<<"name">>, Request, Opts),
+    {ok, Secret} = hb_maps:find(Name, Cookie, Opts),
+    case hb_message:verify(Secret, Request, Opts) of
+        {ok, _} -> {ok, dev_codec_cookie:without(Base, Opts)};
+        {error, Reason} -> {error, Reason}
     end.
-
-%% @doc Calculate the commitment for a given secret and name.
-calculate_commitment(Secret, Name, _Opts) ->
-    hb_util:human_id(crypto:hash(sha256, <<Secret/binary, Name/binary>>)).
-
 
 %%% Tests
 
@@ -193,18 +140,17 @@ generate_verify_hidden_name_test() ->
 
 %% @doc Takes the cookies from the `GenerateResponse' and applies them to the
 %% `Target' message.
-apply_cookie(Target, GenerateResponse, Opts) ->
-    ?event({apply_cookie, {target, Target}, {generate, GenerateResponse}}),
+apply_cookie(NextReq, GenerateResponse, Opts) ->
+    ?event({apply_cookie, {next_req, NextReq}, {generate, GenerateResponse}}),
     ?event({opts, Opts}),
     {ok, Cookie} = hb_maps:find(<<"set-cookie">>, GenerateResponse, Opts),
-    {ok, CookiesEncoded} = dev_codec_cookie:to(Cookie, Target#{ <<"bundle">> => true },Opts),
+    {ok, CookiesEncoded} = dev_codec_cookie:to(Cookie, NextReq#{ <<"bundle">> => true },Opts),
     ?event(debug_cookie, {cookies_encoded, CookiesEncoded}),
     hb_ao:set(
-        Target,
+        NextReq,
         #{ <<"cookie">> => CookiesEncoded, <<"set-cookie">> => unset },
         dev_codec_cookie:opts(Opts)
     ).
-
 
 %% @doc Assert that the response is a valid verification.
 assert_valid_verification(Res, Opts) ->
