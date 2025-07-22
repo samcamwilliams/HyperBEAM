@@ -22,8 +22,6 @@
 %% `Opts' argument to use for all AO-Core resolution requests downstream.
 start() ->
     ?event(http, {start_store, <<"cache-mainnet">>}),
-    Store = hb_opts:get(store, no_store, #{}),
-    hb_store:start(Store),
     Loaded =
         case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>)) of
             {ok, Conf} ->
@@ -38,6 +36,16 @@ start() ->
             hb_opts:default_message(),
             Loaded
         ),
+    %% Apply store defaults before starting store
+    StoreOpts = hb_opts:get(store, no_store, MergedConfig),
+    StoreDefaults = hb_opts:get(store_defaults, #{}, MergedConfig),
+    UpdatedStoreOpts = 
+        case StoreOpts of
+            no_store -> no_store;
+            _ when is_list(StoreOpts) -> hb_store_opts:apply(StoreOpts, StoreDefaults);
+            _ -> StoreOpts
+        end,
+    hb_store:start(UpdatedStoreOpts),
     PrivWallet =
         hb:wallet(
             hb_opts:get(
@@ -91,7 +99,7 @@ start() ->
     start(
         Loaded#{
             priv_wallet => PrivWallet,
-            store => Store,
+            store => UpdatedStoreOpts,
             port => hb_opts:get(port, 8734, Loaded),
             cache_writers => [hb_util:human_id(ar_wallet:to_address(PrivWallet))]
         }
