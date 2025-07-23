@@ -614,26 +614,29 @@ list_wallets_test() ->
         priv_wallet => ar_wallet:new()
     }),
     % Generate some wallets first.
-    {ok, _} =
+    {ok, Msg1} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&wallet=wallet-1">>,
+            <<"/~wallet@1.0/generate?persist=in-memory">>,
             #{}
         ),
-    {ok, _} =
+    {ok, Msg2} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&wallet=wallet-2">>,
+            <<"/~wallet@1.0/generate?persist=in-memory">>,
             #{}
         ),
+    WalletAddress1 = maps:get(<<"body">>, Msg1),
+    WalletAddress2 = maps:get(<<"body">>, Msg2),
+    ?assertEqual(WalletAddress1, maps:get(<<"wallet-address">>, Msg1)),
+    ?assertEqual(WalletAddress2, maps:get(<<"wallet-address">>, Msg2)),
     % List all wallets (no authentication required for listing).
     {ok, Wallets} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
-    ?event({wallet_list, {wallets, Wallets}}),
     % Each wallet entry should be a wallet name.
     ?assert(
         lists:all(
             fun(Wallet) -> lists:member(Wallet, hb_maps:values(Wallets)) end,
-            [<<"wallet-1">>, <<"wallet-2">>]
+            [WalletAddress1, WalletAddress2]
         )
     ).
 
