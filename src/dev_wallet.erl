@@ -596,6 +596,7 @@ import_wallet_with_key_test() ->
     }),
     % Create a test wallet key to import (in real scenario from user).
     TestWallet = ar_wallet:new(),
+    WalletAddress = hb_util:human_id(TestWallet),
     WalletKey = ar_wallet:to_json(TestWallet),
     % Import the wallet with a specific name.
     ImportUrl =
@@ -603,7 +604,8 @@ import_wallet_with_key_test() ->
             WalletKey/binary>>,
     {ok, ImportResponse} = hb_http:get(Node, ImportUrl, #{}),
     % Response should come from auth device with wallet name in body.
-    ?assertMatch(#{<<"body">> := <<"imported-wallet">>}, ImportResponse),
+    % Wallet name is the address of the wallet.
+    ?assertMatch(#{<<"body">> := WalletAddress}, ImportResponse),
     % Should include cookie setup from auth device.
     ?assert(maps:is_key(<<"set-cookie">>, ImportResponse)).
 
