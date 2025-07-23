@@ -42,9 +42,18 @@ httpc_req(Args, _, Opts) ->
     end,
     ?event(http_client, {httpc_req, {explicit, Args}}),
     URL = binary_to_list(iolist_to_binary([Scheme, "://", Host, ":", integer_to_binary(Port), Path])),
-    FilteredHeaders = hb_maps:remove(<<"content-type">>, Headers, Opts),
+    FilteredHeaders = hb_maps:without([<<"content-type">>, <<"cookie">>], Headers, Opts),
     HeaderKV =
-        [ {binary_to_list(Key), binary_to_list(Value)} || {Key, Value} <- hb_maps:to_list(FilteredHeaders, Opts) ],
+        [
+            {binary_to_list(Key), binary_to_list(Value)}
+        ||
+            {Key, Value} <- hb_maps:to_list(FilteredHeaders, Opts)
+        ] ++
+        [
+            {<<"cookie">>, CookieLine}
+        ||
+            CookieLine <- hb_maps:get(<<"cookie">>, Headers, [], Opts)
+        ],
     Method = binary_to_existing_atom(hb_util:to_lower(RawMethod)),
     ContentType = hb_maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>, Opts),
     Request =
@@ -577,7 +586,16 @@ request(PID, Args, Opts) ->
         ),
 	Method = hb_maps:get(method, Args, undefined, Opts),
 	Path = hb_maps:get(path, Args, undefined, Opts),
-	Headers = hb_maps:get(headers, Args, [], Opts),
+    HeaderMap = hb_maps:get(headers, Args, #{}, Opts),
+    % Normalize cookie header lines from the header map.
+	HeadersWithoutCookie =
+        hb_maps:to_list(
+            hb_maps:without([<<"cookie">>], HeaderMap, Opts),
+            Opts
+        ),
+    CookieLines = hb_maps:get(<<"cookie">>, HeaderMap, [], Opts),
+    CookieHeaders = [ {<<"cookie">>, CookieLine} || CookieLine <- CookieLines ],
+    Headers = HeadersWithoutCookie ++ CookieHeaders,
 	Body = hb_maps:get(body, Args, <<>>, Opts),
     ?event(
         http_client,

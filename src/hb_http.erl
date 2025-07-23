@@ -287,16 +287,31 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             not_found -> Message#{ <<"accept-bundle">> => true };
             _ -> Message
         end,
+    % Generate a `cookie' key for the message, if an unencoded cookie is
+    % present.
+    {MaybeCookie, WithoutCookie} =
+        case hb_ao:get(<<"cookie">>, Message, Opts) of
+            not_found -> {#{}, Message};
+            Cookie ->
+                {ok, CookieLines} =
+                    dev_codec_cookie:to(
+                        Cookie,
+                        #{},
+                        Opts
+                    ),
+                ?event(http, {cookie_lines, CookieLines}),
+                {#{ <<"cookie">> => CookieLines }, Message}
+        end,
     % Determine the `ao-peer-port' from the message to send or the node message.
     % `port_external' can be set in the node message to override the port that
     % the peer node should receive. This allows users to proxy requests to their
     % HB node from another port.
     WithSelfPort =
-        WithAcceptBundle#{
+        WithoutCookie#{
             <<"ao-peer-port">> =>
                 hb_ao:get(
                     <<"ao-peer-port">>,
-                    WithAcceptBundle,
+                    WithoutCookie,
                     hb_opts:get(
                         port_external,
                         hb_opts:get(port, undefined, Opts),
@@ -323,7 +338,11 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             Headers = hb_maps:without([<<"body">>], FullEncoding, Opts),
 			?event(http, {request_headers, {explicit, {headers, Headers}}}),
 			?event(http, {request_body, {explicit, {body, Body}}}),
-            hb_maps:merge(ReqBase, #{ headers => Headers, body => Body }, Opts);
+            hb_maps:merge(
+                ReqBase,
+                #{ headers => maps:merge(MaybeCookie, Headers), body => Body },
+                Opts
+            );
         <<"ans104@1.0">> ->
             ?event(debug_accept, {request_message, {message, Message}}),
             {ok, FilteredMessage} =
@@ -334,7 +353,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                 end,
             ReqBase#{
                 headers =>
-                    #{
+                    MaybeCookie#{
                         <<"codec-device">> => <<"ans104@1.0">>,
                         <<"content-type">> => <<"application/ans104">>,
                         <<"accept-bundle">> =>
@@ -361,7 +380,8 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             };
         _ ->
             ReqBase#{
-                headers => maps:without([<<"body">>], Message),
+                headers =>
+                    maps:merge(MaybeCookie, maps:without([<<"body">>], Message)),
                 body => maps:get(<<"body">>, Message, <<>>)
             }
     end.
@@ -540,14 +560,16 @@ reply(Req, TABMReq, Message, Opts) ->
     reply(Req, TABMReq, Status, Message, Opts).
 reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
-reply(Req, TABMReq, Status, RawMessage, Opts) ->
-    Message = hb_ao:normalize_keys(RawMessage, Opts),
-    SetCookie = hb_maps:get(<<"set-cookie">>, Message, undefined, Opts),
-    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(
-        Status,
-        TABMReq,
-        hb_maps:without([<<"set-cookie">>], Message, Opts),
-        Opts),
+reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
+    KeyNormMessage = hb_ao:normalize_keys(RawMessage, Opts),
+    {ok, Req, Message} = reply_handle_cookies(InitReq, KeyNormMessage, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} =
+        encode_reply(
+            Status,
+            TABMReq,
+            Message,
+            Opts
+        ),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr, Opts),
@@ -561,61 +583,11 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {enc_body, EncodedBody}
         }
     ),
-    % Cowboy handles cookies in headers separately, so we need to parse the
-    % field if it is present and call `cowboy_req:set_resp_cookie/3' to set
-    % them.
-    BaseReq = Req#{ resp_headers => EncodedHeaders },
-    SetCookiesReq = case SetCookie of
-        undefined -> BaseReq;
-        _ ->
-            {ok, ParsedCookies} =
-                dev_codec_cookie:to(
-                    SetCookie,
-                    #{ <<"bundle">> => false },
-                    Opts
-                ),
-            ?event(debug_cookie, {parsed_cookies, {lines, ParsedCookies}}),
-            lists:foldl(
-                fun(CookieLine, ReqAcc) ->
-                    % NOTE: Cowboy has an extremely strange way of handling
-                    % cookies, which we encounter here.
-                    % 
-                    % It needs the cookies to be in a map in `resp_cookies',
-                    % with `key => cookie_line'. Note that the value is not
-                    % simply the value of the cookie, but a full cookie line
-                    % with the key and attributes.
-                    % 
-                    % Under-the-hood it strips the keys from this map and
-                    % only uses the values. Subsequently, we could in theory
-                    % key the map with any term we want (as a prior version
-                    % of HyperBEAM did).
-                    % 
-                    % In order to be better `cowboy' citizens we attempt to
-                    % split the cookie on the first `=' character and use
-                    % that as the key. Beware however, dear reader, that
-                    % the key used here is not actually sent over the wire.
-                    % It is just a reference to the cookie line, keeping them
-                    % unique.
-                    % 
-                    % Do not be surprised if proxying received cookies has
-                    % high WTF/min issues with these keys. We tried.
-                    [CookieRef, _] = binary:split(CookieLine, <<"=">>),
-                    RespCookies = maps:get(resp_cookies, ReqAcc, #{}),
-                    ReqAcc#{
-                        resp_cookies =>
-                            RespCookies#{
-                                CookieRef => CookieLine
-                            }
-                    }
-                end,
-                BaseReq,
-                ParsedCookies
-            )
-    end,
-    Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    cowboy_req:stream_body(EncodedBody, nofin, Req2),
+    ReqBeforeStream = Req#{ resp_headers => EncodedHeaders },
+    PostStreamReq = cowboy_req:stream_reply(Status, #{}, ReqBeforeStream),
+    cowboy_req:stream_body(EncodedBody, nofin, PostStreamReq),
     EndTime = os:system_time(millisecond),
-    ?event(http, {reply_headers, {explicit, {ok, Req2, no_state}}}),
+    ?event(http, {reply_headers, {explicit, PostStreamReq}}),
     ?event(http_short,
         {sent,
             {status, Status},
@@ -631,7 +603,58 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {body_size, byte_size(EncodedBody)}
         }
     ),
-    {ok, Req2, no_state}.
+    {ok, PostStreamReq, no_state}.
+
+%% @doc Handle replying with cookies if the message contains them. Returns the
+%% new Cowboy `Req` object, and the message with the cookies removed. Both
+%% `set-cookie' and `cookie' fields are treated as viable sources of cookies.
+reply_handle_cookies(Req, Message, Opts) ->
+    Cookies =
+        case hb_maps:get(<<"set-cookie">>, Message, undefined, Opts) of
+            undefined -> hb_maps:get(<<"cookie">>, Message, undefined, Opts);
+            SetCookie -> SetCookie
+        end,
+    ?event(debug_cookie, {encoding_reply_cookies, {explicit, Cookies}}),
+    case Cookies of
+        undefined -> {ok, Req, Message};
+        _ ->
+            % The internal values of the `cookie' field will be stored in the
+            % `priv_store' by default, so we let `dev_codec_cookie:opts/1'
+            % reset the options.
+            CookieOpts = dev_codec_cookie:opts(Opts),
+            LoadedCookies = hb_cache:ensure_all_loaded(Cookies, CookieOpts),
+            {ok, ParsedCookies} =
+                dev_codec_cookie:to(
+                    LoadedCookies,
+                    #{},
+                    CookieOpts
+                ),
+            % Add the cookies to the response headers.
+            FinalReq =
+                lists:foldl(
+                    fun(FullCookieLine, ReqAcc) ->
+                        [CookieRef, _] = binary:split(FullCookieLine, <<"=">>),
+                        RespCookies = maps:get(resp_cookies, ReqAcc, #{}),
+                        % Note: Cowboy handles cookies peculiarly. The key
+                        % given in the `resp_cookies' map is not used directly
+                        % in the response headers. Nonetheless, we use the
+                        % key parsed from the cookie line as the key, but do not
+                        % be surprised if while debugging you see a different
+                        % key created by Cowboy in the response headers.
+                        ReqAcc#{
+                            resp_cookies =>
+                                RespCookies#{ CookieRef => FullCookieLine }
+                        }
+                    end,
+                    Req,
+                    ParsedCookies
+                ),
+            {
+                ok,
+                FinalReq,
+                hb_maps:without([<<"set-cookie">>, <<"cookie">>], Message, Opts)
+            }
+    end.
 
 %% @doc Add permissive CORS headers to a message, if the message has not already
 %% specified CORS headers.
@@ -668,12 +691,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
         ),
     AcceptBundle =
         hb_util:atom(
-            hb_ao:get(
-                <<"accept-bundle">>,
-                {as, <<"message@1.0">>, TABMReq},
-                false,
-                Opts
-            )
+            hb_maps:get(<<"accept-bundle">>, TABMReq, false, Opts)
         ),
     % Codecs generally do not need to specify headers outside of the content-type,
     % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
@@ -689,17 +707,6 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                 maps:without([<<"body">>], ErrMsg),
                 maps:get(<<"body">>, ErrMsg, <<>>)
             };
-        % {500, <<"httpsig@1.0">>, false} ->
-        %     {ok, ErrMsg} =
-        %         dev_hyperbuddy:return_file(
-        %             <<"hyperbuddy@1.0">>,
-        %             <<"500.html">>,
-        %             #{ <<"error">> => <<"500 Internal Server Error">> }
-        %         ),
-        %     {ok,
-        %         maps:without([<<"body">>], ErrMsg),
-        %         maps:get(<<"body">>, ErrMsg, <<>>)
-        %     };
         {_, <<"httpsig@1.0">>, _} ->
             TABM =
                 hb_message:convert(
