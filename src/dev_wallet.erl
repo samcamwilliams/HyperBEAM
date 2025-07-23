@@ -183,8 +183,8 @@ import(Base, Request, Opts) ->
         undefined ->
             % Import from cookie.
             case request_to_wallet(Base, Request, Opts) of
-                {ok, ModRequest, WalletDetails} ->
-                    register_wallet(WalletDetails, Base, ModRequest, Opts);
+                {ok, WalletDetails} ->
+                    register_wallet(WalletDetails, Base, Request, Opts);
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -202,8 +202,6 @@ import(Base, Request, Opts) ->
 
 %% @doc Register a wallet on the node.
 register_wallet(Wallet, _Base, Request, Opts) ->
-    % Get the wallet name from the request or cookie.
-    WalletName = hb_ao:get(<<"wallet">>, Request, undefined, Opts),
     PersistMode = hb_ao:get(<<"persist">>, Request, <<"in-memory">>, Opts),
     % Get the authentication message from the request. If the message is a path
     % or a message with a `path' field, we resolve it to get the base.
@@ -223,21 +221,20 @@ register_wallet(Wallet, _Base, Request, Opts) ->
     % Find the wallet's address.
     {PrivKey, _} = Wallet,
     Address = ar_wallet:to_address(Wallet),
-    % Determine final wallet name.
-    FinalWalletName =
-        case WalletName of
-            undefined -> hb_util:human_id(Address);
-            Name -> Name
-        end,
+    WalletName = hb_util:human_id(Address),
     % Call authentication device to set up auth.
     AuthRequest =
         Request#{
             <<"path">> => <<"commit">>,
-            <<"name">> => FinalWalletName
+            <<"name">> => WalletName
         },
     ?event({register_wallet, {auth_msg, AuthMsg}, {request, AuthRequest}}),
     case hb_ao:resolve(AuthMsg, AuthRequest, Opts) of
         {ok, InitializedAuthMsg} ->
+            % Find the new signer address.
+            PriorSigners = hb_message:signers(AuthMsg, Opts),
+            NewSigners = hb_message:signers(InitializedAuthMsg, Opts),
+            [Committer] = NewSigners -- PriorSigners,
             % Store wallet details.
             WalletDetails =
                 #{
@@ -245,6 +242,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                     <<"address">> => hb_util:human_id(Address),
                     <<"persist">> => PersistMode,
                     <<"auth">> => InitializedAuthMsg,
+                    <<"committer">> => Committer,
                     <<"exportable">> => parse_exportable(Exportable, Opts)
                 },
             case PersistMode of
@@ -253,7 +251,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                     hb_ao:resolve(
                         InitializedAuthMsg#{
                             <<"device">> => <<"cookie@1.0">>,
-                            <<"body">> => FinalWalletName,
+                            <<"body">> => WalletName,
                             <<"wallet-address">> => hb_util:human_id(Address)
                         },
                         #{
@@ -266,13 +264,13 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                     % Store wallet and return auth response with wallet info.
                     store_wallet(
                         hb_util:key_to_atom(PersistMode, existing),
-                        FinalWalletName,
+                        WalletName,
                         WalletDetails,
                         Opts
                     ),
                     ModResponse =
                         InitializedAuthMsg#{
-                            <<"body">> => FinalWalletName,
+                            <<"body">> => WalletName,
                             <<"wallet-address">> => hb_util:human_id(Address)
                         },
                     ?event(
@@ -293,12 +291,11 @@ list(_Base, _Request, Opts) ->
     {ok, list_wallets(Opts)}.
 
 %% @doc Sign a message with a wallet.
-commit(Base, RawRequest, Opts) ->
-    case request_to_wallet(Base, RawRequest, Opts) of
-        {ok, Request, WalletDetails} ->
+commit(Base, Request, Opts) ->
+    case request_to_wallet(Base, Request, Opts) of
+        {ok, WalletDetails} ->
             ?event(
                 {signing,
-                    {raw_request, RawRequest},
                     {request, Request},
                     {wallet_details, WalletDetails}
                 }
@@ -320,6 +317,9 @@ request_to_wallet(Base, Request, Opts) ->
             FoundWalletName -> {wallet_name, FoundWalletName}
         end,
     case Wallet of
+        {wallet_key, WalletKey} ->
+            % Return the wallet key.
+            {ok, #{ <<"key">> => WalletKey }};
         {wallet_name, WalletName} ->
             % Get the wallet from the node's options.
             case find_wallet(WalletName, Opts) of
@@ -329,19 +329,18 @@ request_to_wallet(Base, Request, Opts) ->
                         true ->
                             % If the request is already signed by an exporter
                             % return the request as-is with the wallet.
-                            {ok, Request, WalletDetails};
+                            {ok, WalletDetails};
                         false ->
                             case verify_wallet(Base, WalletDetails, Opts) of
-                                {ok, NewRequest} ->
-                                    {ok, NewRequest, WalletDetails};
+                                {ok, true} ->
+                                    {ok, WalletDetails};
+                                {ok, false} ->
+                                    {error, <<"Verification failed.">>};
                                 {error, Reason} ->
                                     {error, Reason}
                             end
                     end
-            end;
-        {wallet_key, WalletKey} ->
-            % Sign the message.
-            {ok, Request, #{ <<"key">> => WalletKey }}
+            end
     end.
 
 %% @doc Validate if a caller is an `exportable' for the given wallet.
@@ -361,7 +360,12 @@ validate_export_signers(WalletDetails, Request, Opts) ->
 %% @doc Verify a wallet for a given request.
 verify_wallet(Base, WalletDetails, Opts) ->
     AuthBase = hb_maps:get(<<"auth">>, WalletDetails, #{}, Opts),
-    AuthRequest = Base#{ <<"path">> => <<"verify">> },
+    AuthRequest =
+        Base#{
+            <<"path">> => <<"verify">>,
+            <<"committers">> =>
+                [hb_maps:get(<<"committer">>, WalletDetails, undefined, Opts)]
+        },
     ?event({verify_wallet, {auth_base, AuthBase}, {request, AuthRequest}}),
     hb_ao:resolve(AuthBase, AuthRequest, Opts).
 
@@ -375,8 +379,9 @@ wallet_from_cookie(Msg, Opts) ->
         end,
     case hb_maps:find(<<"key">>, Parsed, Opts) of
         {ok, Key} ->
+            ?event({wallet_from_cookie, {key, Key}}),
             {wallet_key, ar_wallet:from_json(Key)};
-        _ ->
+        error ->
             case hb_maps:find(<<"name">>, Parsed, Opts) of
                 {ok, WalletName} -> {wallet_name, WalletName};
                 _ ->
@@ -407,7 +412,7 @@ export(Base, RawRequest, Opts) ->
 %% @doc Export a single wallet.
 export_single(Base, Request, Opts) ->
     case request_to_wallet(Base, Request, Opts) of
-        {ok, _, WalletDetails} ->
+        {ok, WalletDetails} ->
             {ok, WalletDetails};
         {error, Reason} ->
             {error, Reason}
@@ -565,6 +570,7 @@ test_wallet_generate_and_verify(GeneratePath, ExpectedName, CommitParams) ->
             },
             CommitParams
         ),
+    ?event({signing_with_cookie, {test_message, TestMessage}}),
     {ok, SignedMessage} = hb_http:post(Node, TestMessage, #{}),
     % Should return signed message with correct signer
     ?assertMatch(#{ <<"body">> := <<"Test message">> }, SignedMessage),
@@ -577,14 +583,7 @@ client_persist_generate_and_verify_test() ->
         #{}
     ).
 
-named_wallet_generate_and_verify_test() ->
-    test_wallet_generate_and_verify(
-        <<"/~wallet@1.0/generate?persist=in-memory&wallet=my-named-wallet">>,
-        <<"my-named-wallet">>,
-        #{ <<"wallet">> => <<"my-named-wallet">> }
-    ).
-
-unnamed_wallet_generate_and_verify_test() ->
+cookie_wallet_generate_and_verify_test() ->
     test_wallet_generate_and_verify(
         <<"/~wallet@1.0/generate?persist=in-memory">>,
         undefined,
