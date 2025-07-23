@@ -56,7 +56,22 @@ commit(Base, Request, RawOpts) ->
     CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
     % Create the cookie parameters, using the name as the key and the secret as
     % the value.
-    CookieParams = #{ CookieAddr => hb_util:encode(Key) },
+    BaseCookieParams = #{ <<"secret-", CookieAddr/binary>> => hb_util:encode(Key) },
+    % Add the reference of the commitment request to the cookie, if it is
+    % present.
+    CookieParams =
+        case hb_maps:find(<<"nonce">>, Request, Opts) of
+            error -> BaseCookieParams;
+            {ok, Reference} ->
+                ExistingNonces = find_nonces(Request, Opts),
+                BaseCookieParams#{
+                    <<"nonces-", CookieAddr/binary>> =>
+                        serialize_nonces(
+                            [Reference | ExistingNonces],
+                            Opts
+                        )
+                }
+        end,
     % Set the cookie on the message with the new commitment and return.
     dev_codec_cookie:set_cookie(ModCommittedMsg, CookieParams, Opts).
 
@@ -87,9 +102,27 @@ find_secret(Request, Opts) ->
 find_secret(Committer, Request, Opts) ->
     maybe
         {ok, Cookie} ?= dev_codec_cookie:from(Request, #{}, Opts),
-        {ok, _Secret} ?= hb_maps:find(Committer, Cookie, Opts)
+        {ok, _Secret} ?= hb_maps:find(<<"secret-", Committer/binary>>, Cookie, Opts)
     else error -> {error, not_found}
     end.
+
+%% @doc Find the references for the given committer, if they exist in the cookie.
+find_nonces(Request, Opts) ->
+    maybe
+        {ok, Cookie} ?= dev_codec_cookie:from(Request, #{}, Opts),
+        {ok, Committer} ?= hb_maps:find(<<"committer">>, Request, Opts),
+        {ok, RefsBin} ?= hb_maps:find(<<"nonces-", Committer/binary>>, Cookie, Opts),
+        deserialize_nonces(RefsBin, Opts)
+    else error -> []
+    end.
+
+%% @doc Deserialize a reference string into a list of references.
+deserialize_nonces(Reference, _Opts) ->
+    binary:split(Reference, <<",">>, [global]).
+
+%% @doc Serialize a list of references into a string.
+serialize_nonces(References, _Opts) ->
+    hb_util:bin(string:join(lists:map(fun hb_util:list/1, References), ", ")).
 
 %%% Tests
 
