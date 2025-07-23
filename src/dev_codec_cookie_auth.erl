@@ -99,7 +99,7 @@ set_cookie_test() ->
     {ok, SetRes} =
         hb_http:get(
             Node,
-            <<"/~cookie@1.0/set_cookie?k1=v1&k2=v2">>,
+            <<"/~cookie@1.0/set-cookie?k1=v1&k2=v2">>,
             #{}
         ),
     ?event(debug_cookie, {set_cookie_test, {set_res, SetRes}}),
