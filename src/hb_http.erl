@@ -282,11 +282,6 @@ route_to_request(M, {error, Reason}, _Opts) ->
 %% already present in the message, and sets it to `true' if it is not.
 prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     Message = hb_ao:normalize_keys(RawMessage, Opts),
-    WithAcceptBundle =
-        case hb_ao:get(<<"accept-bundle">>, Message, Opts) of
-            not_found -> Message#{ <<"accept-bundle">> => true };
-            _ -> Message
-        end,
     % Generate a `cookie' key for the message, if an unencoded cookie is
     % present.
     {MaybeCookie, WithoutCookie} =
@@ -302,16 +297,23 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                 ?event(http, {cookie_lines, CookieLines}),
                 {#{ <<"cookie">> => CookieLines }, Message}
         end,
+    % Add the `accept-bundle: true' key to the message, if the caller has not
+    % set an explicit preference.
+    WithAcceptBundle =
+        case hb_ao:get(<<"accept-bundle">>, Message, Opts) of
+            not_found -> WithoutCookie#{ <<"accept-bundle">> => true };
+            _ -> WithoutCookie
+        end,
     % Determine the `ao-peer-port' from the message to send or the node message.
     % `port_external' can be set in the node message to override the port that
     % the peer node should receive. This allows users to proxy requests to their
     % HB node from another port.
     WithSelfPort =
-        WithoutCookie#{
+        WithAcceptBundle#{
             <<"ao-peer-port">> =>
                 hb_ao:get(
                     <<"ao-peer-port">>,
-                    WithoutCookie,
+                    WithAcceptBundle,
                     hb_opts:get(
                         port_external,
                         hb_opts:get(port, undefined, Opts),
