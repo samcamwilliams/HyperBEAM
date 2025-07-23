@@ -288,6 +288,16 @@ verify(Self, Req, Opts) ->
     ?event(verify, {verify, {base_found, Base}}),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
+    % Generate the new commitment request base messsage by removing the keys
+    % used by this function (path, committers, commitments) and returning the
+    % remaining keys. This message will then be merged with each commitment
+    % message to generate the final request, allowing the caller to pass 
+    % additional keys to the commitment device.
+    ReqBase =
+        maps:without(
+            [<<"path">>, <<"committers">>, <<"commitments">>],
+            Req
+        ),
     % Verify the commitments. Stop execution if any fail.
     Res =
         lists:all(
@@ -295,7 +305,10 @@ verify(Self, Req, Opts) ->
                 {ok, Res} =
                     verify_commitment(
                         Base,
-                        maps:get(CommitmentID, Commitments),
+                        maps:merge(
+                            ReqBase,
+                            maps:get(CommitmentID, Commitments)
+                        ),
                         Opts
                     ),
                 ?event(verify,

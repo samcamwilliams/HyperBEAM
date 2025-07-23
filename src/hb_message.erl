@@ -359,17 +359,24 @@ verify(Msg, all, Opts) ->
     verify(Msg, <<"all">>, Opts);
 verify(Msg, signers, Opts) ->
     verify(Msg, hb_message:signers(Msg, Opts), Opts);
-verify(Msg, Committers, Opts) ->
+verify(Msg, Committers, Opts) when not is_map(Committers) ->
+    verify(
+        Msg,
+        #{
+            <<"committers">> =>
+                case ?IS_ID(Committers) of
+                    true -> [Committers];
+                    false -> Committers
+                end
+        },
+        Opts
+    );
+verify(Msg, Spec, Opts) ->
+    ?event(verify, {verify, {spec, Spec}}),
     {ok, Res} =
         dev_message:verify(
             Msg,
-            #{
-                <<"committers">> =>
-                    case ?IS_ID(Committers) of
-                        true -> [Committers];
-                        false -> Committers
-                    end
-            },
+            Spec,
             Opts
         ),
     Res.
