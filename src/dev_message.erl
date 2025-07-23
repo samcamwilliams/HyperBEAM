@@ -464,14 +464,9 @@ commitment_ids_from_request(Base, Req, Opts) ->
             <<"none">> -> [];
             <<"all">> -> hb_maps:keys(Commitments, Opts);
             CommitmentIDs ->
-                CommitmentIDs =
-                    if is_list(CommitmentIDs) -> CommitmentIDs;
-                    true -> [CommitmentIDs]
-                    end,
-                lists:map(
-                    fun(CommitmentID) -> maps:get(CommitmentID, Commitments) end,
-                    CommitmentIDs
-                )
+                if is_list(CommitmentIDs) -> CommitmentIDs;
+                true -> [CommitmentIDs]
+                end
         end,
     FromCommitterAddrs =
         case ReqCommitters of
