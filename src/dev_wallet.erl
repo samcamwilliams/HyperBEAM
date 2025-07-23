@@ -314,13 +314,13 @@ request_to_wallet(Base, Request, Opts) ->
             undefined ->
                 % Get the wallet name from the cookie.
                 wallet_from_cookie(Request, Opts);
-            FoundWalletName -> {wallet_name, FoundWalletName}
+            FoundWalletName -> {cookie_address, FoundWalletName}
         end,
     case Wallet of
         {wallet_key, WalletKey} ->
             % Return the wallet key.
             {ok, #{ <<"key">> => WalletKey }};
-        {wallet_name, WalletName} ->
+        {cookie_address, WalletName} ->
             % Get the wallet from the node's options.
             case find_wallet(WalletName, Opts) of
                 not_found -> {error, <<"Wallet not hosted on node.">>};
@@ -363,8 +363,8 @@ verify_wallet(Base, WalletDetails, Opts) ->
     AuthRequest =
         Base#{
             <<"path">> => <<"verify">>,
-            <<"committers">> =>
-                [hb_maps:get(<<"committer">>, WalletDetails, undefined, Opts)]
+            <<"committer">> =>
+                hb_maps:get(<<"committer">>, WalletDetails, undefined, Opts)
         },
     ?event({verify_wallet, {auth_base, AuthBase}, {request, AuthRequest}}),
     hb_ao:resolve(AuthBase, AuthRequest, Opts).
@@ -382,8 +382,9 @@ wallet_from_cookie(Msg, Opts) ->
             ?event({wallet_from_cookie, {key, Key}}),
             {wallet_key, ar_wallet:from_json(Key)};
         error ->
-            case hb_maps:find(<<"name">>, Parsed, Opts) of
-                {ok, WalletName} -> {wallet_name, WalletName};
+            Keys = hb_maps:keys(Parsed, Opts),
+            case Keys of
+                [CookieAddr] -> {cookie_address, CookieAddr};
                 _ ->
                     ?event({invalid_cookie, {msg, Msg}, {parsed, Parsed}}),
                     {error, <<"Invalid cookie contents.">>}
@@ -514,8 +515,25 @@ find_wallet(Name, Opts) ->
         undefined -> find_wallet(non_volatile, Name, Opts);
         Wallet -> Wallet
     end.
-find_wallet(in_memory, Name, Opts) ->
-    hb_maps:get(Name, hb_opts:get(priv_wallet_hosted, #{}, Opts), not_found, Opts);
+
+% Loop over the wallets and find the wallet message whose committer is the cookie address.
+find_wallet(in_memory, CookieAddr, Opts) ->
+    Wallets = hb_opts:get(priv_wallet_hosted, #{}, Opts),
+    maps:fold(fun(_, Wallet, Acc) ->
+        case Acc of
+            not_found ->
+                case hb_maps:get(<<"committer">>, Wallet, undefined, Opts) of
+                    undefined -> not_found;
+                    Committer -> 
+                        case hb_util:human_id(Committer) =:= CookieAddr of
+                            true -> Wallet;
+                            false -> not_found
+                        end
+                end;
+            Found -> Found
+        end
+    end, not_found, Wallets);
+
 find_wallet(non_volatile, Name, Opts) ->
     PrivOpts = priv_store_opts(Opts),
     Store = hb_opts:get(priv_store, undefined, PrivOpts),

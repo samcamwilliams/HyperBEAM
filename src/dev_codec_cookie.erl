@@ -144,7 +144,9 @@ to(CookiesMsg, Req, RawOpts) when is_map(CookiesMsg) ->
     % depending on the `bundle' key in the request message.
     Opts = opts(RawOpts),
     LoadedCookies = hb_cache:ensure_all_loaded(CookiesMsg, Opts),
-    to(maps:values(maps:map(fun to_line/2, LoadedCookies)), Req, Opts).
+    % remove priv from the list
+    NonPrivateLoadedCookies = hb_maps:without([<<"priv">>], LoadedCookies, Opts),
+    to(maps:values(maps:map(fun to_line/2, NonPrivateLoadedCookies)), Req, Opts).
 
 %% @doc Convert a cookie message into a `set-cookie' header line.
 %% Note: Assumes that the cookies have all been loaded from the cache fully.
@@ -194,10 +196,17 @@ from(CookiesMsg, Req, Opts) when is_binary(CookiesMsg) ->
     % within quoted strings), then remove any preceding whitespace. Finally, we
     % recurse to convert the lines into `~cookie@1.0' messages.
     from(split(lines, CookiesMsg), Req, opts(Opts));
+
 from(CookiesMsg, _Req, _Opts) when is_list(CookiesMsg) ->
     {ok, maps:from_list(lists:map(fun from_line/1, CookiesMsg))};
+
 from(#{ <<"cookie">> := Cookie }, Req, Opts) ->
-    from(Cookie, Req, Opts).
+    from(Cookie, Req, Opts);
+
+% Cookie can be a map of #{cookie => #{key => secret}} when generating a wallet
+from(CookiesMsg, _Req, _Opts) when is_map(CookiesMsg) ->
+    {ok, CookiesMsg}.
+
 
 %% @doc Convert a cookie header line into a cookie message.
 from_line(Line) ->
