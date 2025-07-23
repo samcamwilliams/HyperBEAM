@@ -546,7 +546,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     {ok, HeadersBeforeCors, EncodedBody} = encode_reply(
         Status,
         TABMReq,
-        Message,
+        hb_maps:without([<<"set-cookie">>], Message, Opts),
         Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
