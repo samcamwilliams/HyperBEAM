@@ -4,53 +4,31 @@
 %%% support commitments, but does act as a valid target format for unsigned
 %%% messages.
 %%% 
-%%% Additionally, a `generate' and `verify' API is provided to generate and
+%%% Additionally, a `commit' and `verify' API is provided to commit and
 %%% verify a secret stored in the cookies of the caller.
 %%% 
-%%% The cryptographic scheme used in the generate and verify APIs is as follows:
+%%% The cryptographic scheme used in the commit and verify APIs is as follows:
 %%% 
-%%%     generate:
-%%%         secret = 32 random bytes
-%%%         name = req.name or base64url(sha256(secret))
-%%%         commitment = sha256(secret ++ name)
-%%%         return cookie(#{ secret, commitment, name })
+%%%     commit:
+%%%         secret = 32 random bytes or existing secret from cookie
+%%%         name = base64url(sha256(secret))
+%%%         commitment = sha256(secret) and scheme:secret
+%%%         return cookie(#{ name => secret })
 %%% 
 %%%     verify:
-%%%         expected = sha256(req.cookie.secret ++ (req.name || req.cookie.name))
-%%%         return req.cookie.commitment == expected
+%%%         committer = req.committer
+%%%         expecting cookie format in form of #{
+%%%             committer => secret,
+%%%         }
+%%%         return httpsig@1.0 message verified with key = secret
 %%% 
-%%% This scheme enables three different modes of operation:
-%%% 
-%%% 1. Generation with a random name.
-%%%    Allowing: The caller to be identified by the node as the holder of the
-%%%    secret for a name, but not necessarily known/remembered by the node. If
-%%%    the node adds the `name' key to the verification request, they may gain
-%%%    certainty that the caller is also indeed a holder of a specific secret
-%%%    generated previously.
-%%% 2. Generation with a specific name.
-%%%    Allowing: The node to ensure that the caller has a secret that relates
-%%%    only to the name provided during generation.
-%%% 3. Generation with a specific name, but omitting the name from the cookie.
-%%%    Allowing: The node to have a unique identifier for the caller that is
-%%%    unknown to them.
-%%% 
-%%% Note: While names given by the caller of `generate' are combined with the
-%%% secret to generate the commitment, allowing user's to be oblivious to their
-%%% name, `~cookie@1.0` makes no guarantee that chosen names are unique. If no
-%%% name is provided to the `generate' call, however, the name is chosen at
-%%% random from a 256-bit address space.
 %%% 
 %%% This device supports the following paths:
 %%% 
-%%% `/generate': Sets a `secret', `nonce', and `name' key in the cookies of the
-%%% caller. The name may be set by the caller, or will be calculated as the hash
-%%% of the nonce. The `secret' is a SHA-256 hash commitment of the nonce and
-%%% name. Optionally takes an `omit' parameter to omit the caller's `name' from
-%%% the cookie.
-%%% `/verify': Verifies the caller's request by checking the parameters in the
-%%% request match the parameters in the cookies of the base message. Optionally,
-%%% the `name' may be provided in the request to ensure that the caller is the
-%%% holder of an associated secret.
+%%% `/commit': Sets a `secret' key in the cookies of the caller. The name of 
+%%% the cookie is calculated as the hash of the secret. 
+%%% `/verify': Verifies the caller's request by checking the committer in the
+%%% request matches the secret in the cookies of the base message.
 %%% `/set-cookie': Sets the keys in the request message in the cookies of the
 %%% caller.
 -module(dev_codec_cookie).
