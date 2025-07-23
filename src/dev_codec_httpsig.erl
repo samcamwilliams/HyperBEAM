@@ -104,11 +104,12 @@ verify(Base, Req, RawOpts) ->
                     }
                 }),
             {ok, Signature =:= ActualHMac};
-        {KeyError, _Type} ->
-            % If there was an error extracting the key material, return it.
-            % We do not unwrap the type here, so that the form (error or failure)
-            % is preserved.
-            KeyError
+        {{error, Reason}, _Type} ->
+            ?event(httpsig_verify, {verify, {error, Reason}}),
+            {ok, false};
+        {{failure, Info}, _Type} ->
+            ?event(httpsig_verify, {verify, {failure, Info}}),
+            {failure, Info}
     end.
 
 %% @doc Commit to a message using the HTTP-Signature format. We use the `type'
@@ -144,7 +145,11 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
             MaybeTagMap#{
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"rsa-pss-sha512">>,
-                <<"keyid">> => base64:encode(ar_wallet:to_pubkey(Wallet)),
+                <<"keyid">> =>
+                    <<
+                        "publickey:",
+                        (base64:encode(ar_wallet:to_pubkey(Wallet)))/binary
+                    >>,
                 <<"committer">> =>
                     hb_util:human_id(ar_wallet:to_address(Wallet)),
                 <<"committed">> => ToCommit
@@ -187,7 +192,6 @@ commit(BaseMsg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
     ?event({req_to_key_material, {req, Req}}),
     {ok, Scheme, Key, KeyID} = dev_codec_httpsig_keyid:req_to_key_material(Req, Opts),
     Committer = dev_codec_httpsig_keyid:keyid_to_committer(Scheme, KeyID),
-    ?event(debug_committer, {keyid_info, {scheme, Scheme}, {keyid, KeyID}, {committer, Committer}}),
     % Remove any existing hmac commitments with the given keyid before adding
     % the new one.
     Msg =
@@ -554,11 +558,44 @@ validate_large_message_from_http_test() ->
 committed_id_test() ->
     Msg = #{ <<"basic">> => <<"value">> },
     Signed = hb_message:commit(Msg, hb:wallet()),
+    ?assert(hb_message:verify(Signed, all, #{})),
     ?event({signed_msg, Signed}),
     UnsignedID = hb_message:id(Signed, none),
     SignedID = hb_message:id(Signed, all),
     ?event({ids, {unsigned_id, UnsignedID}, {signed_id, SignedID}}),
     ?assertNotEqual(UnsignedID, SignedID).
+
+commit_secret_key_test() ->
+    Msg = #{ <<"basic">> => <<"value">> },
+    CommittedMsg =
+        hb_message:commit(
+            Msg,
+            #{},
+            #{
+                <<"type">> => <<"hmac-sha256">>,
+                <<"key">> => <<"test-secret">>,
+                <<"commitment-device">> => <<"httpsig@1.0">>,
+                <<"scheme">> => <<"secret">>
+            }
+        ),
+    ?event({committed_msg, CommittedMsg}),
+    Committers = hb_message:signers(CommittedMsg, #{}),
+    ?assert(length(Committers) == 1),
+    ?event({committers, Committers}),
+    ?assert(
+        hb_message:verify(
+            CommittedMsg,
+            #{ <<"committers">> => Committers, <<"key">> => <<"test-secret">> },
+            #{}
+        )
+    ),
+    ?assertNot(
+        hb_message:verify(
+            CommittedMsg,
+            #{ <<"committers">> => Committers, <<"key">> => <<"bad-secret">> },
+            #{}
+        )
+    ).
 
 multicommitted_id_test() ->
     Msg = #{ <<"basic">> => <<"value">> },

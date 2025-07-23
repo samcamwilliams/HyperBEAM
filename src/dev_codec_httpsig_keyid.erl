@@ -9,7 +9,8 @@
 %%% These functions are abstracted in order to allow for the addition of new
 %%% schemes in the future.
 -module(dev_codec_httpsig_keyid).
--export([req_to_key_material/2, keyid_to_committer/2]).
+-export([req_to_key_material/2, keyid_to_committer/1, keyid_to_committer/2]).
+-export([secret_key_to_committer/1]).
 -include_lib("include/hb.hrl").
 
 %%% The supported schemes for HMAC keys.
@@ -26,7 +27,7 @@
 %% `{ok, Scheme, Key, KeyID}' or `{error, Reason}'.
 req_to_key_material(Req, Opts) ->
     ?event({req_to_key_material, {req, Req}}),
-    KeyID = maps:get(<<"keyid">>, Req, ?HMAC_DEFAULT_KEY),
+    KeyID = maps:get(<<"keyid">>, Req, undefined),
     ?event({keyid_to_key_material, {keyid, KeyID}}),
     case find_scheme(KeyID, Req, Opts) of
         {ok, Scheme} ->
@@ -34,13 +35,16 @@ req_to_key_material(Req, Opts) ->
             ApplyRes = apply_scheme(Scheme, KeyID, Req),
             ?event({apply_scheme_result, {apply_res, ApplyRes}}),
             case ApplyRes of
-                {ok, Key, KeyID} ->
-                    {ok, Scheme, Key, KeyID};
-                {ok, _OtherKey, _OtherKeyID} ->
+                {ok, _, CalcKeyID} when KeyID /= undefined, CalcKeyID /= KeyID ->
                     {error, key_mismatch};
+                {ok, Key, CalcKeyID} ->
+                    {ok, Scheme, Key, CalcKeyID};
                 {error, Reason} ->
                     {error, Reason}
             end;
+        {error, undefined_scheme} ->
+            {ok, DefaultScheme} = req_to_default_scheme(Req, Opts),
+            req_to_key_material(Req#{ <<"scheme">> => DefaultScheme }, Opts);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -55,8 +59,11 @@ find_scheme(KeyID, Req = #{ <<"scheme">> := RawScheme }, Opts) ->
     % Validate that the scheme in the request matches the scheme in the keyid.
     case find_scheme(KeyID, maps:without([<<"scheme">>], Req), Opts) of
         {ok, Scheme} -> {ok, Scheme};
+        {error, undefined_scheme} -> {ok, Scheme};
         _OtherScheme -> {error, scheme_mismatch}
     end;
+find_scheme(undefined, _Req, _Opts) ->
+    {error, undefined_scheme};
 find_scheme(KeyID, Req, Opts) ->
     SchemeRes =
         case binary:split(KeyID, <<":">>) of
@@ -69,9 +76,7 @@ find_scheme(KeyID, Req, Opts) ->
         {ok, Scheme} ->
             case lists:member(SchemeAtom = hb_util:atom(Scheme), ?KEYID_SCHEMES) of
                 true -> {ok, SchemeAtom};
-                false ->
-                    ?event({find_scheme_error, {keyid, KeyID}, {scheme, Scheme}, {req, Req}}),
-                    {error, unknown_scheme}
+                false -> {error, unknown_scheme}
             end;
         {error, Reason} ->
             {error, Reason}
@@ -89,29 +94,44 @@ req_to_default_scheme(Req, _Opts) ->
             {error, no_request_type}
     end.
 
-%% @doc Apply the requested scheme to generate the key material.
+%% @doc Apply the requested scheme to generate the key material (key and keyid).
 apply_scheme(publickey, KeyID, _Req) ->
     % Remove the `publickey:' prefix from the keyid and return the key.
-    {ok, base64:decode(remove_scheme_prefix(KeyID)), KeyID};
-apply_scheme(constant, KeyID, _Req) ->
+    PubKey = base64:decode(remove_scheme_prefix(KeyID)),
+    {ok, PubKey, << "publickey:", (base64:encode(PubKey))/binary >>};
+apply_scheme(constant, RawKeyID, _Req) ->
     % In the `constant' scheme, the key is simply the key itself, including the
     % `constant:' prefix if given.
+    KeyID =
+        if RawKeyID == undefined -> ?HMAC_DEFAULT_KEY;
+        true -> RawKeyID
+        end,
     {ok, KeyID, KeyID};
 apply_scheme(secret, _KeyID, Req) ->
     % In the `secret' scheme, the key is hashed to generate a keyid.
     Key = maps:get(<<"key">>, Req, undefined),
-    {ok, Key, hb_util:human_id(hb_crypto:sha256(Key))};
+    Committer = secret_key_to_committer(Key),
+    {ok, Key, << "secret:", Committer/binary >>};
 apply_scheme(_Scheme, _Key, _KeyID) ->
     {error, unsupported_scheme}.
 
 %% @doc Given a keyid and a scheme, generate the committer value for a commitment.
 %% Returns `BinaryAddress' or `undefined' if the keyid implies no committer.
+keyid_to_committer(KeyID) ->
+    case find_scheme(KeyID, #{}, #{}) of
+        {ok, Scheme} -> keyid_to_committer(Scheme, KeyID);
+        {error, _} -> undefined
+    end.
 keyid_to_committer(publickey, KeyID) ->
     hb_util:human_id(ar_wallet:to_address(base64:decode(remove_scheme_prefix(KeyID))));
 keyid_to_committer(secret, KeyID) ->
     remove_scheme_prefix(KeyID);
 keyid_to_committer(constant, _KeyID) ->
     undefined.
+
+%% @doc Given a secret key, generate the committer value for a commitment.
+secret_key_to_committer(Key) ->
+    hb_util:human_id(hb_crypto:sha256(Key)).
 
 %% @doc Remove the `scheme:' prefix from a keyid.
 remove_scheme_prefix(KeyID) ->

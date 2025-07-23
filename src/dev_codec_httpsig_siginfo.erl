@@ -259,16 +259,14 @@ sf_siginfo_to_commitment(Msg, BodyKeys, SFSig, SFSigInput, Opts) ->
             <<"signature">> => hb_util:encode(Sig),
             <<"committed">> => CommittedKeys
         },
+    KeyID = maps:get(<<"keyid">>, Commitment3, <<>>),
     Commitment5 =
-        case maps:get(<<"keyid">>, Commitment3) of
-            DecKeyID when byte_size(DecKeyID) =< 43 ->
+        case dev_codec_httpsig_keyid:keyid_to_committer(KeyID) of
+            undefined ->
                 Commitment3;
-            DecPubKey ->
+            Committer ->
                 Commitment3#{
-                    <<"committer">> =>
-                        hb_util:human_id(
-                            crypto:hash(sha256, hb_util:decode(DecPubKey))
-                        )
+                    <<"committer">> => Committer
                 }
         end,
     ID =
