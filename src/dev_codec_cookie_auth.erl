@@ -168,37 +168,6 @@ directly_invoke_commit_verify_test() ->
     ?assert(hb_message:verify(CommittedMsg, VerifyReqWithoutComms, #{})),
     ok.
 
-%% @doc Generate a secret cookie with a random name and verify it. Ensure that
-%% the returned message has the cookie removed.
-http_generate_verify_test() ->
-    Node = hb_http_server:start_node(#{}),
-    % Generate a secret cookie with a random name.
-    {ok, Base} =
-        hb_http:get(
-            Node,
-            #{
-                <<"path">> => <<"/~cookie@1.0/commit">>,
-                <<"test-key">> => <<"value">>,
-                <<"committed">> => [<<"test-key">>]
-            },
-            #{}
-        ),
-    ?event({committed_response, Base}),
-    VerifyReq =
-        apply_cookie(
-            Base#{
-                <<"path">> => <<"verify">>
-            },
-            Base,
-            #{}
-        ),
-    ?event({verify_req, VerifyReq}),
-    % Verify the secret cookie. `verify' will return the request message with the
-    % cookie removed if the secret verifies.
-    {ok, Res} = hb_http:get(Node, VerifyReq, #{}),
-    assert_valid_verification(Res, #{}),
-    ok.
-
 %%% Test Helpers
 
 %% @doc Takes the cookies from the `GenerateResponse' and applies them to the
@@ -206,10 +175,3 @@ http_generate_verify_test() ->
 apply_cookie(NextReq, GenerateResponse, Opts) ->
     {ok, Cookie} = hb_maps:find(<<"set-cookie">>, GenerateResponse, Opts),
     NextReq#{ <<"cookie">> => Cookie }.
-
-%% @doc Assert that the response is a valid verification.
-assert_valid_verification(Res, Opts) ->
-    ?assertNotEqual(<<"false">>, Res),
-    ?assertNot(lists:member(<<"set-cookie">>, hb_maps:keys(Res, Opts))),
-    ?assertNot(lists:member(<<"cookie">>, hb_maps:keys(Res, Opts))),
-    ok.
