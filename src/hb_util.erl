@@ -10,6 +10,7 @@
 -export([number/1, list_to_numbered_message/1]).
 -export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
+-export([numbered_keys_to_list/2]).
 -export([is_string_list/1, list_replace/3]).
 -export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
@@ -454,6 +455,23 @@ message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
     end;
 message_to_ordered_list(Message, [Key|_Keys], ExpectedKey, _Opts) ->
     throw({missing_key, {expected, ExpectedKey, {next, Key}, {message, Message}}}).
+
+%% @doc Convert a message with numbered keys and others to a sorted list with only
+%% the numbered values.
+numbered_keys_to_list(Message, Opts) ->
+    OnlyNumbered =
+        hb_maps:filter(
+            fun(Key, _Value) ->
+                try int(hb_ao:normalize_key(Key)) of
+                    IntKey when is_integer(IntKey) -> true;
+                    _ -> false
+                catch _:_ -> false
+                end
+            end,
+            Message,
+            Opts
+        ),
+    message_to_ordered_list(OnlyNumbered, Opts).
 
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
