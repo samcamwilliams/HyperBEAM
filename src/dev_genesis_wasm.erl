@@ -62,7 +62,19 @@ ensure_started(Opts) ->
     {ok, Cwd} = file:get_cwd(),
     ?event({ensure_started, cwd, Cwd}),
     % Determine path based on whether we're in a release or development
-    GenesisWasmServerDir = filename:join([Cwd, "genesis-wasm-server"]),
+    GenesisWasmServerDir =
+        case init:get_argument(mode) of
+            {ok, [["embedded"]]} ->
+                % We're in release mode - genesis-wasm-server is in the release root
+                filename:join([Cwd, "genesis-wasm-server"]);
+            _ ->
+                % We're in development mode - look in the build directory
+                DevPath = filename:join([Cwd, "_build", "genesis_wasm", "genesis-wasm-server"]),
+                case filelib:is_dir(DevPath) of
+                    true -> DevPath;
+                    false -> filename:join([Cwd, "genesis-wasm-server"]) % Fallback
+                end
+        end,
     ?event({ensure_started, genesis_wasm_server_dir, GenesisWasmServerDir}),
     ?event({ensure_started, genesis_wasm, self()}),
     IsRunning = is_genesis_wasm_server_running(Opts),
