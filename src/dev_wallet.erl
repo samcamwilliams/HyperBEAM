@@ -1071,3 +1071,26 @@ sync_non_volatile_wallets_test() ->
     ?event({sync_wallets_test, {wallet_list, WalletList}}),
     % Should return a map of successfully imported wallets or list of names.
     ?assert(lists:member(WalletName, hb_maps:values(WalletList))).
+
+preprocessor_cookie_signing_test() ->
+    % Start a node with a preprocessor hook that signs the request.
+    Node =
+        hb_http_server:start_node(
+            #{
+                on => #{
+                    <<"request">> => #{
+                        <<"device">> => <<"cookie@1.0">>,
+                        <<"path">> => <<"on-request">>
+                    }
+                }
+            }),
+    % Run a request and check that the response is signed.
+    {ok, Response} =
+        hb_http:get(
+            Node,
+            <<"/committed">>,
+            #{}
+        ),
+    ?event({preprocessor_cookie_signing_test, {response, Response}}),
+    Signers = hb_util:numbered_keys_to_list(Response, #{}),
+    ?assertEqual(length(Signers), 1).
