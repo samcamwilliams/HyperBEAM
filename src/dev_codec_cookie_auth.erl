@@ -73,7 +73,7 @@ commit(Base, Request, RawOpts) ->
                 }
         end,
     % Set the cookie on the message with the new commitment and return.
-    dev_codec_cookie:set_cookie(ModCommittedMsg, CookieParams, Opts).
+    dev_codec_cookie:store(ModCommittedMsg, CookieParams, Opts).
 
 %% @doc Verify the hmac commitment with the key being the secret from the 
 %% request cookies. We find the appropriate cookie from the cookie message by
@@ -101,7 +101,7 @@ find_secret(Request, Opts) ->
     end.
 find_secret(Committer, Request, Opts) ->
     maybe
-        {ok, Cookie} ?= dev_codec_cookie:from(Request, #{}, Opts),
+        {ok, Cookie} ?= dev_codec_cookie:extract(Request, #{}, Opts),
         {ok, _Secret} ?= hb_maps:find(<<"secret-", Committer/binary>>, Cookie, Opts)
     else error -> {error, not_found}
     end.
@@ -109,7 +109,7 @@ find_secret(Committer, Request, Opts) ->
 %% @doc Find the references for the given committer, if they exist in the cookie.
 find_nonces(Request, Opts) ->
     maybe
-        {ok, Cookie} ?= dev_codec_cookie:from(Request, #{}, Opts),
+        {ok, Cookie} ?= dev_codec_cookie:extract(Request, #{}, Opts),
         {ok, Committer} ?= hb_maps:find(<<"committer">>, Request, Opts),
         {ok, RefsBin} ?= hb_maps:find(<<"nonces-", Committer/binary>>, Cookie, Opts),
         deserialize_nonces(RefsBin, Opts)
@@ -132,12 +132,12 @@ set_cookie_test() ->
     {ok, SetRes} =
         hb_http:get(
             Node,
-            <<"/~cookie@1.0/set-cookie?k1=v1&k2=v2">>,
+            <<"/~cookie@1.0/store?k1=v1&k2=v2">>,
             #{}
         ),
     ?event(debug_cookie, {set_cookie_test, {set_res, SetRes}}),
     ?assertMatch(#{ <<"set-cookie">> := _ }, SetRes),
-    Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/from">> }, SetRes, #{}),
+    Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/extract">> }, SetRes, #{}),
     {ok, Res} = hb_http:get(Node, Req, #{}),
     ?assertMatch(#{ <<"k1">> := <<"v1">>, <<"k2">> := <<"v2">> }, Res),
     ok.
@@ -173,5 +173,12 @@ directly_invoke_commit_verify_test() ->
 %% @doc Takes the cookies from the `GenerateResponse' and applies them to the
 %% `Target' message.
 apply_cookie(NextReq, GenerateResponse, Opts) ->
-    {ok, Cookie} = hb_maps:find(<<"set-cookie">>, GenerateResponse, Opts),
-    NextReq#{ <<"cookie">> => Cookie }.
+    {ok, Cookie} = dev_codec_cookie:extract(GenerateResponse, #{}, Opts),
+    {ok, NextWithParsedCookie} = dev_codec_cookie:store(NextReq, Cookie, Opts),
+    {ok, NextWithCookie} =
+        dev_codec_cookie:to(
+            NextWithParsedCookie,
+            #{ <<"format">> => <<"cookie">> },
+            Opts
+        ),
+    NextWithCookie.
