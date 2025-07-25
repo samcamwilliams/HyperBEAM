@@ -16,7 +16,7 @@
 
 -module(hb_private).
 -export([from_message/1, reset/1, is_private/1]).
--export([get/3, get/4, set/4, set/3, set_priv/2]).
+-export([get/3, get/4, set/4, set/3, set_priv/2, merge/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -61,6 +61,21 @@ set(Msg, PrivMap, Opts) ->
     NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, priv_ao_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
+
+%% @doc Merge the private elements of two messages into one. The keys in the
+%% second message will override the keys in the first message. The base keys
+%% from the first message will be preserved, but the keys in the second message
+%% will be lost.
+merge(Msg1, Msg2, Opts) ->
+    % Merge the private elements of the two messages.
+    Merged =
+        hb_util:deep_merge(
+            from_message(Msg1),
+            from_message(Msg2),
+            priv_ao_opts(Opts)
+        ),
+    % Set the merged private element on the first message.
+    set_priv(Msg1, Merged).
 
 %% @doc Helper function for setting the complete private element of a message.
 set_priv(Msg, PrivMap)
