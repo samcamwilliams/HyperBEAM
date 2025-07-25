@@ -587,13 +587,18 @@ request(PID, Args, Opts) ->
 	Method = hb_maps:get(method, Args, undefined, Opts),
 	Path = hb_maps:get(path, Args, undefined, Opts),
     HeaderMap = hb_maps:get(headers, Args, #{}, Opts),
-    % Normalize cookie header lines from the header map.
+    % Normalize cookie header lines from the header map. We support both
+    % lists of cookie lines and a single cookie line.
 	HeadersWithoutCookie =
         hb_maps:to_list(
             hb_maps:without([<<"cookie">>], HeaderMap, Opts),
             Opts
         ),
-    CookieLines = hb_maps:get(<<"cookie">>, HeaderMap, [], Opts),
+    CookieLines =
+        case hb_maps:get(<<"cookie">>, HeaderMap, [], Opts) of
+            BinCookieLine when is_binary(BinCookieLine) -> [BinCookieLine];
+            CookieLinesList -> CookieLinesList
+        end,
     CookieHeaders = [ {<<"cookie">>, CookieLine} || CookieLine <- CookieLines ],
     Headers = HeadersWithoutCookie ++ CookieHeaders,
 	Body = hb_maps:get(body, Args, <<>>, Opts),

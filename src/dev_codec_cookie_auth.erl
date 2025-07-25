@@ -126,22 +126,6 @@ serialize_nonces(References, _Opts) ->
 
 %%% Tests
 
-%% @doc Set keys in a cookie and verify that they can be parsed into a message.
-set_cookie_test() ->
-    Node = hb_http_server:start_node(#{}),
-    {ok, SetRes} =
-        hb_http:get(
-            Node,
-            <<"/~cookie@1.0/store?k1=v1&k2=v2">>,
-            #{}
-        ),
-    ?event(debug_cookie, {set_cookie_test, {set_res, SetRes}}),
-    ?assertMatch(#{ <<"set-cookie">> := _ }, SetRes),
-    Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/extract">> }, SetRes, #{}),
-    {ok, Res} = hb_http:get(Node, Req, #{}),
-    ?assertMatch(#{ <<"k1">> := <<"v1">>, <<"k2">> := <<"v2">> }, Res),
-    ok.
-
 %% @doc Call the cookie codec's `commit' and `verify' functions directly.
 directly_invoke_commit_verify_test() ->
     Base = #{ <<"test-key">> => <<"test-value">> },
@@ -166,6 +150,22 @@ directly_invoke_commit_verify_test() ->
     VerifyReqWithoutComms = hb_maps:without([<<"commitments">>], VerifyReq, #{}),
     ?event({verify_req_without_comms, VerifyReqWithoutComms}),
     ?assert(hb_message:verify(CommittedMsg, VerifyReqWithoutComms, #{})),
+    ok.
+
+%% @doc Set keys in a cookie and verify that they can be parsed into a message.
+http_set_get_cookies_test() ->
+    Node = hb_http_server:start_node(#{}),
+    {ok, SetRes} =
+        hb_http:get(
+            Node,
+            <<"/~cookie@1.0/store?k1=v1&k2=v2">>,
+            #{}
+        ),
+    ?event(debug_cookie, {set_cookie_test, {set_res, SetRes}}),
+    ?assertMatch(#{ <<"set-cookie">> := _ }, SetRes),
+    Req = apply_cookie(#{ <<"path">> => <<"/~cookie@1.0/extract">> }, SetRes, #{}),
+    {ok, Res} = hb_http:get(Node, Req, #{}),
+    ?assertMatch(#{ <<"k1">> := <<"v1">>, <<"k2">> := <<"v2">> }, Res),
     ok.
 
 %%% Test Helpers

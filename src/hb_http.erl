@@ -96,7 +96,9 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             Opts
         ),
     StartTime = os:system_time(millisecond),
+    % Perform the HTTP request.
     {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
+    % Process the response.
     EndTime = os:system_time(millisecond),
     ?event(http_outbound,
         {
@@ -132,8 +134,14 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     },
                     Opts
                 ),
-                {ok, CookieMsg} = dev_codec_cookie:from(SetCookieLines, #{}, Opts),
-                #{ <<"set-cookie">> => CookieMsg }
+                {ok, MsgWithCookies} =
+                    dev_codec_cookie:from(
+                        #{ <<"set-cookie">> => SetCookieLines },
+                        #{},
+                        Opts
+                    ),
+                ?event(debug_cookie, {msg_with_cookies, MsgWithCookies}),
+                MsgWithCookies
         end,
     % Merge the set-cookie message into the header map, which itself is
     % constructed from the header key-value pair list.
@@ -288,19 +296,21 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     % Generate a `cookie' key for the message, if an unencoded cookie is
     % present.
     {MaybeCookie, WithoutCookie} =
-        case hb_ao:get(<<"cookie">>, Message, Opts) of
-            not_found -> {#{}, Message};
-            Cookie ->
-                {ok, CookieLines} =
+        case dev_codec_cookie:extract(Message, #{}, Opts) of
+            {ok, NoCookies} when map_size(NoCookies) == 0 ->
+                {#{}, Message};
+            {ok, _Cookies} ->
+                {ok, #{ <<"cookie">> := CookieLines }} =
                     dev_codec_cookie:to(
-                        Cookie,
-                        #{},
+                        Message,
+                        #{ <<"format">> => <<"cookie">> },
                         Opts
                     ),
+                {ok, CookieReset} = dev_codec_cookie:reset(Message, Opts),
                 ?event(http, {cookie_lines, CookieLines}),
                 {
                     #{ <<"cookie">> => CookieLines },
-                    hb_maps:without([<<"cookie">>, <<"set-cookie">>], Message, Opts)
+                    CookieReset
                 }
         end,
     % Add the `accept-bundle: true' key to the message, if the caller has not
@@ -617,26 +627,21 @@ reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
 %% new Cowboy `Req` object, and the message with the cookies removed. Both
 %% `set-cookie' and `cookie' fields are treated as viable sources of cookies.
 reply_handle_cookies(Req, Message, Opts) ->
-    Cookies =
-        case hb_maps:get(<<"set-cookie">>, Message, undefined, Opts) of
-            undefined -> hb_maps:get(<<"cookie">>, Message, no_cookies, Opts);
-            SetCookie -> SetCookie
-        end,
+    {ok, Cookies} = dev_codec_cookie:extract(Message, #{}, Opts),
     ?event(debug_cookie, {encoding_reply_cookies, {explicit, Cookies}}),
     case Cookies of
-        no_cookies -> {ok, Req, Message};
+        NoCookies when map_size(NoCookies) == 0 -> {ok, Req, Message};
         _ ->
             % The internal values of the `cookie' field will be stored in the
             % `priv_store' by default, so we let `dev_codec_cookie:opts/1'
             % reset the options.
-            CookieOpts = dev_codec_cookie:opts(Opts),
-            LoadedCookies = hb_cache:ensure_all_loaded(Cookies, CookieOpts),
-            {ok, ParsedCookies} =
+            {ok, #{ <<"set-cookie">> := SetCookieLines }} =
                 dev_codec_cookie:to(
-                    LoadedCookies,
-                    #{},
-                    CookieOpts
+                    Message,
+                    #{ <<"format">> => <<"set-cookie">> },
+                    Opts
                 ),
+            ?event(debug_cookie, {outbound_set_cookie_lines, SetCookieLines}),
             % Add the cookies to the response headers.
             FinalReq =
                 lists:foldl(
@@ -655,12 +660,13 @@ reply_handle_cookies(Req, Message, Opts) ->
                         }
                     end,
                     Req,
-                    ParsedCookies
+                    SetCookieLines
                 ),
+            {ok, CookieReset} = dev_codec_cookie:reset(Message, Opts),
             {
                 ok,
                 FinalReq,
-                hb_maps:without([<<"set-cookie">>, <<"cookie">>], Message, Opts)
+                CookieReset
             }
     end.
 
