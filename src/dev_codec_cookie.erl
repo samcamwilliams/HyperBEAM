@@ -38,79 +38,21 @@
 -export([to/3, from/3]).
 %%% Public commit/verify API.
 -export([commit/3, verify/3]).
-%%% Preprocessor hook key.
--export([on_request/3]).
 %%% Public utility functions.
 -export([opts/1, reset/2, without/2]).
+%%% Preprocessor hook API.
+-export([request/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
-
-%%% Keys that the preprocessor hook should not sign by default.
--define(PREPROCESSOR_IGNORE_KEYS, [<<"cookie">>, <<"set-cookie">>]).
 
 %%% ~message@1.0 Commitments API keys.
 commit(Base, Req, RawOpts) -> dev_codec_cookie_auth:commit(Base, Req, RawOpts).
 verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 
-%% @doc A preprocessor hook key that takes a message and attempts to sign it,
-%% if a `cookie' field is present and there are no existing signatures.
-on_request(Base, Req, Opts) ->
-    maybe
-        {ok, Request} ?= hb_maps:find(<<"request">>, Req, Opts),
-        % We are only interested in messages that have no existing signatures.
-        [] ?= hb_message:signers(Request, Opts),
-        % If there is no existing cookie, we resolve the `generate' path to
-        % generate a new wallet and set the cookie.
-        {ok, WithCookie} ?=
-            case hb_maps:is_key(<<"cookie">>, Base, Opts) of
-                true -> Base;
-                false -> dev_wallet:generate(Base, Request, Opts)
-            end,
-        % We attempt to sign the message, now that we know we have a cookie.
-        IgnoredKeys =
-            hb_opts:get(
-                cookie_preprocessor_ignore,
-                ?PREPROCESSOR_IGNORE_KEYS,
-                Opts
-            ),
-        WithoutIgnored = hb_maps:without(IgnoredKeys, Request, Opts),
-        ?event(
-            {preprocessor_commit,
-                {with_cookie, WithCookie},
-                {to_sign, WithoutIgnored}
-            }
-        ),
-        {ok, Signed} ?=
-            dev_wallet:commit(
-                WithCookie,
-                WithoutIgnored,
-                Opts
-            ),
-        % Add any ignored keys back to the signed message.
-        SignedWithIgnored =
-            hb_maps:merge(
-                Signed,
-                hb_maps:with(IgnoredKeys, Request, Opts),
-                Opts
-            ),
-        ?event(
-            {committed,
-                {committor, hb_message:signers(SignedWithIgnored, Opts)},
-                {signed, SignedWithIgnored}
-            }
-        ),
-        % Return the signed message, parsed by `hb_singleton` into a list of
-        % messages to execute.
-        Parsed = hb_singleton:from(SignedWithIgnored, Opts),
-        {ok, #{ <<"request">> => Parsed }}
-    else
-        Signers when is_list(Signers) ->
-            ?event({preprocessor_skipping, {signers, Signers}, {base, Base}}),
-            {ok, Base};
-        {error, Err} ->
-            ?event({preprocessor_error, {error, Err}, {base, Base}}),
-            {ok, Base}
-    end.
+%% @doc Preprocessor that utilizes cookies and the `~wallet@1.0' device to sign
+%% inbound HTTP requests from users if they are not already signed.
+request(Base, Req, Opts) ->
+    dev_codec_cookie_hook:request(Base, Req, Opts).
 
 %% @doc Get the options to use for functions in the cookie device. We use the
 %% `priv_store' option if set, such that evaluations are not inadvertently
