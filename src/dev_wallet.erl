@@ -189,7 +189,7 @@ import(Base, Request, Opts) ->
             error ->
                 case hb_maps:find(<<"key">>, Request, Opts) of
                     {ok, Key} ->
-                        [ wallet_from_key(Key) ];
+                        [ wallet_from_key(hb_escape:decode_quotes(Key)) ];
                     error ->
                         % Find the keys from the cookie.
                         request_to_wallets(Base, Request, Opts)
@@ -210,23 +210,17 @@ import_wallets(Wallets, Base, Request, Opts) ->
             fun(Wallet, Acc) ->
                 case register_wallet(Wallet, Base, Request, Opts) of
                     {ok, RegRes} ->
-                        % Merge the cookie from the registration response into
-                        % the accumulator.
+                        % Merge the private element of the registration response
+                        % into the accumulator.
                         NewAddr = hb_maps:get(<<"body">>, RegRes, <<"">>, Opts),
                         OldImported = hb_maps:get(<<"imported">>, Acc, [], Opts),
-                        NewCookie = hb_maps:get(<<"set-cookie">>, RegRes, #{}, Opts),
-                        {ok, ParsedNewCookie} = dev_codec_cookie:from(NewCookie, #{}, Opts),
-                        Acc#{
-                            <<"set-cookie">> =>
-                                hb_maps:merge(
-                                    hb_maps:get(
-                                        <<"set-cookie">>,
-                                        Acc,
-                                        #{},
-                                        Opts
-                                    ),
-                                    ParsedNewCookie
-                                ),
+                        Merged =
+                            hb_private:merge(
+                                Acc,
+                                RegRes,
+                                Opts
+                            ),
+                        Merged#{
                             <<"imported">> => [ NewAddr | OldImported ]
                         };
                     {error, _} -> Acc
@@ -285,6 +279,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
     ?event({register_wallet, {auth_msg, AuthMsg}, {request, AuthRequest}}),
     case hb_ao:resolve(AuthMsg, AuthRequest, Opts) of
         {ok, InitializedAuthMsg} ->
+            ?event({register_wallet_success, {initialized_auth_msg, InitializedAuthMsg}}),
             % Find the new signer address.
             PriorSigners = hb_message:signers(AuthMsg, Opts),
             NewSigners = hb_message:signers(InitializedAuthMsg, Opts),
@@ -301,6 +296,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                 },
             persist_registered_wallet(WalletDetails, InitializedAuthMsg, Opts);
         {error, Reason} ->
+            ?event({register_wallet_error, {reason, Reason}}),
             {error, Reason}
     end.
 
@@ -322,8 +318,8 @@ persist_registered_wallet(WalletDetails, RespBase, Opts) ->
             hb_ao:resolve(
                 Base#{ <<"device">> => <<"cookie@1.0">> },
                 #{
-                    <<"path">> => <<"set-cookie">>,
-                    <<"key-", Address/binary>> => JSONKey
+                    <<"path">> => <<"store">>,
+                    <<"key-", Address/binary>> => hb_escape:encode_quotes(JSONKey)
                 },
                 Opts
             );
@@ -470,7 +466,7 @@ verify_wallet(Base, WalletDetails, Opts) ->
 wallets_from_cookie(Msg, Opts) ->
     % Parse the cookie as a Structured-Fields map.
     ParsedCookie =
-        try dev_codec_cookie:from(Msg, #{}, Opts) of
+        try dev_codec_cookie:extract(Msg, #{ <<"format">> => <<"cookie">> }, Opts) of
             {ok, CookieMsg} -> CookieMsg
         catch _:_ -> {error, <<"Invalid cookie format.">>}
         end,
@@ -478,7 +474,9 @@ wallets_from_cookie(Msg, Opts) ->
     % We determine their type from the `type-' prefix of the key.
     lists:flatten(lists:filtermap(
         fun({<<"key-", _Address/binary >>, Key}) ->
-            {true, {wallet_key, ar_wallet:from_json(Key)}};
+            DecodedKey = hb_escape:decode_quotes(Key),
+            ?event({wallet_from_cookie, {key, DecodedKey}}),
+            {true, {wallet_key, ar_wallet:from_json(DecodedKey)}};
            ({<<"nonces-", _/binary>>, NoncesBin}) ->
             Nonces = binary_to_addresses(NoncesBin),
             {true, [{wallet_addr, Nonce} || Nonce <- Nonces]};
@@ -614,7 +612,7 @@ find_wallet(Address, Opts) ->
         Wallet -> Wallet
     end.
 
-% Loop over the wallets and find the wallet message whose committer is the cookie address.
+%% @doc Loop over the wallets and find the reference to the wallet.
 find_wallet(in_memory, Addr, Opts) ->
     Wallets = hb_opts:get(priv_wallet_hosted, #{}, Opts),
     ?event({find_wallet, {address, Addr}, {wallets, Wallets}}),
@@ -622,7 +620,6 @@ find_wallet(in_memory, Addr, Opts) ->
         {ok, Wallet} -> Wallet;
         error -> not_found
     end;
-
 find_wallet(non_volatile, Name, Opts) ->
     PrivOpts = priv_store_opts(Opts),
     Store = hb_opts:get(priv_store, undefined, PrivOpts),
@@ -693,16 +690,16 @@ test_wallet_generate_and_verify(GeneratePath, ExpectedName, CommitParams) ->
             % For named wallets, check exact match
             ?assertEqual(ExpectedName, WalletAddr)            
     end,
-    ?assert(maps:is_key(<<"set-cookie">>, GenResponse)),
-    AuthCookie = maps:get(<<"set-cookie">>, GenResponse, <<>>),
+    ?assertMatch(#{ <<"priv">> := #{ <<"cookie">> := _ } }, GenResponse),
+    #{ <<"priv">> := Priv } = GenResponse,
     % Now verify by signing a message
     TestMessage =
         maps:merge(
             #{
                 <<"device">> => <<"wallet@1.0">>,
                 <<"path">> => <<"commit">>,
-                <<"cookie">> => AuthCookie,
-                <<"body">> => <<"Test message">>
+                <<"body">> => <<"Test message">>,
+                <<"priv">> => Priv
             },
             CommitParams
         ),
@@ -740,7 +737,7 @@ import_wallet_with_key_test() ->
     % Create a test wallet key to import (in real scenario from user).
     TestWallet = ar_wallet:new(),
     WalletAddress = hb_util:human_id(TestWallet),
-    WalletKey = ar_wallet:to_json(TestWallet),
+    WalletKey = hb_escape:encode_quotes(ar_wallet:to_json(TestWallet)),
     % Import the wallet with a specific name.
     ImportUrl =
         <<"/~wallet@1.0/import?wallet=imported-wallet&persist=in-memory&key=",
@@ -791,18 +788,13 @@ commit_with_cookie_wallet_test() ->
     {ok, GenResponse} =
         hb_http:get(Node, <<"/~wallet@1.0/generate?persist=client">>, #{}),
     WalletName = maps:get(<<"body">>, GenResponse),
-    AuthCookie =
-        maps:get(
-            <<"set-cookie">>,
-            GenResponse,
-            maps:get(<<"cookie">>, GenResponse, <<>>)
-        ),
+    #{ <<"priv">> := Priv } = GenResponse,
     % Use the cookie to sign a message (no wallet parameter needed).
     TestMessage = #{
         <<"device">> => <<"wallet@1.0">>,
         <<"path">> => <<"commit">>,
-        <<"cookie">> => AuthCookie,
-        <<"body">> => <<"Test data">>
+        <<"body">> => <<"Test data">>,
+        <<"priv">> => Priv
     },
     {ok, SignedMessage} = hb_http:post(Node, TestMessage, #{}),
     % Should return the signed message with signature attached.
@@ -817,16 +809,15 @@ export_wallet_test() ->
             <<"/~wallet@1.0/generate?persist=in-memory">>,
             #{}
         ),
-    AuthCookie = maps:get(<<"set-cookie">>, GenResponse),
+    #{ <<"priv">> := Priv } = GenResponse,
     WalletAddress = maps:get(<<"body">>, GenResponse),
-    ?event({export_test, {auth_cookie, AuthCookie}}),
     % Export the wallet with authentication.
     {ok, ExportResponse} =
         hb_http:get(
             Node,
             #{
                 <<"path">> => <<"/~wallet@1.0/export/1">>,
-                <<"cookie">> => AuthCookie
+                <<"priv">> => Priv
             },
             #{}
         ),
@@ -851,8 +842,7 @@ export_non_volatile_wallet_test() ->
                 <<"/~wallet@1.0/generate?persist=non-volatile">>,
                 #{}
             ),
-        AuthCookie = maps:get(<<"set-cookie">>, GenResponse),
-        ?event({export_test, {auth_cookie, AuthCookie}}),
+        #{ <<"priv">> := Priv } = GenResponse,
         % Export the wallet with authentication.
         {ok, ExportResponse} =
             hb_http:get(
@@ -860,7 +850,7 @@ export_non_volatile_wallet_test() ->
                 #{
                     <<"device">> => <<"wallet@1.0">>,
                     <<"path">> => <<"export/1">>,
-                    <<"cookie">> => AuthCookie
+                    <<"priv">> => Priv
                 },
                 #{}
             ),
