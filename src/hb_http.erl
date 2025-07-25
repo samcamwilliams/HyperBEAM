@@ -127,7 +127,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             _ ->
                 ?event(
                     debug_cookie,
-                    {normalizing_setcookie_headers, SetCookieLines}
+                    {normalizing_setcookie_headers,
+                        {set_cookie_lines, [ {string, Line} || Line <- SetCookieLines ]}
+                    },
+                    Opts
                 ),
                 {ok, CookieMsg} = dev_codec_cookie:from(SetCookieLines, #{}, Opts),
                 #{ <<"set-cookie">> => CookieMsg }
@@ -295,7 +298,10 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                         Opts
                     ),
                 ?event(http, {cookie_lines, CookieLines}),
-                {#{ <<"cookie">> => CookieLines }, Message}
+                {
+                    #{ <<"cookie">> => CookieLines },
+                    hb_maps:without([<<"cookie">>, <<"set-cookie">>], Message, Opts)
+                }
         end,
     % Add the `accept-bundle: true' key to the message, if the caller has not
     % set an explicit preference.
@@ -613,12 +619,12 @@ reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
 reply_handle_cookies(Req, Message, Opts) ->
     Cookies =
         case hb_maps:get(<<"set-cookie">>, Message, undefined, Opts) of
-            undefined -> hb_maps:get(<<"cookie">>, Message, undefined, Opts);
+            undefined -> hb_maps:get(<<"cookie">>, Message, no_cookies, Opts);
             SetCookie -> SetCookie
         end,
     ?event(debug_cookie, {encoding_reply_cookies, {explicit, Cookies}}),
     case Cookies of
-        undefined -> {ok, Req, Message};
+        no_cookies -> {ok, Req, Message};
         _ ->
             % The internal values of the `cookie' field will be stored in the
             % `priv_store' by default, so we let `dev_codec_cookie:opts/1'
