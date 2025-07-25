@@ -12,24 +12,28 @@
 
 %% @doc A preprocessor hook key that takes a message and attempts to sign it,
 %% if a `cookie' field is present and there are no existing signatures.
-request(Base, Req, Opts) ->
-    ?event({cookie_on_request_preprocessor_called, {base, Base}, {req, Req}}),
+request(Base, HookReq, Opts) ->
+    ?event({cookie_on_request_called, {base, Base}, {hook_req, HookReq}}),
     % Retrieve the existing parsed messages from the request, which we return
     % unmodified if the preprocessor fails.
-    ExistingMessages = hb_maps:get(<<"body">>, Req, Opts),
+    ExistingMessages = hb_maps:get(<<"body">>, HookReq, Opts),
     maybe
-        {ok, Request} ?= hb_maps:find(<<"request">>, Req, Opts),
+        {ok, Request} ?= hb_maps:find(<<"request">>, HookReq, Opts),
         % We are only interested in messages that have no existing signatures.
         [] ?= hb_message:signers(Request, Opts),
         % If there is no existing cookie, we resolve the `generate' path to
         % generate a new wallet and set the cookie.
-        Cookie =
-            case hb_maps:get(<<"cookie">>, Request, not_found, Opts) of
-                not_found ->
-                    {ok, #{ <<"set-cookie">> := NewCookie }} =
+        ?event({cookie_on_request_extracting_cookies, Request}),
+        Cookies =
+            case dev_codec_cookie:extract(Request, #{}, Opts) of
+                {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
+                    ?event({cookie_on_request_generating_cookie, Request}),
+                    {ok, GenerateRes} =
                         dev_wallet:generate(Base, Request, Opts),
-                    NewCookie;
-                ExistingCookie -> ExistingCookie
+                    {ok, NewCookies} =
+                        dev_codec_cookie:extract(GenerateRes, Request, Opts),
+                    NewCookies;
+                {ok, ExistingCookies} -> ExistingCookies
             end,
         % Get the new node options, such that we have a fresh copy with the
         % new wallet installed, if it was generated.
@@ -40,8 +44,8 @@ request(Base, Req, Opts) ->
                 ?DEFAULT_IGNORE_KEYS,
                 NewOpts
             ),
-        WithoutIgnored = hb_maps:without(IgnoredKeys, Request, NewOpts),
-        WithCookie = WithoutIgnored#{ <<"cookie">> => Cookie },
+        WithoutIgnoredKeys = hb_maps:without(IgnoredKeys, Request, NewOpts),
+        {ok, WithCookie} = dev_codec_cookie:store(WithoutIgnoredKeys, Cookies, Opts),
         % We attempt to sign the message, now that we know we have a message 
         % with the cookie.
         ?event(
@@ -56,10 +60,11 @@ request(Base, Req, Opts) ->
                 WithCookie,
                 NewOpts
             ),
+        {ok, SignedWithCookie} = dev_codec_cookie:store(Signed, Cookies, Opts),
         % Add any ignored keys back to the signed message.
         SignedWithIgnored =
             hb_maps:merge(
-                Signed#{ <<"set-cookie">> => Cookie },
+                SignedWithCookie,
                 hb_maps:with(IgnoredKeys, Request, NewOpts),
                 NewOpts
             ),
@@ -72,9 +77,16 @@ request(Base, Req, Opts) ->
         % Parse by `hb_singleton` into a list of messages to execute. Insert
         % a message to set the cookie in the result as the final step.
         Parsed = hb_singleton:from(SignedWithIgnored, NewOpts),
+        {ok, OnlyCookieMsg} = dev_codec_cookie:store(#{}, Cookies, Opts),
+        {ok, #{ <<"set-cookie">> := SetCookie }} =
+            dev_codec_cookie:to(
+                OnlyCookieMsg,
+                #{ <<"format">> => <<"set-cookie">> },
+                Opts
+            ),
         WithSetCookie =
             Parsed ++
-            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => Cookie }],
+            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }],
         % Return the signed message, with the cookie added to the response.
         {ok, #{ <<"body">> => WithSetCookie }}
     else
@@ -121,10 +133,10 @@ preprocessor_cookie_signing_test() ->
     ?assertEqual(1, length(Signers)),
     % Generate a further request and check that the same address is used.
     [CookieAddress] = Signers,
-    Cookie = hb_maps:get(<<"set-cookie">>, Response, not_found, #{}),
+    #{ <<"priv">> := CookiePriv } = Response,
     ?event(
         {cookie_from_response,
-            {cookie, Cookie},
+            {cookie_priv, CookiePriv},
             {cookie_address, CookieAddress}
         }
     ),
@@ -134,7 +146,7 @@ preprocessor_cookie_signing_test() ->
             #{
                 <<"path">> => <<"/commitments">>,
                 <<"body">> => <<"Test data2">>,
-                <<"cookie">> => Cookie
+                <<"priv">> => CookiePriv
             },
             #{}
         ),
