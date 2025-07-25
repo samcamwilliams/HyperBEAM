@@ -245,7 +245,7 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % on the result.
     ?event(ao_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
     ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Msg2}}, Opts),
-    case subresolve(#{}, DevID, SubReq, Opts) of
+    case subresolve(SubReq, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
             ?event(subresolution,
