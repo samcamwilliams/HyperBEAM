@@ -250,6 +250,12 @@ default_message() ->
         % Options for the router device
         <<"router_opts">> => #{
             routes => []
+        },
+        on => #{
+            <<"request">> => #{
+                <<"device">> => <<"cookie@1.0">>,
+                <<"path">> => <<"request">>
+            }
         }
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
