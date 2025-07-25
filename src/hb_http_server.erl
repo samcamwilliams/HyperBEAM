@@ -494,7 +494,7 @@ set_default_opts(Opts) ->
             no_store ->
                 TestDir = <<"cache-TEST/run-fs-", (integer_to_binary(Port))/binary>>,
                 filelib:ensure_dir(binary_to_list(TestDir)),
-                [#{ <<"store-module">> => hb_store_fs, <<"name">> => TestDir }];
+                #{ <<"store-module">> => hb_store_fs, <<"name">> => TestDir };
             PassedStore -> PassedStore
         end,
     ?event({set_default_opts,

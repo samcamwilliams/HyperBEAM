@@ -21,7 +21,7 @@ test_store() ->
         >>,
     filelib:ensure_dir(binary_to_list(TestDir)),
     DefaultStore = maps:get(<<"store-module">>, hd(hb_opts:get(store))),
-    [#{ <<"store-module">> => DefaultStore, <<"name">> => TestDir }].
+    #{ <<"store-module">> => DefaultStore, <<"name">> => TestDir }.
 
 %% @doc Run each test in a suite with each set of options. Start and reset
 %% the store(s) for each test. Expects suites to be a list of tuples with

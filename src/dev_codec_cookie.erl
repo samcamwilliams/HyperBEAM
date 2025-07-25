@@ -61,13 +61,18 @@ request(Base, Req, Opts) ->
 %% also ensure that no cache entries are generated from downstream AO-Core
 %% resolutions.
 opts(Opts) ->
-    Store =
+    PrivStore =
         case hb_opts:get(priv_store, undefined, Opts) of
             undefined -> [];
             PrivateStores when is_list(PrivateStores) -> PrivateStores;
             PrivateStore -> [PrivateStore]
         end,
-    NormStore = Store ++ hb_opts:get(store, [], Opts),
+    BaseStore =
+        case hb_opts:get(store, [], Opts) of
+            SingleStore when is_map(SingleStore) -> [SingleStore];
+            Stores when is_list(Stores) -> Stores
+        end,
+    NormStore = PrivStore ++ BaseStore,
     Opts#{
         store => NormStore,
         cache_control => [<<"no-store">>, <<"no-cache">>]
