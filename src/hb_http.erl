@@ -997,8 +997,20 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                     maps:get(<<"accept-bundle">>, RawHeaders, false)
                 )
         },
-    case hb_maps:get(<<"ao-peer-port">>, WithoutPeer, undefined, Opts) of
-        undefined -> WithoutPeer;
+    % Parse and add the cookie from the request, if present. We reinstate the
+    % `cookie' field in the message, as it is not typically signed, yet should
+    % be honored by the node anyway.
+    {ok, WithCookie} =
+        dev_codec_cookie:from(
+            case maps:get(<<"cookie">>, RawHeaders, undefined) of
+                undefined -> WithoutPeer;
+                Cookie -> WithoutPeer#{ <<"cookie">> => Cookie }
+            end,
+            Req,
+            Opts
+        ),
+    case hb_maps:get(<<"ao-peer-port">>, WithCookie, undefined, Opts) of
+        undefined -> WithCookie;
         P2PPort ->
             % Calculate the peer address from the request. We honor the 
             % `x-real-ip' header if it is present.
@@ -1015,7 +1027,7 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                     IP -> IP
                 end,
             Peer = <<RealIP/binary, ":", (hb_util:bin(P2PPort))/binary>>,
-            (remove_unless_signed([<<"ao-peer-port">>], WithoutPeer, Opts))#{
+            (remove_unless_signed([<<"ao-peer-port">>], WithCookie, Opts))#{
                 <<"ao-peer">> => Peer
             }
     end.
