@@ -54,17 +54,22 @@ verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 request(Base, Req, Opts) ->
     dev_codec_cookie_hook:request(Base, Req, Opts).
 
-%% @doc Get the options to use for functions in the cookie device. We use the
+%% @doc Get the options to use for functions in the cookie device. We add the
 %% `priv_store' option if set, such that evaluations are not inadvertently
-%% persisted in public storage. Additionally, we ensure that no cache entries
-%% are generated from downstream AO-Core resolutions.
+%% persisted in public storage but this module can still access data from the
+%% normal stores. This mechanism requires that the priv_store is writable. We
+%% also ensure that no cache entries are generated from downstream AO-Core
+%% resolutions.
 opts(Opts) ->
+    Store =
+        case hb_opts:get(priv_store, undefined, Opts) of
+            undefined -> [];
+            PrivateStores when is_list(PrivateStores) -> PrivateStores;
+            PrivateStore -> [PrivateStore]
+        end,
+    NormStore = Store ++ hb_opts:get(store, [], Opts),
     Opts#{
-        store =>
-            case hb_opts:get(priv_store, undefined, Opts) of
-                undefined -> hb_opts:get(store, undefined, Opts);
-                PrivStore -> PrivStore
-            end,
+        store => NormStore,
         cache_control => [<<"no-store">>, <<"no-cache">>]
     }.
 
@@ -94,6 +99,12 @@ get_cookie(Base, Req, RawOpts) ->
                 <<"cookie">> -> {ok, value(Cookie)}
             end
     end.
+
+%% @doc Return the parsed and normalized cookies from a message.
+extract(Msg, Req, Opts) ->
+    {ok, MsgWithCookie} = from(Msg, Req, Opts),
+    Cookies = hb_private:get(<<"cookie">>, MsgWithCookie, #{}, Opts),
+    {ok, Cookies}.
 
 %% @doc Set the keys in the request message in the cookies of the caller. Removes
 %% a set of base keys from the request message before setting the remainder as
@@ -251,11 +262,6 @@ to_set_cookie_line(Key, RawCookie) ->
 %% unsets the `attributes' and `flags' keys first.
 to_cookie_line(Key, Cookie) ->
     to_set_cookie_line(Key, value(Cookie)).
-
-%% @doc Return the parsed and normalized cookies from a message.
-extract(Msg, Req, Opts) ->
-    {ok, MsgWithCookie} = from(Msg, Req, Opts),
-    {ok, hb_private:get(<<"cookie">>, MsgWithCookie, #{}, Opts)}.
 
 %% @doc Normalize a message containing a `cookie', `set-cookie', and potentially
 %% a `priv/cookie' key into a message with only the `priv/cookie' key.
