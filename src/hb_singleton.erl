@@ -277,8 +277,9 @@ build_messages(Msgs, ScopedModifications, Opts) ->
 do_build(_, [], _ScopedKeys, _Opts) -> [];
 do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opts) ->
     ScopedKey = lists:nth(I, ScopedKeys),
+    MsgWithoutPath = hb_maps:remove(<<"path">>, Msg),
     StepMsg = hb_message:convert(
-        Merged = hb_maps:merge(Msg, ScopedKey),
+        Merged = hb_maps:merge(MsgWithoutPath, ScopedKey),
         <<"structured@1.0">>,
 		Opts#{ topic => ao_internal }
     ),
