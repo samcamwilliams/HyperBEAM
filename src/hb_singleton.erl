@@ -273,10 +273,10 @@ build_messages(Msgs, ScopedModifications, Opts) ->
 
 do_build(_, [], _ScopedKeys, _Opts) -> [];
 do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opts) ->
-    ScopedKey = lists:nth(I, ScopedKeys),
-    MsgWithoutPath = hb_maps:remove(<<"path">>, Msg),
+    Additional = hb_ao:set(lists:nth(I, ScopedKeys), <<"path">>, unset, Opts),
+    MsgWithoutPath = hb_ao:set(Msg, <<"path">>, unset, Opts),
     StepMsg = hb_message:convert(
-        Merged = hb_maps:merge(MsgWithoutPath, ScopedKey),
+        Merged = hb_maps:merge(MsgWithoutPath, Additional),
         <<"structured@1.0">>,
 		Opts#{ topic => ao_internal }
     ),
@@ -285,10 +285,10 @@ do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opt
 do_build(I, [Msg|Rest], ScopedKeys, Opts) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
-    ScopedKey = lists:nth(I, ScopedKeys),
+    Additional = lists:nth(I, ScopedKeys),
     StepMsg =
         hb_message:convert(
-            hb_maps:merge(Msg, ScopedKey),
+            hb_maps:merge(Msg, Additional),
             <<"structured@1.0">>,
             Opts#{ topic => ao_internal }
         ),

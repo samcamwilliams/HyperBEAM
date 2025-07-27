@@ -606,7 +606,7 @@ set(Message1, NewValuesMsg, Opts) ->
         ),
     % Base message with keys-to-unset removed
     BaseValues = hb_maps:without(UnsetKeys, Message1, Opts),
-    ?event(
+    ?event(message_set,
         {performing_set,
             {conflicting_keys, ConflictingKeys},
             {keys_to_unset, UnsetKeys},
@@ -636,11 +636,13 @@ set(Message1, NewValuesMsg, Opts) ->
             },
             Opts
         ),
-    ?event({setting,
-        {committed_keys, CommittedKeys},
-        {keys_to_set, KeysToSet},
-        {message, Message1}
-    }),
+    ?event(message_set,
+        {setting,
+            {committed_keys, CommittedKeys},
+            {keys_to_set, KeysToSet},
+            {message, Message1}
+        }
+    ),
     OverwrittenCommittedKeys =
         lists:filtermap(
             fun(Key) ->
@@ -665,23 +667,42 @@ set(Message1, NewValuesMsg, Opts) ->
             OriginalPriv
         ),
     case OverwrittenCommittedKeys of
-        [] -> {ok, Merged};
+        [] ->
+            ?event(message_set, {no_overwritten_committed_keys, {merged, Merged}}),
+            {ok, Merged};
         _ ->
             % We did overwrite some keys, but do their values match the original?
             % If not, we must remove the commitments.
             case hb_message:match(Merged, Message1, Opts) of
-                true -> {ok, Merged};
-                _ -> {ok, hb_maps:without([<<"commitments">>], Merged, Opts)}
+                true ->
+                    ?event(message_set, {set_keys_matched, {merged, Merged}}),
+                    {ok, Merged};
+                _ ->
+                    ?event(
+                        message_set,
+                        {set_conflict_removing_commitments, {merged, Merged}}
+                    ),
+                    {ok, hb_maps:without([<<"commitments">>], Merged, Opts)}
             end
     end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for AO-Core to know the key to evaluate in requests.
-set_path(Message1, #{ <<"value">> := unset }, _Opts) ->
-    {ok, maps:without([<<"path">>], Message1)};
-set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
-    {ok, Message1#{ <<"path">> => Value }}.
+set_path(Base, #{ <<"value">> := Value }, Opts) ->
+    set_path(Base, Value, Opts);
+set_path(Base, Value, Opts) when not is_map(Value) ->
+    BaseWithCorrectedComms =
+        case hb_message:is_signed_key(<<"path">>, Base, Opts) of
+            true -> hb_message:uncommitted(Base, Opts);
+            false -> Base
+        end,
+    case Value of
+        unset ->
+            {ok, hb_maps:without([<<"path">>], BaseWithCorrectedComms, Opts)};
+        _ ->
+            BaseWithCorrectedComms#{ <<"path">> => Value }
+    end.
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, Key) ->

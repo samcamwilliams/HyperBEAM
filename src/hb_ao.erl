@@ -244,20 +244,18 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % As this is the first message, we will then continue to execute the request
     % on the result.
     ?event(ao_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
-    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Msg2}}, Opts),
+    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Msg2}}),
     case subresolve(SubReq, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
             ?event(subresolution,
-                {continuing_with_subresolved_message, {msg1, SubRes}},
-                Opts
+                {continuing_with_subresolved_message, {msg1, SubRes}}
             ),
             resolve_stage(1, SubRes, Msg2, Opts);
         OtherRes ->
             % The subresolution has returned an error. Return it.
             ?event(subresolution,
-                {subresolution_error, {msg1, Raw}, {res, OtherRes}},
-                Opts
+                {subresolution_error, {msg1, Raw}, {res, OtherRes}}
             ),
             OtherRes
     end;
@@ -697,8 +695,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     % First, ensure that the message is loaded from the cache.
     Msg1 = ensure_message_loaded(RawMsg1, Opts),
     ?event(subresolution,
-        {subresolving, {msg1, Msg1}, {dev, DevID}, {req, Req}},
-        Opts
+        {subresolving, {msg1, Msg1}, {dev, DevID}, {req, Req}}
     ),
     % Next, set the device ID if it is given.
     Msg1b =
@@ -717,7 +714,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
                     _ ->
                         set(
 							Msg1b,
-							hb_maps:without([<<"path">>], Req, Opts),
+							set(Req, <<"path">>, unset, Opts),
 							Opts#{ force_message => false }
 						)
                 end,
@@ -728,14 +725,10 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
             {ok, Msg1c};
         Path ->
             ?event(subresolution,
-                {exec_subrequest_on_base, {mod_base, Msg1b}, {req, Path}},
-                Opts
+                {exec_subrequest_on_base, {mod_base, Msg1b}, {req, Path}}
             ),
             Res = resolve(Msg1b, Req, Opts),
-            ?event(subresolution,
-                {subresolved_with_new_device, {res, Res}},
-                Opts
-            ),
+            ?event(subresolution, {subresolved_with_new_device, {res, Res}}),
             Res
     end.
 
