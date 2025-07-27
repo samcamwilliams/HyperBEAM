@@ -52,14 +52,12 @@ to(Messages) ->
                 % Special case when AO-Core message is ID
                 (Message, {Acc, Index, ScopedModifications}) when ?IS_ID(Message) ->
                     {append_path(Message, Acc), Index + 1, ScopedModifications};
-
                 % Special case when AO-Core message contains resolve command
                 ({resolve, SubMessages0}, {Acc, Index, ScopedModifications}) ->
                     SubMessages1 = hb_maps:get(<<"path">>, to(SubMessages0)),
                     <<"/", SubMessages2/binary>> = SubMessages1,
                     SubMessages = <<"(", SubMessages2/binary, ")">>,
                     {append_path(SubMessages, Acc), Index + 1, ScopedModifications};
-
                 % Regular case when message is a map
                 (Message, {Acc, Index, ScopedModifications}) ->
                     {NewMessage, NewScopedModifications} =
@@ -95,7 +93,6 @@ to(Messages) ->
                             end,
                             {Acc, ScopedModifications},
                             Message),
-
                         {NewMessage, Index + 1, NewScopedModifications}
 
             end,
