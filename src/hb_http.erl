@@ -313,12 +313,14 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                     CookieReset
                 }
         end,
+    % Remove the private components from the message, if they are present.
+    WithoutPriv = hb_private:reset(WithoutCookie),
     % Add the `accept-bundle: true' key to the message, if the caller has not
     % set an explicit preference.
     WithAcceptBundle =
         case hb_ao:get(<<"accept-bundle">>, Message, Opts) of
-            not_found -> WithoutCookie#{ <<"accept-bundle">> => true };
-            _ -> WithoutCookie
+            not_found -> WithoutPriv#{ <<"accept-bundle">> => true };
+            _ -> WithoutPriv
         end,
     % Determine the `ao-peer-port' from the message to send or the node message.
     % `port_external' can be set in the node message to override the port that
