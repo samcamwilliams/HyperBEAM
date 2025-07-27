@@ -209,7 +209,12 @@ adopt_node_message(Request, NodeMsg) ->
 handle_resolve(Req, Msgs, NodeMsg) ->
     TracePID = hb_opts:get(trace, no_tracer_set, NodeMsg),
     % Apply the pre-processor to the request.
-    ?event(http_request, {resolve_hook, Req, Msgs, NodeMsg}),
+    ?event(http_request,
+        {resolve_hook,
+            {raw_request, Req},
+            {parsed_request_sequence, Msgs}
+        }
+    ),
     LoadedMsgs = hb_cache:ensure_all_loaded(Msgs, NodeMsg),
     case resolve_hook(<<"request">>, Req, LoadedMsgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
