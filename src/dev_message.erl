@@ -687,15 +687,27 @@ set(Message1, NewValuesMsg, Opts) ->
     end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
-%% using the normal `set' function, as the `path' is a reserved key, necessary 
-%% for AO-Core to know the key to evaluate in requests.
+%% using the normal `set' function, as the `path' is a reserved key, used to
+%% transmit the present key that is being executed. Subsequently, to call `path'
+%% we would need to set `path' to `set', removing the ability to specify its 
+%% new value.
 set_path(Base, #{ <<"value">> := Value }, Opts) ->
     set_path(Base, Value, Opts);
 set_path(Base, Value, Opts) when not is_map(Value) ->
+    % Determine whether the `path' key is committed. If it is, we remove the
+    % commitment if the new value is different. We try to minimize work by
+    % doing the `hb_maps:get` first, as it is far cheaper than calculating
+    % the committed keys.
     BaseWithCorrectedComms =
-        case hb_message:is_signed_key(<<"path">>, Base, Opts) of
-            true -> hb_message:uncommitted(Base, Opts);
-            false -> Base
+        case hb_maps:get(<<"path">>, Base, undefined, Opts) of
+            Value -> Base;
+            _ ->
+                % The new value is different, but is it committed? If so, we
+                % must remove the commitments.
+                case hb_message:is_signed_key(<<"path">>, Base, Opts) of
+                  true -> hb_message:uncommitted(Base, Opts);
+                  false -> Base
+                end
         end,
     case Value of
         unset ->
