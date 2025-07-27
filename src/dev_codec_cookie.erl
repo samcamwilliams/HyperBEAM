@@ -272,7 +272,7 @@ to_cookie_line(Key, Cookie) ->
 %% a `priv/cookie' key into a message with only the `priv/cookie' key.
 from(Msg, Req, Opts) ->
     CookieOpts = opts(Opts),
-    LoadedMsg = hb_cache:ensure_all_loaded(Msg, CookieOpts),
+    LoadedMsg = hb_cache:ensure_all_loaded(Msg, Opts),
     do_from(LoadedMsg, Req, CookieOpts).
 do_from(Msg, Req, Opts) when is_map(Msg) ->
     {ok, ResetBase} = reset(Msg, Opts),
