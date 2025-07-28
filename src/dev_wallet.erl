@@ -425,7 +425,9 @@ load_and_verify_access_wallet({wallet_addr, WalletName}, Base, Request, Opts) ->
                     % return the request as-is with the wallet.
                     {ok, WalletDetails};
                 false ->
-                    case verify_wallet(Base, WalletDetails, Opts) of
+                    Priv = hb_maps:get(<<"priv">>, Request, Opts),
+                    BasePriv = hb_maps:put(<<"priv">>, Priv, Base, Opts),
+                    case verify_wallet(BasePriv, WalletDetails, Opts) of
                         {ok, true} ->
                             {ok, WalletDetails};
                         {ok, false} ->
