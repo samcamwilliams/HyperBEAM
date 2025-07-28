@@ -10,7 +10,7 @@
 %%% schemes in the future.
 -module(dev_codec_httpsig_keyid).
 -export([req_to_key_material/2, keyid_to_committer/1, keyid_to_committer/2]).
--export([secret_key_to_committer/1]).
+-export([secret_key_to_committer/1, remove_scheme_prefix/1]).
 -include_lib("include/hb.hrl").
 
 %%% The supported schemes for HMAC keys.
@@ -123,7 +123,17 @@ keyid_to_committer(KeyID) ->
         {error, _} -> undefined
     end.
 keyid_to_committer(publickey, KeyID) ->
-    hb_util:human_id(ar_wallet:to_address(base64:decode(remove_scheme_prefix(KeyID))));
+    % Note: There is a subtlety here. The `KeyID' is decoded with the 
+    % `hb_util:decode' function rather than `base64:decode'. The reason for this
+    % is that certain codecs (e.g. `ans104@1.0') encode the public key with
+    % `base64url' encoding, rather than the standard `base64' encoding in 
+    % HTTPSig. Our `hb_util:decode' function handles both cases returning the
+    % same raw bytes, and is subsequently safe.
+    hb_util:human_id(
+        ar_wallet:to_address(
+            hb_util:decode(remove_scheme_prefix(KeyID))
+        )
+    );
 keyid_to_committer(secret, KeyID) ->
     remove_scheme_prefix(KeyID);
 keyid_to_committer(constant, _KeyID) ->
