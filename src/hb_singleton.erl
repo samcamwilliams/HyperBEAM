@@ -271,29 +271,39 @@ parse_scope(KeyBin) ->
 build_messages(Msgs, ScopedModifications, Opts) ->
     do_build(1, Msgs, ScopedModifications, Opts).
 
-do_build(_, [], _ScopedKeys, _Opts) -> [];
-do_build(I, [Msg|Rest], ScopedKeys, Opts) when not is_map(Msg) ->
-    [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
-do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opts) ->
+do_build(_, [], _, _) -> [];
+do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }} | Rest], ScopedKeys, Opts) ->
     Additional = hb_ao:set(lists:nth(I, ScopedKeys), <<"path">>, unset, Opts),
-    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
     MsgWithoutPath = hb_ao:set(Msg, <<"path">>, unset, Opts),
+    Merged = hb_maps:merge(MsgWithoutPath, Additional),
     StepMsg = hb_message:convert(
-        Merged = hb_maps:merge(Additional, MsgWithoutPath),
-        <<"structured@1.0">>,
-		Opts#{ topic => ao_internal }
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
     ),
-    ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
+    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
     [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys, Opts)];
+do_build(I, [{as, DevID, Msg} | Rest], ScopedKeys, Opts) when is_map(Msg) ->
+    Additional = lists:nth(I, ScopedKeys),
+    Merged = hb_maps:merge(Msg, Additional),
+    StepMsg = hb_message:convert(
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
+    ),
+    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
+    [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys, Opts)];
+do_build(I, [Msg | Rest], ScopedKeys, Opts) when not is_map(Msg) ->
+    [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
     Additional = lists:nth(I, ScopedKeys),
+    Merged = hb_maps:merge(Msg, Additional),
+    StepMsg = hb_message:convert(
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
+    ),
     ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
-    StepMsg =
-        hb_message:convert(
-            hb_maps:merge(Additional, Msg),
-            <<"structured@1.0">>,
-            Opts#{ topic => ao_internal }
-        ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys, Opts)].
 
 %% @doc Parse a path part into a message or an ID.
