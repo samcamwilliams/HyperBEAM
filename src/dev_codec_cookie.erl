@@ -259,11 +259,9 @@ do_from(Msg, Req, Opts) when is_map(Msg) ->
     {ok, FromCookie} = from_cookie(Msg, Req, Opts),
     {ok, FromSetCookie} = from_set_cookie(Msg, Req, Opts),
     FromPriv = hb_private:get(<<"cookie">>, Msg, #{}, Opts),
-    FromPrivReq = hb_private:get(<<"cookie">>, Req, #{}, Opts),
     % Merge all found cookies into a single map.
-    MergePriv = hb_maps:merge(FromPriv, FromPrivReq, Opts),
     MergedMsg = hb_maps:merge(FromCookie, FromSetCookie, Opts),
-    AllParsed = hb_maps:merge(MergedMsg, MergePriv, Opts),
+    AllParsed = hb_maps:merge(MergedMsg, FromPriv, Opts),
     % Set the cookies in the private element of the message.
     {ok, hb_private:set(ResetBase, <<"cookie">>, AllParsed, Opts)};
 do_from(CookiesMsg, _Req, _Opts) ->
