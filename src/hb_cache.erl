@@ -131,10 +131,8 @@ report_ensure_loaded_not_found(Ref, Lk, Opts) ->
     ?event(link_error, {link_not_resolvable, {ref, Ref}, {link, Lk}, {opts, Opts}}),
     throw(
         {necessary_message_not_found,
-            {not_found,
-                {ref, lists:reverse(Ref)},
-                {link, Lk}
-            }
+            hb_path:to_binary(lists:reverse(Ref)),
+            hb_link:format_unresolved(Lk)
         }
     ).
 

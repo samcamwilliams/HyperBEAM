@@ -233,21 +233,27 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                         HTTPOpts#{ force_message => true, trace => TracePID }
                     )
                 catch
-                    throw:{necessary_message_not_found, MsgID} ->
-                        ID =
-                            if ?IS_ID(MsgID) -> hb_util:human_id(MsgID);
-                               ?IS_LINK(MsgID) -> hb_link:format(MsgID);
-                               true -> iolist_to_binary([MsgID])
+                    throw:{necessary_message_not_found, RefPath, Link} ->
+                        BaseBody =
+                            <<
+                                "Data necessary to load message was not found. "
+                            >>,
+                        Body =
+                            try 
+                                <<
+                                    BaseBody/binary,
+                                    "Error occurred at relative path `",
+                                    RefPath/binary, "'. Link was: ",
+                                    Link/binary
+                                >>
+                            catch
+                                _:_ -> BaseBody
                             end,
                         {error, #{
                             <<"status">> => 404,
-                            <<"unavailable">> => ID,
-                            <<"body">> =>
-                                <<
-                                    "Message necessary to resolve request ",
-                                    "not found: ",
-                                    ID/binary
-                                >>
+                            <<"unavailable">> => Link,
+                            <<"while-resolving">> => RefPath,
+                            <<"body">> => Body
                         }}
                 end,
             {ok, StatusEmbeddedRes} =

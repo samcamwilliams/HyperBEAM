@@ -57,9 +57,9 @@
 %% @doc The number of write and read operations to perform in the benchmark.
 -define(STORE_BENCH_WRITE_OPS, 100_000).
 -define(STORE_BENCH_READ_OPS, 100_000).
--define(STORE_BENCH_LIST_KEYS, 500_000).
+-define(STORE_BENCH_LIST_KEYS, 100_000).
 -define(STORE_BENCH_LIST_GROUP_SIZE, 10).
--define(STORE_BENCH_LIST_OPS, 100_000).
+-define(STORE_BENCH_LIST_OPS, 20_000).
 -define(BENCH_MSG_WRITE_OPS, 250).
 -define(BENCH_MSG_READ_OPS, 250).
 -define(BENCH_MSG_DATA_SIZE, 1024).
@@ -364,13 +364,15 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 %% default into all HyperBEAM distributions.
 test_stores() ->
     [
-        % #{
-        %     <<"store-module">> => hb_store_fs,
-        %     <<"name">> => <<"cache-TEST/fs">>
-        % },
+        #{
+            <<"store-module">> => hb_store_fs,
+            <<"name">> => <<"cache-TEST/fs">>,
+            <<"benchmark-scale">> => 0.001
+        },
         #{
             <<"store-module">> => hb_store_lmdb,
-            <<"name">> => <<"cache-TEST/lmdb">>
+            <<"name">> => <<"cache-TEST/lmdb">>,
+            <<"benchmark-scale">> => 0.5
         },
         #{
             <<"store-module">> => hb_store_lru,
@@ -468,7 +470,15 @@ benchmark_suite_test_() ->
 
 %% @doc Benchmark a store. By default, we write 10,000 keys and read 10,000
 %% keys. This can be altered by setting the `STORE_BENCH_WRITE_OPS' and
-%% `STORE_BENCH_READ_OPS' macros.
+%% `STORE_BENCH_READ_OPS' macros. If the `benchmark-scale' key is set in the
+%% store message, we use it to scale the number of operations for only that
+%% store. This allows slower stores to be tested with fewer operations.
+benchmark_key_read_write(Store = #{ <<"benchmark-scale">> := Scale }) ->
+    benchmark_key_read_write(
+        Store,
+        erlang:ceil(Scale * ?STORE_BENCH_WRITE_OPS), 
+        erlang:ceil(Scale * ?STORE_BENCH_READ_OPS)
+    );
 benchmark_key_read_write(Store) ->
     benchmark_key_read_write(Store, ?STORE_BENCH_WRITE_OPS, ?STORE_BENCH_READ_OPS).
 benchmark_key_read_write(Store, WriteOps, ReadOps) ->
@@ -545,6 +555,13 @@ benchmark_key_read_write(Store, WriteOps, ReadOps) ->
     ),
     ?assertEqual(0, NotFoundCount, "Written keys not found in store.").
 
+benchmark_list(Store = #{ <<"benchmark-scale">> := Scale }) ->
+    benchmark_list(
+        Store,
+        erlang:ceil(Scale * ?STORE_BENCH_LIST_KEYS),
+        erlang:ceil(Scale * ?STORE_BENCH_LIST_OPS),
+        erlang:ceil(Scale * ?STORE_BENCH_LIST_GROUP_SIZE)
+    );
 benchmark_list(Store) ->
     benchmark_list(
         Store,
@@ -685,6 +702,12 @@ benchmark_list(Store, WriteOps, ListOps, GroupSize) ->
     ),
     ?assertEqual(0, NotFoundCount, "Groups listed in correctly.").
 
+benchmark_message_read_write(Store = #{ <<"benchmark-scale">> := Scale }) ->
+    benchmark_message_read_write(
+        Store,
+        erlang:ceil(Scale * ?BENCH_MSG_WRITE_OPS),
+        erlang:ceil(Scale * ?BENCH_MSG_READ_OPS)
+    );
 benchmark_message_read_write(Store) ->
     benchmark_message_read_write(Store, ?BENCH_MSG_WRITE_OPS, ?BENCH_MSG_READ_OPS).
 benchmark_message_read_write(Store, WriteOps, ReadOps) ->

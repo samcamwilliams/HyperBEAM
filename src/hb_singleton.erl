@@ -271,29 +271,53 @@ parse_scope(KeyBin) ->
 build_messages(Msgs, ScopedModifications, Opts) ->
     do_build(1, Msgs, ScopedModifications, Opts).
 
-do_build(_, [], _ScopedKeys, _Opts) -> [];
-do_build(I, [Msg|Rest], ScopedKeys, Opts) when not is_map(Msg) ->
-    [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
-do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opts) ->
-    Additional = hb_ao:set(lists:nth(I, ScopedKeys), <<"path">>, unset, Opts),
-    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
-    MsgWithoutPath = hb_ao:set(Msg, <<"path">>, unset, Opts),
+do_build(_, [], _, _) -> [];
+do_build(I, [{as, DevID, RawMsg} | Rest], ScopedKeys, Opts) when is_map(RawMsg) ->
+    % We are processing an `as' message. If the path is empty, we need to
+    % remove it from the message and the additional message, such that AO-Core
+    % returns only the message with the device specifier changed. If the message
+    % does have a path, AO-Core will subresolve it.
+    RawAdditional = lists:nth(I, ScopedKeys),
+    {Msg, Additional} =
+        case hb_maps:get(<<"path">>, RawMsg, <<"">>, Opts) of
+            ID when ?IS_ID(ID) ->
+                % When we have an ID, we do not merge the globally scoped elements.
+                {
+                    RawMsg,
+                    #{}
+                };
+            <<"">> ->
+                % When we have an empty path, we remove the path from both
+                % messages. AO-Core will then simply set the device specifier
+                % and not execute a subresolve.
+                {
+                    hb_ao:set(RawMsg, <<"path">>, unset, Opts),
+                    hb_ao:set(RawAdditional, <<"path">>, unset, Opts)
+                };
+            _BasePath ->
+                % When we have a non-empty path, we merge the messages in
+                % totality. The path-part's path will be subresolved.
+                {RawMsg, RawAdditional}
+        end,
+    Merged = hb_maps:merge(Additional, Msg, Opts),
     StepMsg = hb_message:convert(
-        Merged = hb_maps:merge(Additional, MsgWithoutPath),
-        <<"structured@1.0">>,
-		Opts#{ topic => ao_internal }
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
     ),
-    ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
+    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
     [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys, Opts)];
+do_build(I, [Msg | Rest], ScopedKeys, Opts) when not is_map(Msg) ->
+    [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
     Additional = lists:nth(I, ScopedKeys),
+    Merged = hb_maps:merge(Additional, Msg, Opts),
+    StepMsg = hb_message:convert(
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
+    ),
     ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
-    StepMsg =
-        hb_message:convert(
-            hb_maps:merge(Additional, Msg),
-            <<"structured@1.0">>,
-            Opts#{ topic => ao_internal }
-        ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys, Opts)].
 
 %% @doc Parse a path part into a message or an ID.

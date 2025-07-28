@@ -395,7 +395,6 @@ handle_request(RawReq, Body, ServerID) ->
                 hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
             catch
                 Type:Details:Stacktrace ->
-                    Trace = hb_tracer:get_trace(TracePID),
                     FormattedError =
                         hb_util:bin(hb_message:format(
                             hb_private:reset(#{
