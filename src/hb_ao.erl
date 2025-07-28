@@ -809,7 +809,7 @@ ensure_message_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
         {ok, LoadedMsg} ->
             LoadedMsg;
         not_found ->
-            throw({necessary_message_not_found, MsgID})
+            throw({necessary_message_not_found, <<"/">>, MsgID})
     end;
 ensure_message_loaded(MsgLink, Opts) when ?IS_LINK(MsgLink) ->
     hb_cache:ensure_loaded(MsgLink, Opts);
