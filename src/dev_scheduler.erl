@@ -559,9 +559,9 @@ post_location(Msg1, RawReq, RawOpts) ->
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
-    case hb_ao:get(<<"method">>, Msg2, <<"GET">>, Opts) of
-        <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
-        <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
+    case hb_util:key_to_atom(hb_ao:get(<<"method">>, Msg2, <<"GET">>, Opts)) of
+        post -> post_schedule(Msg1, Msg2, Opts);
+        get -> get_schedule(Msg1, Msg2, Opts)
     end.
 
 %% @doc Schedules a new message on the SU. Searches Msg1 for the appropriate ID,

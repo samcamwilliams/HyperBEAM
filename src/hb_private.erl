@@ -40,7 +40,7 @@ get(InputPath, Msg, Default, Opts) ->
         hb_util:deep_get(
             remove_private_specifier(InputPath, Opts),
             from_message(Msg),
-            priv_ao_opts(Opts)
+            priv_opts(Opts)
         ),
     case Resolved of
         not_found -> Default;
@@ -52,13 +52,13 @@ set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath, Opts),
     Priv = from_message(Msg),
     ?event({set_private, {in, Path}, {out, Path}, {value, Value}, {opts, Opts}}),
-    NewPriv = hb_util:deep_set(Path, Value, Priv, priv_ao_opts(Opts)),
+    NewPriv = hb_util:deep_set(Path, Value, Priv, priv_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
     ?event({set_private, {in, PrivMap}, {opts, Opts}}),
-    NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, priv_ao_opts(Opts)),
+    NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, priv_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 
@@ -72,7 +72,7 @@ merge(Msg1, Msg2, Opts) ->
         hb_util:deep_merge(
             from_message(Msg1),
             from_message(Msg2),
-            priv_ao_opts(Opts)
+            priv_opts(Opts)
         ),
     % Set the merged private element on the first message.
     set_priv(Msg1, Merged).
@@ -101,7 +101,7 @@ remove_private_specifier(InputPath, Opts) ->
 
 %% @doc The opts map that should be used when resolving paths against the
 %% private element of a message.
-priv_ao_opts(Opts) ->
+priv_opts(Opts) ->
     Opts#{ hashpath => ignore, cache_control => [<<"no-cache">>, <<"no-store">>] }.
 
 %% @doc Unset all of the private keys in a message or deep Erlang term.

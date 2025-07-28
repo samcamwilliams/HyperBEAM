@@ -1003,16 +1003,23 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
     % `cookie' field in the message, as it is not typically signed, yet should
     % be honored by the node anyway.
     {ok, WithCookie} =
-        dev_codec_cookie:from(
-            case maps:get(<<"cookie">>, RawHeaders, undefined) of
-                undefined -> WithoutPeer;
-                Cookie -> WithoutPeer#{ <<"cookie">> => Cookie }
-            end,
-            Req,
-            Opts
-        ),
-    case hb_maps:get(<<"ao-peer-port">>, WithCookie, undefined, Opts) of
-        undefined -> WithCookie;
+        case maps:get(<<"cookie">>, RawHeaders, undefined) of
+            undefined -> {ok, WithoutPeer};
+            Cookie ->
+                dev_codec_cookie:from(
+                    WithoutPeer#{ <<"cookie">> => Cookie },
+                    Req,
+                    Opts
+                )
+        end,
+    % If the body is empty and unsigned, we remove it.
+    NormalBody =
+        case hb_maps:get(<<"body">>, WithCookie, undefined, Opts) of
+            <<"">> -> remove_unless_signed(<<"body">>, WithCookie, Opts);
+            _ -> WithCookie
+        end,
+    case hb_maps:get(<<"ao-peer-port">>, NormalBody, undefined, Opts) of
+        undefined -> NormalBody;
         P2PPort ->
             % Calculate the peer address from the request. We honor the 
             % `x-real-ip' header if it is present.
@@ -1029,7 +1036,7 @@ normalize_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
                     IP -> IP
                 end,
             Peer = <<RealIP/binary, ":", (hb_util:bin(P2PPort))/binary>>,
-            (remove_unless_signed([<<"ao-peer-port">>], WithCookie, Opts))#{
+            (remove_unless_signed(<<"ao-peer-port">>, NormalBody, Opts))#{
                 <<"ao-peer">> => Peer
             }
     end.

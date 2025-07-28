@@ -8,7 +8,14 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%% Keys that the preprocessor hook should not sign by default.
--define(DEFAULT_IGNORE_KEYS, [<<"cookie">>, <<"set-cookie">>]).
+-define(DEFAULT_IGNORE_KEYS,
+    [
+        <<"cookie">>,
+        <<"set-cookie">>,
+        <<"path">>,
+        <<"method">>
+    ]
+).
 
 %% @doc A preprocessor hook key that takes a message and attempts to sign it,
 %% if a `cookie' field is present and there are no existing signatures.

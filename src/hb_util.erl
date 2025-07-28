@@ -3,7 +3,7 @@
 -export([int/1, float/1, atom/1, bin/1, list/1, map/1]).
 -export([ceil_int/2, floor_int/2]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
--export([key_to_atom/2, binary_to_addresses/1]).
+-export([key_to_atom/1, key_to_atom/2, binary_to_addresses/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, deep_set/4, deep_get/3, deep_get/4]).
@@ -169,9 +169,10 @@ to_sorted_keys(Msg, _Opts) when is_list(Msg) ->
     lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
 %% @doc Convert keys in a map to atoms, lowering `-' to `_'.
+key_to_atom(Key) -> key_to_atom(Key, existing).
 key_to_atom(Key, _Mode) when is_atom(Key) -> Key;
 key_to_atom(Key, Mode) ->
-    WithoutDashes = binary:replace(Key, <<"-">>, <<"_">>, [global]),
+    WithoutDashes = to_lower(binary:replace(Key, <<"-">>, <<"_">>, [global])),
     case Mode of
         new_atoms -> binary_to_atom(WithoutDashes, utf8);
         _ -> binary_to_existing_atom(WithoutDashes, utf8)

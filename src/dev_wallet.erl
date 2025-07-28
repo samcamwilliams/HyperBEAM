@@ -290,7 +290,7 @@ register_wallet(Wallet, _Base, Request, Opts) ->
                     <<"key">> => ar_wallet:to_json(PrivKey),
                     <<"address">> => hb_util:human_id(Address),
                     <<"persist">> => PersistMode,
-                    <<"auth">> => InitializedAuthMsg,
+                    <<"auth">> => hb_private:reset(InitializedAuthMsg),
                     <<"committer">> => Committer,
                     <<"exportable">> => parse_exportable(Exportable, Opts)
                 },
