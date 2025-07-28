@@ -1605,7 +1605,8 @@ status_test() ->
 
 register_new_process_test() ->
     start(),
-    Msg1 = test_process(),
+    Opts = #{ priv_wallet => hb:wallet() },
+    Msg1 = hb_message:commit(test_process(Opts), Opts),
     ?event({test_registering_new_process, {msg, Msg1}}),
     ?assertMatch({ok, _},
         hb_ao:resolve(
