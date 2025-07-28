@@ -52,7 +52,13 @@ httpc_req(Args, _, Opts) ->
         [
             {<<"cookie">>, CookieLine}
         ||
-            CookieLine <- hb_maps:get(<<"cookie">>, Headers, [], Opts)
+            CookieLine <-
+                case hb_maps:get(<<"cookie">>, Headers, [], Opts) of
+                    Binary when is_binary(Binary) ->
+                        [Binary];
+                    List when is_list(List) ->
+                        List
+                end
         ],
     Method = binary_to_existing_atom(hb_util:to_lower(RawMethod)),
     ContentType = hb_maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>, Opts),
