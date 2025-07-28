@@ -641,6 +641,10 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
                 ?event({verifying_message_before_scheduling, Msg2}),
+                length(hb_message:signers(Msg2, Opts)) > 0
+                    andalso hb_message:verify(Msg2, signers, Opts);
+            accept_unsigned ->
+                ?event({accepting_unsigned_message_before_scheduling, Msg2}),
                 hb_message:verify(Msg2, signers, Opts);
             false -> true
         end,
