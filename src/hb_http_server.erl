@@ -46,7 +46,45 @@ start() ->
                 Loaded
             )
         ),
-    FormattedConfig = hb_util:debug_fmt(MergedConfig, MergedConfig, 2),
+    maybe_greeter(MergedConfig, PrivWallet),
+    start(
+        Loaded#{
+            priv_wallet => PrivWallet,
+            store => Store,
+            port => hb_opts:get(port, 8734, Loaded),
+            cache_writers => [hb_util:human_id(ar_wallet:to_address(PrivWallet))]
+        }
+    ).
+start(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        os_mon
+    ]),
+    hb:init(),
+    BaseOpts = set_default_opts(Opts),
+    {ok, Listener, _Port} = new_server(BaseOpts),
+    {ok, Listener}.
+
+%% @doc Print the greeter message to the console if we are not running tests.
+maybe_greeter(MergedConfig, PrivWallet) ->
+    case hb_features:test() of
+        false ->
+            print_greeter(MergedConfig, PrivWallet);
+        true ->
+            ok
+    end.
+
+%% @doc Print the greeter message to the console. Includes the version, operator
+%% address, URL to access the node, and the wider configuration (including the
+%% keys inherited from the default configuration).
+print_greeter(Config, PrivWallet) ->
+    FormattedConfig = hb_util:debug_fmt(Config, Config, 2),
     io:format("~n"
         "===========================================================~n"
         "==    ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗           ==~n"
@@ -77,8 +115,8 @@ start() ->
                     io_lib:format(
                         "http://~s:~p",
                         [
-                            hb_opts:get(host, <<"localhost">>, Loaded),
-                            hb_opts:get(port, 8734, Loaded)
+                            hb_opts:get(host, <<"localhost">>, Config),
+                            hb_opts:get(port, 8734, Config)
                         ]
                     )
                 ),
@@ -87,30 +125,7 @@ start() ->
             hb_util:human_id(ar_wallet:to_address(PrivWallet)),
             FormattedConfig
         ]
-    ),
-    start(
-        Loaded#{
-            priv_wallet => PrivWallet,
-            store => Store,
-            port => hb_opts:get(port, 8734, Loaded),
-            cache_writers => [hb_util:human_id(ar_wallet:to_address(PrivWallet))]
-        }
     ).
-start(Opts) ->
-    application:ensure_all_started([
-        kernel,
-        stdlib,
-        inets,
-        ssl,
-        ranch,
-        cowboy,
-        gun,
-        os_mon
-    ]),
-    hb:init(),
-    BaseOpts = set_default_opts(Opts),
-    {ok, Listener, _Port} = new_server(BaseOpts),
-    {ok, Listener}.
 
 %% @doc Trigger the creation of a new HTTP server node. Accepts a `NodeMsg'
 %% message, which is used to configure the server. This function executed the
