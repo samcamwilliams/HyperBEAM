@@ -280,12 +280,24 @@ do_build(I, [{as, DevID, RawMsg} | Rest], ScopedKeys, Opts) when is_map(RawMsg) 
     RawAdditional = lists:nth(I, ScopedKeys),
     {Msg, Additional} =
         case hb_maps:get(<<"path">>, RawMsg, <<"">>, Opts) of
+            ID when ?IS_ID(ID) ->
+                % When we have an ID, we do not merge the globally scoped elements.
+                {
+                    RawMsg,
+                    #{}
+                };
             <<"">> ->
+                % When we have an empty path, we remove the path from both
+                % messages. AO-Core will then simply set the device specifier
+                % and not execute a subresolve.
                 {
                     hb_ao:set(RawMsg, <<"path">>, unset, Opts),
                     hb_ao:set(RawAdditional, <<"path">>, unset, Opts)
                 };
-            _ -> {RawMsg, RawAdditional}
+            _BasePath ->
+                % When we have a non-empty path, we merge the messages in
+                % totality. The path-part's path will be subresolved.
+                {RawMsg, RawAdditional}
         end,
     Merged = hb_maps:merge(Additional, Msg, Opts),
     StepMsg = hb_message:convert(
