@@ -15,6 +15,7 @@
 %%% and private elements of messages.
 
 -module(hb_private).
+-export([opts/1]).
 -export([from_message/1, reset/1, is_private/1]).
 -export([get/3, get/4, set/4, set/3, set_priv/2, merge/3]).
 -include_lib("eunit/include/eunit.hrl").
@@ -40,7 +41,7 @@ get(InputPath, Msg, Default, Opts) ->
         hb_util:deep_get(
             remove_private_specifier(InputPath, Opts),
             from_message(Msg),
-            priv_opts(Opts)
+            opts(Opts)
         ),
     case Resolved of
         not_found -> Default;
@@ -52,13 +53,13 @@ set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath, Opts),
     Priv = from_message(Msg),
     ?event({set_private, {in, Path}, {out, Path}, {value, Value}, {opts, Opts}}),
-    NewPriv = hb_util:deep_set(Path, Value, Priv, priv_opts(Opts)),
+    NewPriv = hb_util:deep_set(Path, Value, Priv, opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
     ?event({set_private, {in, PrivMap}, {opts, Opts}}),
-    NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, priv_opts(Opts)),
+    NewPriv = hb_util:deep_merge(CurrentPriv, PrivMap, opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 
@@ -72,7 +73,7 @@ merge(Msg1, Msg2, Opts) ->
         hb_util:deep_merge(
             from_message(Msg1),
             from_message(Msg2),
-            priv_opts(Opts)
+            opts(Opts)
         ),
     % Set the merged private element on the first message.
     set_priv(Msg1, Merged).
@@ -100,9 +101,29 @@ remove_private_specifier(InputPath, Opts) ->
     end.
 
 %% @doc The opts map that should be used when resolving paths against the
-%% private element of a message.
-priv_opts(Opts) ->
-    Opts#{ hashpath => ignore, cache_control => [<<"no-cache">>, <<"no-store">>] }.
+%% private element of a message. We add the `priv_store' option if set, such that
+%% evaluations are not inadvertently persisted in public storage but this module
+%% can still access data from the normal stores. This mechanism requires that
+%% the priv_store is writable. We also ensure that no cache entries are
+%% generated from downstream AO-Core resolutions.
+opts(Opts) ->
+    PrivStore =
+        case hb_opts:get(priv_store, undefined, Opts) of
+            undefined -> [];
+            PrivateStores when is_list(PrivateStores) -> PrivateStores;
+            PrivateStore -> [PrivateStore]
+        end,
+    BaseStore =
+        case hb_opts:get(store, [], Opts) of
+            SingleStore when is_map(SingleStore) -> [SingleStore];
+            Stores when is_list(Stores) -> Stores
+        end,
+    NormStore = PrivStore ++ BaseStore,
+    Opts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        store => NormStore
+    }.
 
 %% @doc Unset all of the private keys in a message or deep Erlang term.
 %% This function operates on all types of data, such that it can be used on

@@ -643,7 +643,7 @@ list_wallets(non_volatile, Opts) ->
 %% @doc Generate a new `Opts' message with the `priv_store' as the only `store'
 %% option.
 priv_store_opts(Opts) ->
-    Opts#{ store => hb_opts:get(priv_store, no_wallet_store, Opts) }.
+    hb_private:opts(Opts).
 
 %% @doc Convert an export response into a list of wallet details. This is
 %% necessary because if a received result over HTTP is a list with a 
