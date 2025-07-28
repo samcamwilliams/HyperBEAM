@@ -172,7 +172,47 @@ get_private_key_test() ->
     {error, _} = hb_ao:resolve(M1, <<"priv/a">>, #{}),
     {error, _} = hb_ao:resolve(M1, <<"priv">>, #{}).
 
-
 get_deep_key_test() ->
     M1 = #{<<"a">> => 1, <<"priv">> => #{<<"b">> => #{<<"c">> => 3}}},
     ?assertEqual(3, get(<<"b/c">>, M1, #{})).
+
+priv_opts_store_read_link_test() ->
+    % Write a message to the public store.
+    PublicStore = [hb_test_utils:test_store(hb_store_lmdb)],
+    timer:sleep(1),
+    OnlyPrivStore = [hb_test_utils:test_store(hb_store_fs)],
+    ok = hb_store:write(PublicStore, <<"key">>, <<"test-message">>),
+    {ok, <<"test-message">>} = hb_store:read(PublicStore, <<"key">>),
+    % Make a link to the key in the public store.
+    ok = hb_store:make_link(PublicStore, <<"key">>, <<"link">>),
+    {ok, <<"test-message">>} = hb_store:read(PublicStore, <<"link">>),
+    % Read the link from the private store. First as a simple store read, then
+    % as a link.
+    Opts = #{ store => PublicStore, priv_store => OnlyPrivStore },
+    PrivOpts = #{ store := PrivStore } = opts(Opts),
+    {ok, <<"test-message">>} = hb_store:read(PrivStore, <<"link">>),
+    Loaded =
+        hb_cache:ensure_loaded(
+            {link, <<"link">>, #{ <<"type">> => <<"link">>, <<"lazy">> => false }},
+            PrivOpts
+        ),
+    ?assertEqual(<<"test-message">>, Loaded).
+
+priv_opts_cache_read_message_test() ->
+    hb:init(),
+    PublicStore = [hb_test_utils:test_store(hb_store_lmdb)],
+    OnlyPrivStore = [hb_test_utils:test_store(hb_store_fs)],
+    Opts = #{ store => PublicStore, priv_store => OnlyPrivStore },
+    PrivOpts = opts(Opts),
+    % Use the `~scheduler@1.0' and `~process@1.0' infrastructure to write a
+    % complex message into the public store.
+    Msg = hb_cache:ensure_all_loaded(dev_process:test_aos_process(Opts), Opts),
+    {ok, ID} = hb_cache:write(Msg, Opts),
+    % Ensure we can read the message using the public store.
+    {ok, PubMsg} = hb_cache:read(ID, Opts),
+    PubMsgLoaded = hb_cache:ensure_all_loaded(PubMsg, Opts),
+    ?assertEqual(Msg, PubMsgLoaded),
+    % Read the message using the private store.
+    {ok, PrivMsg} = hb_cache:read(ID, PrivOpts),
+    PrivMsgLoaded = hb_cache:ensure_all_loaded(PrivMsg, PrivOpts),
+    ?assertEqual(Msg, PrivMsgLoaded).
