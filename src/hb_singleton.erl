@@ -272,20 +272,22 @@ build_messages(Msgs, ScopedModifications, Opts) ->
     do_build(1, Msgs, ScopedModifications, Opts).
 
 do_build(_, [], _, _) -> [];
-do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }} | Rest], ScopedKeys, Opts) ->
-    Additional = hb_ao:set(lists:nth(I, ScopedKeys), <<"path">>, unset, Opts),
-    MsgWithoutPath = hb_ao:set(Msg, <<"path">>, unset, Opts),
-    Merged = hb_maps:merge(MsgWithoutPath, Additional),
-    StepMsg = hb_message:convert(
-        Merged, 
-        <<"structured@1.0">>, 
-        Opts#{ topic => ao_internal }
-    ),
-    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
-    [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys, Opts)];
-do_build(I, [{as, DevID, Msg} | Rest], ScopedKeys, Opts) when is_map(Msg) ->
-    Additional = lists:nth(I, ScopedKeys),
-    Merged = hb_maps:merge(Msg, Additional),
+do_build(I, [{as, DevID, RawMsg} | Rest], ScopedKeys, Opts) when is_map(RawMsg) ->
+    % We are processing an `as' message. If the path is empty, we need to
+    % remove it from the message and the additional message, such that AO-Core
+    % returns only the message with the device specifier changed. If the message
+    % does have a path, AO-Core will subresolve it.
+    RawAdditional = lists:nth(I, ScopedKeys),
+    {Msg, Additional} =
+        case hb_maps:get(<<"path">>, RawMsg, <<"">>, Opts) of
+            <<"">> ->
+                {
+                    hb_ao:set(RawMsg, <<"path">>, unset, Opts),
+                    hb_ao:set(RawAdditional, <<"path">>, unset, Opts)
+                };
+            _ -> {RawMsg, RawAdditional}
+        end,
+    Merged = hb_maps:merge(Additional, Msg, Opts),
     StepMsg = hb_message:convert(
         Merged, 
         <<"structured@1.0">>, 
@@ -297,7 +299,7 @@ do_build(I, [Msg | Rest], ScopedKeys, Opts) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
     Additional = lists:nth(I, ScopedKeys),
-    Merged = hb_maps:merge(Msg, Additional),
+    Merged = hb_maps:merge(Additional, Msg, Opts),
     StepMsg = hb_message:convert(
         Merged, 
         <<"structured@1.0">>, 
