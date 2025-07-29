@@ -267,12 +267,18 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
     LoadedInner = ensure_message_loaded(Msg2Inner, Opts),
     Msg2 =
         hb_maps:merge(
-            Msg2Outer,
-            if is_map(LoadedInner) -> LoadedInner;
-            true -> #{ <<"path">> => LoadedInner }
+            set(Msg2Outer, <<"path">>, unset, Opts),
+            if is_binary(LoadedInner) -> #{ <<"path">> => LoadedInner };
+            true -> LoadedInner
             end,
 			Opts
         ),
+    ?event(subresolution,
+        {subresolving_request_before_execution,
+            {dev, DevID},
+            {msg2, Msg2}
+        }
+    ),
     subresolve(RawMsg1, DevID, Msg2, Opts);
 resolve_stage(1, {resolve, Subres}, Msg2, Opts) ->
     % If the first message is a `{resolve, Subres}' tuple, we should execute it
@@ -725,7 +731,11 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
             {ok, Msg1c};
         Path ->
             ?event(subresolution,
-                {exec_subrequest_on_base, {mod_base, Msg1b}, {req, Path}}
+                {exec_subrequest_on_base,
+                    {mod_base, Msg1b},
+                    {req, Path},
+                    {req, Req}
+                }
             ),
             Res = resolve(Msg1b, Req, Opts),
             ?event(subresolution, {subresolved_with_new_device, {res, Res}}),

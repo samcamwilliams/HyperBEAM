@@ -131,6 +131,8 @@ type(_Value) -> unknown.
 
 %% @doc Normalize a singleton TABM message into a list of executable AO-Core
 %% messages.
+from(RawMsg, Opts) when is_binary(RawMsg) ->
+    from(#{ <<"path">> => RawMsg }, Opts);
 from(RawMsg, Opts) ->
     RawPath = hb_maps:get(<<"path">>, RawMsg, <<>>),
     ?event(parsing, {raw_path, RawPath}),
