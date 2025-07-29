@@ -17,6 +17,10 @@
     ]
 ).
 
+%%% @doc The default key to use to indicate that any given message in a request
+%%% should be signed.
+-define(DEFAULT_SIGN_KEY, <<"!">>).
+
 %% @doc A preprocessor hook key that takes a message and attempts to sign it,
 %% if a `cookie' field is present and there are no existing signatures.
 request(Base, HookReq, Opts) ->
@@ -25,78 +29,29 @@ request(Base, HookReq, Opts) ->
     % unmodified if the preprocessor fails.
     ExistingMessages = hb_maps:get(<<"body">>, HookReq, Opts),
     maybe
+        ?event({cookie_on_request_extracting_request, HookReq}),
         {ok, Request} ?= hb_maps:find(<<"request">>, HookReq, Opts),
         % We are only interested in messages that have no existing signatures.
+        % Go to the `[]' else branch if there are existing signatures, which
+        % returns the existing messages unmodified.
         [] ?= hb_message:signers(Request, Opts),
-        % If there is no existing cookie, we resolve the `generate' path to
-        % generate a new wallet and set the cookie.
-        ?event({cookie_on_request_extracting_cookies, Request}),
-        Cookies =
-            case dev_codec_cookie:extract(Request, #{}, Opts) of
-                {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
-                    ?event({cookie_on_request_generating_cookie, Request}),
-                    {ok, GenerateRes} =
-                        dev_wallet:generate(Base, Request, Opts),
-                    {ok, NewCookies} =
-                        dev_codec_cookie:extract(GenerateRes, Request, Opts),
-                    NewCookies;
-                {ok, ExistingCookies} -> ExistingCookies
-            end,
-        % Get the new node options, such that we have a fresh copy with the
-        % new wallet installed, if it was generated.
-        NewOpts = hb_http_server:get_opts(Opts),
-        IgnoredKeys =
-            hb_opts:get(
-                wallet_preprocessor_ignore,
-                ?DEFAULT_IGNORE_KEYS,
-                NewOpts
-            ),
-        WithoutIgnoredKeys = hb_maps:without(IgnoredKeys, Request, NewOpts),
-        {ok, WithCookie} = dev_codec_cookie:store(WithoutIgnoredKeys, Cookies, Opts),
-        % We attempt to sign the message, now that we know we have a message 
-        % with the cookie.
-        ?event(
-            {preprocessor_commit,
-                {with_cookie, WithCookie},
-                {to_sign, WithCookie}
-            }
-        ),
-        {ok, Signed} ?=
-            dev_wallet:commit(
-                WithCookie,
-                WithCookie,
-                NewOpts
-            ),
-        {ok, SignedWithCookie} = dev_codec_cookie:store(Signed, Cookies, Opts),
-        % Add any ignored keys back to the signed message.
-        SignedWithIgnored =
-            hb_maps:merge(
+        % Normalize the cookie on the request.
+        {ok, WithCookie, NewOpts} ?= normalize_cookie(Base, Request, Opts),
+        % Sign the outer request message.
+        {ok, SignedWithCookie} ?= sign_message(WithCookie, NewOpts),
+        % Sign messages in the parsed stream individually if they have the
+        % node's `cookie-sign' key.
+        {ok, MessageSequence} ?=
+            sign_individual_messages(SignedWithCookie, NewOpts),
+        % Add a `set' message to the end of the message sequence, with the
+        % set-cookie message.
+        {ok, MessageSequenceWithSetCookie} ?=
+            add_set_cookie(
                 SignedWithCookie,
-                hb_maps:with(IgnoredKeys, Request, NewOpts),
+                MessageSequence,
                 NewOpts
             ),
-        ?event(
-            {committed,
-                {committor, hb_message:signers(SignedWithIgnored, NewOpts)},
-                {signed, SignedWithIgnored}
-            }
-        ),
-        % Parse by `hb_singleton` into a list of messages to execute. Extract 
-        % the cookie from the request.
-        Parsed = hb_singleton:from(SignedWithIgnored, NewOpts),
-        {ok, OnlyCookieMsg} = dev_codec_cookie:store(#{}, Cookies, Opts),
-        {ok, #{ <<"set-cookie">> := SetCookie }} =
-            dev_codec_cookie:to(
-                OnlyCookieMsg,
-                #{ <<"format">> => <<"set-cookie">> },
-                Opts
-            ),
-        % Scan the parsed messages for `cookie-sign' elements.
-        WithSetCookie =
-            apply_cookie_sign(Parsed, WithCookie, Opts) ++
-            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }],
-        % Return the signed message, with the cookie added to the response.
-        {ok, #{ <<"body">> => WithSetCookie }}
+        {ok, MessageSequenceWithSetCookie}
     else
         error ->
             ?event({preprocessor_error, invoked_without_request, {base, Base}}),
@@ -109,22 +64,160 @@ request(Base, HookReq, Opts) ->
             {ok, #{ <<"body">> => ExistingMessages }}
     end.
 
+%% @doc Ensure that there is a viable set of cookies on the request. Returns 
+%% both the normalized message and the new node message. If there is no existing
+%% cookie, we resolve the `generate' path to generate a new wallet and set the
+%% cookie.
+normalize_cookie(Base, Request, Opts) ->
+    % If there is no existing cookie, we resolve the `generate' path to
+    % generate a new wallet and set the cookie.
+    ?event({cookie_on_request_extracting_cookies, Request}),
+    Cookies =
+        case dev_codec_cookie:extract(Request, #{}, Opts) of
+            {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
+                ?event({cookie_on_request_generating_cookie, Request}),
+                {ok, GenerateRes} =
+                    dev_wallet:generate(Base, Request, Opts),
+                {ok, NewCookies} =
+                    dev_codec_cookie:extract(GenerateRes, Request, Opts),
+                NewCookies;
+            {ok, ExistingCookies} -> ExistingCookies
+        end,
+    % Get the new node options, such that we have a fresh copy with the
+    % new wallet installed, if it was generated.
+    NewOpts = hb_http_server:get_opts(Opts),
+    {ok, WithCookie} = dev_codec_cookie:store(Request, Cookies, NewOpts),
+    {ok, Cookies, WithCookie, NewOpts}.
+
+%% @doc Internal function to sign a message with a cookie.
+sign_message(Msg, Opts) ->
+    % We attempt to sign the message, now that we know we have a message 
+    % with the cookie.
+    maybe
+        IgnoredKeys =
+            hb_opts:get(
+                wallet_hook_ignore,
+                ?DEFAULT_IGNORE_KEYS,
+                Opts
+            ),
+        WithoutIgnoredKeys = hb_maps:without(IgnoredKeys, Msg, Opts),
+        % We attempt to sign the message, now that we know we have a message 
+        % with the cookie.
+        ?event(
+            {preprocessor_commit,
+                {to_sign, WithoutIgnoredKeys}
+            }
+        ),
+        {ok, Signed} ?=
+            dev_wallet:commit(
+                WithoutIgnoredKeys,
+                WithoutIgnoredKeys,
+                Opts
+            ),
+        % Add any ignored keys back to the signed message.
+        SignedWithIgnored =
+            hb_maps:merge(
+                Signed,
+                hb_maps:with(IgnoredKeys, Msg, Opts),
+                Opts
+            ),
+        ?event(
+            {committed,
+                {committor, hb_message:signers(SignedWithIgnored, Opts)},
+                {signed, SignedWithIgnored}
+            }
+        ),
+        {ok, SignedWithIgnored}
+    else
+        {error, Err} -> {error, Err}
+    end.
+
+%% @doc Parse a request into a list of messages, sign the messages that request
+%% individual signatures, and return the sequence of messages to be executed.
+sign_individual_messages(SignedWithCookie, Opts) ->
+    % Parse by `hb_singleton` into a list of messages to execute. Extract 
+    % the cookie from the request.
+    Parsed = hb_singleton:from(SignedWithCookie, Opts),
+    ?event(debug_bang, {parsed, {parsed, Parsed}, {with_cookie, SignedWithCookie}}),
+    {ok, #{ <<"set-cookie">> := SetCookie }} =
+        dev_codec_cookie:to(
+            SignedWithCookie,
+            #{ <<"format">> => <<"set-cookie">> },
+            Opts
+        ),
+    % Process the parsed messages for elements that request individual 
+    % signatures.
+    IndividuallySigned = apply_cookie_sign(Parsed, SignedWithCookie, Opts),
+    % Add the set-cookie message to the response.
+    {
+        ok,
+        IndividuallySigned ++
+            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }]
+    }.
+
 %% @doc Sign all messages in the list that have a `cookie-sign: true' key.
-apply_cookie_sign([], _, _Opts) -> [];
-apply_cookie_sign([Msg | Rest], WithCookie, Opts) when is_map(Msg) ->
-    case hb_util:atom(hb_maps:get(<<"cookie-sign">>, Msg, false, Opts)) of
+apply_cookie_sign(Msg, WithCookie, Opts) ->
+    apply_cookie_sign(
+        hb_opts:get(
+            cookie_hook_commit_key,
+            ?DEFAULT_SIGN_KEY,
+            Opts
+        ),
+        Msg,
+        WithCookie,
+        Opts
+    ).
+apply_cookie_sign(_Key, [], _, _Opts) -> [];
+apply_cookie_sign(Key, [Msg | Rest], WithCookie, Opts) when is_map(Msg) ->
+    case hb_util:atom(hb_maps:get(Key, Msg, false, Opts)) of
         true ->
-            {ok, Signed} = dev_wallet:commit(Msg, WithCookie, Opts),
-            [
-                Signed
-            |
-                apply_cookie_sign(Rest, WithCookie, Opts)
-            ];
+            Uncommitted = hb_message:uncommitted(Msg, Opts),
+            ?event(debug_bang,
+                {signing_individual_message,
+                    {uncommitted, Uncommitted},
+                    {with_cookie, WithCookie}
+                }
+            ),
+            maybe
+                {ok, Signed} ?= sign_message(Uncommitted, Opts),
+                [
+                    Signed
+                |
+                    apply_cookie_sign(Key, Rest, WithCookie, Opts)
+                ]
+            else
+                {error, Err} ->
+                    ?event(
+                        {
+                            error_signing_individual_message,
+                            {error, Err},
+                            {detected_key, Key},
+                            {msg, Msg}
+                        }
+                    ),
+                    [{error, Err}]
+            end;
         _ ->
-            [ Msg | apply_cookie_sign(Rest, WithCookie, Opts) ]
+            [ Msg | apply_cookie_sign(Key, Rest, WithCookie, Opts) ]
     end;
-apply_cookie_sign([Msg | Rest], WithCookie, Opts) ->
-    [Msg | apply_cookie_sign(Rest, WithCookie, Opts)].
+apply_cookie_sign(Key, [Msg | Rest], WithCookie, Opts) ->
+    [Msg | apply_cookie_sign(Key, Rest, WithCookie, Opts)].
+
+%% @doc Add a `set-cookie' message to the response.
+add_set_cookie(SignedMsg, MessageSequence, Opts) ->
+    {ok, #{ <<"set-cookie">> := SetCookie }} =
+        dev_codec_cookie:to(
+            SignedMsg,
+            #{ <<"format">> => <<"set-cookie">> },
+            Opts
+        ),
+    {
+        ok,
+        MessageSequence
+            ++ [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }]
+    }.
+
+%%% Tests
 
 preprocessor_cookie_signing_test() ->
     % Start a node with a preprocessor hook that signs the request.
