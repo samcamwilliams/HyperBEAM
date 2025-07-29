@@ -81,8 +81,8 @@ request(Base, HookReq, Opts) ->
                 {signed, SignedWithIgnored}
             }
         ),
-        % Parse by `hb_singleton` into a list of messages to execute. Insert
-        % a message to set the cookie in the result as the final step.
+        % Parse by `hb_singleton` into a list of messages to execute. Extract 
+        % the cookie from the request.
         Parsed = hb_singleton:from(SignedWithIgnored, NewOpts),
         {ok, OnlyCookieMsg} = dev_codec_cookie:store(#{}, Cookies, Opts),
         {ok, #{ <<"set-cookie">> := SetCookie }} =
@@ -91,8 +91,9 @@ request(Base, HookReq, Opts) ->
                 #{ <<"format">> => <<"set-cookie">> },
                 Opts
             ),
+        % Scan the parsed messages for `cookie-sign' elements.
         WithSetCookie =
-            Parsed ++
+            apply_cookie_sign(Parsed, WithCookie, Opts) ++
             [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }],
         % Return the signed message, with the cookie added to the response.
         {ok, #{ <<"body">> => WithSetCookie }}
@@ -107,6 +108,23 @@ request(Base, HookReq, Opts) ->
             ?event({preprocessor_error, {error, Err}, {base, Base}}),
             {ok, #{ <<"body">> => ExistingMessages }}
     end.
+
+%% @doc Sign all messages in the list that have a `cookie-sign: true' key.
+apply_cookie_sign([], _, _Opts) -> [];
+apply_cookie_sign([Msg | Rest], WithCookie, Opts) when is_map(Msg) ->
+    case hb_util:atom(hb_maps:get(<<"cookie-sign">>, Msg, false, Opts)) of
+        true ->
+            {ok, Signed} = dev_wallet:commit(Msg, WithCookie, Opts),
+            [
+                Signed
+            |
+                apply_cookie_sign(Rest, WithCookie, Opts)
+            ];
+        _ ->
+            [ Msg | apply_cookie_sign(Rest, WithCookie, Opts) ]
+    end;
+apply_cookie_sign([Msg | Rest], WithCookie, Opts) ->
+    [Msg | apply_cookie_sign(Rest, WithCookie, Opts)].
 
 preprocessor_cookie_signing_test() ->
     % Start a node with a preprocessor hook that signs the request.
