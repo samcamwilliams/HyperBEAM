@@ -84,7 +84,7 @@ maybe_greeter(MergedConfig, PrivWallet) ->
 %% address, URL to access the node, and the wider configuration (including the
 %% keys inherited from the default configuration).
 print_greeter(Config, PrivWallet) ->
-    FormattedConfig = hb_util:debug_fmt(Config, Config, 2),
+    FormattedConfig = hb_util:debug_format(Config, Config, 2),
     io:format("~n"
         "===========================================================~n"
         "==    ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗           ==~n"

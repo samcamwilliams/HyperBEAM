@@ -408,7 +408,11 @@ format(Bin, Opts, Indent) when is_binary(Bin) ->
         Indent
     );
 format(List, Opts, Indent) when is_list(List) ->
-    format(lists:map(fun hb_ao:normalize_key/1, List), Opts, Indent);
+    % Remove the leading newline from the formatted list, if it exists.
+    case hb_util:debug_format(List, Opts, Indent) of
+        [$\n | String] -> String;
+        String -> String
+    end;
 format(Map, Opts, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
@@ -551,6 +555,8 @@ format(Map, Opts, Indent) when is_map(Map) ->
                     case Val of
                         NextMap when is_map(NextMap) ->
                             hb_util:format_maybe_multiline(NextMap, Opts, Indent + 2);
+                        NextList when is_list(NextList) ->
+                            hb_util:debug_format(NextList, Opts, Indent + 2);
                         _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
                             Short = hb_util:short_id(Val),
                             io_lib:format("~s [*]", [Short]);

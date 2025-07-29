@@ -18,7 +18,8 @@
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
--export([debug_print/4, debug_fmt/1, debug_fmt/2, debug_fmt/3, eunit_print/2]).
+-export([debug_print/1, debug_print/2, debug_print/4, eunit_print/2]).
+-export([debug_format/1, debug_format/2, debug_format/3]).
 -export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([format_trace/1, trace_to_list/1, format_trace_short/0, format_trace_short/1]).
 -export([is_hb_module/1, is_hb_module/2, all_hb_modules/0]).
@@ -31,6 +32,10 @@
 -export([all_atoms/0, binary_is_atom/1]).
 -export([lower_case_key_map/2]).
 -include("include/hb.hrl").
+
+%%% Characters that are considered noise and should be removed from strings
+%%% with the `remove_noise_[leading|trailing]' functions.
+-define(NOISE_CHARS, " \t\n,").
 
 %%% Simple type coercion functions, useful for quickly turning inputs from the
 %%% HTTP API into the correct types for the HyperBEAM runtime, if they are not
@@ -536,22 +541,40 @@ maybe_throw(Val, Opts) ->
 
 %% @doc Print a message to the standard error stream, prefixed by the amount
 %% of time that has elapsed since the last call to this function.
+debug_print(X) ->
+    debug_print(X, <<>>).
+debug_print(X, Info) ->
+    io:format(
+        standard_error,
+        "=== HB DEBUG ===~s==>~n~s~n",
+        [Info, debug_format(X, #{}, 0)]
+    ),
+    X.
 debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~s @ ~s]==>~n~s~n",
-        [
-            TSDiff,
-            case server_id() of
-                undefined -> bin(io_lib:format("~p", [self()]));
-                ServerID ->
-                    bin(io_lib:format("~s (~p)", [short_id(ServerID), self()]))
-            end,
-            format_debug_trace(Mod, Func, LineNum),
-            debug_fmt(X, #{}, 0)
-        ]),
-    X.
+    Info =
+        bin(
+            io_lib:format(
+                "[~pms in ~s @ ~s]",
+                [
+                    TSDiff,
+                    case server_id() of
+                        undefined -> bin(io_lib:format("~p", [self()]));
+                        ServerID ->
+                            bin(
+                                io_lib:format(
+                                    "~s (~p)",
+                                    [short_id(ServerID), self()]
+                                )
+                            )
+                    end,
+                    format_debug_trace(Mod, Func, LineNum)
+                ]
+            )
+        ),
+    debug_print(X, Info).
 
 %% @doc Retreive the server ID of the calling process, if known.
 server_id() ->
@@ -572,12 +595,12 @@ format_debug_trace(Mod, Func, Line) ->
     end.
 
 %% @doc Convert a term to a string for debugging print purposes.
-debug_fmt(X) -> debug_fmt(X, #{}).
-debug_fmt(X, Opts) -> debug_fmt(X, Opts, 0).
-debug_fmt(X, Opts, Indent) ->
+debug_format(X) -> debug_format(X, #{}).
+debug_format(X, Opts) -> debug_format(X, Opts, 0).
+debug_format(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
-        case hb_opts:get(debug_print_fail_mode, quiet) of
+        case loud of %hb_opts:get(debug_print_fail_mode, quiet) of
             quiet ->
                 format_indented("[!Format failed!] ~p", [X], Opts, Indent);
             _ ->
@@ -641,9 +664,21 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y) ->
         Indent
     );
 do_debug_fmt({X, Y}, Opts, Indent) ->
-    format_indented("~s: ~s", [debug_fmt(X, Opts, Indent), debug_fmt(Y, Opts, Indent)], Opts, Indent);
+    format_indented(
+        "~s: ~s",
+        [
+            debug_format(X, Opts, Indent),
+            debug_format(Y, Opts, Indent)
+        ],
+        Opts,
+        Indent
+    );
 do_debug_fmt(Map, Opts, Indent) when is_map(Map) ->
-    format_maybe_multiline(Map, Opts, Indent);
+    case maybe_format_short(Map, Opts, Indent) of
+        {ok, SimpleFmt} -> SimpleFmt;
+        error ->
+            "\n" ++ lists:flatten(hb_message:format(Map, Opts, Indent))
+    end;
 do_debug_fmt(Tuple, Opts, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Opts, Indent);
 do_debug_fmt(X, Opts, Indent) when is_binary(X) ->
@@ -653,19 +688,7 @@ do_debug_fmt(Str = [X | _], Opts, Indent) when is_integer(X) andalso X >= 32 and
 do_debug_fmt([], Opts, Indent) ->
     format_indented("[]", [], Opts, Indent);
 do_debug_fmt(MsgList, Opts, Indent) when is_list(MsgList) ->
-    "\n" ++
-        format_indented("List [~w] {~n", [length(MsgList)], Opts, Indent+1) ++
-        lists:map(
-            fun({N, Msg}) ->
-                format_indented("~w => ~n~s~n",
-                    [N, debug_fmt(Msg, Opts, Indent + 3)],
-                    Opts,
-                    Indent + 2
-                )
-            end,
-            lists:zip(lists:seq(1, length(MsgList)), MsgList)
-        ) ++
-        format_indented("}", [], Opts, Indent+1);
+    format_list(MsgList, Opts, Indent);
 do_debug_fmt(X, Opts, Indent) ->
     format_indented("~80p", [X], Opts, Indent).
 
@@ -677,11 +700,79 @@ format_address(Wallet, Opts, Indent) ->
 format_tuple(Tuple, Opts, Indent) ->
     to_lines(lists:map(
         fun(Elem) ->
-            debug_fmt(Elem, Opts, Indent)
+            debug_format(Elem, Opts, Indent)
         end,
         tuple_to_list(Tuple)
     )).
 
+%% @doc Format a list. Comes in three forms: all on one line, individual items
+%% on their own line, or each item a multi-line string.
+format_list(MsgList, Opts, Indent) ->
+    case maybe_format_short(MsgList, Opts, Indent) of
+        {ok, SimpleFmt} -> SimpleFmt;
+        error ->
+            "\n" ++
+                format_indented("List [~w] {~n", [length(MsgList)], Opts, Indent) ++
+                format_list_lines(MsgList, Opts, Indent) ++ 
+                format_indented("}", [], Opts, Indent)
+    end.
+
+%% @doc Format a list as a multi-line string.
+format_list_lines(MsgList, Opts, Indent) ->
+    Numbered = number(MsgList),
+    Lines =
+        lists:map(
+            fun({N, Msg}) ->
+                format_list_item(N, Msg, Opts, Indent)
+            end,
+            Numbered
+        ),
+    AnyLong =
+        lists:any(
+            fun({Mode, _}) -> Mode == multiline end,
+            Lines
+        ),
+    case AnyLong of
+        false -> [ Line || {short, Line} <- Lines ];
+        true ->
+            lists:map(
+                fun({N, Msg}) ->
+                    {_, Line} = format_list_item(multiline, N, Msg, Opts, Indent),
+                    Line
+                end,
+                Numbered
+            )
+    end.
+
+%% @doc Format a single element of a list.
+format_list_item(N, Msg, Opts, Indent) ->
+    case format_list_item(short, N, Msg, Opts, Indent) of
+        {short, String} -> {short, String};
+        error -> format_list_item(multiline, N, Msg, Opts, Indent)
+    end.
+format_list_item(short, N, Msg, Opts, Indent) ->
+    case maybe_format_short(Msg, Opts, Indent) of
+        {ok, SimpleFmt} ->
+            {short, io_lib:format("~s => ~s", [N, SimpleFmt])};
+        error -> error
+    end;
+format_list_item(multiline, N, Msg, Opts, Indent) ->
+    Formatted =
+        case is_multiline(Base = debug_format(Msg, Opts, Indent + 2)) of
+            true -> Base;
+            false -> remove_leading_noise(Base)
+        end,
+    {
+        multiline,
+        format_indented(
+            "~s => ~s~n",
+            [N, Formatted], 
+            Opts,
+            Indent + 1
+        )
+    }.
+
+%% @doc Join a list of strings and remove trailing noise.
 to_lines(Elems) ->
     remove_trailing_noise(do_to_lines(Elems)).
 do_to_lines([]) -> [];
@@ -692,8 +783,20 @@ do_to_lines(In =[RawElem | Rest]) ->
         false -> Elem ++ ", " ++ do_to_lines(Rest)
     end.
 
+%% @doc Remove any leading whitespace from a string.
+remove_leading_noise(Str) ->
+    remove_leading_noise(Str, ?NOISE_CHARS).
+remove_leading_noise([Char|Str], Noise) ->
+    case lists:member(Char, Noise) of
+        true ->
+            remove_leading_noise(Str, Noise);
+        false -> [Char|Str]
+    end.
+
+%% @doc Remove trailing noise characters from a string. By default, this is
+%% whitespace, newlines, and `,'.
 remove_trailing_noise(Str) ->
-    remove_trailing_noise(Str, " \n,").
+    remove_trailing_noise(Str, ?NOISE_CHARS).
 remove_trailing_noise(Str, Noise) ->
     case lists:member(lists:last(Str), Noise) of
         true ->
@@ -762,13 +865,25 @@ add_commas(List) -> List.
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
 format_maybe_multiline(X, Opts, Indent) ->
-    MaxLen = hb_opts:get(debug_print_map_line_threshold),
+    case maybe_format_short(X, Opts, Indent) of
+        {ok, SimpleFmt} -> SimpleFmt;
+        error ->
+            "\n" ++ lists:flatten(hb_message:format(X, Opts, Indent))
+    end.
+
+%% @doc Attempt to generate a short formatting of a message, using the given
+%% node options.
+maybe_format_short(X, Opts, _Indent) ->
+    MaxLen = hb_opts:get(debug_print_map_line_threshold, 100, Opts),
     SimpleFmt = io_lib:format("~p", [X]),
     case lists:flatlength(SimpleFmt) of
-        Len when Len > MaxLen ->
-            "\n" ++ lists:flatten(hb_message:format(X, Opts, Indent));
-        _ -> SimpleFmt
+        Len when Len > MaxLen -> error;
+        _ -> {ok, SimpleFmt}
     end.
+
+%% @doc Is the given string a multi-line string?
+is_multiline(Str) ->
+    lists:member($\n, Str).
 
 %% @doc Format and print an indented string to standard error.
 eunit_print(FmtStr, FmtArgs) ->
