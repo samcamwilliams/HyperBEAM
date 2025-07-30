@@ -398,27 +398,19 @@ handle_request(RawReq, Body, ServerID) ->
                     FormattedError =
                         hb_util:bin(
                             [
-                                hb_message:format(
-                                    hb_private:reset(#{
-                                        <<"type">> => Type,
-                                        <<"details">> => Details
-                                    })
-                                ),
-                                <<"~nStacktrace:~n">>,
-                                hb_util:format_trace(Stacktrace)
+                                <<"Termination type: '">>,
+                                hb_message:format(Type),
+                                <<"'\n\nStacktrace:\n\n">>,
+                                hb_util:format_trace(Stacktrace),
+                                <<"\n\nError details:\n\n">>,
+                                hb_message:format(Details, NodeMsg, 1)
                             ]
                         ),
                     {ok, ErrorPage} = dev_hyperbuddy:return_error(FormattedError),
                     ?event(
                         http_error,
-                        {http_error,
-                            {details,
-                                #{
-                                    type => Type,
-                                    details => Details,
-                                    stacktrace => Stacktrace
-                                }
-                            }
+                        {unexpected_http_request_termination,
+                            {string, <<"\n", FormattedError/binary, "\n">>}
                         }
                     ),
                     hb_http:reply(
