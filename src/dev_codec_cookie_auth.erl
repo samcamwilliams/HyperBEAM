@@ -12,13 +12,20 @@
 commit(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     % Calculate the key to use for the commitment.
-    Key =
+    SecretRes =
         case find_secret(Request, Opts) of
-            {error, no_committer} -> crypto:strong_rand_bytes(32);
+            {ok, RawSecret} -> {ok, RawSecret};
+            {error, no_committer} ->
+                generate_secret(Base, Request, Opts);
             {error, not_found} ->
-                throw({error, <<"Necessary cookie not found in request.">>});
-            {ok, Secret} -> Secret
+                throw({error, <<"Necessary cookie not found in request.">>})
         end,
+    case SecretRes of
+        {ok, Secret} -> commit(Secret, Base, Request, Opts);
+        {error, Err} -> {error, Err}
+    end.
+
+commit(Key, Base, Request, Opts) ->
     % Generate the commitment, find it, change the `commitment-device' to
     % `cookie@1.0', and add it back to the message.
     ExistingComms = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
@@ -53,10 +60,10 @@ commit(Base, Request, RawOpts) ->
                 }
         },
     ?event({cookie_commitment, {id, CommitmentID}, {commitment, ModCommittedMsg}}),
-    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
+    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(hb_util:decode(Key)),
     % Create the cookie parameters, using the name as the key and the secret as
     % the value.
-    BaseCookieParams = #{ <<"secret-", CookieAddr/binary>> => hb_util:encode(Key) },
+    BaseCookieParams = #{ <<"secret-", CookieAddr/binary>> => Key },
     % Add the reference of the commitment request to the cookie, if it is
     % present.
     CookieParams =
@@ -91,6 +98,30 @@ verify(Base, Request, RawOpts) ->
         },
     ?event({proxy_request, ProxyRequest}),
     {ok, hb_message:verify(Base, ProxyRequest, Opts)}.
+
+generate_secret(_Base, Request, Opts) ->
+    case hb_maps:get(<<"generator">>, Request, undefined, Opts) of
+        undefined ->
+            % If no generator is specified, use the default generator.
+            case hb_opts:get(cookie_default_generator, <<"random">>, Opts) of
+                <<"random">> ->
+                    default_generator(Opts);
+                Provider ->
+                    execute_generator(Provider, Opts)
+        end;
+        Provider ->
+            % Execute the user's generator function.
+            execute_generator(Provider, Opts)
+    end.
+
+default_generator(_Opts) ->
+    {ok, hb_util:encode(crypto:strong_rand_bytes(32))}.
+
+execute_generator(GeneratorPath, Opts) when is_binary(GeneratorPath) ->
+    hb_ao:resolve(GeneratorPath, Opts);
+execute_generator(Generator, Opts) ->
+    Path = hb_maps:get(<<"path">>, Generator, <<"generate">>, Opts),
+    hb_ao:resolve(Generator#{ <<"path">> => Path }, Opts).
 
 %% @doc Find the secret key for the given committer, if it exists in the cookie.
 find_secret(Request, Opts) ->
