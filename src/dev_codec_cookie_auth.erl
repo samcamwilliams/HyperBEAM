@@ -40,7 +40,7 @@ commit(Key, Base, Request, Opts) ->
             Request,
             Opts
         ),
-    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(hb_util:decode(Key)),
+    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
     % Create the cookie parameters, using the name as the key and the secret as
     % the value.
     BaseCookieParams = #{ <<"secret-", CookieAddr/binary>> => Key },
