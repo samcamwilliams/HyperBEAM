@@ -1285,7 +1285,7 @@ large_body_committed_keys_test(Codec, Opts) ->
     end.
 
 sign_node_message_test(Codec, Opts) ->
-    Msg = hb_message:commit(hb_opts:default_message(), Opts, Codec),
+    Msg = hb_message:commit(hb_opts:default_message_with_env(), Opts, Codec),
     ?event({committed, Msg}),
     ?assert(hb_message:verify(Msg, all, Opts)),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),

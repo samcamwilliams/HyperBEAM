@@ -35,7 +35,7 @@ start() ->
         end,
     MergedConfig =
         hb_maps:merge(
-            hb_opts:default_message(),
+            hb_opts:default_message_with_env(),
             Loaded
         ),
     PrivWallet =
@@ -135,7 +135,7 @@ print_greeter(Config, PrivWallet) ->
 new_server(RawNodeMsg) ->
     RawNodeMsgWithDefaults =
         hb_maps:merge(
-            hb_opts:default_message(),
+            hb_opts:default_message_with_env(),
             RawNodeMsg#{ only => local }
         ),
     HookMsg = #{ <<"body">> => RawNodeMsgWithDefaults },
@@ -396,13 +396,18 @@ handle_request(RawReq, Body, ServerID) ->
             catch
                 Type:Details:Stacktrace ->
                     FormattedError =
-                        hb_util:bin(hb_message:format(
-                            hb_private:reset(#{
-                                <<"type">> => Type,
-                                <<"details">> => Details,
-                                <<"stacktrace">> => Stacktrace
-                            })
-                        )),
+                        hb_util:bin(
+                            [
+                                hb_message:format(
+                                    hb_private:reset(#{
+                                        <<"type">> => Type,
+                                        <<"details">> => Details
+                                    })
+                                ),
+                                <<"~nStacktrace:~n">>,
+                                hb_util:format_trace(Stacktrace)
+                            ]
+                        ),
                     {ok, ErrorPage} = dev_hyperbuddy:return_error(FormattedError),
                     ?event(
                         http_error,
@@ -578,7 +583,7 @@ set_node_opts_test() ->
 %% @doc Test the set_opts/2 function that merges request with options,
 %% manages node history, and updates server state.
 set_opts_test() ->
-    DefaultOpts = hb_opts:default_message(),
+    DefaultOpts = hb_opts:default_message_with_env(),
     start_node(DefaultOpts#{ 
         priv_wallet => Wallet = ar_wallet:new(), 
         port => rand:uniform(10000) + 10000 

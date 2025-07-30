@@ -53,15 +53,17 @@ index(Msg, Req, Opts) ->
             {error, <<"No default index message set.">>};
         DefaultIndex ->
             hb_ao:resolve(
-                maps:merge(
-                    Msg,
-                    if is_map(DefaultIndex) -> DefaultIndex;
-                       is_binary(DefaultIndex) -> {as, DefaultIndex, Msg}
-                    end
-                ),
+                case is_map(DefaultIndex) of
+                    true -> maps:merge(Msg, DefaultIndex);
+                    false -> {as, DefaultIndex, Msg}
+                end,
                 Req#{
                     <<"path">> =>
-                        hb_opts:get(default_index_path, <<"index">>, Opts)
+                        case hb_maps:find(<<"path">>, DefaultIndex, Opts) of
+                            {ok, Path} -> Path;
+                            _ ->
+                                hb_opts:get(default_index_path, <<"index">>, Opts)
+                        end
                 },
                 Opts
             )
