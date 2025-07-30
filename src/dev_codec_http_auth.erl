@@ -1,9 +1,11 @@
 %%% @doc Implements a two-step authentication process for HTTP requests, using
-%%% the `Basic' authentication scheme. It implements a proxy `~httpsig@1.0'
-%%% secret key HMAC commitment scheme. Additionally, it implements a `generator'
-%%% function that can be used to call PBKDF2 with the user's authentication
-%%% information.
--module(dev_http_auth).
+%%% the `Basic' authentication scheme, implementing the `commit' and `verify'
+%%% scheme of `~message@1.0'.
+%%%
+%%% Its implementation proxies to the `~httpsig@1.0' secret key HMAC commitment
+%%% scheme. Additionally, it implements a `generator' function that can be used
+%%% to call PBKDF2 with the user's authentication information.
+-module(dev_codec_http_auth).
 -export([commit/3, verify/3]).
 -export([generate/3]).
 -include("include/hb.hrl").
