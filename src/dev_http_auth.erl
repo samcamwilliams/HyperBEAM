@@ -1,11 +1,54 @@
 %%% @doc Implements a two-step authentication process for HTTP requests, using
-%%% the `Basic' authentication scheme.
+%%% the `Basic' authentication scheme. It implements a proxy `~httpsig@1.0'
+%%% secret key HMAC commitment scheme. Additionally, it implements a `generator'
+%%% function that can be used to call PBKDF2 with the user's authentication
+%%% information.
 -module(dev_http_auth).
+-export([commit/3, verify/3]).
 -export([generate/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%% @doc The default salt to use for the PBKDF2 algorithm. This value must be
+%% global across all nodes that intend to have a shared keyspace, although in
+%% instances where this is not possible, users may specify non-standard salts
+%% to the `/generate' path with the `salt' request key.
 -define(DEFAULT_SALT, <<"constant:ao">>).
+
+%% @doc Generate or extract a new secret and commit to the message with the
+%% `~httpsig@1.0/commit?type=hmac-sha256&scheme=secret' commitment mechanism.
+commit(Base, Req, Opts) ->
+    case generate(Base, Req, Opts) of
+        {ok, Key} ->
+            {ok, CommitRes} =
+                dev_codec_httpsig_proxy:commit(
+                    <<"http-auth@1.0">>,
+                    Key,
+                    Base,
+                    Req,
+                    Opts
+                ),
+            ?event({commit_result, CommitRes}),
+            {ok, CommitRes};
+        {error, Err} ->
+            {error, Err}
+    end.
+
+%% @doc Verify a given `Base' message with a given `Key' using the `~httpsig@1.0'
+%% HMAC commitment scheme.
+verify(Base, RawReq, Opts) ->
+    ?event({verify_invoked, {base, Base}, {req, RawReq}}),
+    {ok, Key} = generate(Base, RawReq, Opts),
+    ?event({verify_found_key, {key, Key}, {base, Base}, {req, RawReq}}),
+    {ok, VerifyRes} =
+        dev_codec_httpsig_proxy:verify(
+            Key,
+            Base,
+            RawReq,
+            Opts
+        ),
+    ?event({verify_result, VerifyRes}),
+    {ok, VerifyRes}.
 
 %% @doc Collect authentication information from the client. If the `raw' flag
 %% is set to `true', return the raw authentication information. Otherwise,
