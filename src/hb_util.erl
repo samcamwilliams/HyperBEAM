@@ -645,9 +645,8 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_record(Y, tx) ->
         Opts,
         Indent
     );
-do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y) ->
+do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
     Formatted = format_maybe_multiline(Y, Opts, Indent + 1),
-    HasNewline = lists:member($\n, Formatted),
     format_indented(
         case is_binary(X) of
             true -> "~s";
@@ -655,7 +654,7 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y) ->
         end ++ "~s",
         [
             X,
-            case HasNewline of
+            case is_multiline(Formatted) of
                 true -> " ==>" ++ Formatted;
                 false -> ": " ++ Formatted
             end
