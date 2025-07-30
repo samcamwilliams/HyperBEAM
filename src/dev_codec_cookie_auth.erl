@@ -107,11 +107,11 @@ generate_secret(_Base, Request, Opts) ->
                 <<"random">> ->
                     default_generator(Opts);
                 Provider ->
-                    execute_generator(Provider, Opts)
+                    execute_generator(Request#{<<"path">> => Provider}, Opts)
         end;
         Provider ->
             % Execute the user's generator function.
-            execute_generator(Provider, Opts)
+            execute_generator(Request#{<<"path">> => Provider}, Opts)
     end.
 
 default_generator(_Opts) ->
