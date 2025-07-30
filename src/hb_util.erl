@@ -600,7 +600,7 @@ debug_format(X, Opts) -> debug_format(X, Opts, 0).
 debug_format(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
-        case loud of %hb_opts:get(debug_print_fail_mode, quiet) of
+        case hb_opts:get(debug_print_fail_mode, quiet, Opts) of
             quiet ->
                 format_indented("[!Format failed!] ~p", [X], Opts, Indent);
             _ ->
@@ -685,8 +685,6 @@ do_debug_fmt(X, Opts, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Opts, Indent);
 do_debug_fmt(Str = [X | _], Opts, Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Opts, Indent);
-do_debug_fmt([], Opts, Indent) ->
-    format_indented("[]", [], Opts, Indent);
 do_debug_fmt(MsgList, Opts, Indent) when is_list(MsgList) ->
     format_list(MsgList, Opts, Indent);
 do_debug_fmt(X, Opts, Indent) ->
@@ -712,9 +710,8 @@ format_list(MsgList, Opts, Indent) ->
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
             "\n" ++
-                format_indented("List [~w] {~n", [length(MsgList)], Opts, Indent) ++
-                format_list_lines(MsgList, Opts, Indent) ++ 
-                format_indented("}", [], Opts, Indent)
+                format_indented("List [~w] {", [length(MsgList)], Opts, Indent) ++
+                format_list_lines(MsgList, Opts, Indent)
     end.
 
 %% @doc Format a list as a multi-line string.
@@ -733,15 +730,29 @@ format_list_lines(MsgList, Opts, Indent) ->
             Lines
         ),
     case AnyLong of
-        false -> [ Line || {short, Line} <- Lines ];
+        false ->
+            "\n" ++
+                remove_trailing_noise(
+                    lists:flatten(
+                        lists:map(
+                            fun({_, Line}) ->
+                                Line
+                            end,
+                            Lines
+                        )
+                    )
+                ) ++
+                "\n" ++
+                format_indented("}", [], Opts, Indent);
         true ->
-            lists:map(
+            "\n" ++
+            lists:flatten(lists:map(
                 fun({N, Msg}) ->
                     {_, Line} = format_list_item(multiline, N, Msg, Opts, Indent),
                     Line
                 end,
                 Numbered
-            )
+            )) ++ format_indented("}", [], Opts, Indent)
     end.
 
 %% @doc Format a single element of a list.
@@ -753,7 +764,7 @@ format_list_item(N, Msg, Opts, Indent) ->
 format_list_item(short, N, Msg, Opts, Indent) ->
     case maybe_format_short(Msg, Opts, Indent) of
         {ok, SimpleFmt} ->
-            {short, io_lib:format("~s => ~s", [N, SimpleFmt])};
+            {short, format_indented("~s => ~s~n", [N, SimpleFmt], Opts, Indent + 1)};
         error -> error
     end;
 format_list_item(multiline, N, Msg, Opts, Indent) ->
@@ -845,7 +856,10 @@ format_binary(Bin) ->
                     case Printable == Bin of
                         true -> "\"";
                         false ->
-                            io_lib:format("...\" <~s bytes>", [human_int(byte_size(Bin))])
+                            io_lib:format(
+                                "...\" <~s bytes>",
+                                [human_int(byte_size(Bin))]
+                            )
                     end
                 ]
             );
@@ -875,10 +889,14 @@ format_maybe_multiline(X, Opts, Indent) ->
 %% node options.
 maybe_format_short(X, Opts, _Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold, 100, Opts),
-    SimpleFmt = io_lib:format("~p", [X]),
-    case lists:flatlength(SimpleFmt) of
-        Len when Len > MaxLen -> error;
-        _ -> {ok, SimpleFmt}
+    SimpleFmt =
+        case is_binary(X) of
+            true -> format_binary(X);
+            false -> io_lib:format("~p", [X])
+        end,
+    case is_multiline(SimpleFmt) orelse (lists:flatlength(SimpleFmt) > MaxLen) of
+        true -> error;
+        false -> {ok, SimpleFmt}
     end.
 
 %% @doc Is the given string a multi-line string?
