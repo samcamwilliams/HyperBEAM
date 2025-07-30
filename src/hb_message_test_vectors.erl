@@ -2,9 +2,7 @@
 %%% `message@1.0' encoding and commitment APIs. Additionally, this module 
 %%% houses tests that ensure the general functioning of the `hb_message' API.
 -module(hb_message_test_vectors).
-
 -include_lib("eunit/include/eunit.hrl").
-
 -include("include/hb.hrl").
 
 %% @doc Test invocation function, making it easier to run a specific test.
