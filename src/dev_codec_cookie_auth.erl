@@ -1,9 +1,12 @@
-%%% @moduledoc Implements the authentication mechanisms of the cookie codec.
+%%% @doc Implements the authentication mechanisms of the cookie codec.
 %%% See the [cookie codec](dev_codec_cookie.html) documentation for more details.
+%%% Under-the-hood, this module uses the `~httpsig@1.0' commitment scheme to
+%%% commit the message, as well as its proxy functions to verify the commitment
+%%% with a secret key.
 -module(dev_codec_cookie_auth).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
--export([commit/3, verify/3]).
+-export([commit/3, verify/3, commit/4]).
 
 %% @doc Generate a new secret (if no `committer' specified), and use it as the
 %% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 
@@ -25,41 +28,18 @@ commit(Base, Request, RawOpts) ->
         {error, Err} -> {error, Err}
     end.
 
+%% @doc Given the secret key, commit the message and set the cookie. This 
+%% function may be used by other devices via a direct module call, in order to
+%% commit a message and set the given secret key in the cookie.
 commit(Key, Base, Request, Opts) ->
-    % Generate the commitment, find it, change the `commitment-device' to
-    % `cookie@1.0', and add it back to the message.
-    ExistingComms = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
-    CommittedMsg =
-        hb_message:commit(
-            hb_message:uncommitted(Base, Opts),
-            Opts,
-            Request#{
-                <<"commitment-device">> => <<"httpsig@1.0">>,
-                <<"type">> => <<"hmac-sha256">>,
-                <<"scheme">> => <<"secret">>,
-                <<"key">> => hb_util:decode(Key)
-            }
-        ),
-    {ok, CommitmentID, Commitment} =
-        hb_message:commitment(
-            #{
-                <<"commitment-device">> => <<"httpsig@1.0">>,
-                <<"type">> => <<"hmac-sha256">>
-            },
-            CommittedMsg,
+    {ok, CommittedMsg} =
+        dev_codec_httpsig_proxy:commit(
+            <<"cookie@1.0">>,
+            Key,
+            Base,
+            Request,
             Opts
         ),
-    ModCommittedMsg =
-        CommittedMsg#{
-            <<"commitments">> =>
-                ExistingComms#{
-                    CommitmentID =>
-                        Commitment#{
-                            <<"commitment-device">> => <<"cookie@1.0">>
-                        }
-                }
-        },
-    ?event({cookie_commitment, {id, CommitmentID}, {commitment, ModCommittedMsg}}),
     CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(hb_util:decode(Key)),
     % Create the cookie parameters, using the name as the key and the secret as
     % the value.
@@ -80,25 +60,29 @@ commit(Key, Base, Request, Opts) ->
                 }
         end,
     % Set the cookie on the message with the new commitment and return.
-    dev_codec_cookie:store(ModCommittedMsg, CookieParams, Opts).
+    {ok, WithCookie} = dev_codec_cookie:store(CommittedMsg, CookieParams, Opts),
+    ?event({cookie_committed, {message, WithCookie}}),
+    {ok, WithCookie}.
 
-%% @doc Verify the hmac commitment with the key being the secret from the 
+%% @doc Verify the HMAC commitment with the key being the secret from the 
 %% request cookies. We find the appropriate cookie from the cookie message by
 %% the committer ID given in the request message.
 verify(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     ?event({verify, {base, Base}, {request, Request}}),
     {ok, Secret} = find_secret(Request, Opts),
-    % Reformat the request to include the secret as a key.
-    ProxyRequest =
-        Request#{
-            <<"commitment-device">> => <<"httpsig@1.0">>,
-            <<"path">> => <<"verify">>,
-            <<"key">> => Secret
-        },
-    ?event({proxy_request, ProxyRequest}),
-    {ok, hb_message:verify(Base, ProxyRequest, Opts)}.
+    dev_codec_httpsig_proxy:verify(
+        hb_util:decode(Secret),
+        Base,
+        Request,
+        Opts
+    ).
 
+%% @doc Generate a new secret key for the given request. The user may specify
+%% a generator function in the request, which will be executed to generate the
+%% secret key. If no generator is specified, the default generator is used.
+%% A `generator` may be either a path or full message. If no path is present in
+%% a generator message, the `generate` path is assumed.
 generate_secret(_Base, Request, Opts) ->
     case hb_maps:get(<<"generator">>, Request, undefined, Opts) of
         undefined ->
@@ -114,9 +98,11 @@ generate_secret(_Base, Request, Opts) ->
             execute_generator(Request#{<<"path">> => Provider}, Opts)
     end.
 
+%% @doc Generate a new secret key using the default generator.
 default_generator(_Opts) ->
     {ok, hb_util:encode(crypto:strong_rand_bytes(32))}.
 
+%% @doc Execute a generator function. See `generate_secret/3' for more details.
 execute_generator(GeneratorPath, Opts) when is_binary(GeneratorPath) ->
     hb_ao:resolve(GeneratorPath, Opts);
 execute_generator(Generator, Opts) ->
