@@ -197,10 +197,10 @@ default_message() ->
         % should be recorded here.
         node_history => [],
         debug_stack_depth => 40,
+        debug_print => false,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
         debug_print_indent => 2,
-        debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 20,

@@ -413,12 +413,10 @@ handle_request(RawReq, Body, ServerID) ->
                         http_error,
                         {http_error,
                             {details,
-                                {explicit,
-                                    #{
-                                        type => Type,
-                                        details => Details,
-                                        stacktrace => Stacktrace
-                                    }
+                                #{
+                                    type => Type,
+                                    details => Details,
+                                    stacktrace => Stacktrace
                                 }
                             }
                         }
