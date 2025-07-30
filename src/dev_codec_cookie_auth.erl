@@ -37,7 +37,7 @@ commit(Key, Base, Request, Opts) ->
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"hmac-sha256">>,
                 <<"scheme">> => <<"secret">>,
-                <<"key">> => Key
+                <<"key">> => hb_util:decode(Key)
             }
         ),
     {ok, CommitmentID, Commitment} =
