@@ -6,7 +6,23 @@
 -module(dev_codec_cookie_auth).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
--export([commit/3, verify/3, commit/4]).
+-export([commit/3, verify/3]).
+-export([normalize/3, commit/4]).
+
+%% @doc Normalize the authentication credentials, generating new ones if needed.
+normalize(Base, Request, Opts) ->
+    Normalized = 
+        case dev_codec_cookie:extract(Request, #{}, Opts) of
+            {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
+                ?event(auth_hook_generating_new_auth),
+                {ok, Generated} = dev_wallet:generate(Base, Request, Opts),
+                {ok, NewCookies} = dev_codec_cookie:extract(Generated, Request, Opts),
+                NewCookies;
+            {ok, ExistingCookies} ->
+                ExistingCookies
+        end,
+    NewOpts = hb_http_server:get_opts(Opts),
+    {ok, _WithAuth} = dev_codec_cookie:store(Request, Normalized, NewOpts).
 
 %% @doc Generate a new secret (if no `committer' specified), and use it as the
 %% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 
