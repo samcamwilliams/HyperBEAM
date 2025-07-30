@@ -673,7 +673,8 @@ do_debug_fmt({X, Y}, Opts, Indent) ->
         Opts,
         Indent
     );
-do_debug_fmt(Map, Opts, Indent) when is_map(Map) ->
+do_debug_fmt(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
+    Map = hb_private:reset(MaybePrivMap),
     case maybe_format_short(Map, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->

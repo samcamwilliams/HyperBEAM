@@ -413,7 +413,25 @@ format(List, Opts, Indent) when is_list(List) ->
         [$\n | String] -> String;
         String -> String
     end;
-format(Map, Opts, Indent) when is_map(Map) ->
+format(RawMap, Opts, Indent) when is_map(RawMap) ->
+    % Should we filter out the priv key?
+    FilterPriv = hb_opts:get(debug_show_priv, false, Opts),
+    MainPriv = hb_maps:get(<<"priv">>, RawMap, #{}, Opts),
+    % Add private keys to the output if they are not hidden. Opt takes 3 forms:
+    % 1. `false' -- never show priv
+    % 2. `if_present' -- show priv only if there are keys inside
+    % 2. `always' -- always show priv
+    FooterKeys =
+        case {FilterPriv, MainPriv} of
+            {false, _} -> [];
+            {if_present, #{}} -> [];
+            {_, Priv} -> [{<<"!Private!">>, Priv}]
+        end,
+    Map =
+        case FilterPriv of
+            false -> RawMap;
+            _ -> hb_private:reset(RawMap)
+        end,
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
         fun(<<"hashpath">>) ->
@@ -512,16 +530,6 @@ format(Map, Opts, Indent) when is_map(Map) ->
             {<<"path">>, ValOrUndef(<<"path">>)},
             {<<"device">>, ValOrUndef(<<"device">>)}
         ],
-    % Add private keys to the output if they are not hidden. Opt takes 3 forms:
-    % 1. `false' -- never show priv
-    % 2. `if_present' -- show priv only if there are keys inside
-    % 2. `always' -- always show priv
-    FooterKeys =
-        case {hb_opts:get(debug_show_priv, false, Opts), hb_maps:get(<<"priv">>, Map, #{}, Opts)} of
-            {false, _} -> [];
-            {if_present, #{}} -> [];
-            {_, Priv} -> [{<<"!Private!">>, Priv}]
-        end,
     % Concatenate the path and device rows with the rest of the key values.
     UnsortedGeneralKeyVals =
         maps:to_list(
