@@ -41,7 +41,7 @@ generate(_Msg, Req, Opts) ->
 derive_key(Decoded, Req, Opts) ->
     Alg = hb_util:atom(hb_maps:get(<<"alg">>, Req, <<"sha256">>, Opts)),
     Salt = hb_maps:get(<<"salt">>, Req, ?DEFAULT_SALT, Opts),
-    Iterations = hb_maps:get(<<"iterations">>, Req, 1000, Opts),
+    Iterations = hb_maps:get(<<"iterations">>, Req, 600_000, Opts),
     KeyLength = hb_maps:get(<<"key-length">>, Req, 32, Opts),
     ?event(
         {derive_key,
