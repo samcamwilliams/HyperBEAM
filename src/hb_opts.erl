@@ -131,6 +131,7 @@ default_message() ->
             #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
             #{<<"name">> => <<"http-auth@1.0">>, <<"module">> => dev_codec_http_auth},
+            #{<<"name">> => <<"hook@1.0">>, <<"module">> => dev_hook},
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
@@ -207,7 +208,7 @@ default_message() ->
         debug_metadata => true,
         debug_ids => true,
         debug_committers => true,
-        debug_show_priv => if_present,
+        debug_show_priv => true,
         debug_resolve_links => false,
 		trusted => #{},
         snp_enforced_keys => [

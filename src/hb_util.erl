@@ -632,6 +632,8 @@ do_debug_fmt({explicit, X}, Opts, Indent) ->
     format_indented("[Explicit:] ~p", [X], Opts, Indent);
 do_debug_fmt({string, X}, Opts, Indent) ->
     format_indented("~s", [X], Opts, Indent);
+do_debug_fmt({trace, Trace}, Opts, Indent) ->
+    format_indented("~n~s", [format_trace(Trace)], Opts, Indent);
 do_debug_fmt({as, undefined, Msg}, Opts, Indent) ->
     "\n" ++ format_indented("Subresolve => ", [], Opts, Indent) ++
         format_maybe_multiline(Msg, Opts, Indent + 1);
