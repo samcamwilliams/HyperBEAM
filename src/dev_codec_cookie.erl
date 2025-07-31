@@ -39,23 +39,29 @@
 %%% Public commit/verify API.
 -export([commit/3, verify/3]).
 %%% Preprocessor hook API.
--export([request/3]).
+-export([normalize/3, finalize/3]).
 %%% Public utility functions.
 -export([opts/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
+%% @doc Get the private store options to use for functions in the cookie device.
+opts(Opts) -> hb_private:opts(Opts).
+
 %%% ~message@1.0 Commitments API keys.
 commit(Base, Req, RawOpts) -> dev_codec_cookie_auth:commit(Base, Req, RawOpts).
 verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 
-%% @doc Preprocessor that utilizes cookies and the `~wallet@1.0' device to sign
-%% inbound HTTP requests from users if they are not already signed.
-request(Base, Req, Opts) ->
-    dev_codec_cookie_hook:request(Base, Req, Opts).
+%% @doc Preprocessor keys that utilize cookies and the `~wallet@1.0' device to
+%% sign inbound HTTP requests from users if they are not already signed. We use
+%% the `~hook@1.0' authentication framework to implement this.
+normalize(Base, Req, Opts) ->
+    dev_codec_cookie_auth:normalize(Base, Req, Opts).
 
-%% @doc Get the private store options to use for functions in the cookie device.
-opts(Opts) -> hb_private:opts(Opts).
+%% @doc Finalize an `on-request' hook by adding the `set-cookie' header to the
+%% end of the message sequence.
+finalize(Base, Request, Opts) ->
+    dev_codec_cookie_auth:finalize(Base, Request, Opts).
 
 %% @doc Get the cookie with the given key from the base message. The format of
 %% the cookie is determined by the `format' key in the request message:

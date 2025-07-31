@@ -7,7 +7,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -export([commit/3, verify/3]).
--export([normalize/3, commit/4]).
+-export([normalize/3, finalize/3]).
 
 %% @doc Normalize the authentication credentials, generating new ones if needed.
 normalize(Base, Request, Opts) ->
@@ -23,6 +23,26 @@ normalize(Base, Request, Opts) ->
         end,
     NewOpts = hb_http_server:get_opts(Opts),
     {ok, _WithAuth} = dev_codec_cookie:store(Request, Normalized, NewOpts).
+
+%% @doc Finalize an `on-request' hook by adding the cookie to the chain of 
+%% messages. The inbound request has the same structure as a normal `~hook@1.0'
+%% on-request hook: The message sequence is the body of the request, and the
+%% request is the request message.
+finalize(_Base, Request, Opts) ->
+    {ok, SignedMsg} = hb_maps:get(<<"request">>, Request, Opts),
+    {ok, MessageSequence} = hb_maps:get(<<"body">>, Request, Opts),
+    % Cookie auth adds set-cookie to response
+    {ok, #{ <<"set-cookie">> := SetCookie }} =
+        dev_codec_cookie:to(
+            SignedMsg,
+            #{ <<"format">> => <<"set-cookie">> },
+            Opts
+        ),
+    {
+        ok,
+        MessageSequence ++
+            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }]
+    }.
 
 %% @doc Generate a new secret (if no `committer' specified), and use it as the
 %% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 

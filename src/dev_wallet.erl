@@ -172,10 +172,10 @@
 -include("include/hb.hrl").
 
 %% @doc Generate a new wallet for a user and register it on the node.
-generate(Base, Request, Opts) ->
+generate(_Base, Request, Opts) ->
     % Create the new wallet, then join the combined code path with the import key.
     Wallet = ar_wallet:new(),
-    register_wallet(Wallet, Base, Request, Opts).
+    register_wallet(Wallet, Request, Opts).
 
 %% @doc Import a wallet for hosting on the node. Expects the keys to be either
 %% provided as a list of keys in the `keys' field, or a single key in the
@@ -199,16 +199,16 @@ import(Base, Request, Opts) ->
         [] ->
             {error, <<"No viable wallets found to import.">>};
         Wallets ->
-            import_wallets(Wallets, Base, Request, Opts)
+            import_wallets(Wallets, Request, Opts)
     end.
 
 %% @doc Register a series of wallets, returning a summary message with the
 %% list of imported wallets, as well as merged cookies.
-import_wallets(Wallets, Base, Request, Opts) ->
+import_wallets(Wallets, Request, Opts) ->
     Res =
         lists:foldl(
             fun(Wallet, Acc) ->
-                case register_wallet(Wallet, Base, Request, Opts) of
+                case register_wallet(Wallet, Request, Opts) of
                     {ok, RegRes} ->
                         % Merge the private element of the registration response
                         % into the accumulator.
@@ -243,7 +243,7 @@ wallet_from_key(Key) ->
     Key.
 
 %% @doc Register a wallet on the node.
-register_wallet(Wallet, _Base, Request, Opts) ->
+register_wallet(Wallet, Request, Opts) ->
     % Find the wallet's address.
     {PrivKey, _} = Wallet,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),

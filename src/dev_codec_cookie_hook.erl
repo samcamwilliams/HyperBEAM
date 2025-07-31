@@ -73,7 +73,7 @@ request(Base, HookReq, Opts) ->
 %% both the normalized message and the new node message. If there is no existing
 %% cookie, we resolve the `generate' path to generate a new wallet and set the
 %% cookie.
-normalize_cookie(Base, Request, Opts) ->
+normalize_cookie(_Base, Request, Opts) ->
     % If there is no existing cookie, we resolve the `generate' path to
     % generate a new wallet and set the cookie.
     ?event({normalizing_cookie, Request}),
@@ -81,8 +81,7 @@ normalize_cookie(Base, Request, Opts) ->
         case dev_codec_cookie:extract(Request, #{}, Opts) of
             {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
                 ?event({generating_cookie, Request}),
-                GenerateRes =
-                    dev_wallet:generate(Base, Request, Opts),
+                GenerateRes = dev_wallet:generate(#{}, Request, Opts),
                 ?event({generated_cookie, GenerateRes}),
                 {ok, Generated} = GenerateRes,
                 ?event({generated_cookie_message, Generated}),
