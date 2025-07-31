@@ -171,11 +171,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
+-define(DEFAULT_AUTH_DEVICE, <<"cookie@1.0">>).
+
 %% @doc Generate a new wallet for a user and register it on the node.
-generate(_Base, Request, Opts) ->
+generate(Base, Request, Opts) ->
     % Create the new wallet, then join the combined code path with the import key.
     Wallet = ar_wallet:new(),
-    register_wallet(Wallet, Request, Opts).
+    register_wallet(Wallet, Base, Request, Opts).
 
 %% @doc Import a wallet for hosting on the node. Expects the keys to be either
 %% provided as a list of keys in the `keys' field, or a single key in the
@@ -199,16 +201,16 @@ import(Base, Request, Opts) ->
         [] ->
             {error, <<"No viable wallets found to import.">>};
         Wallets ->
-            import_wallets(Wallets, Request, Opts)
+            import_wallets(Wallets, Base, Request, Opts)
     end.
 
 %% @doc Register a series of wallets, returning a summary message with the
 %% list of imported wallets, as well as merged cookies.
-import_wallets(Wallets, Request, Opts) ->
+import_wallets(Wallets, Base, Request, Opts) ->
     Res =
         lists:foldl(
             fun(Wallet, Acc) ->
-                case register_wallet(Wallet, Request, Opts) of
+                case register_wallet(Wallet, Base, Request, Opts) of
                     {ok, RegRes} ->
                         % Merge the private element of the registration response
                         % into the accumulator.
@@ -243,7 +245,7 @@ wallet_from_key(Key) ->
     Key.
 
 %% @doc Register a wallet on the node.
-register_wallet(Wallet, Request, Opts) ->
+register_wallet(Wallet, Base, Request, Opts) ->
     % Find the wallet's address.
     {PrivKey, _} = Wallet,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
@@ -252,9 +254,9 @@ register_wallet(Wallet, Request, Opts) ->
     % Get the authentication message from the request. If the message is a path
     % or a message with a `path' field, we resolve it to get the base.
     {ok, BaseAuthMsg} =
-        case hb_ao:get(<<"auth">>, Request, undefined, Opts) of
+        case hb_ao:get(<<"auth">>, Base, undefined, Opts) of
             undefined ->
-                {ok, #{ <<"device">> => <<"cookie@1.0">> }};
+                {ok, #{ <<"device">> => ?DEFAULT_AUTH_DEVICE }};
             AuthPath when is_binary(AuthPath) ->
                 hb_ao:resolve(AuthPath, Opts);
             Msg ->
