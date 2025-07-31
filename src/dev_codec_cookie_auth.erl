@@ -13,13 +13,20 @@
 normalize(Base, Request, Opts) ->
     Normalized = 
         case dev_codec_cookie:extract(Request, #{}, Opts) of
-            {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
-                ?event(auth_hook_generating_new_auth),
+            {ok, ExistingCookies} when map_size(ExistingCookies) > 0 ->
+                ExistingCookies;
+            {ok, _EmptyCookie} ->
+                ?event(
+                    {
+                        no_existing_cookie,
+                        generate_wallet,
+                        {base, Base},
+                        {request, Request}
+                    }
+                ),
                 {ok, Generated} = dev_wallet:generate(Base, Request, Opts),
                 {ok, NewCookies} = dev_codec_cookie:extract(Generated, Request, Opts),
-                NewCookies;
-            {ok, ExistingCookies} ->
-                ExistingCookies
+                NewCookies
         end,
     NewOpts = hb_http_server:get_opts(Opts),
     {ok, _WithAuth} = dev_codec_cookie:store(Request, Normalized, NewOpts).
@@ -29,20 +36,24 @@ normalize(Base, Request, Opts) ->
 %% on-request hook: The message sequence is the body of the request, and the
 %% request is the request message.
 finalize(_Base, Request, Opts) ->
-    {ok, SignedMsg} = hb_maps:get(<<"request">>, Request, Opts),
-    {ok, MessageSequence} = hb_maps:get(<<"body">>, Request, Opts),
-    % Cookie auth adds set-cookie to response
-    {ok, #{ <<"set-cookie">> := SetCookie }} =
-        dev_codec_cookie:to(
-            SignedMsg,
-            #{ <<"format">> => <<"set-cookie">> },
-            Opts
-        ),
-    {
-        ok,
-        MessageSequence ++
-            [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }]
-    }.
+    maybe
+        {ok, SignedMsg} ?= hb_maps:find(<<"request">>, Request, Opts),
+        {ok, MessageSequence} ?= hb_maps:find(<<"body">>, Request, Opts),
+        % Cookie auth adds set-cookie to response
+        {ok, #{ <<"set-cookie">> := SetCookie }} =
+            dev_codec_cookie:to(
+                SignedMsg,
+                #{ <<"format">> => <<"set-cookie">> },
+                Opts
+            ),
+        {
+            ok,
+            MessageSequence ++
+                [#{ <<"path">> => <<"set">>, <<"set-cookie">> => SetCookie }]
+        }
+    else error ->
+        {error, no_request}
+    end.
 
 %% @doc Generate a new secret (if no `committer' specified), and use it as the
 %% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 

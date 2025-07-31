@@ -297,8 +297,20 @@ resolve_hook(HookName, InitiatingRequest, Body, NodeMsg) ->
     ?event(hook, {resolve_hook, HookName, HookReq}),
     case dev_hook:on(HookName, HookReq, NodeMsg) of
         {ok, #{ <<"body">> := ResponseBody }} ->
+            ?event(hook,
+                {resolve_hook_success,
+                    {name, HookName},
+                    {response_body, ResponseBody}
+                }
+            ),
             {ok, ResponseBody};
         {error, _} = Error ->
+            ?event(hook,
+                {resolve_hook_error,
+                    {name, HookName},
+                    {error, Error}
+                }
+            ),
             Error;
         Other ->
             {error, Other}

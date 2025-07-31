@@ -173,11 +173,19 @@
 
 -define(DEFAULT_AUTH_DEVICE, <<"cookie@1.0">>).
 
-%% @doc Generate a new wallet for a user and register it on the node.
+%% @doc Generate a new wallet for a user and register it on the node. If the
+%% `committer' field is provided, we first check whether there is a wallet
+%% already registered for it. If there is, we return the wallet details.
 generate(Base, Request, Opts) ->
-    % Create the new wallet, then join the combined code path with the import key.
-    Wallet = ar_wallet:new(),
-    register_wallet(Wallet, Base, Request, Opts).
+    case request_to_wallets(Base, Request, Opts) of
+        [] ->
+            % No wallets found, create a new one.
+            Wallet = ar_wallet:new(),
+            register_wallet(Wallet, Base, Request, Opts);
+        [WalletDetails] ->
+            % Wallets found, return them.
+            {ok, [WalletDetails]}
+    end.
 
 %% @doc Import a wallet for hosting on the node. Expects the keys to be either
 %% provided as a list of keys in the `keys' field, or a single key in the
@@ -364,7 +372,7 @@ commit(Base, Request, Opts) ->
                     fun(WalletDetails, Acc) ->
                         sign_message(Acc, WalletDetails, Opts)
                     end,
-                    Request,
+                    Base,
                     WalletDetailsList
                 )
             }
@@ -374,15 +382,19 @@ commit(Base, Request, Opts) ->
 %% of access rights for the wallets before returning them.
 request_to_wallets(Base, Request, Opts) ->
     % Get the wallet references or keys from the request or cookie.
+    ?event({request_to_wallets, {base, Base}, {request, Request}}),
     ExplicitWallets =
         hb_ao:get_first(
             [
                 {Request, <<"wallets">>},
-                {Request, <<"wallet">>}
+                {Request, <<"wallet">>},
+                {Base, <<"wallets">>},
+                {Base, <<"wallet">>}
             ],
             <<"all">>,
             Opts
         ),
+    ?event({request_to_wallets, {requested_wallets, ExplicitWallets}}),
     Wallets =
         case ExplicitWallets of
             <<"all">> ->
@@ -393,11 +405,14 @@ request_to_wallets(Base, Request, Opts) ->
             FoundWalletName when is_binary(FoundWalletName) ->
                 [ {wallet_addr, FoundWalletName} ]
         end,
+    ?event({request_to_wallets, {found_wallets, Wallets}}),
     ?event({attempting_to_load_wallets, {wallets, Wallets}, {request, Request}}),
     lists:filtermap(
         fun(WalletRef) ->
             case load_and_verify_access_wallet(WalletRef, Base, Request, Opts) of
-                {ok, WalletDetails} -> {true, WalletDetails};
+                {ok, WalletDetails} ->
+                    ?event({request_to_wallets, {loaded_wallet, WalletDetails}}),
+                    {true, WalletDetails};
                 {error, Reason} ->
                     ?event(
                         {failed_to_load_wallet,
@@ -416,7 +431,7 @@ request_to_wallets(Base, Request, Opts) ->
 load_and_verify_access_wallet({wallet_key, WalletKey}, _Base, _Request, _Opts) ->
     % Return the wallet key.
     {ok, #{ <<"key">> => WalletKey }};
-load_and_verify_access_wallet({wallet_addr, WalletName}, Base, Request, Opts) ->
+load_and_verify_access_wallet({wallet_addr, WalletName}, _Base, Request, Opts) ->
     % Get the wallet from the node's options.
     case find_wallet(WalletName, Opts) of
         not_found -> {error, <<"Wallet not hosted on node.">>};
@@ -427,7 +442,7 @@ load_and_verify_access_wallet({wallet_addr, WalletName}, Base, Request, Opts) ->
                     % return the request as-is with the wallet.
                     {ok, WalletDetails};
                 false ->
-                    case verify_wallet(Base, WalletDetails, Opts) of
+                    case verify_wallet(Request, WalletDetails, Opts) of
                         {ok, true} ->
                             {ok, WalletDetails};
                         {ok, false} ->
@@ -453,10 +468,10 @@ validate_export_signers(WalletDetails, Request, Opts) ->
     ).
 
 %% @doc Verify a wallet for a given request.
-verify_wallet(Base, WalletDetails, Opts) ->
+verify_wallet(Req, WalletDetails, Opts) ->
     AuthBase = hb_maps:get(<<"auth">>, WalletDetails, #{}, Opts),
     AuthRequest =
-        Base#{
+        Req#{
             <<"path">> => <<"verify">>,
             <<"committer">> =>
                 hb_maps:get(<<"committer">>, WalletDetails, undefined, Opts)
@@ -494,8 +509,7 @@ sign_message(Message, NonMap, Opts) when not is_map(NonMap) ->
 sign_message(Message, #{ <<"key">> := Key }, Opts) when is_binary(Key) ->
     sign_message(Message, ar_wallet:from_json(Key), Opts);
 sign_message(Message, #{ <<"key">> := Key }, Opts) ->
-    WalletOpts = Opts#{priv_wallet => Key},
-    hb_message:commit(Message, WalletOpts).
+    hb_message:commit(Message, Opts#{ priv_wallet => Key }).
 
 %% @doc Export wallets from a request. The request should contain a source of
 %% wallets (cookies, keys, or wallet names), or a specific list/name of a
