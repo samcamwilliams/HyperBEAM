@@ -55,10 +55,15 @@ verify(Base, RawReq, Opts) ->
 %% @doc Collect authentication information from the client. If the `raw' flag
 %% is set to `true', return the raw authentication information. Otherwise,
 %% derive a key from the authentication information and return it.
+generate(_Msg, ReqLink, Opts) when ?IS_LINK(ReqLink) ->
+    generate(_Msg, hb_cache:ensure_loaded(ReqLink, Opts), Opts);
+generate(_Msg, #{ <<"key">> := Key }, _Opts) ->
+    {ok, Key};
 generate(_Msg, Req, Opts) ->
     case hb_maps:get(<<"authorization">>, Req, undefined, Opts) of
         <<"Basic ", Auth/binary>> ->
             Decoded = base64:decode(Auth),
+            ?event(key_gen, {generated_key, {auth, Auth}, {decoded, Decoded}}),
             case hb_maps:get(<<"raw">>, Req, false, Opts) of
                 true -> {ok, Decoded};
                 false -> derive_key(Decoded, Req, Opts)
@@ -87,8 +92,8 @@ derive_key(Decoded, Req, Opts) ->
     Alg = hb_util:atom(hb_maps:get(<<"alg">>, Req, <<"sha256">>, Opts)),
     Salt = hb_maps:get(<<"salt">>, Req, ?DEFAULT_SALT, Opts),
     Iterations = hb_maps:get(<<"iterations">>, Req, 600_000, Opts),
-    KeyLength = hb_maps:get(<<"key-length">>, Req, 32, Opts),
-    ?event(
+    KeyLength = hb_maps:get(<<"key-length">>, Req, 64, Opts),
+    ?event(key_gen,
         {derive_key,
             {alg, Alg},
             {salt, Salt},
@@ -97,9 +102,12 @@ derive_key(Decoded, Req, Opts) ->
         }
     ),
     case hb_crypto:pbkdf2(Alg, Decoded, Salt, Iterations, KeyLength) of
-        {ok, Key} -> {ok, hb_util:encode(Key)};
+        {ok, Key} ->
+            EncodedKey = hb_util:encode(Key),
+            ?event(key_gen, {derived_key, {key, EncodedKey}, {committer, dev_codec_httpsig_keyid:secret_key_to_committer(Key)}}),
+            {ok, EncodedKey};
         {error, Err} ->
-            ?event(
+            ?event(key_gen,
                 {pbkdf2_error,
                     {alg, Alg},
                     {salt, Salt},

@@ -26,9 +26,9 @@
 %% @doc Process an incoming request through a key provider. The key provider
 %% should be a message optionally implementing the following keys:
 %% <pre>
-%%     `normalize-path': The path to call the `normalize' function.
+%%     `generate-path': The path to call the `generate' function.
 %%     `finalize-path': The path to call the `finalize' function.
-%%     `sign': Whether to sign the request.
+%%     `skip-commit': Whether to skip committing the request.
 %%     `ignored-keys': A list of keys to ignore when signing (can be overridden
 %%     by the user request).
 %% </pre>
@@ -45,9 +45,19 @@ on_request(Base, HookReq, Opts) ->
         [] ?= hb_message:signers(Request, Opts),
         ?event(auth_hook_no_signers),
         % Call the key provider to normalize authentication (generate if needed)
-        {ok, NormProvider, NormReq, NewOpts} ?=
-            normalize_auth(Provider, Request, Opts),
-        ?event(auth_hook_normalized),
+        {ok, IntermediateProvider, NormReq} ?=
+            generate_key(Provider, Request, Opts),
+        % Call `~wallet@1.0' to generate a wallet if needed. Returns refreshed
+        % options.
+        {ok, NormProvider, NewOpts} ?=
+            generate_wallet(IntermediateProvider, NormReq, Opts),
+        ?event(
+            {auth_hook_normalized,
+                {intermediate_provider, IntermediateProvider},
+                {norm_provider, NormProvider},
+                {norm_req, NormReq}
+            }
+        ),
         % Sign the full request  
         {ok, SignedReq} ?= sign_request(NormProvider, NormReq, NewOpts),
         ?event(auth_hook_signed),
@@ -78,43 +88,61 @@ on_request(Base, HookReq, Opts) ->
             {ok, #{ <<"body">> => ExistingMessages }};
         ExistingSigners when is_list(ExistingSigners) ->
             ?event({auth_hook_skipping, {signers, ExistingSigners}}),
-            {ok, #{ <<"body">> => ExistingMessages }}
+            {ok, #{ <<"body">> => ExistingMessages }};
+        Other ->
+            ?event({auth_hook_unexpected_result, Other}),
+            Other
     end.
 
-%% @doc Normalize authentication credentials, generating new ones if needed
-normalize_auth(Provider, Request, Opts) ->
-    case call_provider(<<"normalize">>, Provider, Request, Opts) of
+%% @doc Normalize authentication credentials, generating new ones if needed.
+generate_key(Provider, Request, Opts) ->
+    case call_provider(<<"generate">>, Provider, Request, Opts) of
         {error, not_found} ->
-            ?event({no_normalize_handler, Provider}),
-            {ok, Provider, Request, Opts};
+            ?event({no_generate_handler, Provider}),
+            {ok, Provider, strip_sensitive(Request, Opts)};
         {error, Err} ->
-            ?event({normalize_error, Err}),
+            % Forward the error. The main handler will fail to match this and
+            % return the error to the user.
+            ?event({generate_error, Err}),
             {error, Err};
         {ok, Key} when is_binary(Key) ->
+            % The provider returned a direct key, calculate the committer and
+            % generate a wallet for it, if needed.
             ?event({key_from_provider, Key}),
-            % Get the auth message from the provider.
-            Committer = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
-            GenProvider = Provider#{ <<"wallet">> => Committer },
-            % Call generate to ensure that there is a wallet for this key.
-            {ok, Generated} = dev_wallet:generate(GenProvider, Request, Opts),
-            ?event({generated_success, Generated}),
-            {
-                ok,
-                Provider#{
-                    <<"wallet">> =>
-                        dev_codec_httpsig_keyid:secret_key_to_committer(Key)
-                },
-                Request,
-                refresh_opts(Opts)
-            };
+            {ok, Provider#{ <<"key">> => Key }, strip_sensitive(Request, Opts)};
         {ok, NormalizedReq} when is_map(NormalizedReq) ->
-            ?event({auth_hook_normalized, NormalizedReq}),
-            {ok, Provider, NormalizedReq, refresh_opts(Opts)}
+            % If there is a `wallet' field in the request, we move it to the
+            % provider, else continue with the existing provider.
+            ?event({normalized_req, NormalizedReq}),
+            case hb_maps:find(<<"key">>, NormalizedReq, Opts) of
+                {ok, Key} ->
+                    ?event({key_found_in_normalized_req, Key}),
+                    {
+                        ok,
+                        Provider#{ <<"key">> => Key },
+                        strip_sensitive(NormalizedReq, Opts)
+                    };
+                error ->
+                    ?event({no_key_in_normalized_req, NormalizedReq}),
+                    {ok, Provider, strip_sensitive(NormalizedReq, Opts)}
+            end
     end.
+
+%% @doc Strip the `key' field from a request.
+strip_sensitive(Request, Opts) ->
+    hb_maps:without([<<"key">>], Request, Opts).
+
+%% @doc Generate a wallet with the key if the `wallet' field is not present in
+%% the provider after normalization.
+generate_wallet(Provider, Request, Opts) ->
+    {ok, #{ <<"body">> := WalletID }} =
+        dev_wallet:generate(Provider, Request, Opts),
+    ?event({generated_wallet, WalletID}),
+    {ok, Provider, refresh_opts(Opts)}.
 
 %% @doc Sign a request using the configured key provider
 sign_request(Provider, Msg, Opts) ->
-    case hb_maps:get(<<"sign">>, Provider, true, Opts) of
+    case hb_maps:get(<<"skip-commit">>, Provider, true, Opts) of
         false ->
             % Skip signing and return the normalized message.
             ?event({provider_requested_signing_skip, Provider}),
@@ -185,7 +213,7 @@ finalize(KeyProvider, SignedReq, MessageSequence, Opts) ->
             {ok, Finalized};
         {error, not_found} ->
             ?event(auth_hook_no_finalize_handler),
-            {ok, Req}
+            {ok, MessageSequence}
     end.
 
 %%% Utility functions
@@ -331,10 +359,9 @@ http_auth_test() ->
                         <<"key-provider">> =>
                             #{
                                 <<"device">> => <<"http-auth@1.0">>,
-                                <<"normalize-path">> => <<"generate">>
-                            },
-                        <<"auth">> =>
-                            #{ <<"device">> => <<"http-auth@1.0">> }
+                                <<"auth">> =>
+                                    #{ <<"device">> => <<"http-auth@1.0">> }
+                            }
                     }
                 }
             }
@@ -363,7 +390,7 @@ http_auth_test() ->
             #{
                 <<"path">> => <<"commitments">>,
                 <<"body">> => <<"Test data">>,
-                <<"Authorization">> => AuthStr
+                <<"authorization">> => AuthStr
             },
             #{}
         ),
@@ -372,10 +399,10 @@ http_auth_test() ->
         Resp2
     ),
     % Filter the response to only include signed commitments.
-    Signers = signers_from_commitments_response(Resp2, ServerWallet),
+    Signers = signers_from_commitments_response(hb_util:ok(Resp2), ServerWallet),
     ?event(
         {response, {found_signers, Signers}}
-    ),    
+    ),
     ?assertEqual(1, length(Signers)),
     % Generate a further request and check that the same address is used.
     [Signer] = Signers,
@@ -385,7 +412,7 @@ http_auth_test() ->
             #{
                 <<"path">> => <<"commitments">>,
                 <<"body">> => <<"Test data2">>,
-                <<"Authorization">> => AuthStr
+                <<"authorization">> => AuthStr
             },
             #{}
         ),

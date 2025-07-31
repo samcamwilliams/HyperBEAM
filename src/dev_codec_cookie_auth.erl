@@ -7,35 +7,36 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -export([commit/3, verify/3]).
--export([normalize/3, finalize/3]).
+-export([generate/3, finalize/3]).
 
-%% @doc Normalize the authentication credentials, generating new ones if needed.
-normalize(Base, Request, Opts) ->
-    Normalized = 
-        case dev_codec_cookie:extract(Request, #{}, Opts) of
-            {ok, ExistingCookies} when map_size(ExistingCookies) > 0 ->
-                ExistingCookies;
-            {ok, _EmptyCookie} ->
-                ?event(
-                    {
-                        no_existing_cookie,
-                        generate_wallet,
-                        {base, Base},
-                        {request, Request}
-                    }
-                ),
-                {ok, Generated} = dev_wallet:generate(Base, Request, Opts),
-                {ok, NewCookies} = dev_codec_cookie:extract(Generated, Request, Opts),
-                NewCookies
+%% @doc Generate a new secret (if no `committer' specified), and use it as the
+%% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 
+%% for it in the cookie message instead of generating a new secret. See the
+%% module documentation of `dev_codec_cookie' for more details on its scheme.
+generate(Base, Request, Opts) ->
+    {WithCookie, Secrets} =
+        case find_secrets(Request, Opts) of
+            [] ->
+                {ok, GeneratedSecret} = generate_secret(Base, Request, Opts),
+                {ok, Updated} = store_secret(GeneratedSecret, Request, Opts),
+                {Updated, [GeneratedSecret]};
+            FoundSecrets ->
+                {Request, FoundSecrets}
         end,
-    NewOpts = hb_http_server:get_opts(Opts),
-    {ok, _WithAuth} = dev_codec_cookie:store(Request, Normalized, NewOpts).
+    ?event({normalized_cookies_found, {secrets, Secrets}}),
+    {
+        ok,
+        WithCookie#{
+            <<"key">> => Secrets
+        }
+    }.
 
 %% @doc Finalize an `on-request' hook by adding the cookie to the chain of 
 %% messages. The inbound request has the same structure as a normal `~hook@1.0'
 %% on-request hook: The message sequence is the body of the request, and the
 %% request is the request message.
-finalize(_Base, Request, Opts) ->
+finalize(Base, Request, Opts) ->
+    ?event(debug_auth, {finalize, {base, Base}, {request, Request}}),
     maybe
         {ok, SignedMsg} ?= hb_maps:find(<<"request">>, Request, Opts),
         {ok, MessageSequence} ?= hb_maps:find(<<"body">>, Request, Opts),
@@ -59,13 +60,20 @@ finalize(_Base, Request, Opts) ->
 %% key for the `httpsig@1.0' commitment. If a `committer' is given, we search 
 %% for it in the cookie message instead of generating a new secret. See the
 %% module documentation of `dev_codec_cookie' for more details on its scheme.
+commit(Base, Request, RawOpts) when ?IS_LINK(Request) ->
+    Opts = dev_codec_cookie:opts(RawOpts),
+    commit(Base, hb_cache:ensure_loaded(Request, Opts), Opts);
+commit(Base, Req = #{ <<"key">> := Key }, RawOpts) ->
+    Opts = dev_codec_cookie:opts(RawOpts),
+    commit(hb_cache:ensure_loaded(Key, Opts), Base, Req, Opts);
 commit(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     % Calculate the key to use for the commitment.
     SecretRes =
         case find_secret(Request, Opts) of
-            {ok, RawSecret} -> {ok, RawSecret};
-            {error, no_committer} ->
+            {ok, RawSecret} ->
+                {ok, RawSecret};
+            {error, no_secret} ->
                 generate_secret(Base, Request, Opts);
             {error, not_found} ->
                 throw({error, <<"Necessary cookie not found in request.">>})
@@ -87,36 +95,37 @@ commit(Key, Base, Request, Opts) ->
             Request,
             Opts
         ),
-    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
+    store_secret(Key, CommittedMsg, Opts).
+
+%% @doc Update the nonces for a given secret.
+store_secret(Secret, Msg, Opts) ->
+    CookieAddr = dev_codec_httpsig_keyid:secret_key_to_committer(Secret),
     % Create the cookie parameters, using the name as the key and the secret as
     % the value.
-    BaseCookieParams = #{ <<"secret-", CookieAddr/binary>> => Key },
-    % Add the reference of the commitment request to the cookie, if it is
-    % present.
-    CookieParams =
-        case hb_maps:find(<<"nonce">>, Request, Opts) of
-            error -> BaseCookieParams;
-            {ok, Reference} ->
-                ExistingNonces = find_nonces(Request, Opts),
-                BaseCookieParams#{
-                    <<"nonces-", CookieAddr/binary>> =>
-                        serialize_nonces(
-                            [Reference | ExistingNonces],
-                            Opts
-                        )
-                }
-        end,
-    % Set the cookie on the message with the new commitment and return.
-    {ok, WithCookie} = dev_codec_cookie:store(CommittedMsg, CookieParams, Opts),
-    ?event({cookie_committed, {message, WithCookie}}),
+    {ok, Cookies} = dev_codec_cookie:extract(Msg, #{}, Opts),
+    NewCookies = Cookies#{ <<"secret-", CookieAddr/binary>> => Secret },
+    {ok, WithCookie} = dev_codec_cookie:store(Msg, NewCookies, Opts),
+    ?event(debug_auth, {updated_secret, {secret, Secret}, {cookie, WithCookie}, {new_cookies, NewCookies}}),
     {ok, WithCookie}.
 
 %% @doc Verify the HMAC commitment with the key being the secret from the 
 %% request cookies. We find the appropriate cookie from the cookie message by
 %% the committer ID given in the request message.
+verify(Base, ReqLink, RawOpts) when ?IS_LINK(ReqLink) ->
+    Opts = dev_codec_cookie:opts(RawOpts),
+    verify(Base, hb_cache:ensure_loaded(ReqLink, Opts), Opts);
+verify(Base, Req = #{ <<"key">> := Key }, RawOpts) ->
+    Opts = dev_codec_cookie:opts(RawOpts),
+    ?event({verify_with_explicit_key, {base, Base}, {request, Req}}),
+    dev_codec_httpsig_proxy:verify(
+        hb_util:decode(Key),
+        Base,
+        Req,
+        Opts
+    );
 verify(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
-    ?event({verify, {base, Base}, {request, Request}}),
+    ?event({verify_finding_key, {base, Base}, {request, Request}}),
     case find_secret(Request, Opts) of
         {ok, Secret} ->
             dev_codec_httpsig_proxy:verify(
@@ -151,7 +160,7 @@ generate_secret(_Base, Request, Opts) ->
 
 %% @doc Generate a new secret key using the default generator.
 default_generator(_Opts) ->
-    {ok, hb_util:encode(crypto:strong_rand_bytes(32))}.
+    {ok, hb_util:encode(crypto:strong_rand_bytes(64))}.
 
 %% @doc Execute a generator function. See `generate_secret/3' for more details.
 execute_generator(GeneratorPath, Opts) when is_binary(GeneratorPath) ->
@@ -160,12 +169,24 @@ execute_generator(Generator, Opts) ->
     Path = hb_maps:get(<<"path">>, Generator, <<"generate">>, Opts),
     hb_ao:resolve(Generator#{ <<"path">> => Path }, Opts).
 
+%% @doc Find all secrets in the cookie of a message.
+find_secrets(Request, Opts) ->
+    maybe
+        {ok, Cookie} ?= dev_codec_cookie:extract(Request, #{}, Opts),
+        [
+            hb_maps:get(SecretRef, Cookie, secret_unavailable, Opts)
+        ||
+            SecretRef = <<"secret-", _/binary>> <- hb_maps:keys(Cookie)
+        ]
+    else error -> []
+    end.
+
 %% @doc Find the secret key for the given committer, if it exists in the cookie.
 find_secret(Request, Opts) ->
     maybe
         {ok, Committer} ?= hb_maps:find(<<"committer">>, Request, Opts),
         find_secret(Committer, Request, Opts)
-    else error -> {error, no_committer}
+    else error -> {error, no_secret}
     end.
 find_secret(Committer, Request, Opts) ->
     maybe
@@ -175,11 +196,10 @@ find_secret(Committer, Request, Opts) ->
     end.
 
 %% @doc Find the references for the given committer, if they exist in the cookie.
-find_nonces(Request, Opts) ->
+find_nonces(Request, SecretID, Opts) ->
     maybe
         {ok, Cookie} ?= dev_codec_cookie:extract(Request, #{}, Opts),
-        {ok, Committer} ?= hb_maps:find(<<"committer">>, Request, Opts),
-        {ok, RefsBin} ?= hb_maps:find(<<"nonces-", Committer/binary>>, Cookie, Opts),
+        {ok, RefsBin} ?= hb_maps:find(<<"nonces-", SecretID/binary>>, Cookie, Opts),
         deserialize_nonces(RefsBin, Opts)
     else error -> []
     end.

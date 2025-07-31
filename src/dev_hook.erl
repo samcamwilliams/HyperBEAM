@@ -127,10 +127,9 @@ execute_handlers(HookName, [Handler|Rest], Req, Opts) ->
             % If status is ok, continue with the next handler
             ?event(hook, {handler_executed_successfully, HookName, NewReq}),
             execute_handlers(HookName, Rest, NewReq, Opts);
-        {error, _} = Error ->
+        {Status, Res} ->
             % If status is error, halt execution and return the error
-            ?event(hook_error, {handler_error, HookName, Error}),
-            Error;
+            {Status, Res};
         Other ->
             % If status is unknown, convert to error and halt execution
             ?event(hook_error, {unexpected_handler_result, HookName, Other}),
@@ -214,7 +213,7 @@ execute_handler(HookName, Handler, Req, Opts) ->
     catch
         Error:Reason:Stacktrace ->
             % If an exception occurs during execution, log it and return an error.
-            ?event(hook,
+            ?event(hook_error,
                 {handler_exception,
                     {while_executing, HookName},
                     {error, Error},

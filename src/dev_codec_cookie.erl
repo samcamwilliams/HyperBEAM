@@ -39,7 +39,7 @@
 %%% Public commit/verify API.
 -export([commit/3, verify/3]).
 %%% Preprocessor hook API.
--export([normalize/3, finalize/3]).
+-export([generate/3, finalize/3]).
 %%% Public utility functions.
 -export([opts/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -55,8 +55,8 @@ verify(Base, Req, RawOpts) -> dev_codec_cookie_auth:verify(Base, Req, RawOpts).
 %% @doc Preprocessor keys that utilize cookies and the `~wallet@1.0' device to
 %% sign inbound HTTP requests from users if they are not already signed. We use
 %% the `~hook@1.0' authentication framework to implement this.
-normalize(Base, Req, Opts) ->
-    dev_codec_cookie_auth:normalize(Base, Req, Opts).
+generate(Base, Req, Opts) ->
+    dev_codec_cookie_auth:generate(Base, Req, Opts).
 
 %% @doc Finalize an `on-request' hook by adding the `set-cookie' header to the
 %% end of the message sequence.
