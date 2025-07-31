@@ -23,8 +23,8 @@
     ]
 ).
 
-%% @doc Process an incoming request through an authentication provider. The
-%% provider should be a message optionally implementing the following keys:
+%% @doc Process an incoming request through a key provider. The key provider
+%% should be a message optionally implementing the following keys:
 %% <pre>
 %%     `normalize-path': The path to call the `normalize' function.
 %%     `finalize-path': The path to call the `finalize' function.
@@ -33,34 +33,35 @@
 %%     by the user request).
 %% </pre>
 %% 
-on_request(_Base, HookReq, Opts) ->
+on_request(Base, HookReq, Opts) ->
+    ?event({auth_hook_request, {base, Base}, {hook_req, HookReq}}),
     ExistingMessages = hb_maps:find(<<"body">>, HookReq, Opts),
     maybe
-        % Get the auth provider from options and short-circuit if none is
+        % Get the key provider from options and short-circuit if none is
         % provided.
-        {ok, AuthProvider} ?= find_provider(HookReq, Opts),
+        {ok, Provider} ?= find_provider(Base, Opts),
         % Check if the request already has signatures
         {ok, Request} ?= hb_maps:find(<<"request">>, HookReq, Opts),
         [] ?= hb_message:signers(Request, Opts),
         ?event(auth_hook_no_signers),
-        % Call the auth provider to normalize authentication (generate if needed)
-        {ok, NormalizedReq, NewOpts} ?= normalize_auth(AuthProvider, Request, Opts),
-        ?event(auth_hook_normalized),
+        % Call the key provider to normalize authentication (generate if needed)
+        {ok, NormalizedReq, NewOpts} ?= normalize_auth(Provider, Request, Opts),
+        ?event({auth_hook_normalized, NormalizedReq}),
         % Sign the request  
-        {ok, SignedReq} ?= sign_request(AuthProvider, NormalizedReq, NewOpts),
+        {ok, SignedReq} ?= sign_request(Provider, NormalizedReq, NewOpts),
         ?event(auth_hook_signed),
         % Process individual messages if needed
         {ok, MessageSequence} ?=
             maybe_sign_messages(
-                AuthProvider,
+                Provider,
                 SignedReq,
                 NewOpts
             ),
         ?event(auth_hook_processed_messages),
-        % Call the auth provider to finalize the response
+        % Call the key provider to finalize the response
         {ok, FinalSequence} ?=
             finalize(
-                AuthProvider,
+                Provider,
                 SignedReq,
                 MessageSequence,
                 NewOpts
@@ -71,25 +72,22 @@ on_request(_Base, HookReq, Opts) ->
         {error, Resp = #{ <<"status">> := 401 }} ->
             ?event({auth_hook_error, {unauthorized, Resp}}),
             {ok, #{ <<"body">> => Resp }};
-        {error, no_auth_provider} ->
-            ?event(auth_hook_no_auth_provider),
+        {error, AuthError} ->
+            ?event({auth_hook_error, AuthError}),
             {ok, #{ <<"body">> => ExistingMessages }};
         error ->
             ?event({auth_hook_error, no_request}),
             {ok, #{ <<"body">> => ExistingMessages }};
         ExistingSigners when is_list(ExistingSigners) ->
             ?event({auth_hook_skipping, {signers, ExistingSigners}}),
-            {ok, #{ <<"body">> => ExistingMessages }};
-        {error, Err} ->
-            ?event({auth_hook_error, Err}),
             {ok, #{ <<"body">> => ExistingMessages }}
     end.
 
 %% @doc Normalize authentication credentials, generating new ones if needed
-normalize_auth(AuthProvider, Request, Opts) ->
-    case call_provider(<<"normalize">>, AuthProvider, Request, Opts) of
+normalize_auth(Provider, Request, Opts) ->
+    case call_provider(<<"normalize">>, Provider, Request, Opts) of
         {error, not_found} ->
-            ?event(auth_hook_no_auth_provider),
+            ?event(auth_hook_no_key_provider),
             {ok, Request, Opts};
         {ok, Normalized} ->
             ?event({auth_hook_normalized, Normalized}),
@@ -98,22 +96,23 @@ normalize_auth(AuthProvider, Request, Opts) ->
                 Opts -> ?event(auth_hook_no_opts_change);
                 _ -> ?event({auth_hook_opts_changed, NewOpts})
             end,
-            % Find the new options again, in case the auth provider modified them
+            % Find the new options again, in case the key provider modified them
             {ok, Normalized, NewOpts}
     end.
 
-%% @doc Sign a request using the configured auth provider
-sign_request(AuthProvider, Msg, Opts) ->
-    case hb_maps:get(<<"sign">>, AuthProvider, true, Opts) of
+%% @doc Sign a request using the configured key provider
+sign_request(Provider, Msg, Opts) ->
+    case hb_maps:get(<<"sign">>, Provider, true, Opts) of
         false ->
             % Skip signing and return the normalized message.
-            ?event({provider_requested_signing_skip, AuthProvider}),
+            ?event({provider_requested_signing_skip, Provider}),
             {ok, Msg};
         true ->
             % Wallet signs without ignored keys
             IgnoredKeys = ignored_keys(Msg, Opts),
             WithoutIgnored = hb_maps:without(IgnoredKeys, Msg, Opts),
-            case dev_wallet:commit(WithoutIgnored, WithoutIgnored, Opts) of
+            % Call the wallet to sign the request.
+            case dev_wallet:commit(Provider, WithoutIgnored, Opts) of
                 {ok, Signed} ->
                     SignedWithIgnored = 
                         hb_maps:merge(
@@ -128,37 +127,37 @@ sign_request(AuthProvider, Msg, Opts) ->
     end.
 
 %% @doc Process a sequence of messages, signing those marked for signing
-maybe_sign_messages(AuthProvider, SignedReq, Opts) ->
+maybe_sign_messages(Provider, SignedReq, Opts) ->
     Parsed = hb_singleton:from(SignedReq, Opts),
     ?event({auth_hook_parsed_messages, {sequence_length, length(Parsed)}}),
     SignKey = hb_opts:get(auth_hook_commit_key, <<"!">>, Opts),
-    Processed = maybe_sign_messages(AuthProvider, SignKey, Parsed, Opts),
+    Processed = maybe_sign_messages(Provider, SignKey, Parsed, Opts),
     {ok, Processed}.
-maybe_sign_messages(_AuthProvider, _Key, [], _Opts) -> [];
-maybe_sign_messages(AuthProvider, Key, [Msg | Rest], Opts) when is_map(Msg) ->
+maybe_sign_messages(_Provider, _Key, [], _Opts) -> [];
+maybe_sign_messages(Provider, Key, [Msg | Rest], Opts) when is_map(Msg) ->
     case hb_util:atom(hb_maps:get(Key, Msg, false, Opts)) of
         true ->
             Uncommitted = hb_message:uncommitted(Msg, Opts),
             ?event({auth_hook_signing_message, {uncommitted, Msg}}),
-            case sign_request(AuthProvider, Uncommitted, Opts) of
+            case sign_request(Provider, Uncommitted, Opts) of
                 {ok, Signed} ->
                     [
                         Signed
                     |
-                        maybe_sign_messages(AuthProvider, Key, Rest, Opts)
+                        maybe_sign_messages(Provider, Key, Rest, Opts)
                     ];
                 {error, Err} ->
                     ?event({auth_hook_sign_error, Err}),
                     [{error, Err}]
             end;
         _ ->
-            [Msg | maybe_sign_messages(AuthProvider, Key, Rest, Opts)]
+            [Msg | maybe_sign_messages(Provider, Key, Rest, Opts)]
     end;
-maybe_sign_messages(AuthProvider, Key, [Msg | Rest], Opts) ->
-    [Msg | maybe_sign_messages(AuthProvider, Key, Rest, Opts)].
+maybe_sign_messages(Provider, Key, [Msg | Rest], Opts) ->
+    [Msg | maybe_sign_messages(Provider, Key, Rest, Opts)].
 
 %% @doc Finalize the response by adding authentication state
-finalize(AuthProvider, SignedReq, MessageSequence, Opts) ->
+finalize(KeyProvider, SignedReq, MessageSequence, Opts) ->
     % Add the signed request and message sequence to the response, mirroring the
     % structure of a normal `~hook@1.0' on-request hook.
     Req =
@@ -166,7 +165,7 @@ finalize(AuthProvider, SignedReq, MessageSequence, Opts) ->
             <<"request">> => SignedReq,
             <<"body">> => MessageSequence
         },
-    case call_provider(<<"finalize">>, AuthProvider, Req, Opts) of
+    case call_provider(<<"finalize">>, KeyProvider, Req, Opts) of
         {ok, Finalized} ->
             ?event({auth_hook_finalized, Finalized}),
             {ok, Finalized};
@@ -177,22 +176,28 @@ finalize(AuthProvider, SignedReq, MessageSequence, Opts) ->
 
 %%% Utility functions
 
-%% @doc Get the auth provider from the base message or the defaults.
+%% @doc Get the key provider from the base message or the defaults.
 find_provider(Base, Opts) ->
-    case hb_maps:get(<<"auth-provider">>, Base, Opts) of
-        no_auth_provider ->
-            case hb_opts:get(hook_auth_provider, no_auth_provider, Opts) of
-                no_auth_provider -> {error, no_auth_provider};
-                AuthProvider -> AuthProvider
+    case hb_maps:get(<<"key-provider">>, Base, no_key_provider, Opts) of
+        no_key_provider ->
+            case hb_opts:get(hook_key_provider, no_key_provider, Opts) of
+                no_key_provider -> {error, no_key_provider};
+                KeyProvider -> KeyProvider
             end;
-        AuthProvider ->
-            {ok, AuthProvider}
+        KeyProvider when is_binary(KeyProvider) ->
+            {ok, #{ <<"device">> => KeyProvider }};
+        KeyProvider when is_map(KeyProvider) ->
+            {ok, KeyProvider};
+        _ ->
+            {error, invalid_auth_provider}
     end.
 
-%% @doc Find the appropriate handler for a key in the auth provider.
-call_provider(Key, AuthProvider, Request, Opts) ->
-    ExecKey = hb_maps:get(<< Key, "-path">>, AuthProvider, Key, Opts),
-    hb_ao:resolve(AuthProvider, Request#{ <<"path">> => ExecKey }, Opts).
+%% @doc Find the appropriate handler for a key in the key provider.
+call_provider(Key, KeyProvider, Request, Opts) ->
+    ?event({call_provider, {key, {explicit, Key}}, {key_provider, KeyProvider}, {request, Request}}),
+    ExecKey = hb_maps:get(<< Key/binary, "-path">>, KeyProvider, Key, Opts),
+    ?event({call_provider, {exec_key, {explicit, ExecKey}}}),
+    hb_ao:resolve(KeyProvider, Request#{ <<"path">> => ExecKey }, Opts).
 
 %% @doc Default keys to ignore when signing
 ignored_keys(Msg, Opts) ->
@@ -209,7 +214,7 @@ ignored_keys(Msg, Opts) ->
 %%% Tests
 
 cookie_test() ->
-    % Start a node with an auth-provider that uses the cookie device.
+    % Start a node with an key-provider that uses the cookie device.
     Node =
         hb_http_server:start_node(
             #{
@@ -218,8 +223,10 @@ cookie_test() ->
                     <<"request">> => #{
                         <<"device">> => <<"hook@1.0">>,
                         <<"path">> => <<"request">>,
-                        <<"auth-provider">> =>
-                            #{ <<"device">> => <<"cookie@1.0">> }
+                        <<"key-provider">> =>
+                            #{
+                                <<"device">> => <<"cookie@1.0">>
+                            }
                     }
                 }
             }
@@ -268,7 +275,7 @@ cookie_test() ->
     ).
 
 http_auth_test() ->
-    % Start a node with the `~http-auth@1.0' device as the auth-provider.
+    % Start a node with the `~http-auth@1.0' device as the key-provider.
     Node =
         hb_http_server:start_node(
             #{
@@ -277,7 +284,9 @@ http_auth_test() ->
                     <<"request">> => #{
                         <<"device">> => <<"hook@1.0">>,
                         <<"path">> => <<"request">>,
-                        <<"auth-provider">> =>
+                        <<"key-provider">> =>
+                            #{ <<"device">> => <<"http-auth@1.0">> },
+                        <<"auth">> =>
                             #{ <<"device">> => <<"http-auth@1.0">> }
                     }
                 }
