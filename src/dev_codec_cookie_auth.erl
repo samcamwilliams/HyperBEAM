@@ -106,13 +106,17 @@ commit(Key, Base, Request, Opts) ->
 verify(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     ?event({verify, {base, Base}, {request, Request}}),
-    {ok, Secret} = find_secret(Request, Opts),
-    dev_codec_httpsig_proxy:verify(
-        hb_util:decode(Secret),
-        Base,
-        Request,
-        Opts
-    ).
+    case find_secret(Request, Opts) of
+        {ok, Secret} ->
+            dev_codec_httpsig_proxy:verify(
+                hb_util:decode(Secret),
+                Base,
+                Request,
+                Opts
+            );
+        {error, Err} ->
+            {error, Err}
+    end.
 
 %% @doc Generate a new secret key for the given request. The user may specify
 %% a generator function in the request, which will be executed to generate the
