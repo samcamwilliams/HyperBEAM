@@ -214,7 +214,14 @@ execute_handler(HookName, Handler, Req, Opts) ->
     catch
         Error:Reason:Stacktrace ->
             % If an exception occurs during execution, log it and return an error.
-            ?event(hook, {handler_exception, Error, Reason, Stacktrace}),
+            ?event(hook,
+                {handler_exception,
+                    {while_executing, HookName},
+                    {error, Error},
+                    {reason, Reason},
+                    {stacktrace, {trace, Stacktrace}}
+                }
+            ),
             {failure, <<
                 "Handler for hook `",
                 (hb_ao:normalize_key(HookName))/binary,
