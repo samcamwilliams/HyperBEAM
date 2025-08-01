@@ -63,9 +63,9 @@ finalize(Base, Request, Opts) ->
 commit(Base, Request, RawOpts) when ?IS_LINK(Request) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     commit(Base, hb_cache:ensure_loaded(Request, Opts), Opts);
-commit(Base, Req = #{ <<"key">> := Key }, RawOpts) ->
+commit(Base, Req = #{ <<"secret">> := Secret }, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
-    commit(hb_cache:ensure_loaded(Key, Opts), Base, Req, Opts);
+    commit(hb_cache:ensure_loaded(Secret, Opts), Base, Req, Opts);
 commit(Base, Request, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     % Calculate the key to use for the commitment.
@@ -86,16 +86,16 @@ commit(Base, Request, RawOpts) ->
 %% @doc Given the secret key, commit the message and set the cookie. This 
 %% function may be used by other devices via a direct module call, in order to
 %% commit a message and set the given secret key in the cookie.
-commit(Key, Base, Request, Opts) ->
+commit(Secret, Base, Request, Opts) ->
     {ok, CommittedMsg} =
         dev_codec_httpsig_proxy:commit(
             <<"cookie@1.0">>,
-            Key,
+            Secret,
             Base,
             Request,
             Opts
         ),
-    store_secret(Key, CommittedMsg, Opts).
+    store_secret(Secret, CommittedMsg, Opts).
 
 %% @doc Update the nonces for a given secret.
 store_secret(Secret, Msg, Opts) ->
@@ -114,11 +114,11 @@ store_secret(Secret, Msg, Opts) ->
 verify(Base, ReqLink, RawOpts) when ?IS_LINK(ReqLink) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     verify(Base, hb_cache:ensure_loaded(ReqLink, Opts), Opts);
-verify(Base, Req = #{ <<"key">> := Key }, RawOpts) ->
+verify(Base, Req = #{ <<"secret">> := Secret }, RawOpts) ->
     Opts = dev_codec_cookie:opts(RawOpts),
     ?event({verify_with_explicit_key, {base, Base}, {request, Req}}),
     dev_codec_httpsig_proxy:verify(
-        hb_util:decode(Key),
+        hb_util:decode(Secret),
         Base,
         Req,
         Opts
