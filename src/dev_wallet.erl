@@ -267,12 +267,12 @@ register_wallet(Wallet, Base, Request, Opts) ->
     PersistMode = hb_ao:get(<<"persist">>, Request, <<"in-memory">>, Opts),
     % Get the authentication message from the request. If the message is a path
     % or a message with a `path' field, we resolve it to get the base.
-    {ok, BaseAuthMsg} =
-        case hb_ao:get(<<"auth">>, Base, undefined, Opts) of
+    {ok, BaseAccessControl} =
+        case hb_ao:get(<<"access-control">>, Base, undefined, Opts) of
             undefined ->
                 ?event(
                     debug_auth,
-                    {defaulting_auth_msg, {base, Base}, {request, Request}}
+                    {defaulting_access_control, {base, Base}, {request, Request}}
                 ),
                 {ok, #{ <<"device">> => ?DEFAULT_AUTH_DEVICE }};
             AuthPath when is_binary(AuthPath) ->
@@ -283,11 +283,14 @@ register_wallet(Wallet, Base, Request, Opts) ->
                     false -> {ok, Msg}
                 end
         end,
-    AuthMsg =
-        BaseAuthMsg#{
+    AccessControl =
+        BaseAccessControl#{
             <<"wallet-address">> => hb_util:human_id(Address)
         },
-    Exportable = hb_ao:get(<<"exportable">>, Request, default, Opts),
+    Controllers =
+        hb_ao:get(<<"controllers">>, Request, default, Opts),
+    RequiredControllers =
+        hb_util:int(hb_ao:get(<<"required-controllers">>, Request, 1, Opts)),
     % Call authentication device to set up auth. Pass the wallet address as the
     % nonce. Some auth devices may use the nonce to track the messages that
     % they have committed.
@@ -303,12 +306,12 @@ register_wallet(Wallet, Base, Request, Opts) ->
                     <<"secret">> => Secret
                 }
         end,
-    ?event({register_wallet, {auth_msg, AuthMsg}, {request, AuthRequest}}),
-    case hb_ao:resolve(AuthMsg, AuthRequest, Opts) of
+    ?event({register_wallet, {access_control, AccessControl}, {request, AuthRequest}}),
+    case hb_ao:resolve(AccessControl, AuthRequest, Opts) of
         {ok, InitializedAuthMsg} ->
             ?event({register_wallet_success, {initialized_auth_msg, InitializedAuthMsg}}),
             % Find the new signer address.
-            PriorSigners = hb_message:signers(AuthMsg, Opts),
+            PriorSigners = hb_message:signers(AccessControl, Opts),
             NewSigners = hb_message:signers(InitializedAuthMsg, Opts),
             [Committer] = NewSigners -- PriorSigners,
             % Store wallet details.
@@ -317,9 +320,10 @@ register_wallet(Wallet, Base, Request, Opts) ->
                     <<"wallet">> => ar_wallet:to_json(PrivKey),
                     <<"address">> => hb_util:human_id(Address),
                     <<"persist">> => PersistMode,
-                    <<"auth">> => hb_private:reset(InitializedAuthMsg),
+                    <<"access-control">> => hb_private:reset(InitializedAuthMsg),
                     <<"committer">> => Committer,
-                    <<"exportable">> => parse_exportable(Exportable, Opts)
+                    <<"controllers">> => parse_controllers(Controllers, Opts),
+                    <<"required-controllers">> => RequiredControllers
                 },
             persist_registered_wallet(WalletDetails, InitializedAuthMsg, Opts);
         {error, Reason} ->
@@ -336,8 +340,8 @@ persist_registered_wallet(WalletDetails, RespBase, Opts) ->
     % Add the wallet address as the body of the response.
     Address = hb_maps:get(<<"address">>, WalletDetails, undefined, Opts),
     ?event({resp_base, RespBase, WalletDetails}),
-    Auth = hb_maps:get(<<"auth">>, WalletDetails, #{}, Opts),
-    {ok, _, Commitment} = hb_message:commitment(#{}, Auth, Opts),
+    AccessControl = hb_maps:get(<<"access-control">>, WalletDetails, #{}, Opts),
+    {ok, _, Commitment} = hb_message:commitment(#{}, AccessControl, Opts),
     KeyID = hb_maps:get(<<"keyid">>, Commitment, Opts),
     Base = RespBase#{ <<"body">> => KeyID },
     % Determine how to persist the wallet.
@@ -351,7 +355,7 @@ persist_registered_wallet(WalletDetails, RespBase, Opts) ->
                 Base#{ <<"device">> => <<"cookie@1.0">> },
                 #{
                     <<"path">> => <<"store">>,
-                    <<"key-", Address/binary>> => hb_escape:encode_quotes(JSONKey)
+                    <<"wallet-", Address/binary>> => hb_escape:encode_quotes(JSONKey)
                 },
                 Opts
             );
@@ -393,8 +397,13 @@ commit(Base, Request, Opts) ->
                 ok,
                 lists:foldl(
                     fun(WalletDetails, Acc) ->
-                        ?event({invoking_sign_message, {message, Acc}, {wallet, WalletDetails}}),
-                        sign_message(Acc, WalletDetails, Opts)
+                        ?event(
+                            {invoking_commit_message,
+                                {message, Acc},
+                                {wallet, WalletDetails}
+                            }
+                        ),
+                        commit_message(Acc, WalletDetails, Opts)
                     end,
                     Base,
                     WalletDetailsList
@@ -424,17 +433,17 @@ request_to_wallets(Base, Request, Opts) ->
                     <<"all">> ->
                             % Get the wallet name from the cookie.
                         wallets_from_cookie(Request, Opts);
-                    _ -> keys_to_keyids(Keys)
+                    _ -> secrets_to_keyids(Keys)
                 end;
         KeyIDs -> lists:map(fun(KeyID) ->
                     Wallet = find_wallet(KeyID, Opts),
-                    {wallet_keyid, KeyID, hb_maps:get(<<"wallet">>, Wallet, Opts) }
+                    {secret, KeyID, hb_maps:get(<<"wallet">>, Wallet, Opts) }
                 end, KeyIDs)
     end,
     ?event({attempting_to_load_wallets, {keyids, WalletKeyIDs}, {request, Request}}),
     lists:filtermap(
         fun(WalletKeyID) ->
-            case load_and_verify_access_wallet(WalletKeyID, Base, Request, Opts) of
+            case load_and_verify(WalletKeyID, Base, Request, Opts) of
                 {ok, WalletDetails} ->
                     ?event({request_to_wallets, {loaded_wallet, WalletDetails}}),
                     {true, WalletDetails};
@@ -451,9 +460,8 @@ request_to_wallets(Base, Request, Opts) ->
         WalletKeyIDs
     ).
 
-%% @doc Load a wallet from a wallet reference and verify we have the authority
-%% to access it.
-load_and_verify_access_wallet({wallet_key, WalletKey}, _Base, _Request, _Opts) ->
+%% @doc Load a wallet from a keyid and verify we have the authority to access it.
+load_and_verify({wallet, WalletKey}, _Base, _Request, _Opts) ->
     % Return the wallet key.
     Wallet = ar_wallet:from_json(WalletKey),
     PubKey = ar_wallet:to_pubkey(Wallet),
@@ -464,18 +472,18 @@ load_and_verify_access_wallet({wallet_key, WalletKey}, _Base, _Request, _Opts) -
         <<"persist">> => <<"client">>,
         <<"committer">> => << "publickey:", (hb_util:encode(PubKey))/binary >>
     }};
-load_and_verify_access_wallet({wallet_keyid, KeyID, Key}, _Base, Request, Opts) ->
+load_and_verify({secret, KeyID, _}, _Base, Request, Opts) ->
     % Get the wallet from the node's options.
     case find_wallet(KeyID, Opts) of
         not_found -> {error, <<"Wallet not hosted on node.">>};
         WalletDetails ->
-            case validate_export_signers(WalletDetails, Request#{ <<"key">> => Key }, Opts) of
+            case verify_controllers(WalletDetails, Request, Opts) of
                 true ->
                     % If the request is already signed by an exporter
                     % return the request as-is with the wallet.
                     {ok, WalletDetails};
                 false ->
-                    case verify_wallet(Request, WalletDetails, Opts) of
+                    case verify_auth(WalletDetails, Request, Opts) of
                         {ok, true} ->
                             {ok, WalletDetails};
                         {ok, false} ->
@@ -486,23 +494,28 @@ load_and_verify_access_wallet({wallet_keyid, KeyID, Key}, _Base, Request, Opts) 
             end
     end.
 
-%% @doc Validate if a caller is an `exportable' for the given wallet.
-validate_export_signers(WalletDetails, Request, Opts) ->
-    Exportable =
-        parse_exportable(
-            hb_maps:get(<<"exportable">>, WalletDetails, [], Opts),
+%% @doc Validate if a calling message has the required `controllers' for the
+%% given wallet.
+verify_controllers(WalletDetails, Request, Opts) ->
+    RequiredControllers =
+        hb_util:int(hb_maps:get(<<"required-controllers">>, WalletDetails, 1, Opts)),
+    Controllers =
+        parse_controllers(
+            hb_maps:get(<<"controllers">>, WalletDetails, [], Opts),
             Opts
         ),
-    lists:any(
-        fun(Signer) ->
-            lists:member(Signer, Exportable)
-        end,
-        hb_message:signers(Request, Opts)
-    ).
+    PresentControllers =
+        lists:filter(
+            fun(Signer) ->
+                lists:member(Signer, Controllers)
+            end,
+            hb_message:signers(Request, Opts)
+        ),
+    length(PresentControllers) >= RequiredControllers.
 
 %% @doc Verify a wallet for a given request.
-verify_wallet(Req, WalletDetails, Opts) ->
-    AuthBase = hb_maps:get(<<"auth">>, WalletDetails, #{}, Opts),
+verify_auth(WalletDetails, Req, Opts) ->
+    AuthBase = hb_maps:get(<<"access-control">>, WalletDetails, #{}, Opts),
     AuthRequest =
         Req#{
             <<"path">> => <<"verify">>,
@@ -527,29 +540,11 @@ wallets_from_cookie(Msg, Opts) ->
         fun({<<"secret-", Address/binary >>, Key}) ->
             DecodedKey = hb_escape:decode_quotes(Key),
             ?event({wallet_from_cookie, {key, DecodedKey},{ address, Address}}),
-            {true, keys_to_keyids(DecodedKey)};
-           ({<<"key-", Address/binary >>, Key}) ->
+            {true, secrets_to_keyids(DecodedKey)};
+           ({<<"wallet-", Address/binary >>, Key}) ->
             DecodedKey = hb_escape:decode_quotes(Key),
             ?event({wallet_from_cookie, {key, DecodedKey}, {address, Address}}),
-            {true, [{wallet_key, DecodedKey}]};
-           ({<<"keyids-", _/binary>>, KeyIDsBin}) ->
-            KeyIDs = binary_to_addresses(KeyIDsBin),
-            {true,
-                [
-                    {
-                        wallet_keyid,
-                        KeyID,
-                        hb_maps:get(
-                            KeyID,
-                            ParsedCookie,
-                            undefined,
-                            Opts
-                        )
-                    }
-                ||
-                    KeyID <- KeyIDs
-                ]
-            };
+            {true, [{wallet, DecodedKey}]};
            ({_Irrelevant, _}) -> false
         end,
         hb_maps:to_list(ParsedCookie, Opts)
@@ -557,11 +552,11 @@ wallets_from_cookie(Msg, Opts) ->
 
 %% @doc Sign a message using hb_message:commit, taking either a wallet as a 
 %% JSON-encoded string or a wallet details message with a `key' field.
-sign_message(Message, NonMap, Opts) when not is_map(NonMap) ->
-    sign_message(Message, #{ <<"wallet">> => NonMap }, Opts);
-sign_message(Message, #{ <<"wallet">> := Key }, Opts) when is_binary(Key) ->
-    sign_message(Message, ar_wallet:from_json(Key), Opts);
-sign_message(Message, #{ <<"wallet">> := Key }, Opts) ->
+commit_message(Message, NonMap, Opts) when not is_map(NonMap) ->
+    commit_message(Message, #{ <<"wallet">> => NonMap }, Opts);
+commit_message(Message, #{ <<"wallet">> := Key }, Opts) when is_binary(Key) ->
+    commit_message(Message, ar_wallet:from_json(Key), Opts);
+commit_message(Message, #{ <<"wallet">> := Key }, Opts) ->
     ?event({committing_with_proxy, {message, Message}, {wallet, Key}}),
     hb_message:commit(Message, Opts#{ priv_wallet => Key }).
 
@@ -641,16 +636,16 @@ sync(_Base, Request, Opts) ->
 %%% Helper functions
 
 %% @doc Convert a key to a wallet reference.
-keys_to_keyids(Keys) when is_list(Keys) ->
-    [ hd(keys_to_keyids(Key)) || Key <- Keys ];
-keys_to_keyids(Key) when is_binary(Key) ->
-    ?event({keys_to_keyids, {key, {explicit, Key}}}),
-    KeyID = dev_codec_httpsig_keyid:secret_key_to_committer(Key),
-    [ {wallet_keyid, <<"secret:", KeyID/binary>>, Key} ].
+secrets_to_keyids(Secrets) when is_list(Secrets) ->
+    [ hd(secrets_to_keyids(Secret)) || Secret <- Secrets ];
+secrets_to_keyids(Secret) when is_binary(Secret) ->
+    ?event({secrets_to_keyids, {secret, Secret}}),
+    KeyID = dev_codec_httpsig_keyid:secret_key_to_committer(Secret),
+    [ {secret, <<"secret:", KeyID/binary>>, Secret} ].
 
 %% @doc Parse the exportable setting for a wallet and return a list of addresses
 %% which are allowed to export the wallet.
-parse_exportable(default, Opts) ->
+parse_controllers(default, Opts) ->
     case hb_opts:get(wallet_admin, undefined, Opts) of
         undefined -> 
             case hb_opts:get(operator, undefined, Opts) of
@@ -660,10 +655,10 @@ parse_exportable(default, Opts) ->
             end;
         Admin -> [Admin]
     end;
-parse_exportable(true, Opts) -> parse_exportable(default, Opts);
-parse_exportable(false, _Opts) -> [];
-parse_exportable(Addresses, _Opts) when is_list(Addresses) -> Addresses;
-parse_exportable(Address, _Opts) when is_binary(Address) -> [Address].
+parse_controllers(true, Opts) -> parse_controllers(default, Opts);
+parse_controllers(false, _Opts) -> [];
+parse_controllers(Addresses, _Opts) when is_list(Addresses) -> Addresses;
+parse_controllers(Address, _Opts) when is_binary(Address) -> [Address].
 
 %% @doc Store a wallet in the appropriate location.
 store_wallet(in_memory, KeyID, Details, Opts) ->
@@ -906,12 +901,12 @@ export_wallet_test() ->
     ?event({export_test, {export_response, ExportResponse}}),
     % Should return wallet details including key, auth, exportable, persist.
     ?assertMatch(#{<<"wallet">> := _, <<"persist">> := <<"in-memory">>}, ExportResponse),
-    ?assert(maps:is_key(<<"auth">>, ExportResponse)),
-    ?assert(maps:is_key(<<"exportable">>, ExportResponse)),
+    ?assert(maps:is_key(<<"access-control">>, ExportResponse)),
+    ?assert(maps:is_key(<<"controllers">>, ExportResponse)),
     % Should return the correct wallet address in the response.
     ?assertEqual(WalletAddress, maps:get(<<"address">>, ExportResponse)),
-    Auth = maps:get(<<"auth">>, ExportResponse),
-    ?assertEqual(WalletAddress, maps:get(<<"wallet-address">>, Auth)).
+    AccessControl = maps:get(<<"access-control">>, ExportResponse),
+    ?assertEqual(WalletAddress, maps:get(<<"wallet-address">>, AccessControl)).
 
 export_non_volatile_wallet_test() ->
         Node = hb_http_server:start_node(#{
@@ -937,9 +932,12 @@ export_non_volatile_wallet_test() ->
                 #{}
             ),
         % Should return wallet details including key, auth, exportable, persist.
-        ?assertMatch(#{<<"wallet">> := _, <<"persist">> := <<"non-volatile">>}, ExportResponse),
-        ?assert(maps:is_key(<<"auth">>, ExportResponse)),
-        ?assert(maps:is_key(<<"exportable">>, ExportResponse)).
+        ?assertMatch(
+            #{<<"wallet">> := _, <<"persist">> := <<"non-volatile">>},
+            ExportResponse
+        ),
+        ?assert(maps:is_key(<<"access-control">>, ExportResponse)),
+        ?assert(maps:is_key(<<"controllers">>, ExportResponse)).
 
 export_individual_batch_wallets_test() ->
     Node =
@@ -996,13 +994,19 @@ export_individual_batch_wallets_test() ->
     ?assert(is_map(ExportWallet1Response)),
     ExportedAllWallets =
         [
-            <<"secret:", (hb_maps:get(<<"committer">>, Wallet, undefined, #{}))/binary>>
+            <<
+                "secret:",
+                (hb_maps:get(<<"committer">>, Wallet, undefined, #{}))/binary
+            >>
         ||
             Wallet <- export_response_to_list(ExportAllResponse, #{})
         ],
     ExportedSingleWallets =
         [
-            <<"secret:", (hb_maps:get(<<"committer">>, Wallet, undefined, #{}))/binary>>
+            <<
+                "secret:",
+                (hb_maps:get(<<"committer">>, Wallet, undefined, #{}))/binary
+            >>
         ||
             Wallet <- export_response_to_list(ExportWallet1Response, #{})
         ],

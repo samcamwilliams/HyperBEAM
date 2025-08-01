@@ -328,7 +328,7 @@ default_message() ->
         %         <<"key-provider">> =>
         %             #{
         %                 <<"device">> => <<"http-auth@1.0">>,
-        %                 <<"auth">> =>
+        %                 <<"access-control">> =>
         %                     #{ <<"device">> => <<"http-auth@1.0">> }
         %             }
         %     }
