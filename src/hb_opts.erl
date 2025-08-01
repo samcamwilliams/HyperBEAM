@@ -117,6 +117,7 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
             #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
+            #{<<"name">> => <<"auth-hook@1.0">>, <<"module">> => dev_auth_hook},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
@@ -208,7 +209,7 @@ default_message() ->
         debug_metadata => true,
         debug_ids => true,
         debug_committers => true,
-        debug_show_priv => true,
+        debug_show_priv => if_present,
         debug_resolve_links => false,
 		trusted => #{},
         snp_enforced_keys => [
@@ -320,10 +321,16 @@ default_message() ->
         <<"router_opts">> => #{
             routes => []
         }
-        % on => #{
+        %on => #{
         %     <<"request">> => #{
-        %         <<"device">> => <<"cookie@1.0">>,
-        %         <<"path">> => <<"request">>
+        %         <<"device">> => <<"hook@1.0">>,
+        %         <<"path">> => <<"request">>,
+        %         <<"key-provider">> =>
+        %             #{
+        %                 <<"device">> => <<"http-auth@1.0">>,
+        %                 <<"auth">> =>
+        %                     #{ <<"device">> => <<"http-auth@1.0">> }
+        %             }
         %     }
         % }
         % Should the node track and expose prometheus metrics?

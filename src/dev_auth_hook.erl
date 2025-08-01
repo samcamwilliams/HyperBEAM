@@ -1,25 +1,31 @@
 %%% @doc Common authentication hook framework for on-request signing.
 %%% 
-%%% This module provides a reusable pattern for implementing authentication hooks
-%%% that verify request headers and conditionally sign messages. It abstracts the
-%%% common functionality found in dev_codec_cookie_hook and can be used with
-%%% different authentication schemes (cookie, HTTP auth, etc.).
+%%% This module expects to receive a `secret-provider' key in the hook base
+%%% message, optionally also taking a `generate-path' and `finalize-path' key,
+%%% which are used to generate the secret and post-process the response. If
+%%% either `X-path' keys are not present, the `generate' and `finalize'
+%%% paths are used. If the secret provider's device does not implement these
+%%% keys, execution continues without modifying the request or response.
 %%% 
-%%% This module looks for a `hook_auth_provider' key in the options, and uses
-%%% that to determine how to sign the request.
--module(dev_hook_request_auth).
--export([on_request/3]).
+-module(dev_auth_hook).
+-export([request/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%%% Default key used to indicate that an individual message in the path should
+%%% be signed.
+-define(DEFAULT_COMMIT_KEY, <<"!">>).
 
 %%% Default keys to ignore when signing
 -define(DEFAULT_IGNORED_KEYS,
     [
+        <<"secret">>,
         <<"cookie">>,
         <<"set-cookie">>,
         <<"path">>,
         <<"method">>,
-        <<"authorization">>
+        <<"authorization">>,
+        ?DEFAULT_COMMIT_KEY
     ]
 ).
 
@@ -33,7 +39,7 @@
 %%     by the user request).
 %% </pre>
 %% 
-on_request(Base, HookReq, Opts) ->
+request(Base, HookReq, Opts) ->
     ?event({auth_hook_request, {base, Base}, {hook_req, HookReq}}),
     ExistingMessages = hb_maps:find(<<"body">>, HookReq, Opts),
     maybe
@@ -46,7 +52,7 @@ on_request(Base, HookReq, Opts) ->
         ?event(auth_hook_no_signers),
         % Call the key provider to normalize authentication (generate if needed)
         {ok, IntermediateProvider, NormReq} ?=
-            generate_key(Provider, Request, Opts),
+            generate_secret(Provider, Request, Opts),
         % Call `~wallet@1.0' to generate a wallet if needed. Returns refreshed
         % options.
         {ok, NormProvider, NewOpts} ?=
@@ -95,7 +101,7 @@ on_request(Base, HookReq, Opts) ->
     end.
 
 %% @doc Normalize authentication credentials, generating new ones if needed.
-generate_key(Provider, Request, Opts) ->
+generate_secret(Provider, Request, Opts) ->
     case call_provider(<<"generate">>, Provider, Request, Opts) of
         {error, not_found} ->
             ?event({no_generate_handler, Provider}),
@@ -105,21 +111,21 @@ generate_key(Provider, Request, Opts) ->
             % return the error to the user.
             ?event({generate_error, Err}),
             {error, Err};
-        {ok, Key} when is_binary(Key) ->
+        {ok, Secret} when is_binary(Secret) ->
             % The provider returned a direct key, calculate the committer and
             % generate a wallet for it, if needed.
-            ?event({key_from_provider, Key}),
-            {ok, Provider#{ <<"key">> => Key }, strip_sensitive(Request, Opts)};
+            ?event({secret_from_provider, Secret}),
+            {ok, Provider#{ <<"secret">> => Secret }, strip_sensitive(Request, Opts)};
         {ok, NormalizedReq} when is_map(NormalizedReq) ->
             % If there is a `wallet' field in the request, we move it to the
             % provider, else continue with the existing provider.
             ?event({normalized_req, NormalizedReq}),
-            case hb_maps:find(<<"key">>, NormalizedReq, Opts) of
+            case hb_maps:find(<<"secret">>, NormalizedReq, Opts) of
                 {ok, Key} ->
                     ?event({key_found_in_normalized_req, Key}),
                     {
                         ok,
-                        Provider#{ <<"key">> => Key },
+                        Provider#{ <<"secret">> => Key },
                         strip_sensitive(NormalizedReq, Opts)
                     };
                 error ->
@@ -128,9 +134,9 @@ generate_key(Provider, Request, Opts) ->
             end
     end.
 
-%% @doc Strip the `key' field from a request.
+%% @doc Strip the `secret' field from a request.
 strip_sensitive(Request, Opts) ->
-    hb_maps:without([<<"key">>], Request, Opts).
+    hb_maps:without([<<"secret">>], Request, Opts).
 
 %% @doc Generate a wallet with the key if the `wallet' field is not present in
 %% the provider after normalization.
@@ -172,7 +178,7 @@ sign_request(Provider, Msg, Opts) ->
 maybe_sign_messages(Provider, SignedReq, Opts) ->
     Parsed = hb_singleton:from(SignedReq, Opts),
     ?event({auth_hook_parsed_messages, {sequence_length, length(Parsed)}}),
-    SignKey = hb_opts:get(auth_hook_commit_key, <<"!">>, Opts),
+    SignKey = hb_opts:get(auth_hook_commit_key, ?DEFAULT_COMMIT_KEY, Opts),
     Processed = maybe_sign_messages(Provider, SignKey, Parsed, Opts),
     {ok, Processed}.
 maybe_sign_messages(_Provider, _Key, [], _Opts) -> [];
@@ -237,26 +243,26 @@ refresh_opts(Opts) ->
 
 %% @doc Get the key provider from the base message or the defaults.
 find_provider(Base, Opts) ->
-    case hb_maps:get(<<"key-provider">>, Base, no_key_provider, Opts) of
+    case hb_maps:get(<<"secret-provider">>, Base, no_key_provider, Opts) of
         no_key_provider ->
-            case hb_opts:get(hook_key_provider, no_key_provider, Opts) of
+            case hb_opts:get(hook_secret_provider, no_key_provider, Opts) of
                 no_key_provider -> {error, no_key_provider};
-                KeyProvider -> KeyProvider
+                SecretProvider -> SecretProvider
             end;
-        KeyProvider when is_binary(KeyProvider) ->
-            {ok, #{ <<"device">> => KeyProvider }};
-        KeyProvider when is_map(KeyProvider) ->
-            {ok, KeyProvider};
+        SecretProvider when is_binary(SecretProvider) ->
+            {ok, #{ <<"device">> => SecretProvider }};
+        SecretProvider when is_map(SecretProvider) ->
+            {ok, SecretProvider};
         _ ->
             {error, invalid_auth_provider}
     end.
 
 %% @doc Find the appropriate handler for a key in the key provider.
-call_provider(Key, KeyProvider, Request, Opts) ->
-    ?event({call_provider, {key, Key}, {key_provider, KeyProvider}, {req, Request}}),
-    ExecKey = hb_maps:get(<< Key/binary, "-path">>, KeyProvider, Key, Opts),
+call_provider(Key, Provider, Request, Opts) ->
+    ?event({call_provider, {key, Key}, {provider, Provider}, {req, Request}}),
+    ExecKey = hb_maps:get(<< Key/binary, "-path">>, Provider, Key, Opts),
     ?event({call_provider, {exec_key, ExecKey}}),
-    case hb_ao:resolve(KeyProvider, Request#{ <<"path">> => ExecKey }, Opts) of
+    case hb_ao:resolve(Provider, Request#{ <<"path">> => ExecKey }, Opts) of
         {ok, Msg} when is_map(Msg) ->
             % The result is a message. We revert the path to its original value.
             case hb_maps:find(<<"path">>, Request, Opts) of
@@ -293,9 +299,9 @@ cookie_test() ->
                 priv_wallet => ServerWallet = ar_wallet:new(),
                 on => #{
                     <<"request">> => #{
-                        <<"device">> => <<"hook@1.0">>,
+                        <<"device">> => <<"auth-hook@1.0">>,
                         <<"path">> => <<"request">>,
-                        <<"key-provider">> =>
+                        <<"secret-provider">> =>
                             #{
                                 <<"device">> => <<"cookie@1.0">>
                             }
@@ -354,9 +360,9 @@ http_auth_test() ->
                 priv_wallet => ServerWallet = ar_wallet:new(),
                 on => #{
                     <<"request">> => #{
-                        <<"device">> => <<"hook@1.0">>,
+                        <<"device">> => <<"auth-hook@1.0">>,
                         <<"path">> => <<"request">>,
-                        <<"key-provider">> =>
+                        <<"secret-provider">> =>
                             #{
                                 <<"device">> => <<"http-auth@1.0">>,
                                 <<"auth">> =>

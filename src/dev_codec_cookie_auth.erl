@@ -27,7 +27,7 @@ generate(Base, Request, Opts) ->
     {
         ok,
         WithCookie#{
-            <<"key">> => Secrets
+            <<"secret">> => Secrets
         }
     }.
 
@@ -194,23 +194,6 @@ find_secret(Committer, Request, Opts) ->
         {ok, _Secret} ?= hb_maps:find(<<"secret-", Committer/binary>>, Cookie, Opts)
     else error -> {error, not_found}
     end.
-
-%% @doc Find the references for the given committer, if they exist in the cookie.
-find_nonces(Request, SecretID, Opts) ->
-    maybe
-        {ok, Cookie} ?= dev_codec_cookie:extract(Request, #{}, Opts),
-        {ok, RefsBin} ?= hb_maps:find(<<"nonces-", SecretID/binary>>, Cookie, Opts),
-        deserialize_nonces(RefsBin, Opts)
-    else error -> []
-    end.
-
-%% @doc Deserialize a reference string into a list of references.
-deserialize_nonces(Reference, _Opts) ->
-    binary:split(Reference, <<",">>, [global]).
-
-%% @doc Serialize a list of references into a string.
-serialize_nonces(References, _Opts) ->
-    hb_util:bin(string:join(lists:map(fun hb_util:list/1, References), ", ")).
 
 %%% Tests
 

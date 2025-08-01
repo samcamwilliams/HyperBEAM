@@ -17,9 +17,9 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% @doc Commit to a given `Base' message with a given `Key', setting the 
+%% @doc Commit to a given `Base' message with a given `Secret', setting the 
 %% `commitment-device' key to `Device' afterwards.
-commit(Device, Key, Base, Req, Opts) ->
+commit(Device, Secret, Base, Req, Opts) ->
     % If there are no existing commitments, we use the unmodified base message.
     % If there are, we remove the uncommitted parts of the message.
     ExistingComms = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
@@ -41,7 +41,7 @@ commit(Device, Key, Base, Req, Opts) ->
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"hmac-sha256">>,
                 <<"scheme">> => <<"secret">>,
-                <<"key">> => Key
+                <<"secret">> => Secret
             }
         ),
     {ok, CommitmentID, Commitment} =
@@ -67,14 +67,14 @@ commit(Device, Key, Base, Req, Opts) ->
     ?event({cookie_commitment, {id, CommitmentID}, {commitment, ModCommittedMsg}}),
     {ok, ModCommittedMsg}.
 
-%% @doc Verify a given `Base' message with a given `Key' using the `~httpsig@1.0'
+%% @doc Verify a given `Base' message with a given `Secret' using the `~httpsig@1.0'
 %% HMAC commitment scheme.
-verify(Key, Base, RawReq, Opts) ->
+verify(Secret, Base, RawReq, Opts) ->
     ProxyRequest =
         RawReq#{
             <<"commitment-device">> => <<"httpsig@1.0">>,
             <<"path">> => <<"verify">>,
-            <<"key">> => Key
+            <<"secret">> => Secret
         },
     ?event({proxy_request, ProxyRequest}),
     {ok, hb_message:verify(Base, ProxyRequest, Opts)}.

@@ -109,9 +109,9 @@ apply_scheme(constant, RawKeyID, _Req) ->
     {ok, KeyID, KeyID};
 apply_scheme(secret, _KeyID, Req) ->
     % In the `secret' scheme, the key is hashed to generate a keyid.
-    Key = maps:get(<<"key">>, Req, undefined),
-    Committer = secret_key_to_committer(Key),
-    {ok, Key, << "secret:", Committer/binary >>};
+    Secret = maps:get(<<"secret">>, Req, undefined),
+    Committer = secret_key_to_committer(Secret),
+    {ok, Secret, << "secret:", Committer/binary >>};
 apply_scheme(_Scheme, _Key, _KeyID) ->
     {error, unsupported_scheme}.
 

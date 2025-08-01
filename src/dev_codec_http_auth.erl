@@ -57,8 +57,8 @@ verify(Base, RawReq, Opts) ->
 %% derive a key from the authentication information and return it.
 generate(_Msg, ReqLink, Opts) when ?IS_LINK(ReqLink) ->
     generate(_Msg, hb_cache:ensure_loaded(ReqLink, Opts), Opts);
-generate(_Msg, #{ <<"key">> := Key }, _Opts) ->
-    {ok, Key};
+generate(_Msg, #{ <<"secret">> := Secret }, _Opts) ->
+    {ok, Secret};
 generate(_Msg, Req, Opts) ->
     case hb_maps:get(<<"authorization">>, Req, undefined, Opts) of
         <<"Basic ", Auth/binary>> ->
@@ -91,7 +91,7 @@ generate(_Msg, Req, Opts) ->
 derive_key(Decoded, Req, Opts) ->
     Alg = hb_util:atom(hb_maps:get(<<"alg">>, Req, <<"sha256">>, Opts)),
     Salt = hb_maps:get(<<"salt">>, Req, ?DEFAULT_SALT, Opts),
-    Iterations = hb_maps:get(<<"iterations">>, Req, 600_000, Opts),
+    Iterations = hb_maps:get(<<"iterations">>, Req, 2 * 600_000, Opts),
     KeyLength = hb_maps:get(<<"key-length">>, Req, 64, Opts),
     ?event(key_gen,
         {derive_key,
@@ -104,7 +104,13 @@ derive_key(Decoded, Req, Opts) ->
     case hb_crypto:pbkdf2(Alg, Decoded, Salt, Iterations, KeyLength) of
         {ok, Key} ->
             EncodedKey = hb_util:encode(Key),
-            ?event(key_gen, {derived_key, {key, EncodedKey}, {committer, dev_codec_httpsig_keyid:secret_key_to_committer(Key)}}),
+            ?event(key_gen,
+                {derived_key,
+                    {key, EncodedKey},
+                    {committer, dev_codec_httpsig_keyid:secret_key_to_committer(Key)},
+                    {iterations, Iterations}
+                }
+            ),
             {ok, EncodedKey};
         {error, Err} ->
             ?event(key_gen,
@@ -123,3 +129,21 @@ derive_key(Decoded, Req, Opts) ->
                 }
             }
     end.
+
+%%% Tests
+
+benchmark_pbkdf2_test() ->
+    Key = crypto:strong_rand_bytes(32),
+    Iterations = 2 * 600_000,
+    KeyLength = 32,
+    Derivations = 
+        hb_test_utils:benchmark(
+            fun() ->
+                hb_crypto:pbkdf2(sha256, Key, <<"salt">>, Iterations, KeyLength)
+            end
+        ),
+    hb_test_utils:benchmark_print(
+        <<"Derived">>,
+        <<"keys (1.2m iterations each)">>,
+        Derivations
+    ).

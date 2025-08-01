@@ -57,15 +57,8 @@
 -module(dev_hook).
 %%% Backend API for calling hooks, used by devices as well as AO-Core.
 -export([info/1, on/3, find/2, find/3]).
-%%% Public API for hook frameworks.
--export([request/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
-%% @doc Hook framework for signing message requests using symmetric keys. See
-%% `dev_hook_request_auth' for more details.
-request(Base, Req, Opts) ->
-    dev_hook_request_auth:on_request(Base, Req, Opts).
 
 %% @doc Device API information
 info(_) ->
