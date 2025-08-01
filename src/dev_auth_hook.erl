@@ -46,10 +46,11 @@ request(Base, HookReq, Opts) ->
         % Get the key provider from options and short-circuit if none is
         % provided.
         {ok, Provider} ?= find_provider(Base, Opts),
-        % Check if the request already has signatures
+        % Check if the request already has signatures, or the hook base enforces
+        % that we should always attempt to sign the request.
         {ok, Request} ?= hb_maps:find(<<"request">>, HookReq, Opts),
-        [] ?= hb_message:signers(Request, Opts),
-        ?event(auth_hook_no_signers),
+        true ?= is_relevant(Base, Request, Opts),
+        ?event(auth_hook_is_relevant),
         % Call the key provider to normalize authentication (generate if needed)
         {ok, IntermediateProvider, NormReq} ?=
             generate_secret(Provider, Request, Opts),
@@ -89,15 +90,63 @@ request(Base, HookReq, Opts) ->
         {error, AuthError} ->
             ?event({auth_hook_auth_error, AuthError}),
             {error, AuthError};
+        {skip, {committers, Committers}, {headers, Headers}} ->
+            ?event({auth_hook_skipping, {committers, Committers}, {headers, Headers}}),
+            {ok, HookReq};
         error ->
             ?event({auth_hook_error, no_request}),
-            {ok, #{ <<"body">> => ExistingMessages }};
-        ExistingSigners when is_list(ExistingSigners) ->
-            ?event({auth_hook_skipping, {signers, ExistingSigners}}),
-            {ok, #{ <<"body">> => ExistingMessages }};
+            {ok, HookReq};
         Other ->
             ?event({auth_hook_unexpected_result, Other}),
             Other
+    end.
+
+%% @doc Check if the request is relevant to the hook base. Node operators may
+%% specify criteria for activation of the hook based on the committers of the
+%% request (`always', `uncommitted', or a list of committers), or the presence
+%% of certain headers (`always', or a list of headers).
+is_relevant(Base, Request, Opts) ->
+    Committers = is_relevant_from_committers(Base, Request, Opts),
+    Headers = is_relevant_from_headers(Base, Request, Opts),
+    ?event({auth_hook_is_relevant, {committers, Committers}, {headers, Headers}}),
+    if Committers andalso Headers -> true;
+        true -> {skip, {committers, Committers}, {headers, Headers}}
+    end.
+
+%% @doc Check if the request is relevant to the hook base based on the committers
+%% of the request.
+is_relevant_from_committers(Base, Request, Opts) ->
+    Config = hb_util:deep_get([<<"when">>, <<"committers">>], Base, <<"uncommitted">>, Opts),
+    ?event({auth_hook_is_relevant_from_committers, Config, Base}),
+    case Config of
+        <<"always">> -> true;
+        <<"uncommitted">> -> hb_message:signers(Request, Opts) == [];
+        RelevantCommitters ->
+            lists:any(
+                fun(Signer) ->
+                    lists:member(Signer, RelevantCommitters)
+                end,
+                hb_message:signers(Request, Opts)
+            )
+    end.
+
+%% @doc Check if the request is relevant to the hook base based on the presence
+%% of headers specified in the hook base.
+is_relevant_from_headers(Base, Request, Opts) ->
+    Config = hb_util:deep_get([<<"when">>, <<"headers">>], Base, <<"always">>, Opts),
+    ?event({auth_hook_is_relevant_from_headers, Config, Base}),
+    case Config of
+        <<"always">> -> true;
+        RelevantHeaders ->
+            lists:any(
+                fun(Header) ->
+                    case hb_maps:find(Header, Request, Opts) of
+                        {ok, _} -> true;
+                        error -> false
+                    end
+                end,
+                RelevantHeaders
+            )
     end.
 
 %% @doc Normalize authentication credentials, generating new ones if needed.
@@ -425,6 +474,66 @@ http_auth_test() ->
     ?assertEqual(
         [Signer],
         signers_from_commitments_response(Resp3, ServerWallet)
+    ).
+
+when_test() ->
+    % Start a node with the `~http-auth@1.0' device as the key-provider. Only
+    % request commitment with the hook if the `Authorization' header is present.
+    Node =
+        hb_http_server:start_node(
+            #{
+                priv_wallet => ServerWallet = ar_wallet:new(),
+                on => #{
+                    <<"request">> => #{
+                        <<"device">> => <<"auth-hook@1.0">>,
+                        <<"path">> => <<"request">>,
+                        <<"when">> => #{
+                            <<"headers">> => [<<"authorization">>]
+                        },
+                        <<"secret-provider">> =>
+                            #{
+                                <<"device">> => <<"http-auth@1.0">>,
+                                <<"access-control">> =>
+                                    #{ <<"device">> => <<"http-auth@1.0">> }
+                            }
+                    }
+                }
+            }
+        ),
+    % Run a request and check that the response is not signed, but is `status: 200'.
+    {ok, Resp1} =
+        hb_http:get(
+            Node,
+            #{
+                <<"path">> => <<"~meta@1.0/info">>,
+                <<"body">> => <<"Test data">>
+            },
+            #{}
+        ),
+    ?assertEqual(200, hb_maps:get(<<"status">>, Resp1, 0)),
+    % Run a request with the `Authorization' header and check that the response
+    % is signed.
+    AuthStr = << "Basic ", (base64:encode(<<"user:pass">>))/binary >>,
+    Resp2 =
+        hb_http:get(
+            Node,
+            #{
+                <<"path">> => <<"commitments">>,
+                <<"body">> => <<"Test data">>,
+                <<"authorization">> => AuthStr
+            },
+            #{}
+        ),
+    ?assertMatch(
+        {ok, #{ <<"status">> := 200 }},
+        Resp2
+    ),
+    ?assertMatch(
+        [_],
+        signers_from_commitments_response(
+            hb_util:ok(Resp2),
+            ServerWallet
+        )
     ).
 
 %% @doc The cookie hook test(s) call `GET /commitments', which returns the 
