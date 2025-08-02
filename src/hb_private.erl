@@ -13,7 +13,6 @@
 %%% 
 %%% See `hb_ao' for more information about the AO-Core protocol
 %%% and private elements of messages.
-
 -module(hb_private).
 -export([opts/1]).
 -export([from_message/1, reset/1, is_private/1]).

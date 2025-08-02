@@ -1,172 +1,170 @@
-%%% @doc A device that allows a node to manage wallets on behalf of users. Users
-%%% are able to create wallets, then have the node sign their messages and
-%%% potentially continue execution upon the result. This device is intended for
-%%% use in situations in which the node is trusted by the user, for example if
-%%% it is running on their own machine or in a TEE-protected environment that 
-%%% they deem to be secure.
+%%% @doc A device that allows a node to create, export, and commit messages with
+%%% secrets that are stored on the node itself. Users of this device must specify
+%%% an `access-control' message which requests are validated against before 
+%%% access to secrets is granted.
+%%% 
+%%% This device is intended for use in situations in which the node is trusted
+%%% by the user, for example if it is running on their own machine or in a
+%%% TEE-protected environment that they deem to be secure.
 %%% 
 %%% # Authentication Flow
 %%% 
-%%% Each wallet is associated with an authentication message that controls access.
-%%% The authentication system is pluggable -- users can employ any authentication
-%%% message as they desire. The default authentication message is empty aside 
-%%% the device being set to `cookie@1.0`.
+%%% Each secret is associated with an `access-control' message and a list of
+%%% `controllers' that may access it. The `access-control' system is pluggable
+%%% -- users may configure their messages to call any AO-Core device that is
+%%% executable on the host node. The default `access-control' message uses the
+%%% `~cookie@1.0' device's `generate' and `verify' keys to authenticate users.
 %%% 
-%%% During wallet generation:
-%%% 1. The wallet device creates the wallet and determines its name (provided by
-%%%    the user or derived from the wallet address).
-%%% 2. The wallet device calls the authentication message with path `generate'
-%%%    and the wallet name in the request.
-%%% 3. The authentication device sets up authentication (e.g., creates cookies,
-%%%    secrets) and returns a response.
-%%% 4. The wallet device stores both the wallet and the authentication result, 
-%%%    as well as its other metadata.
-%%% 5. The wallet device returns the authentication response with the wallet name
-%%%    added to the `body' field.
+%%% During secret generation:
+%%% 1. This device creates the secret and determines its `committer' address.
+%%% 2. The device invokes the caller's `access-control' message with the `commit'
+%%%    path and the `keyid' in the request.
+%%% 3. The `access-control' message sets up authentication (e.g., creates cookies,
+%%%    secrets) and returns a response, containing a commitment with a `keyid'
+%%%    field. This `keyid' is used to identify the user's 'access secret' which
+%%%    grants them the ability to use the device's 'hidden' secret in the future.
+%%% 4. This device stores both the secret and the initialized `access-control'
+%%%    message, as well as its other metadata.
+%%% 5. This device returns the initialized `access-control' message with the
+%%%    secret's `keyid' added to the `body' field.
 %%% 
-%%% During wallet operations (commit, export, etc.):
-%%% 1. The wallet device retrieves the stored authentication message for the
-%%%    wallet either from persistent storage or from the node's message.
-%%% 2. The wallet device calls the authentication message with path `verify' and
+%%% During secret operations (commit, export, etc.):
+%%% 1. This device retrieves the stored `access-control' message for the
+%%%    secret either from persistent storage or from the node message's private
+%%%    element. The keyid of the `access secret' is either provided by the 
+%%%    user in the request, or is determined from a provided `secret' parameter
+%%%    in the request.
+%%% 2. This device calls the `access-control' message with path `verify' and
 %%%    the user's request.
-%%% 3. The authentication device verifies the request (e.g., checks cookies).
-%%% 4. If verification passes, the wallet device performs the requested operation
+%%% 3. The `access-control' message verifies the request (e.g., checks cookies,
+%%%    provided authentication credentials, etc.).
+%%% 4. If verification passes, the device performs the requested operation.
 %%% 5. If verification fails, a 400 error is returned.
 %%% 
-%%% # Authentication Message Requirements
+%%% # Access Control Message Requirements
 %%% 
-%%% Authentication devices must support two paths:
+%%% Access control messages are fully customizable by callers, but must support
+%%% two paths:
 %%% 
-%%% `/generate': Called during wallet creation.
-%%%  - Input: Request message containing `name' field with wallet's name.
+%%% `/commit': Called during secret generation to bind the `access-control'
+%%%            template message to the given `keyid' (secret reference).
+%%%  - Input:  Request message containing `keyid' field with the secret's `keyid'
+%%%            in the `body' field.
 %%%  - Output: Response message with authentication setup (cookies, tokens, etc.).
 %%%            This message will be used as the `Base' message for the `verify'
 %%%            path.
 %%% 
-%%% `/verify': Called during wallet operations.
-%%%   - Base: The output of the `generate' path.
-%%%   - Request: User's request message with authentication credentials.
-%%%   - Output: `false' if an error has occurred. If the request is valid, the
-%%%            authentication message should return either `true' or a modification
+%%% `/verify': Called before allowing an operation that requires access to a
+%%%            secret to proceed.
+%%%   - Base:    The initialized `access-control' message from the `commit' path.
+%%%   - Request: Caller's request message with authentication credentials.
+%%%   - Output:  `false' if an error has occurred. If the request is valid, the
+%%%            `access-control' message should return either `true' or a modification
 %%%            of the request message which will be used for any subsequent
 %%%            operations.
 %%% 
-%%% The default authentication device `~cookie@1.0' uses HTTP cookies with
-%%% secrets to authenticate users.
+%%% The default `access-control' message is `~cookie@1.0', which uses HTTP
+%%% cookies with secrets to authenticate users.
 %%% 
-%%% # Wallet Device Keys
+%%% # Secret Generation Parameters
 %%% 
-%%% As well as by direct invocation, this device may be used as a `preprocessor'
-%%% hook on the node, allowing it to sign requests for users before they are
-%%% executed.
+%%% The following parameters are supported by the `generate' key:
 %%% 
-%%% The keys provided by the device are as follows:
 %%% ```
 %%% /generate
-%%%     Parameters:
-%%%     - `auth' (optional): The authentication message to use. Defaults to
-%%%       `#{<<"device">> => <<"cookie@1.0">>}' if not provided.
-%%%     - `wallet' (optional): The name of the wallet to generate. If not provided,
-%%%       the wallet's address will be used as the name.
-%%%     - `persist' (optional): How the node should persist the wallet. Options:
-%%%       - `client': The wallet is generated on the server, but not persisted.
-%%%                  The full wallet key is returned for the user to store.
+%%%     - `access-control' (optional): The `access-control' message to use.
+%%%                  Defaults to `#{<<"device">> => <<"cookie@1.0">>}'.
+%%%     - `keyid' (optional): The `keyid' of the secret to generate. If not
+%%%                  provided, the secret's address will be used as the name.
+%%%     - `persist' (optional): How the node should persist the secret. Options:
+%%%       - `client': The secret is generated on the server, but not persisted.
+%%%                  The full secret key is returned for the user to store.
 %%%       - `in-memory': The wallet is generated on the server and persisted only
 %%%                  in local memory, never written to disk.
 %%%       - `non-volatile': The wallet is persisted to non-volatile storage on 
-%%%                  the node.
-%%%     - `exportable' (optional): Whether the wallet should be exportable to
-%%%                  remote peers via the `export' key (and its security
-%%%                  mechanisms). If a wallet address or list of addresses is
-%%%                  provided, the wallet is exportable only via those addresses.
-%%%                  Defaults to the node's `wallet_admin' option if set, or its
-%%%                  operator address if not.
-%%% 
-%%%     Generates a new wallet and sets up authentication for it. The steps are:
-%%%     1. Creates a new wallet.
-%%%     2. Determines the wallet name (provided name or wallet address).
-%%%     3. Calls the authentication device with path `generate' and the wallet name.
-%%%     4. Stores the wallet and authentication result.
-%%%     5. Returns the authentication device's response with wallet name in `body'.
+%%%                  the node. The store used by this option is segmented from
+%%%                  the node's main storage, configurable via the `priv_store'
+%%%                  node message option.
+%%%     - `controllers' (optional): A list of controllers that may access the
+%%%                  secret. Defaults to the node's `wallet_admin' option if set,
+%%%                  or its operator address if not.
+%%%     - `required-controllers' (optional): The number of controllers that must
+%%%                  sign the secret for it to be valid. Defaults to `1'.
 %%%     
 %%%     The response will contain authentication setup (such as cookies) from the
-%%%     authentication device, plus the wallet name in the `body' field and the 
-%%%     wallet's address in the `wallet-address' field. The wallet's key is not
-%%%     returned to the user unless the `persist' option is set to `client'. If
-%%%     it is, the `~cookie@1.0' device will be employed to set the user's cookie
-%%%     with the wallet's key.
+%%%     `access-control' message, plus the secret's `keyid' in the `body' field.
+%%%     The secret's key is not returned to the user unless the `persist' option
+%%%     is set to `client'. If it is, the `~cookie@1.0' device will be employed
+%%%     to set the user's cookie with the secret.
 %%% 
 %%% /import
 %%%     Parameters:
-%%%     - `wallet' (optional): The name of the wallet to import.
-%%%     - `key' (optional): The JSON-encoded wallet to import.
+%%%     - `key' (optional): The JSON-encoded secret to import.
 %%%     - `cookie' (optional): A structured-fields cookie containing a map with
-%%%       a `key' field which is a JSON-encoded wallet.
-%%%     - `auth' (optional): The authentication message to use.
-%%%     - `persist' (optional): How the node should persist the wallet. The
+%%%       a `key' field which is a JSON-encoded secret.
+%%%     - `access-control' (optional): The `access-control' message to use.
+%%%     - `persist' (optional): How the node should persist the secret. The
 %%%       supported options are as with the `generate' key.
 %%% 
-%%%     Imports a wallet for hosting from the user. Executes as `generate' does,
+%%%     Imports a secret for hosting from the user. Executes as `generate' does,
 %%%     except that it expects the key to store to be provided either directly
-%%%     via the `key' parameter as a `key' field in the cookie Structured-Fields
+%%%     via the `key' parameter as a `keyid' field in the cookie Structured-Fields
 %%%     map. Support for loading the key from the cookie is provided such that
-%%%     a previously-generated wallet by the user can have its persistence mode
+%%%     a previously-generated secret by the user can have its persistence mode
 %%%     changed.
 %%% 
 %%% /list
+%%%     Parameters:
+%%%     - `keyids' (optional): A list of `keyid's to list. If not provided,
+%%%       all secrets will be listed via the `keyid' that is must be provided
+%%%       in order to access them.
 %%% 
-%%%     Lists all hosted wallets on the node.
+%%%     Lists all hosted secrets on the node by the `keyid' that is used to
+%%%     access them. If `keyids' is provided, only the secrets with those
+%%%     `keyid's will be listed.
 %%% 
 %%% /commit
 %%%     Parameters:
-%%%     - `wallet' (optional): The name of the wallet to sign with.
-%%%     - Authentication credentials as required by the wallet's authentication
-%%%       message (e.g., cookies for `~cookie@1.0' device).
+%%%     - `keyid' (optional): The `keyid' of the secret to commit with.
+%%%     - Authentication credentials as required by the `access-control' message.
 %%% 
-%%%     Signs the given message using the specified wallet after authentication.
-%%%     The process:
-%%%     1. Identifies the wallet (from `wallet' parameter or authentication data).
-%%%     2. Retrieves the stored authentication message for that wallet.
-%%%     3. Calls the authentication device with path `verify' to validate the
-%%%        request.
-%%%     4. If authentication succeeds, signs the entire request message using
-%%%        the wallet.
-%%%     5. Returns the signed message with signature attached.
-%%%     
-%%%     If no `wallet' parameter is provided, the request's authentication data
-%%%     (such as cookies) must contain wallet identification.
+%%%     Commits the given message using the specified secret after authentication.
+%%%     If no `keyid' parameter is provided, the request's authentication data
+%%%     (such as cookies) must contain secret identification.
 %%% 
 %%% /export
 %%%     Parameters:
-%%%     - `wallet' (optional): The name of the wallet to export.
-%%%     - `cookie' (optional): The cookie to use for the wallet.
-%%%     - `batch' (optional): A list of wallet names to export, or `all' to
-%%%       export all wallets for which the request passes authentication.
+%%%     - `keyids' (optional): A list of `keyid's to export, or `all' to
+%%%       export all secrets for which the request passes authentication.
 %%% 
-%%%     Exports a given wallet or set of wallets (in JSON-encoded form). If
-%%%     multiple wallets are requested, the result is a message with form
-%%%     `name => #{ `key` => JSON-encoded wallet, `auth' => authentication
-%%%     message, `exportable' => [address, ...], `persist' => `client' |
-%%%     `in-memory' | `non-volatile' }'.
+%%%     Exports a given secret or set of secrets. If multiple secrets are
+%%%     requested, the result is a message with form `keyid => #{ `key` =>
+%%%     JSON-encoded secret, `access-control' => `access-control' message,
+%%%     `controllers' => [address, ...], `required-controllers' => integer,
+%%%     `persist' => `client' | `in-memory' | `non-volatile' }'.
 %%% 
-%%%     A wallet will be exported if:
-%%%     - The given request passes the wallet's authentication message; or
-%%%     - The `exportable' field is set to `true` and the request is signed by
-%%%       the `wallet_admin' key; or
-%%%     - The `exportable' field is set to a list of addresses and the request
-%%%       is signed by one of those addresses.
+%%%     A secret will be exported if:
+%%%     - The given request passes each requested secret's `access-control'
+%%%       message; or
+%%%     - The request passes each requested secret's `controllers' parameter
+%%%       checks.
 %%% 
 %%% /sync
 %%%     Parameters:
-%%%     - `node': The node to pull wallets from.
+%%%     - `node': The peer node to pull secrets from.
 %%%     - `as' (optional): The identity it should use when signing its request
 %%%       to the remote peer.
-%%%     - `batch' (optional): A list of wallet names to export, or `all' to load
-%%%       every available wallet. Defaults to `all'.
+%%%     - `keyids' (optional): A list of `keyid's to export, or `all' to load
+%%%       every available secret. Defaults to `all'.
 %%% 
-%%%     Attempts to download all wallets from the given node and import them.
+%%%     Attempts to download all (or a given subset of) secrets from the given
+%%%     node and import them. If the `keyids' parameter is provided, only the
+%%%     secrets with those `keyid's will be imported. The `as' parameter is
+%%%     used to inform the node which key it should use to sign its request to
+%%%     the remote peer, such that its request validates against the secret's
+%%%     `access-control' messages on the remote peer.
 %%% '''
--module(dev_wallet).
+-module(dev_secret).
 -export([generate/3, import/3, list/3, commit/3, export/3, sync/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -605,7 +603,7 @@ sync(_Base, Request, Opts) ->
                 (hb_message:commit(
                     #{ <<"keyids">> => Wallets },
                     SignAsOpts
-                ))#{ <<"path">> => <<"/~wallet@1.0/export">> },
+                ))#{ <<"path">> => <<"/~secret@1.0/export">> },
             ?event({sync, {export_req, ExportRequest}}),
             case hb_http:get(Node, ExportRequest, SignAsOpts) of
                 {ok, ExportResponse} ->
@@ -769,7 +767,7 @@ test_wallet_generate_and_verify(GeneratePath, ExpectedName, CommitParams) ->
     TestMessage =
         maps:merge(
             #{
-                <<"device">> => <<"wallet@1.0">>,
+                <<"device">> => <<"secret@1.0">>,
                 <<"path">> => <<"commit">>,
                 <<"body">> => <<"Test message">>,
                 <<"priv">> => Priv
@@ -784,21 +782,21 @@ test_wallet_generate_and_verify(GeneratePath, ExpectedName, CommitParams) ->
 
 client_persist_generate_and_verify_test() ->
     test_wallet_generate_and_verify(
-        <<"/~wallet@1.0/generate?persist=client">>,
+        <<"/~secret@1.0/generate?persist=client">>,
         undefined,
         #{}
     ).
 
 cookie_wallet_generate_and_verify_test() ->
     test_wallet_generate_and_verify(
-        <<"/~wallet@1.0/generate?persist=in-memory">>,
+        <<"/~secret@1.0/generate?persist=in-memory">>,
         undefined,
         #{}
     ).
 
 non_volatile_persist_generate_and_verify_test() ->
     test_wallet_generate_and_verify(
-        <<"/~wallet@1.0/generate?persist=non-volatile">>,
+        <<"/~secret@1.0/generate?persist=non-volatile">>,
         undefined,
         #{}
     ).
@@ -814,7 +812,7 @@ import_wallet_with_key_test() ->
     WalletAddress = hb_util:human_id(ar_wallet:to_address(TestWallet)),
     % Import the wallet with a specific name.
     ImportUrl =
-        <<"/~wallet@1.0/import?wallet=imported-wallet&persist=in-memory&key=",
+        <<"/~secret@1.0/import?wallet=imported-wallet&persist=in-memory&key=",
             WalletKey/binary>>,
     {ok, ImportResponse} = hb_http:get(Node, ImportUrl, #{}),
     ?event({resp, ImportResponse, WalletAddress}),
@@ -833,14 +831,14 @@ list_wallets_test() ->
     {ok, Msg1} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory">>,
+            <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
         ?event({msg1, Msg1}),
     {ok, Msg2} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory">>,
+            <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
     WalletAddress1 = maps:get(<<"body">>, Msg1),
@@ -848,7 +846,7 @@ list_wallets_test() ->
     ?assertEqual(WalletAddress1, maps:get(<<"body">>, Msg1)),
     ?assertEqual(WalletAddress2, maps:get(<<"body">>, Msg2)),
     % List all wallets (no authentication required for listing).
-    {ok, Wallets} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
+    {ok, Wallets} = hb_http:get(Node, <<"/~secret@1.0/list">>, #{}),
     % Each wallet entry should be a wallet name.
     ?assert(
         lists:all(
@@ -863,12 +861,12 @@ commit_with_cookie_wallet_test() ->
     }),
     % Generate a client wallet to get a cookie with full wallet key.
     {ok, GenResponse} =
-        hb_http:get(Node, <<"/~wallet@1.0/generate?persist=client">>, #{}),
+        hb_http:get(Node, <<"/~secret@1.0/generate?persist=client">>, #{}),
     WalletName = maps:get(<<"wallet-address">>, GenResponse),
     #{ <<"priv">> := Priv } = GenResponse,
     % Use the cookie to sign a message (no wallet parameter needed).
     TestMessage = #{
-        <<"device">> => <<"wallet@1.0">>,
+        <<"device">> => <<"secret@1.0">>,
         <<"path">> => <<"commit">>,
         <<"body">> => <<"Test data">>,
         <<"priv">> => Priv
@@ -883,7 +881,7 @@ export_wallet_test() ->
     {ok, GenResponse} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory">>,
+            <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
     #{ <<"priv">> := Priv } = GenResponse,
@@ -893,7 +891,7 @@ export_wallet_test() ->
         hb_http:get(
             Node,
             #{
-                <<"path">> => <<"/~wallet@1.0/export/1">>,
+                <<"path">> => <<"/~secret@1.0/export/1">>,
                 <<"priv">> => Priv
             },
             #{}
@@ -916,7 +914,7 @@ export_non_volatile_wallet_test() ->
         {ok, GenResponse} =
             hb_http:get(
                 Node,
-                <<"/~wallet@1.0/generate?persist=non-volatile">>,
+                <<"/~secret@1.0/generate?persist=non-volatile">>,
                 #{}
             ),
         #{ <<"priv">> := Priv } = GenResponse,
@@ -925,7 +923,7 @@ export_non_volatile_wallet_test() ->
             hb_http:get(
                 Node,
                 #{
-                    <<"device">> => <<"wallet@1.0">>,
+                    <<"device">> => <<"secret@1.0">>,
                     <<"path">> => <<"export/1">>,
                     <<"priv">> => Priv
                 },
@@ -951,14 +949,14 @@ export_individual_batch_wallets_test() ->
     {ok, #{ <<"body">> := WalletKeyID1 }} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&exportable=",
+            <<"/~secret@1.0/generate?persist=in-memory&exportable=",
                 (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
     {ok, #{ <<"body">> := WalletKeyID2 }} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&exportable=",
+            <<"/~secret@1.0/generate?persist=in-memory&exportable=",
                 (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
@@ -968,11 +966,11 @@ export_individual_batch_wallets_test() ->
             Node,
             (hb_message:commit(
                 #{
-                    <<"device">> => <<"wallet@1.0">>,
+                    <<"device">> => <<"secret@1.0">>,
                     <<"keyids">> => [WalletKeyID1, WalletKeyID2]
                 },
                 AdminOpts
-            ))#{ <<"path">> => <<"/~wallet@1.0/export">> },
+            ))#{ <<"path">> => <<"/~secret@1.0/export">> },
             #{}
         ),
 
@@ -982,11 +980,11 @@ export_individual_batch_wallets_test() ->
         Node,
         (hb_message:commit(
             #{
-                <<"device">> => <<"wallet@1.0">>,
+                <<"device">> => <<"secret@1.0">>,
                 <<"keyids">> => [WalletKeyID1]
             },
             AdminOpts
-        ))#{ <<"path">> => <<"/~wallet@1.0/export">> },
+        ))#{ <<"path">> => <<"/~secret@1.0/export">> },
         #{}
     ),
     
@@ -1038,14 +1036,14 @@ export_batch_all_wallets_test() ->
     {ok, #{ <<"wallet-address">> := WalletAddr1 }} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&exportable=",
+            <<"/~secret@1.0/generate?persist=in-memory&exportable=",
                 (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
     {ok, #{ <<"wallet-address">> := WalletAddr2 }} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/generate?persist=in-memory&exportable=",
+            <<"/~secret@1.0/generate?persist=in-memory&exportable=",
                 (hb_util:human_id(AdminWallet))/binary>>,
             #{}
         ),
@@ -1055,11 +1053,11 @@ export_batch_all_wallets_test() ->
             Node,
             (hb_message:commit(
                 #{
-                    <<"device">> => <<"wallet@1.0">>,
+                    <<"device">> => <<"secret@1.0">>,
                     <<"keyids">> => <<"all">>
                 },
                 AdminOpts
-            ))#{ <<"path">> => <<"/~wallet@1.0/export">> },
+            ))#{ <<"path">> => <<"/~secret@1.0/export">> },
             #{}
         ),
     ?event({export_batch_test, {export_response, ExportResponse}}),
@@ -1097,7 +1095,7 @@ sync_wallets_test() ->
     {ok, GenResponse} =
         hb_http:get(
             Node2,
-            <<"/~wallet@1.0/generate?persist=in-memory">>,
+            <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
     WalletKeyID = maps:get(<<"body">>, GenResponse),
@@ -1105,11 +1103,11 @@ sync_wallets_test() ->
     {ok, _} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/sync?node=", Node2/binary, "&wallets=all">>,
+            <<"/~secret@1.0/sync?node=", Node2/binary, "&wallets=all">>,
             #{}
         ),
     % Get the wallet list from the first node.
-    {ok, WalletList} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
+    {ok, WalletList} = hb_http:get(Node, <<"/~secret@1.0/list">>, #{}),
     ?event({sync_wallets_test, {wallet_list, WalletList}}),
     % Should return a map of successfully imported wallets or list of names.
     ?assert(lists:member(WalletKeyID, hb_maps:values(WalletList))).
@@ -1131,7 +1129,7 @@ sync_non_volatile_wallets_test() ->
     {ok, GenResponse} =
         hb_http:get(
             Node2,
-            <<"/~wallet@1.0/generate?persist=non-volatile">>,
+            <<"/~secret@1.0/generate?persist=non-volatile">>,
             #{}
         ),
     WalletName = maps:get(<<"body">>, GenResponse),
@@ -1139,11 +1137,11 @@ sync_non_volatile_wallets_test() ->
     {ok, _} =
         hb_http:get(
             Node,
-            <<"/~wallet@1.0/sync?node=", Node2/binary, "&wallets=all">>,
+            <<"/~secret@1.0/sync?node=", Node2/binary, "&wallets=all">>,
             #{}
         ),
     % Get the wallet list from the first node.
-    {ok, WalletList} = hb_http:get(Node, <<"/~wallet@1.0/list">>, #{}),
+    {ok, WalletList} = hb_http:get(Node, <<"/~secret@1.0/list">>, #{}),
     ?event({sync_wallets_test, {wallet_list, WalletList}}),
     % Should return a map of successfully imported wallets or list of names.
     ?assert(lists:member(WalletName, hb_maps:values(WalletList))).

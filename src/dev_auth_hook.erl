@@ -1,11 +1,76 @@
-%%% @doc Common authentication hook framework for on-request signing.
+%%% @doc A device offering an on-request hook that signs incoming messages with
+%%% node-hosted wallets, in accordance with the node operator's configuration.
+%%% It is intended for deployment in environments where a node's users have
+%%% intrinsic reasons for trusting the node outside of the scope of this device.
+%%% For example, if executed on a node running in a Trusted Execution Environment
+%%% with `~snp@1.0', or a node they operate or is operated by a trusted
+%%% third-party.
 %%% 
-%%% This module expects to receive a `secret-provider' key in the hook base
-%%% message, optionally also taking a `generate-path' and `finalize-path' key,
-%%% which are used to generate the secret and post-process the response. If
-%%% either `X-path' keys are not present, the `generate' and `finalize'
-%%% paths are used. If the secret provider's device does not implement these
-%%% keys, execution continues without modifying the request or response.
+%%% This device utilizes the `generator' interface type which other devices may
+%%% implement. The generator is used to find/create a secret based on a user's
+%%% request, which is then passed to the `~proxy-wallet@1.0' device and matched
+%%% with a wallet which is used to sign the request. The `generator' interface
+%%% may implement the following keys:
+%%% 
+%%% <pre>
+%%%     `generate' (optional): A key that generates a secret based on a
+%%%                            user's request. May return either the secret
+%%%                            directly, or a message with a `secret' key. If 
+%%%                            a message is returned, it is assumed to be a
+%%%                            modified version of the user's request and is
+%%%                            used for further processing.
+%%%     `finalize' (optional): A key that takes the message sequence after this
+%%%                            device has processed it and returns it in a
+%%%                            modified form.
+%%% </pre>
+%%% 
+%%% At present, the `~cookie-secret@1.0' and `~http-auth@1.0' devices implement
+%%% the `generator' interface. For example, the following hook definition will
+%%% use the `~cookie-secret@1.0' device to generate and manage wallets for
+%%% users, with authentication details stored in cookies:
+%%% 
+%%% <pre>
+%%%   "on": {
+%%%     "request": {
+%%%       "device": "auth-hook@1.0",
+%%%       "secret-provider": {
+%%%         "device": "cookie-secret@1.0"
+%%%       }
+%%%     }
+%%%   }
+%%% </pre>
+%%% 
+%%% `~auth-hook@1.0' expects to receive a `secret-provider' key in the hook
+%%% base message. It may optionally also take a `generate-path' and
+%%% `finalize-path', which are used to generate the secret and post-process the
+%%% response. If either `X-path' keys are not present, the `generate' and
+%%% `finalize' paths are used upon the `secret-provider' message. If the secret
+%%% provider's device does not implement these keys, the operations are skipped.
+%%% 
+%%% Node operators may also specify a `when' message inside their hook definition
+%%% which is used to determine when messages should be signed. The supported keys
+%%% are:
+%%% 
+%%% <pre>
+%%%     `committers': always | uncommitted | [committer1, or committer2, or ...]
+%%%     `headers': always | [header1, or header2, or ...]
+%%% </pre>
+%%% 
+%%% Both keys are optional and can be combined to form 'and' conditions. For
+%%% example, the following hook definition will sign all uncommitted requests
+%%% that have the `Authorization' header:
+%%% 
+%%% <pre>
+%%%   "on": {
+%%%     "request": {
+%%%       "device": "auth-hook@1.0",
+%%%       "when": {
+%%%             "headers": ["authorization"],
+%%%             "committers": "uncommitted"
+%%%         }
+%%%       }
+%%%     }
+%%% </pre>
 %%% 
 -module(dev_auth_hook).
 -export([request/3]).
@@ -41,7 +106,6 @@
 %% 
 request(Base, HookReq, Opts) ->
     ?event({auth_hook_request, {base, Base}, {hook_req, HookReq}}),
-    ExistingMessages = hb_maps:find(<<"body">>, HookReq, Opts),
     maybe
         % Get the key provider from options and short-circuit if none is
         % provided.
@@ -54,7 +118,7 @@ request(Base, HookReq, Opts) ->
         % Call the key provider to normalize authentication (generate if needed)
         {ok, IntermediateProvider, NormReq} ?=
             generate_secret(Provider, Request, Opts),
-        % Call `~wallet@1.0' to generate a wallet if needed. Returns refreshed
+        % Call `~secret@1.0' to generate a wallet if needed. Returns refreshed
         % options.
         {ok, NormProvider, NewOpts} ?=
             generate_wallet(IntermediateProvider, NormReq, Opts),
@@ -191,7 +255,7 @@ strip_sensitive(Request, Opts) ->
 %% the provider after normalization.
 generate_wallet(Provider, Request, Opts) ->
     {ok, #{ <<"body">> := WalletID }} =
-        dev_wallet:generate(Provider, Request, Opts),
+        dev_secret:generate(Provider, Request, Opts),
     ?event({generated_wallet, WalletID}),
     {ok, Provider, refresh_opts(Opts)}.
 
@@ -207,7 +271,7 @@ sign_request(Provider, Msg, Opts) ->
             IgnoredKeys = ignored_keys(Msg, Opts),
             WithoutIgnored = hb_maps:without(IgnoredKeys, Msg, Opts),
             % Call the wallet to sign the request.
-            case dev_wallet:commit(WithoutIgnored, Provider, Opts) of
+            case dev_secret:commit(WithoutIgnored, Provider, Opts) of
                 {ok, Signed} ->
                     ?event({auth_hook_signed, Signed}),
                     SignedWithIgnored = 

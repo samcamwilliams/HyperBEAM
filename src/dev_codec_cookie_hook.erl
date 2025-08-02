@@ -81,7 +81,7 @@ normalize_cookie(_Base, Request, Opts) ->
         case dev_codec_cookie:extract(Request, #{}, Opts) of
             {ok, EmptyCookie} when map_size(EmptyCookie) == 0 ->
                 ?event({generating_cookie, Request}),
-                GenerateRes = dev_wallet:generate(#{}, Request, Opts),
+                GenerateRes = dev_secret:generate(#{}, Request, Opts),
                 ?event({generated_cookie, GenerateRes}),
                 {ok, Generated} = GenerateRes,
                 ?event({generated_cookie_message, Generated}),
@@ -122,7 +122,7 @@ sign_message(Msg, Opts) ->
             }
         ),
         {ok, Signed} ?=
-            dev_wallet:commit(
+            dev_secret:commit(
                 WithoutIgnoredKeys,
                 WithoutIgnoredKeys,
                 Opts

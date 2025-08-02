@@ -1,8 +1,6 @@
-%%% @doc Implements the authentication mechanisms of the cookie codec.
+%%% @doc Implements the `message@1.0' commitment interface for the `~cookie@1.0',
+%%% as well as the `generator' interface type for the `~auth-hook@1.0' device.
 %%% See the [cookie codec](dev_codec_cookie.html) documentation for more details.
-%%% Under-the-hood, this module uses the `~httpsig@1.0' commitment scheme to
-%%% commit the message, as well as its proxy functions to verify the commitment
-%%% with a secret key.
 -module(dev_codec_cookie_auth).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -105,7 +103,6 @@ store_secret(Secret, Msg, Opts) ->
     {ok, Cookies} = dev_codec_cookie:extract(Msg, #{}, Opts),
     NewCookies = Cookies#{ <<"secret-", CookieAddr/binary>> => Secret },
     {ok, WithCookie} = dev_codec_cookie:store(Msg, NewCookies, Opts),
-    ?event(debug_auth, {updated_secret, {secret, Secret}, {cookie, WithCookie}, {new_cookies, NewCookies}}),
     {ok, WithCookie}.
 
 %% @doc Verify the HMAC commitment with the key being the secret from the 
