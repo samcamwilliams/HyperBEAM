@@ -573,7 +573,7 @@ commit_secret_key_test() ->
             #{},
             #{
                 <<"type">> => <<"hmac-sha256">>,
-                <<"key">> => <<"test-secret">>,
+                <<"secret">> => <<"test-secret">>,
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"scheme">> => <<"secret">>
             }
@@ -585,14 +585,14 @@ commit_secret_key_test() ->
     ?assert(
         hb_message:verify(
             CommittedMsg,
-            #{ <<"committers">> => Committers, <<"key">> => <<"test-secret">> },
+            #{ <<"committers">> => Committers, <<"secret">> => <<"test-secret">> },
             #{}
         )
     ),
     ?assertNot(
         hb_message:verify(
             CommittedMsg,
-            #{ <<"committers">> => Committers, <<"key">> => <<"bad-secret">> },
+            #{ <<"committers">> => Committers, <<"secret">> => <<"bad-secret">> },
             #{}
         )
     ).
