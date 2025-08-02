@@ -26,6 +26,18 @@
 -define(DEFAULT_PRINT_OPTS, [error, http_error, http_short, compute_short, push_short]).
 -endif.
 
+-ifdef(ENABLE_HYPER_STORE).
+-define(DEFAULT_PRIMARY_STORE, #{
+    <<"name">> => <<"cache-mainnet/lmdb">>,
+    <<"store-module">> => hyper_lmdb
+}).
+-else.
+-define(DEFAULT_PRIMARY_STORE, #{
+    <<"name">> => <<"cache-mainnet/lmdb">>,
+    <<"store-module">> => hb_store_lmdb
+}).
+-endif.
+
 -define(ENV_KEYS,
     #{
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
@@ -250,19 +262,7 @@ default_message() ->
         ],
         store =>
             [
-                % #{
-                %     <<"name">> => <<"cache-mainnet/lru">>,
-                %     <<"capacity">> => 512 * 1024 * 1024,
-                %     <<"store-module">> => hb_store_lru,
-                %     <<"persistent-store">> => #{
-                %         <<"store-module">> => hb_store_fs,
-                %         <<"name">> => <<"cache-mainnet/lru">>
-                %     }
-                % },
-                #{
-                    <<"name">> => <<"cache-mainnet/lmdb">>,
-                    <<"store-module">> => hb_store_lmdb
-                },
+                ?DEFAULT_PRIMARY_STORE,
                 #{
                     <<"store-module">> => hb_store_fs,
                     <<"name">> => <<"cache-mainnet">>
@@ -275,23 +275,11 @@ default_message() ->
                             <<"value">> => <<"ao">>
                         }
                     ],
-                    <<"store">> => 
-                    [
-                        #{
-                            <<"store-module">> => hb_store_lmdb,
-                            <<"name">> => <<"cache-mainnet/lmdb">>
-                        }
-                    ]
+                    <<"store">> => [?DEFAULT_PRIMARY_STORE]
                 },
                 #{
                     <<"store-module">> => hb_store_gateway,
-                    <<"store">> =>
-                        [
-                            #{
-                                <<"store-module">> => hb_store_lmdb,
-                                <<"name">> => <<"cache-mainnet/lmdb">>
-                            }
-                        ]
+                    <<"store">> => [?DEFAULT_PRIMARY_STORE]
                 }
             ],
         priv_store =>
