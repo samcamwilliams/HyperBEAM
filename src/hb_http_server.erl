@@ -58,7 +58,7 @@ start() ->
     start(
         Loaded#{
             priv_wallet => PrivWallet,
-            store => Store,
+            store => UpdatedStoreOpts,
             port => hb_opts:get(port, 8734, Loaded),
             cache_writers => [hb_util:human_id(ar_wallet:to_address(PrivWallet))]
         }
