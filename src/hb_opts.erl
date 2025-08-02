@@ -320,19 +320,22 @@ default_message() ->
         % Options for the router device
         <<"router_opts">> => #{
             routes => []
+        },
+        on => #{
+            <<"request">> => #{
+                <<"device">> => <<"auth-hook@1.0">>,
+                <<"path">> => <<"request">>,
+                <<"when">> => #{
+                    <<"keys">> => [<<"authorization">>, <<"!">>]
+                },
+                <<"secret-provider">> =>
+                    #{
+                        <<"device">> => <<"http-auth@1.0">>,
+                        <<"access-control">> =>
+                            #{ <<"device">> => <<"http-auth@1.0">> }
+                    }
+            }
         }
-        %on => #{
-        %     <<"request">> => #{
-        %         <<"device">> => <<"hook@1.0">>,
-        %         <<"path">> => <<"request">>,
-        %         <<"key-provider">> =>
-        %             #{
-        %                 <<"device">> => <<"http-auth@1.0">>,
-        %                 <<"access-control">> =>
-        %                     #{ <<"device">> => <<"http-auth@1.0">> }
-        %             }
-        %     }
-        % }
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
         % can be used to determine if we should expose metrics instead,
