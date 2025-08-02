@@ -124,7 +124,7 @@ write(Opts, PathParts, Value) when is_list(PathParts) ->
     write(Opts, PathBin, Value);
 write(Opts, Path, Value) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
-    case elmdb:async_put(DBInstance, Path, Value) of
+    case elmdb:put(DBInstance, Path, Value) of
         ok -> ok;
         {error, Type, Description} ->
             ?event(
