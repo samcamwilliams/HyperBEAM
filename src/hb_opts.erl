@@ -14,10 +14,77 @@
 %%% with a refusal to execute.
 -module(hb_opts).
 -export([get/1, get/2, get/3, as/2, identities/1, load/1, load/2, load_bin/2]).
--export([default_message/0, mimic_default_types/3]).
+-export([default_message/0, default_message_with_env/0, mimic_default_types/3]).
 -export([ensure_node_history/2]).
 -export([check_required_opts/2]).
 -include("include/hb.hrl").
+
+%%% Environment variables that can be used to override the default message.
+-ifdef(TEST).
+-define(DEFAULT_PRINT_OPTS, [error, http_error]).
+-else.
+-define(DEFAULT_PRINT_OPTS, [error, http_error, http_short, compute_short, push_short]).
+-endif.
+
+-define(ENV_KEYS,
+    #{
+        priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
+        hb_config_location => {"HB_CONFIG", "config.flat"},
+        port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
+        mode => {"HB_MODE", fun list_to_existing_atom/1},
+        debug_print =>
+            {"HB_PRINT",
+                fun
+                    ({preparsed, Parsed}) -> Parsed;
+                    (Str) when Str == "1" -> true;
+                    (Str) when Str == "true" -> true;
+                    (Str) ->
+                        lists:map(
+                            fun(Topic) -> list_to_atom(Topic) end,
+                            string:tokens(Str, ",")
+                        )
+                end,
+                {preparsed, ?DEFAULT_PRINT_OPTS}
+            },
+        lua_scripts => {"LUA_SCRIPTS", "scripts"},
+        lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests},
+        default_index =>
+            {
+                "INDEX",
+                fun("ui") ->
+                    #{
+                        <<"device">> => <<"hyperbuddy@1.0">>
+                    };
+                   ("format") ->
+                    #{
+                        <<"device">> => <<"hyperbuddy@1.0">>,
+                        <<"path">> => <<"format">>
+                    };
+                   (Str) ->
+                    case string:tokens(Str, "/") of
+                        [Device, Path] ->
+                            #{ <<"device">> => Device, <<"path">> => Path };
+                        [Device] ->
+                            #{ <<"device">> => Device }
+                    end
+                end,
+                "ui"
+            }
+    }
+).
+
+%% @doc Return the default message with all environment variables set.
+default_message_with_env() ->
+    maps:fold(
+        fun(Key, _Spec, NodeMsg) ->
+            case global_get(Key, undefined, #{}) of
+                undefined -> NodeMsg;
+                Value -> NodeMsg#{ Key => Value }
+            end
+        end,
+        default_message(),
+        ?ENV_KEYS
+    ).
 
 %% @doc The default configuration options of the hyperbeam node.
 default_message() ->
@@ -50,10 +117,12 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
             #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
+            #{<<"name">> => <<"auth-hook@1.0">>, <<"module">> => dev_auth_hook},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
             #{<<"name">> => <<"cacheviz@1.0">>, <<"module">> => dev_cacheviz},
+            #{<<"name">> => <<"cookie@1.0">>, <<"module">> => dev_codec_cookie},
             #{<<"name">> => <<"cron@1.0">>, <<"module">> => dev_cron},
             #{<<"name">> => <<"dedup@1.0">>, <<"module">> => dev_dedup},
             #{<<"name">> => <<"delegated-compute@1.0">>, <<"module">> => dev_delegated_compute},
@@ -62,6 +131,8 @@ default_message() ->
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
             #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
+            #{<<"name">> => <<"http-auth@1.0">>, <<"module">> => dev_codec_http_auth},
+            #{<<"name">> => <<"hook@1.0">>, <<"module">> => dev_hook},
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
@@ -91,6 +162,7 @@ default_message() ->
             #{<<"name">> => <<"test-device@1.0">>, <<"module">> => dev_test},
             #{<<"name">> => <<"volume@1.0">>, <<"module">> => dev_volume},
 			#{<<"name">> => <<"tx@1.0">>, <<"module">> => dev_codec_tx},
+            #{<<"name">> => <<"secret@1.0">>, <<"module">> => dev_secret},
             #{<<"name">> => <<"wasi@1.0">>, <<"module">> => dev_wasi},
             #{<<"name">> => <<"wasm-64@1.0">>, <<"module">> => dev_wasm},
             #{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}
@@ -127,10 +199,10 @@ default_message() ->
         % should be recorded here.
         node_history => [],
         debug_stack_depth => 40,
+        debug_print => false,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
         debug_print_indent => 2,
-        debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 20,
@@ -222,7 +294,14 @@ default_message() ->
                         ]
                 }
             ],
-        default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
+        priv_store =>
+            [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"name">> => <<"cache-priv">>
+                }
+            ],
+        %default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
         % Should we use the latest cached state of a process when computing?
         process_now_from_cache => false,
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
@@ -241,6 +320,21 @@ default_message() ->
         % Options for the router device
         <<"router_opts">> => #{
             routes => []
+        },
+        on => #{
+            <<"request">> => #{
+                <<"device">> => <<"auth-hook@1.0">>,
+                <<"path">> => <<"request">>,
+                <<"when">> => #{
+                    <<"keys">> => [<<"authorization">>, <<"!">>]
+                },
+                <<"secret-provider">> =>
+                    #{
+                        <<"device">> => <<"http-auth@1.0">>,
+                        <<"access-control">> =>
+                            #{ <<"device">> => <<"http-auth@1.0">> }
+                    }
+            }
         }
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
@@ -296,37 +390,6 @@ do_get(Key, Default, Opts = #{ prefer := local }) ->
 do_get(Key, Default, Opts) ->
     % No preference was set in Opts, so we default to local.
     do_get(Key, Default, Opts#{ prefer => local }).
-
--ifdef(TEST).
--define(DEFAULT_PRINT_OPTS, [error, http_error]).
--else.
--define(DEFAULT_PRINT_OPTS, [error, http_error, http_short, compute_short, push_short]).
--endif.
-
--define(ENV_KEYS,
-    #{
-        priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
-        hb_config_location => {"HB_CONFIG", "config.flat"},
-        port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
-        mode => {"HB_MODE", fun list_to_existing_atom/1},
-        debug_print =>
-            {"HB_PRINT",
-                fun
-                    ({preparsed, Parsed}) -> Parsed;
-                    (Str) when Str == "1" -> true;
-                    (Str) when Str == "true" -> true;
-                    (Str) ->
-                        lists:map(
-                            fun(Topic) -> list_to_atom(Topic) end,
-                            string:tokens(Str, ",")
-                        )
-                end,
-                {preparsed, ?DEFAULT_PRINT_OPTS}
-            },
-        lua_scripts => {"LUA_SCRIPTS", "scripts"},
-        lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests}
-    }
-).
 
 %% @doc Get an environment variable or configuration key. Depending on whether
 %% the value is derived from an environment variable, we may be able to cache
@@ -414,7 +477,7 @@ load_bin(Bin, Opts) ->
 
 %% @doc Mimic the types of the default message for a given map.
 mimic_default_types(Map, Mode, Opts) ->
-    Default = default_message(),
+    Default = default_message_with_env(),
     hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
             NewKey = try hb_util:key_to_atom(Key, Mode) catch _:_ -> Key end,
