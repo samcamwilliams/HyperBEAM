@@ -52,14 +52,12 @@ to(Messages) ->
                 % Special case when AO-Core message is ID
                 (Message, {Acc, Index, ScopedModifications}) when ?IS_ID(Message) ->
                     {append_path(Message, Acc), Index + 1, ScopedModifications};
-
                 % Special case when AO-Core message contains resolve command
                 ({resolve, SubMessages0}, {Acc, Index, ScopedModifications}) ->
                     SubMessages1 = hb_maps:get(<<"path">>, to(SubMessages0)),
                     <<"/", SubMessages2/binary>> = SubMessages1,
                     SubMessages = <<"(", SubMessages2/binary, ")">>,
                     {append_path(SubMessages, Acc), Index + 1, ScopedModifications};
-
                 % Regular case when message is a map
                 (Message, {Acc, Index, ScopedModifications}) ->
                     {NewMessage, NewScopedModifications} =
@@ -95,7 +93,6 @@ to(Messages) ->
                             end,
                             {Acc, ScopedModifications},
                             Message),
-
                         {NewMessage, Index + 1, NewScopedModifications}
 
             end,
@@ -134,6 +131,8 @@ type(_Value) -> unknown.
 
 %% @doc Normalize a singleton TABM message into a list of executable AO-Core
 %% messages.
+from(RawMsg, Opts) when is_binary(RawMsg) ->
+    from(#{ <<"path">> => RawMsg }, Opts);
 from(RawMsg, Opts) ->
     RawPath = hb_maps:get(<<"path">>, RawMsg, <<>>),
     ?event(parsing, {raw_path, RawPath}),
@@ -213,8 +212,7 @@ path_parts(Sep, PathBin) when is_binary(PathBin) ->
 %% @doc Extract all of the parts from the binary, given (a list of) separators.
 all_path_parts(_Sep, <<>>) -> [];
 all_path_parts(Sep, Bin) ->
-    {_MatchedSep, Part, Rest} = part(Sep, Bin),
-    [Part | all_path_parts(Sep, Rest)].
+    hb_util:split_depth_string_aware(Sep, Bin).
 
 %% @doc Extract the characters from the binary until a separator is found.
 %% The first argument of the function is an explicit separator character, or
@@ -223,20 +221,7 @@ all_path_parts(Sep, Bin) ->
 part(Sep, Bin) when not is_list(Sep) ->
     part([Sep], Bin);
 part(Seps, Bin) ->
-    part(Seps, Bin, 0, <<>>).
-part(_Seps, <<>>, _Depth, CurrAcc) -> {no_match, CurrAcc, <<>>};
-part(Seps, << $\(, Rest/binary>>, Depth, CurrAcc) ->
-    %% Increase depth
-    part(Seps, Rest, Depth + 1, << CurrAcc/binary, "(" >>);
-part(Seps, << $\), Rest/binary>>, Depth, CurrAcc) when Depth > 0 ->
-    %% Decrease depth
-    part(Seps, Rest, Depth - 1, << CurrAcc/binary, ")">>);
-part(Seps, <<C:8/integer, Rest/binary>>, Depth, CurrAcc) ->
-    case Depth == 0 andalso lists:member(C, Seps) of
-        true -> {C, CurrAcc, Rest};
-        false ->
-            part(Seps, Rest, Depth, << CurrAcc/binary, C:8/integer >>)
-    end.
+    hb_util:split_depth_string_aware_single(Seps, Bin).
 
 %% @doc Step 3: Apply types to values and remove specifiers.
 apply_types(Msg, Opts) ->
@@ -288,26 +273,53 @@ parse_scope(KeyBin) ->
 build_messages(Msgs, ScopedModifications, Opts) ->
     do_build(1, Msgs, ScopedModifications, Opts).
 
-do_build(_, [], _ScopedKeys, _Opts) -> [];
-do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys, Opts) ->
-    ScopedKey = lists:nth(I, ScopedKeys),
+do_build(_, [], _, _) -> [];
+do_build(I, [{as, DevID, RawMsg} | Rest], ScopedKeys, Opts) when is_map(RawMsg) ->
+    % We are processing an `as' message. If the path is empty, we need to
+    % remove it from the message and the additional message, such that AO-Core
+    % returns only the message with the device specifier changed. If the message
+    % does have a path, AO-Core will subresolve it.
+    RawAdditional = lists:nth(I, ScopedKeys),
+    {Msg, Additional} =
+        case hb_maps:get(<<"path">>, RawMsg, <<"">>, Opts) of
+            ID when ?IS_ID(ID) ->
+                % When we have an ID, we do not merge the globally scoped elements.
+                {
+                    RawMsg,
+                    #{}
+                };
+            <<"">> ->
+                % When we have an empty path, we remove the path from both
+                % messages. AO-Core will then simply set the device specifier
+                % and not execute a subresolve.
+                {
+                    hb_ao:set(RawMsg, <<"path">>, unset, Opts),
+                    hb_ao:set(RawAdditional, <<"path">>, unset, Opts)
+                };
+            _BasePath ->
+                % When we have a non-empty path, we merge the messages in
+                % totality. The path-part's path will be subresolved.
+                {RawMsg, RawAdditional}
+        end,
+    Merged = hb_maps:merge(Additional, Msg, Opts),
     StepMsg = hb_message:convert(
-        Merged = hb_maps:merge(Msg, ScopedKey),
-        <<"structured@1.0">>,
-		Opts#{ topic => ao_internal }
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
     ),
-    ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
+    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
     [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys, Opts)];
-do_build(I, [Msg|Rest], ScopedKeys, Opts) when not is_map(Msg) ->
+do_build(I, [Msg | Rest], ScopedKeys, Opts) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys, Opts)];
 do_build(I, [Msg | Rest], ScopedKeys, Opts) ->
-    ScopedKey = lists:nth(I, ScopedKeys),
-    StepMsg =
-        hb_message:convert(
-            hb_maps:merge(Msg, ScopedKey),
-            <<"structured@1.0">>,
-            Opts#{ topic => ao_internal }
-        ),
+    Additional = lists:nth(I, ScopedKeys),
+    Merged = hb_maps:merge(Additional, Msg, Opts),
+    StepMsg = hb_message:convert(
+        Merged, 
+        <<"structured@1.0">>, 
+        Opts#{ topic => ao_internal }
+    ),
+    ?event(parsing, {build_messages, {base, Msg}, {additional, Additional}}),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys, Opts)].
 
 %% @doc Parse a path part into a message or an ID.
