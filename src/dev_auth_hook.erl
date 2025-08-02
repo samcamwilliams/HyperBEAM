@@ -53,7 +53,7 @@
 %%% 
 %%% <pre>
 %%%     `committers': always | uncommitted | [committer1, or committer2, or ...]
-%%%     `headers': always | [header1, or header2, or ...]
+%%%     `keys': always | [key1, or key2, or ...]
 %%% </pre>
 %%% 
 %%% Both keys are optional and can be combined to form 'and' conditions. For
@@ -65,7 +65,7 @@
 %%%     "request": {
 %%%       "device": "auth-hook@1.0",
 %%%       "when": {
-%%%             "headers": ["authorization"],
+%%%             "keys": ["authorization"],
 %%%             "committers": "uncommitted"
 %%%         }
 %%%       }
@@ -113,7 +113,8 @@ request(Base, HookReq, Opts) ->
         % Check if the request already has signatures, or the hook base enforces
         % that we should always attempt to sign the request.
         {ok, Request} ?= hb_maps:find(<<"request">>, HookReq, Opts),
-        true ?= is_relevant(Base, Request, Opts),
+        {ok, OrigMessages} ?= hb_maps:find(<<"body">>, HookReq, Opts),
+        true ?= is_relevant(Base, Request, OrigMessages, Opts),
         ?event(auth_hook_is_relevant),
         % Call the key provider to normalize authentication (generate if needed)
         {ok, IntermediateProvider, NormReq} ?=
@@ -154,8 +155,8 @@ request(Base, HookReq, Opts) ->
         {error, AuthError} ->
             ?event({auth_hook_auth_error, AuthError}),
             {error, AuthError};
-        {skip, {committers, Committers}, {headers, Headers}} ->
-            ?event({auth_hook_skipping, {committers, Committers}, {headers, Headers}}),
+        {skip, {committers, Committers}, {keys, Keys}} ->
+            ?event({auth_hook_skipping, {committers, Committers}, {keys, Keys}}),
             {ok, HookReq};
         error ->
             ?event({auth_hook_error, no_request}),
@@ -168,20 +169,31 @@ request(Base, HookReq, Opts) ->
 %% @doc Check if the request is relevant to the hook base. Node operators may
 %% specify criteria for activation of the hook based on the committers of the
 %% request (`always', `uncommitted', or a list of committers), or the presence
-%% of certain headers (`always', or a list of headers).
-is_relevant(Base, Request, Opts) ->
+%% of certain keys (`always', or a list of keys) on any of the messages in the
+%% sequence.
+is_relevant(Base, Request, MessageSequence, Opts) ->
     Committers = is_relevant_from_committers(Base, Request, Opts),
-    Headers = is_relevant_from_headers(Base, Request, Opts),
-    ?event({auth_hook_is_relevant, {committers, Committers}, {headers, Headers}}),
-    if Committers andalso Headers -> true;
-        true -> {skip, {committers, Committers}, {headers, Headers}}
+    Keys =
+        lists:any(
+            fun(Msg) -> is_relevant_from_keys(Base, Msg, Opts) end,
+            [Request | MessageSequence]
+        ),
+    ?event({auth_hook_is_relevant, {committers, Committers}, {keys, Keys}}),
+    if Committers andalso Keys -> true;
+        true -> {skip, {committers, Committers}, {keys, Keys}}
     end.
 
 %% @doc Check if the request is relevant to the hook base based on the committers
 %% of the request.
 is_relevant_from_committers(Base, Request, Opts) ->
-    Config = hb_util:deep_get([<<"when">>, <<"committers">>], Base, <<"uncommitted">>, Opts),
-    ?event({auth_hook_is_relevant_from_committers, Config, Base}),
+    Config =
+        hb_util:deep_get(
+            [<<"when">>, <<"committers">>],
+            Base,
+            <<"uncommitted">>,
+            Opts
+        ),
+    ?event({auth_hook_is_relevant_from_committers, {config, Config}, {base, Base}}),
     case Config of
         <<"always">> -> true;
         <<"uncommitted">> -> hb_message:signers(Request, Opts) == [];
@@ -195,21 +207,34 @@ is_relevant_from_committers(Base, Request, Opts) ->
     end.
 
 %% @doc Check if the request is relevant to the hook base based on the presence
-%% of headers specified in the hook base.
-is_relevant_from_headers(Base, Request, Opts) ->
-    Config = hb_util:deep_get([<<"when">>, <<"headers">>], Base, <<"always">>, Opts),
-    ?event({auth_hook_is_relevant_from_headers, Config, Base}),
+%% of keys specified in the hook base.
+is_relevant_from_keys(_Base, ID, _Opts) when is_binary(ID) ->
+    false;
+is_relevant_from_keys(Base, {as, _, Msg}, Opts) ->
+    is_relevant_from_keys(Base, Msg, Opts);
+is_relevant_from_keys(Base, {resolve, Msg}, Opts) ->
+    is_relevant_from_keys(Base, Msg, Opts);
+is_relevant_from_keys(Base, Request, Opts) ->
+    Config = hb_util:deep_get([<<"when">>, <<"keys">>], Base, <<"always">>, Opts),
+    ?event(
+        {
+            auth_hook_is_relevant_from_keys,
+            {config, Config},
+            {base, Base},
+            {request, Request}
+        }
+    ),
     case Config of
         <<"always">> -> true;
-        RelevantHeaders ->
+        RelevantKeys ->
             lists:any(
-                fun(Header) ->
-                    case hb_maps:find(Header, Request, Opts) of
+                fun(Key) ->
+                    case hb_maps:find(Key, Request, Opts) of
                         {ok, _} -> true;
                         error -> false
                     end
                 end,
-                RelevantHeaders
+                RelevantKeys
             )
     end.
 
@@ -405,7 +430,7 @@ ignored_keys(Msg, Opts) ->
 %%% Tests
 
 cookie_test() ->
-    % Start a node with an key-provider that uses the cookie device.
+    % Start a node with a secret-provider that uses the cookie device.
     Node =
         hb_http_server:start_node(
             #{
@@ -466,7 +491,7 @@ cookie_test() ->
     ).
 
 http_auth_test() ->
-    % Start a node with the `~http-auth@1.0' device as the key-provider.
+    % Start a node with the `~http-auth@1.0' device as the secret-provider.
     Node =
         hb_http_server:start_node(
             #{
@@ -541,7 +566,7 @@ http_auth_test() ->
     ).
 
 when_test() ->
-    % Start a node with the `~http-auth@1.0' device as the key-provider. Only
+    % Start a node with the `~http-auth@1.0' device as the secret-provider. Only
     % request commitment with the hook if the `Authorization' header is present.
     Node =
         hb_http_server:start_node(
@@ -552,7 +577,7 @@ when_test() ->
                         <<"device">> => <<"auth-hook@1.0">>,
                         <<"path">> => <<"request">>,
                         <<"when">> => #{
-                            <<"headers">> => [<<"authorization">>]
+                            <<"keys">> => [<<"authorization">>]
                         },
                         <<"secret-provider">> =>
                             #{
