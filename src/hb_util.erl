@@ -16,6 +16,7 @@
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
+-export([indent/1, indent/2]).
 -export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
 -export([debug_print/1, debug_print/2, debug_print/4, eunit_print/2]).
@@ -631,6 +632,8 @@ do_debug_fmt({explicit, X}, Opts, Indent) ->
     format_indented("[Explicit:] ~p", [X], Opts, Indent);
 do_debug_fmt({string, X}, Opts, Indent) ->
     format_indented("~s", [X], Opts, Indent);
+do_debug_fmt({trace, Trace}, Opts, Indent) ->
+    format_indented("~n~s", [format_trace(Trace)], Opts, Indent);
 do_debug_fmt({as, undefined, Msg}, Opts, Indent) ->
     "\n" ++ format_indented("Subresolve => ", [], Opts, Indent) ++
         format_maybe_multiline(Msg, Opts, Indent + 1);
@@ -829,6 +832,23 @@ format_indented(RawStr, Fmt, Opts, Ind) ->
             )
         )
     ).
+
+%% @doc Take a series of strings or a combined string and format as a
+%% single string with newlines and indentation to the given level. Note: This
+%% function returns a binary.
+indent(Strings) ->
+    indent(Strings, 0).
+indent(Strings, Indent) when is_binary(Strings) ->
+    indent(binary:split(Strings, <<"\n">>, [global]), Indent);
+indent(Strings, Indent) when is_list(Strings) ->
+    bin(lists:join(
+        "\n",
+        [
+            format_indented(list(String), #{}, Indent)
+        ||
+            String <- Strings
+        ]
+    )).
 
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->

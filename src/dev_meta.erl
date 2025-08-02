@@ -297,8 +297,20 @@ resolve_hook(HookName, InitiatingRequest, Body, NodeMsg) ->
     ?event(hook, {resolve_hook, HookName, HookReq}),
     case dev_hook:on(HookName, HookReq, NodeMsg) of
         {ok, #{ <<"body">> := ResponseBody }} ->
+            ?event(hook,
+                {resolve_hook_success,
+                    {name, HookName},
+                    {response_body, ResponseBody}
+                }
+            ),
             {ok, ResponseBody};
         {error, _} = Error ->
+            ?event(hook,
+                {resolve_hook_error,
+                    {name, HookName},
+                    {error, Error}
+                }
+            ),
             Error;
         Other ->
             {error, Other}
@@ -332,7 +344,10 @@ status_code(error, _NodeMsg) -> 400;
 status_code(created, _NodeMsg) -> 201;
 status_code(not_found, _NodeMsg) -> 404;
 status_code(failure, _NodeMsg) -> 500;
-status_code(unavailable, _NodeMsg) -> 503.
+status_code(unavailable, _NodeMsg) -> 503;
+status_code(unauthorized, _NodeMsg) -> 401;
+status_code(forbidden, _NodeMsg) -> 403;
+status_code(_, _NodeMsg) -> 200.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(#{ <<"body">> := Status }, NodeMsg) when is_atom(Status) ->

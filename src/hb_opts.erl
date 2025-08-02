@@ -117,6 +117,7 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
             #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
+            #{<<"name">> => <<"auth-hook@1.0">>, <<"module">> => dev_auth_hook},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
@@ -130,6 +131,8 @@ default_message() ->
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
             #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
+            #{<<"name">> => <<"http-auth@1.0">>, <<"module">> => dev_codec_http_auth},
+            #{<<"name">> => <<"hook@1.0">>, <<"module">> => dev_hook},
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
@@ -159,7 +162,7 @@ default_message() ->
             #{<<"name">> => <<"test-device@1.0">>, <<"module">> => dev_test},
             #{<<"name">> => <<"volume@1.0">>, <<"module">> => dev_volume},
 			#{<<"name">> => <<"tx@1.0">>, <<"module">> => dev_codec_tx},
-            #{<<"name">> => <<"wallet@1.0">>, <<"module">> => dev_wallet},
+            #{<<"name">> => <<"secret@1.0">>, <<"module">> => dev_secret},
             #{<<"name">> => <<"wasi@1.0">>, <<"module">> => dev_wasi},
             #{<<"name">> => <<"wasm-64@1.0">>, <<"module">> => dev_wasm},
             #{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}
@@ -196,10 +199,10 @@ default_message() ->
         % should be recorded here.
         node_history => [],
         debug_stack_depth => 40,
+        debug_print => false,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
         debug_print_indent => 2,
-        debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 20,
@@ -318,10 +321,16 @@ default_message() ->
         <<"router_opts">> => #{
             routes => []
         }
-        % on => #{
+        %on => #{
         %     <<"request">> => #{
-        %         <<"device">> => <<"cookie@1.0">>,
-        %         <<"path">> => <<"request">>
+        %         <<"device">> => <<"hook@1.0">>,
+        %         <<"path">> => <<"request">>,
+        %         <<"key-provider">> =>
+        %             #{
+        %                 <<"device">> => <<"http-auth@1.0">>,
+        %                 <<"access-control">> =>
+        %                     #{ <<"device">> => <<"http-auth@1.0">> }
+        %             }
         %     }
         % }
         % Should the node track and expose prometheus metrics?
