@@ -52,13 +52,16 @@
 %% @param StoreOpts A map containing database configuration options
 %% @returns {ok, ServerPid} on success, {error, Reason} on failure
 start(Opts = #{ <<"name">> := DataDir }) ->
+    % Ensure the directory exists before opening LMDB environment
+    DataDirPath = hb_util:list(DataDir),
+    ok = filelib:ensure_dir(filename:join(DataDirPath, "dummy")),
     % Create the LMDB environment with specified size limit
     {ok, Env} =
         elmdb:env_open(
-            hb_util:list(DataDir),
+            DataDirPath,
             [
                 {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)},
-                no_mem_init, no_sync
+                no_mem_init, no_sync, write_map
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
@@ -312,30 +315,18 @@ scope(_) -> scope().
 %% @doc List all keys that start with a given prefix.
 %%
 %% This function provides directory-like navigation by finding all keys that
-%% begin with the specified path prefix. It uses LMDB's fold operation to
-%% efficiently scan through the database and collect matching keys.
+%% begin with the specified path prefix. It uses the native elmdb:list/2 function
+%% to efficiently scan through the database and collect matching keys.
 %%
-%% The implementation only returns keys that are longer than the prefix itself,
-%% ensuring that the prefix acts like a directory separator. For example,
-%% listing with prefix "colors" will return "colors/red" and "colors/blue"
-%% but not "colors" itself.
+%% The implementation returns only the immediate children of the given path,
+%% not the full paths. For example, listing "colors/" will return ["red", "blue"]
+%% not ["colors/red", "colors/blue"].
 %%
 %% If the Path points to a link, the function resolves the link and lists
 %% the contents of the target directory instead.
 %%
 %% This is particularly useful for implementing hierarchical data organization
 %% and providing tree-like navigation interfaces in applications.
-%% 
-%% Supports three modes of operation for handling the write queue:
-%% - `moderate`: (Default) Read the keys from the database and the pending writes.
-%%   Does not flush the write queue.
-%% - `paranoid`: always flush the write queue before reading any data. If read
-%%   fails, flush _again_ and try again in `extreme` mode.
-%% - `yolo`: no flushing, just return the result as-is without checking the
-%%   write queue. This is the fastest mode and should not cause issues _as long
-%%   as the write queue never grows_. If it does, however, this mode creates
-%%   systemic risk. You have been warned by both this documentation and the name
-%%   of the mode. Do not complain.
 %%
 %% @param StoreOpts Database configuration map
 %% @param Path Binary prefix to search for
@@ -356,96 +347,24 @@ list(Opts, Path) ->
             not_found ->
                 Path
         end,
+    % Ensure path ends with / for elmdb:list API
     SearchPath = 
         case ResolvedPath of
-            <<>> -> <<"">>;   % Root paths
-            <<"/">> -> <<"">>;
-            _ -> <<ResolvedPath/binary, "/">>
+            <<>> -> <<>>;      % Root path
+            <<"/">> -> <<>>;   % Root path variant
+            _ -> 
+                case binary:last(ResolvedPath) of
+                    $/ -> ResolvedPath;
+                    _ -> <<ResolvedPath/binary, "/">>
+                end
         end,
-    DBKeys =
-        case matching_db_keys(SearchPath, Opts) of
-            {ok, Keys} -> Keys;
-            not_found -> []
-        end,
-    {ok, DBKeys}.
-
-%% @doc Determine if a key matches a path prefix. Returns `{true, Child}'
-%% if the key matches the prefix, and `false' if it does not.
-match_path(Prefix, Path) when byte_size(Prefix) > byte_size(Path) ->
-    false;
-match_path(Prefix, Path) ->
-    PathPrefix = binary:part(Path, 0, byte_size(Prefix)),
-    case PathPrefix of
-        Prefix ->
-            % Return the part of the path after the prefix.
-            {
-                true,
-                hd(
-                    binary:split(
-                        binary:part(
-                            Path,
-                            byte_size(Prefix),
-                            byte_size(Path) - byte_size(Prefix)
-                        ),
-                        <<"/">>
-                    )
-                )
-            };
-        _ -> false
+    % Use native elmdb:list function
+    #{ <<"db">> := DBInstance } = find_env(Opts),
+    case elmdb:list(DBInstance, SearchPath) of
+        {ok, Children} -> {ok, Children};
+        not_found -> {ok, []}
     end.
 
-%% @doc Find all keys that match the given path prefix from the LMDB database.
-matching_db_keys(Prefix, Opts) ->
-    fold_after(
-        Opts,
-        Prefix,
-        fun(Key, _Value, Acc) ->
-            % Match keys that start with our search path (like dir listing)
-            case match_path(Prefix, Key) of
-                {true, Child} -> [Child | Acc];
-                false -> {stop, Acc}
-            end
-        end,
-        []
-    ).
-
-%% @doc Fold over a database after a given path. The `Fun` is called with
-%% the key and value, and the accumulator. The `Fun` may return `{stop, Acc}`
-%% to stop the fold early.
-fold_after(Opts, Path, Fun, Acc) ->
-    #{ <<"db">> := DBInstance, <<"env">> := Env } = find_env(Opts),
-    {ok, Txn} = elmdb:ro_txn_begin(Env),
-    {ok, Cur} = elmdb:ro_txn_cursor_open(Txn, DBInstance),
-    fold_cursor(
-        elmdb:ro_txn_cursor_get(Cur, {set_range, Path}),
-        Txn,
-        Cur,
-        Fun,
-        Acc
-    ).
-
-%% @doc Internal helper for `fold_after/4`.
-fold_cursor(not_found, Txn, Cur, _Fun, Acc) ->
-    fold_stop(Txn, Cur, Acc);
-fold_cursor({ok, Key, Value}, Txn, Cur, Fun, Acc) ->
-    case Fun(Key, Value, Acc) of
-        {stop, Acc} ->
-            fold_stop(Txn, Cur, Acc);
-        NewAcc ->
-            fold_cursor(
-                elmdb:ro_txn_cursor_get(Cur, next),
-                Txn,
-                Cur,
-                Fun,
-                NewAcc
-            )
-    end.
-
-%% @doc Terminate a fold early.
-fold_stop(Txn, Cur, Acc) ->
-    ok = elmdb:ro_txn_cursor_close(Cur),
-    ok = elmdb:ro_txn_abort(Txn),
-    {ok, Acc}.
 
 %% @doc Create a group entry that can contain other keys hierarchically.
 %%
