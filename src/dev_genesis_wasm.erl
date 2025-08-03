@@ -15,32 +15,47 @@ init(Msg, _Msg2, _Opts) -> {ok, Msg}.
 %% @doc Normalize the device.
 normalize(Msg, _Msg2, _Opts) -> {ok, Msg}.
 
-%% @doc Snapshot the device.
-snapshot(Msg, _Msg2, _Opts) -> {ok, Msg}.
-
 %% @doc All the `delegated-compute@1.0' device to execute the request. We then apply
 %% the `patch@1.0' device, applying any state patches that the AO process may have
 %% requested.
 compute(Msg, Msg2, Opts) ->
+    % Validate whether the genesis-wasm feature is enabled.
+    case delegate_request(Msg, Msg2, Opts) of
+        {ok, Msg3} ->
+            % Resolve the `patch@1.0' device.
+            {ok, Msg4} =
+                hb_ao:resolve(
+                    Msg3,
+                    {
+                        as,
+                        <<"patch@1.0">>,
+                        Msg2#{ <<"patch-from">> => <<"/results/outbox">> }
+                    },
+                    Opts
+                ),
+            % Return the patched message.
+            {ok, Msg4};
+        {error, Error} ->
+            % Return the error.
+            {error, Error}
+    end.
+
+%% @doc Snapshot the state of the process via the `delegated-compute@1.0' device.
+snapshot(Msg, Msg2, Opts) ->
+    delegate_request(Msg, Msg2, Opts).
+
+%% @doc Proxy a request to the delegated-compute@1.0 device, ensuring that
+%% the server is running.
+delegate_request(Msg, Msg2, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
     case ensure_started(Opts) of
         true ->
             % Resolve the `delegated-compute@1.0' device.
             case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
                 {ok, Msg3} ->
-                    % Resolve the `patch@1.0' device.
-                    {ok, Msg4} =
-                        hb_ao:resolve(
-                            Msg3,
-                            {
-                                as,
-                                <<"patch@1.0">>,
-                                Msg2#{ <<"patch-from">> => <<"/results/outbox">> }
-                            },
-                            Opts
-                        ),
                     % Return the patched message.
-                    {ok, Msg4};
+                    ?event({delegated_compute_resolved, {req, Msg2}, {msg, Msg3}}),
+                    {ok, Msg3};
                 {error, Error} ->
                     % Return the error.
                     {error, Error}
