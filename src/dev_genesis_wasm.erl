@@ -84,7 +84,15 @@ ensure_started(Opts) ->
                 filename:join([Cwd, "genesis-wasm-server"]);
             _ ->
                 % We're in development mode - look in the build directory
-                DevPath = filename:join([Cwd, "_build", "genesis_wasm", "genesis-wasm-server"]),
+                DevPath =
+                    filename:join(
+                        [
+                            Cwd,
+                            "_build",
+                            "genesis_wasm",
+                            "genesis-wasm-server"
+                        ]
+                    ),
                 case filelib:is_dir(DevPath) of
                     true -> DevPath;
                     false -> filename:join([Cwd, "genesis-wasm-server"]) % Fallback
@@ -135,11 +143,16 @@ ensure_started(Opts) ->
                         Port =
                             open_port(
                                 {spawn_executable,
-                                    filename:join([GenesisWasmServerDir, "launch-monitored.sh"])
+                                    filename:join(
+                                        [
+                                            GenesisWasmServerDir,
+                                            "launch-monitored.sh"
+                                        ]
+                                    )
                                 },
                                 [
                                     binary, use_stdio, stderr_to_stdout,
-                                    {args, [
+                                    {args, Args = [
                                         "npm",
                                         "--prefix",
                                         GenesisWasmServerDir,
@@ -147,7 +160,7 @@ ensure_started(Opts) ->
                                         "start"
                                     ]},
                                     {env,
-                                        [
+                                        Env = [
                                             {"UNIT_MODE", "hbu"},
                                             {"HB_URL", NodeURL},
                                             {"PORT",
@@ -188,6 +201,13 @@ ensure_started(Opts) ->
                                 ]
                             ),
                         ?event({genesis_wasm_port_opened, {port, Port}}),
+                        ?event(
+                            debug_genesis,
+                            {started_genesis_wasm,
+                                {args, Args},
+                                {env, maps:from_list(Env)}
+                            }
+                        ),
                         collect_events(Port)
                     end
                 ),
