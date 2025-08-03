@@ -23,7 +23,9 @@
 -ifdef(TEST).
 -define(DEFAULT_PRINT_OPTS, [error, http_error]).
 -else.
--define(DEFAULT_PRINT_OPTS, [error, http_error, http_short, compute_short, push_short]).
+-define(DEFAULT_PRINT_OPTS,
+    [error, http_error, http_short, compute_short, push_short]
+).
 -endif.
 
 -define(ENV_KEYS,
@@ -221,6 +223,11 @@ default_message() ->
             #{
                 % Routes for the genesis-wasm device to use a local CU, if requested.
                 <<"template">> => <<"/result/.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            },
+            #{
+                % Routes for the genesis-wasm device to use a local CU, if requested.
+                <<"template">> => <<"/snapshot/.*">>,
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             },
             #{
