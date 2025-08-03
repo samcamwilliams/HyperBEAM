@@ -113,7 +113,7 @@ do_compute(ProcID, Msg2, Opts) ->
 %% `GET /snapshot' endpoint.
 snapshot(Msg, Msg2, Opts) ->
     ?event({snapshotting, {req, Msg2}}),
-    {ok, ProcID} = dev_process:process_id(Msg, #{}, Opts),
+    ProcID = dev_process:process_id(Msg, #{}, Opts),
     Res = 
         hb_ao:resolve(
             #{
@@ -124,7 +124,8 @@ snapshot(Msg, Msg2, Opts) ->
                 <<"path">> => <<"call">>,
                 <<"relay-method">> => <<"POST">>,
                 <<"relay-path">> => <<"/snapshot/", ProcID/binary>>,
-                <<"content-type">> => <<"application/json">>
+                <<"content-type">> => <<"application/json">>,
+                <<"body">> => <<"{}">>
             },
             Opts#{
                 hashpath => ignore,
@@ -132,4 +133,13 @@ snapshot(Msg, Msg2, Opts) ->
             }
         ),
     ?event({snapshotting_result, Res}),
-    Res.
+    case Res of
+        {ok, Response} ->
+            {ok, Response};
+        {error, Error} ->
+            {ok,
+                #{
+                    <<"error">> => <<"No checkpoint produced.">>,
+                    <<"error-details">> => Error
+                }}
+    end.
