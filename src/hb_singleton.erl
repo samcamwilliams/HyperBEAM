@@ -169,23 +169,24 @@ from(RawMsg, Opts) ->
 parse_full_path(RelativeRef) ->
     %?event(parsing, {raw_relative_ref, RawRelativeRef}),
     %RelativeRef = hb_escape:decode(RawRelativeRef),
-    ?event(parsing, {parsed_relative_ref, RelativeRef}),
+    Decoded = decode_string(RelativeRef),
+    ?event(parsing, {parsed_relative_ref, Decoded}),
     {Path, QKVList} =
-        case binary:split(RelativeRef, <<"?">>) of
-            [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
-            [P] -> {P, []}
+        case hb_util:split_depth_string_aware_single("?", Decoded) of
+            {_Sep, P, QStr} -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
+            {no_match, P, <<>>} -> {P, []}
         end,
     {
         ok,
-        lists:map(fun(Part) -> decode_string(Part) end, path_parts($/, Path)),
+        path_parts($/, Path),
         hb_maps:from_list(QKVList)
     }.
 
 %% @doc Step 2: Decode, split and sanitize the path. Split by `/' but avoid
 %% subpath components, such that their own path parts are not dissociated from
 %% their parent path.
-path_messages(RawBin, Opts) when is_binary(RawBin) ->
-    lists:map(fun(Part) -> parse_part(Part, Opts) end, path_parts([$/], decode_string(RawBin))).
+path_messages(Bin, Opts) when is_binary(Bin) ->
+    lists:map(fun(Part) -> parse_part(Part, Opts) end, path_parts([$/], Bin)).
 
 %% @doc Normalize the base path.
 normalize_base([]) -> [];
@@ -208,6 +209,7 @@ path_parts(Sep, PathBin) when is_binary(PathBin) ->
         end,
         all_path_parts(Sep, PathBin)
     ),
+    ?event({path_parts, Res}),
     Res.
 
 %% @doc Extract all of the parts from the binary, given (a list of) separators.
@@ -384,10 +386,19 @@ parse_part_mods(<<$+, InlinedMsgBin/binary>>, M = #{ <<"path">> := Path }, Opts)
 parse_inlined_key_val(Bin, Opts) ->
     case part([$=, $&], Bin) of
         {no_match, K, <<>>} -> {K, true};
-        {$=, K, V} ->
+        {$=, K, RawV} ->
+            V = unquote(RawV),
             {_, Key, Val} = maybe_typed(K, maybe_subpath(V, Opts), Opts),
             {Key, Val}
     end.
+
+%% @doc Unquote a string.
+unquote(<<"\"", Inner/binary>>) ->
+    case binary:last(Inner) of
+        $" -> binary:part(Inner, 0, byte_size(Inner) - 1);
+        _ -> Inner
+    end;
+unquote(Bin) -> Bin.
 
 %% @doc Attempt Cowboy URL decode, then sanitize the result.
 decode_string(B) ->
@@ -762,6 +773,26 @@ inlined_keys_test() ->
     ?assertEqual(<<"v2">>, hb_maps:get(<<"k2">>, Msg3)),
     ?assertEqual(not_found, hb_maps:get(<<"k1">>, Msg1, not_found)),
     ?assertEqual(not_found, hb_maps:get(<<"k2">>, Msg2, not_found)).
+
+inlined_quoted_key_test() ->
+    Req = #{
+        <<"method">> => <<"POST">>,
+        <<"path">> => <<"/a/b&k1=\"v/1\"/c&k2=v2">>
+    },
+    Msgs = from(Req, #{}),
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(<<"v/1">>, hb_maps:get(<<"k1">>, Msg2)),
+    ?assertEqual(<<"v2">>, hb_maps:get(<<"k2">>, Msg3)),
+    ?assertEqual(not_found, hb_maps:get(<<"k1">>, Msg1, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"k2">>, Msg2, not_found)),
+    ReqB = #{
+        <<"method">> => <<"POST">>,
+        <<"path">> => <<"/~profile@1.0/eval=%22~meta@1.0/info%22">>
+    },
+    MsgsB = from(ReqB, #{}),
+    [_, Msg2b] = MsgsB,
+    ?assertEqual(<<"~meta@1.0/info">>, hb_maps:get(<<"eval">>, Msg2b)).
 
 inlined_assumed_key_test() ->
     Req = #{
