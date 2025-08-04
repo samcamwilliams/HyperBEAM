@@ -14,7 +14,7 @@
   1},
  {<<"elmdb">>,
   {git,"https://github.com/twilson63/elmdb-rs.git",
-       {ref,"705879d2284d8df13d274e45a04989b76d39477c"}},
+       {ref,"fecd9e50d9c47f6751f63af5aaa5a95146fd1b94"}},
   0},
  {<<"gun">>,
   {git,"https://github.com/ninenines/gun",

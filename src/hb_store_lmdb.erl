@@ -65,9 +65,9 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
-    % Store the environment handle in persistent_term for later cleanup
+    % Store both environment and DB instance in persistent_term for later cleanup
     StoreKey = {lmdb, ?MODULE, DataDir},
-    persistent_term:put(StoreKey, {Env, DataDir}),
+    persistent_term:put(StoreKey, {Env, DBInstance, DataDir}),
     {ok, #{ <<"env">> => Env, <<"db">> => DBInstance }};
 start(_) ->
     {error, {badarg, <<"StoreOpts must be a map">>}}.
@@ -223,7 +223,11 @@ to_path(PathParts) ->
 %% Returns {ok, Value} or not_found.
 read_direct(Opts, Path) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
-    elmdb:get(DBInstance, Path).
+    case elmdb:get(DBInstance, Path) of
+        {ok, Value} -> {ok, Value};
+        {error, not_found} -> not_found;  % Normalize error format
+        not_found -> not_found  % Handle both old and new format
+    end.
 
 %% @doc Read a value directly from the database with link resolution.
 %% This is the internal implementation that handles actual database reads.
@@ -362,7 +366,8 @@ list(Opts, Path) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
     case elmdb:list(DBInstance, SearchPath) of
         {ok, Children} -> {ok, Children};
-        not_found -> {ok, []}
+        {error, not_found} -> {ok, []};  % Normalize new error format
+        not_found -> {ok, []}  % Handle both old and new format
     end.
 
 
@@ -515,28 +520,43 @@ stop(_InvalidStoreOpts) ->
 %% Close environment using persistent_term lookup with fallback
 close_environment(StoreKey, DataDir) ->
     case safe_get_persistent_term(StoreKey) of
-        {ok, Env} ->
-            close_and_cleanup(Env, StoreKey, DataDir);
+        {ok, {Env, DBInstance}} ->
+            close_and_cleanup(Env, DBInstance, StoreKey, DataDir);
         not_found ->
             ?event(debug, {lmdb_stop_not_found_in_persistent_term, DataDir}),
             safe_close_by_name(DataDir)
     end,
     ok.
 
-%% Get environment from persistent_term without exceptions
+%% Get environment and DB instance from persistent_term without exceptions
 safe_get_persistent_term(Key) ->
     case persistent_term:get(Key, undefined) of
-        {Env, _DataDir} -> {ok, Env};
+        {Env, DBInstance, _DataDir} -> {ok, {Env, DBInstance}};
+        {Env, _DataDir} -> {ok, {Env, undefined}};  % Backwards compatibility
         _ -> not_found
     end.
 
-%% Close environment and cleanup persistent_term entry
-close_and_cleanup(Env, StoreKey, DataDir) ->
-    CloseResult = safe_close_env(Env),
+%% Close DB instance and environment, then cleanup persistent_term entry
+close_and_cleanup(Env, DBInstance, StoreKey, DataDir) ->
+    % Close DB instance first if it exists
+    DBCloseResult = safe_close_db(DBInstance),
+    ?event(debug, {db_close_result, DBCloseResult}),
+    % Then close the environment
+    EnvCloseResult = safe_close_env(Env),
     persistent_term:erase(StoreKey),
-    case CloseResult of
+    case EnvCloseResult of
         ok -> ?event(debug, {lmdb_stop_success, DataDir});
         {error, Reason} -> ?event(debug, {lmdb_stop_error, Reason})
+    end.
+
+%% Close DB instance with error capture
+safe_close_db(undefined) ->
+    ok;  % No DB instance to close
+safe_close_db(DBInstance) ->
+    try
+        elmdb:db_close(DBInstance)
+    catch
+        error:Reason -> {error, Reason}
     end.
 
 %% Close environment handle with error capture
@@ -616,45 +636,37 @@ list_test() ->
         <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
-    
     % Create immediate children under colors/
     write(StoreOpts, <<"colors/red">>, <<"1">>),
     write(StoreOpts, <<"colors/blue">>, <<"2">>),
     write(StoreOpts, <<"colors/green">>, <<"3">>),
-    
     % Create nested directories under colors/ - these should show up as immediate children
     write(StoreOpts, <<"colors/multi/foo">>, <<"4">>),
     write(StoreOpts, <<"colors/multi/bar">>, <<"5">>),
     write(StoreOpts, <<"colors/primary/red">>, <<"6">>),
     write(StoreOpts, <<"colors/primary/blue">>, <<"7">>),
     write(StoreOpts, <<"colors/nested/deep/value">>, <<"8">>),
-    
     % Create other top-level directories
     write(StoreOpts, <<"foo/bar">>, <<"baz">>),
     write(StoreOpts, <<"beep/boop">>, <<"bam">>),
-    
     read(StoreOpts, <<"colors">>), 
     % Test listing colors/ - should return immediate children only
     {ok, ListResult} = list(StoreOpts, <<"colors">>),
     ?event({list_result, ListResult}),
-    
     % Expected: red, blue, green (files) + multi, primary, nested (directories)
     % Should NOT include deeply nested items like foo, bar, deep, value
     ExpectedChildren = [<<"blue">>, <<"green">>, <<"multi">>, <<"nested">>, <<"primary">>, <<"red">>],
     ?assert(lists:all(fun(Key) -> lists:member(Key, ExpectedChildren) end, ListResult)),
-    
     % Test listing a nested directory - should only show immediate children
     {ok, NestedListResult} = list(StoreOpts, <<"colors/multi">>),
     ?event({nested_list_result, NestedListResult}),
     ExpectedNestedChildren = [<<"bar">>, <<"foo">>],
     ?assert(lists:all(fun(Key) -> lists:member(Key, ExpectedNestedChildren) end, NestedListResult)),
-    
     % Test listing a deeper nested directory
     {ok, DeepListResult} = list(StoreOpts, <<"colors/nested">>),
     ?event({deep_list_result, DeepListResult}),
     ExpectedDeepChildren = [<<"deep">>],
     ?assert(lists:all(fun(Key) -> lists:member(Key, ExpectedDeepChildren) end, DeepListResult)),
-    
     ok = stop(StoreOpts).
 
 %% @doc Group test - verifies group creation and type detection.
@@ -788,30 +800,23 @@ exact_hb_store_test() ->
         <<"name">> => <<"/tmp/store-exact">>,
         <<"capacity">> => ?DEFAULT_SIZE
     },
-    
     % Follow exact same pattern as hb_store test
     ?event(debug, step1_make_group),
     make_group(StoreOpts, <<"test-dir1">>),
-    
     ?event(debug, step2_write_file),
     write(StoreOpts, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
-    
     ?event(debug, step3_make_link),
     make_link(StoreOpts, [<<"test-dir1">>], <<"test-link">>),
-    
     % Debug: test that the link behaves like the target (groups are unreadable)
     ?event(debug, step4_check_link),
     LinkResult = read(StoreOpts, <<"test-link">>),
     ?event(debug, {link_result, LinkResult}),
     % Since test-dir1 is a group and groups are unreadable, the link should also be unreadable
     ?assertEqual(not_found, LinkResult),
-    
-    
     % Debug: test intermediate steps
     ?event(debug, step5_test_direct_read),
     DirectResult = read(StoreOpts, <<"test-dir1/test-file">>),
     ?event(debug, {direct_result, DirectResult}),
-    
     % This should work: reading via the link path  
     ?event(debug, step6_test_link_read),
     Result = read(StoreOpts, [<<"test-link">>, <<"test-file">>]),
@@ -830,15 +835,12 @@ cache_style_test() ->
     reset(StoreOpts),
     % Start the store
     hb_store:start(StoreOpts),
-    
     % Test writing through hb_store interface  
     ok = hb_store:write(StoreOpts, <<"test-key">>, <<"test-value">>),
-    
     % Test reading through hb_store interface
     Result = hb_store:read(StoreOpts, <<"test-key">>),
     ?event({cache_style_read_result, Result}),
     ?assertEqual({ok, <<"test-value">>}, Result),
-    
     hb_store:stop(StoreOpts).
 
 %% @doc Test nested map storage with cache-like linking behavior
@@ -853,10 +855,8 @@ nested_map_cache_test() ->
         <<"name">> => <<"/tmp/store-nested-cache">>,
         <<"capacity">> => ?DEFAULT_SIZE
     },
-    
     % Clean up any previous test data
     reset(StoreOpts),
-    
     % Original nested map structure
     OriginalMap = #{
         <<"target">> => <<"Foo">>,
@@ -874,84 +874,62 @@ nested_map_cache_test() ->
             <<"other-key-key">> => <<"other-key-value">>
         }
     },
-    
     ?event({original_map, OriginalMap}),
-    
     % Step 1: Store each leaf value at data/{hash}
     TargetValue = <<"Foo">>,
     TargetHash = base64:encode(crypto:hash(sha256, TargetValue)),
     write(StoreOpts, <<"data/", TargetHash/binary>>, TargetValue),
-    
     AlgValue1 = <<"rsa-pss-512">>,
     AlgHash1 = base64:encode(crypto:hash(sha256, AlgValue1)),
     write(StoreOpts, <<"data/", AlgHash1/binary>>, AlgValue1),
-    
     CommitterValue1 = <<"unique-id">>,
     CommitterHash1 = base64:encode(crypto:hash(sha256, CommitterValue1)),
     write(StoreOpts, <<"data/", CommitterHash1/binary>>, CommitterValue1),
-    
     AlgValue2 = <<"hmac">>,
     AlgHash2 = base64:encode(crypto:hash(sha256, AlgValue2)),
     write(StoreOpts, <<"data/", AlgHash2/binary>>, AlgValue2),
-    
     CommitterValue2 = <<"unique-id-2">>,
     CommitterHash2 = base64:encode(crypto:hash(sha256, CommitterValue2)),
     write(StoreOpts, <<"data/", CommitterHash2/binary>>, CommitterValue2),
-    
     OtherKeyValue = <<"other-key-value">>,
     OtherKeyHash = base64:encode(crypto:hash(sha256, OtherKeyValue)),
     write(StoreOpts, <<"data/", OtherKeyHash/binary>>, OtherKeyValue),
-    
     % Step 2: Create the nested structure with groups and links
-    
     % Create the root group
     make_group(StoreOpts, <<"root">>),
-    
     % Create links for the root level keys
     make_link(StoreOpts, <<"data/", TargetHash/binary>>, <<"root/target">>),
-    
     % Create the commitments subgroup
     make_group(StoreOpts, <<"root/commitments">>),
-    
     % Create the key1 subgroup within commitments
     make_group(StoreOpts, <<"root/commitments/key1">>),
     make_link(StoreOpts, <<"data/", AlgHash1/binary>>, <<"root/commitments/key1/alg">>),
     make_link(StoreOpts, <<"data/", CommitterHash1/binary>>, <<"root/commitments/key1/committer">>),
-    
     % Create the key2 subgroup within commitments
     make_group(StoreOpts, <<"root/commitments/key2">>),
     make_link(StoreOpts, <<"data/", AlgHash2/binary>>, <<"root/commitments/key2/alg">>),
     make_link(StoreOpts, <<"data/", CommitterHash2/binary>>, <<"root/commitments/key2/commiter">>),
-    
     % Create the other-key subgroup
     make_group(StoreOpts, <<"root/other-key">>),
     make_link(StoreOpts, <<"data/", OtherKeyHash/binary>>, <<"root/other-key/other-key-key">>),
-    
     % Step 3: Test reading the structure back
-    
     % Verify the root is a composite
     ?assertEqual(composite, type(StoreOpts, <<"root">>)),
-    
     % List the root contents
     {ok, RootKeys} = list(StoreOpts, <<"root">>),
     ?event({root_keys, RootKeys}),
     ExpectedRootKeys = [<<"commitments">>, <<"other-key">>, <<"target">>],
     ?assert(lists:all(fun(Key) -> lists:member(Key, ExpectedRootKeys) end, RootKeys)),
-    
     % Read the target directly
     {ok, TargetValueRead} = read(StoreOpts, <<"root/target">>),
     ?assertEqual(<<"Foo">>, TargetValueRead),
-    
     % Verify commitments is a composite
     ?assertEqual(composite, type(StoreOpts, <<"root/commitments">>)),
-    
     % Verify other-key is a composite  
     ?assertEqual(composite, type(StoreOpts, <<"root/other-key">>)),
-    
     % Step 4: Test programmatic reconstruction of the nested map
     ReconstructedMap = reconstruct_map(StoreOpts, <<"root">>),
     ?event({reconstructed_map, ReconstructedMap}),
-    
     % Verify the reconstructed map matches the original structure
     ?assert(hb_message:match(OriginalMap, ReconstructedMap)),
     stop(StoreOpts).
@@ -984,45 +962,35 @@ cache_debug_test() ->
         <<"name">> => <<"/tmp/cache-debug">>,
         <<"capacity">> => ?DEFAULT_SIZE
     },
-    
     reset(StoreOpts),
-    
     % Simulate what the cache does:
     % 1. Create a group for message ID
     MessageID = <<"test_message_123">>,
     make_group(StoreOpts, MessageID),
-    
     % 2. Store a value at data/hash
     Value = <<"test_value">>,
     ValueHash = base64:encode(crypto:hash(sha256, Value)),
     DataPath = <<"data/", ValueHash/binary>>,
     write(StoreOpts, DataPath, Value),
-    
     % 3. Calculate a key hashpath (simplified version)
     KeyHashPath = <<MessageID/binary, "/", "key_hash_abc">>,
-    
     % 4. Create link from data path to key hash path
     make_link(StoreOpts, DataPath, KeyHashPath),
-    
     % 5. Test what the cache would see:
     ?event(debug_cache_test, {step, check_message_type}),
     MsgType = type(StoreOpts, MessageID),
     ?event(debug_cache_test, {message_type, MsgType}),
-    
     ?event(debug_cache_test, {step, list_message_contents}),
     {ok, Subkeys} = list(StoreOpts, MessageID),
     ?event(debug_cache_test, {message_subkeys, Subkeys}),
-    
     ?event(debug_cache_test, {step, read_key_hashpath}),
     KeyHashResult = read(StoreOpts, KeyHashPath),
     ?event(debug_cache_test, {key_hash_read_result, KeyHashResult}),
-    
     % 6. Test with path as list (what cache does):
     ?event(debug_cache_test, {step, read_path_as_list}),
     PathAsList = [MessageID, <<"key_hash_abc">>],
     PathAsListResult = read(StoreOpts, PathAsList),
     ?event(debug_cache_test, {path_as_list_result, PathAsListResult}),
-    
     stop(StoreOpts).
 
 %% @doc Isolated test focusing on the exact cache issue
@@ -1032,48 +1000,37 @@ isolated_type_debug_test() ->
         <<"name">> => <<"/tmp/isolated-debug">>,
         <<"capacity">> => ?DEFAULT_SIZE
     },
-    
     reset(StoreOpts),
-    
     % Create the exact scenario from user's description:
     % 1. A message ID with nested structure
     MessageID = <<"message123">>,
     make_group(StoreOpts, MessageID),
-    
     % 2. Create nested groups for "commitments" and "other-test-key"
     CommitmentsPath = <<MessageID/binary, "/commitments">>,
     OtherKeyPath = <<MessageID/binary, "/other-test-key">>,
-    
     ?event(isolated_debug, {creating_nested_groups, CommitmentsPath, OtherKeyPath}),
     make_group(StoreOpts, CommitmentsPath),
     make_group(StoreOpts, OtherKeyPath),
-    
     % 3. Add some actual data within those groups
     write(StoreOpts, <<CommitmentsPath/binary, "/sig1">>, <<"signature_data_1">>),
     write(StoreOpts, <<OtherKeyPath/binary, "/sub_value">>, <<"nested_value">>),
-    
     % 4. Test type detection on the nested paths
     ?event(isolated_debug, {testing_main_message_type}),
     MainType = type(StoreOpts, MessageID),
     ?event(isolated_debug, {main_message_type, MainType}),
-    
     ?event(isolated_debug, {testing_commitments_type}),
     CommitmentsType = type(StoreOpts, CommitmentsPath),
     ?event(isolated_debug, {commitments_type, CommitmentsType}),
-    
     ?event(isolated_debug, {testing_other_key_type}),
     OtherKeyType = type(StoreOpts, OtherKeyPath),
     ?event(isolated_debug, {other_key_type, OtherKeyType}),
-    
     % 5. Test what happens when reading these nested paths
     ?event(isolated_debug, {reading_commitments_directly}),
     CommitmentsResult = read(StoreOpts, CommitmentsPath),
     ?event(isolated_debug, {commitments_read_result, CommitmentsResult}),
-    
     ?event(isolated_debug, {reading_other_key_directly}),
     OtherKeyResult = read(StoreOpts, OtherKeyPath),
     ?event(isolated_debug, {other_key_read_result, OtherKeyResult}),
-    
     stop(StoreOpts).
 
 %% @doc Test that list function resolves links correctly
@@ -1084,25 +1041,20 @@ list_with_link_test() ->
         <<"capacity">> => ?DEFAULT_SIZE
     },
     reset(StoreOpts),
-    
     % Create a group with some children
     make_group(StoreOpts, <<"real-group">>),
     write(StoreOpts, <<"real-group/child1">>, <<"value1">>),
     write(StoreOpts, <<"real-group/child2">>, <<"value2">>),
     write(StoreOpts, <<"real-group/child3">>, <<"value3">>),
-    
     % Create a link to the group
     make_link(StoreOpts, <<"real-group">>, <<"link-to-group">>),
-    
     % List the real group to verify expected children
     {ok, RealGroupChildren} = list(StoreOpts, <<"real-group">>),
     ?event({real_group_children, RealGroupChildren}),
     ExpectedChildren = [<<"child1">>, <<"child2">>, <<"child3">>],
     ?assertEqual(ExpectedChildren, lists:sort(RealGroupChildren)),
-    
     % List via the link - should return the same children
     {ok, LinkChildren} = list(StoreOpts, <<"link-to-group">>),
     ?event({link_children, LinkChildren}),
     ?assertEqual(ExpectedChildren, lists:sort(LinkChildren)),
-    
     stop(StoreOpts).
