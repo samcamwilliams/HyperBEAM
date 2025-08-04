@@ -188,7 +188,7 @@ eflame_profile(Fun, Req, Opts) ->
     StackToFlameScript = hb_util:bin(filename:join(EflameDir, "flamegraph.pl")),
     FlameArg =
         case MergeStacks of
-            <<"merge">> -> <<"--merge">>;
+            <<"merge">> -> <<"">>;
             <<"time">> -> <<"--flamechart">>
         end,
     PreparedCommand = 
