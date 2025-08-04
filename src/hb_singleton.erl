@@ -14,6 +14,7 @@
 %%%     Part: (Key + Resolution), Device?, #{ K => V}?
 %%%         - Part => #{ path => Part }
 %%%         - `Part&Key=Value => #{ path => Part, Key => Value }'
+%%%         - `Part=Value&... => #{ path => Part, Part => Value, ... }'
 %%%         - `Part&Key => #{ path => Part, Key => true }'
 %%%         - `Part&k1=v1&k2=v2 => #{ path => Part, k1 => `<<"v1">>', k2 => `<<"v2">>' }'
 %%%         - `Part~Device => {as, Device, #{ path => Part }}'
@@ -333,7 +334,7 @@ parse_part(Part, Opts) ->
     case maybe_subpath(Part, Opts) of
         {resolve, Subpath} -> {resolve, Subpath};
         Part ->
-            case part([$&, $~, $+, $ ], Part) of
+            case part([$&, $~, $+, $ , $=], Part) of
                 {no_match, PartKey, <<>>} ->
                     #{ <<"path">> => PartKey };
                 {Sep, PartKey, PartModBin} ->
@@ -369,7 +370,13 @@ parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg, Opts) ->
             Msg,
             InlinedKeys
         ),
-    MsgWithInlined.
+    MsgWithInlined;
+parse_part_mods(<<$=, InlinedMsgBin/binary>>, M = #{ <<"path">> := Path }, Opts)
+        when map_size(M) =:= 1, is_binary(Path) ->
+    parse_part_mods(<< "&", Path/binary, "=", InlinedMsgBin/binary >>, M, Opts);
+parse_part_mods(<<$+, InlinedMsgBin/binary>>, M = #{ <<"path">> := Path }, Opts)
+        when map_size(M) =:= 1, is_binary(InlinedMsgBin) ->
+    parse_part_mods(<< "&", Path/binary, "+", InlinedMsgBin/binary >>, M, Opts).
 
 %% @doc Extrapolate the inlined key-value pair from a path segment. If the
 %% key has a value, it may provide a type (as with typical keys), but if a
@@ -755,6 +762,30 @@ inlined_keys_test() ->
     ?assertEqual(<<"v2">>, hb_maps:get(<<"k2">>, Msg3)),
     ?assertEqual(not_found, hb_maps:get(<<"k1">>, Msg1, not_found)),
     ?assertEqual(not_found, hb_maps:get(<<"k2">>, Msg2, not_found)).
+
+inlined_assumed_key_test() ->
+    Req = #{
+        <<"method">> => <<"POST">>,
+        <<"path">> => <<"/a/b=4/c&k2=v2">>
+    },
+    Msgs = from(Req, #{}),
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
+    ?event({parsed, Msgs}),
+    ?assertEqual(<<"4">>, hb_maps:get(<<"b">>, Msg2)),
+    ?assertEqual(not_found, hb_maps:get(<<"b">>, Msg1, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"b">>, Msg3, not_found)),
+    ReqB = #{
+        <<"method">> => <<"POST">>,
+        <<"path">> => <<"/a/b+integer=4/c&k2=v2">>
+    },
+    MsgsB = from(ReqB, #{}),
+    [_, Msg1b, Msg2b, Msg3b] = MsgsB,
+    ?event({parsed, MsgsB}),
+    ?assertEqual(4, hb_maps:get(<<"b">>, Msg2b)),
+    ?assertEqual(not_found, hb_maps:get(<<"b">>, Msg1b, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"b">>, Msg3b, not_found)).
+
 
 multiple_inlined_keys_test() ->
     Path = <<"/a/b&k1=v1&k2=v2">>,
