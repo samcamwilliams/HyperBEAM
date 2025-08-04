@@ -61,7 +61,7 @@ start(Opts = #{ <<"name">> := DataDir }) ->
             DataDirPath,
             [
                 {map_size, maps:get(<<"capacity">>, Opts, ?DEFAULT_SIZE)},
-                no_mem_init, no_sync, write_map
+                no_mem_init, no_sync
             ]
         ),
     {ok, DBInstance} = elmdb:db_open(Env, [create]),
