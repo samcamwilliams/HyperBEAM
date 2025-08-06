@@ -49,7 +49,12 @@
                 {preparsed, ?DEFAULT_PRINT_OPTS}
             },
         lua_scripts => {"LUA_SCRIPTS", "scripts"},
-        lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests},
+        lua_tests => 
+            {
+                "LUA_TESTS", 
+                fun(Str) -> {lazy, dev_lua_test, parse_spec, [Str]} end,
+                "tests"
+            },
         default_index =>
             {
                 "INDEX",
