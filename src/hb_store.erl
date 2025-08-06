@@ -375,12 +375,7 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 %% @doc Return a list of stores for testing. Additional individual functions are
 %% used to generate store options for those whose drivers are not built by 
 %% default into all HyperBEAM distributions.
-test_stores() -> 
-    rocks_stores() ++ hyper_stores() ++ base_stores().
-
-%% @doc Return a list of the built-in stores that are always available on all
-%% HyperBEAM distributions.
-base_stores() ->
+test_stores() ->
     [
         #{
             <<"store-module">> => hb_store_fs,
@@ -414,18 +409,6 @@ rocks_stores() ->
     ].
 -else.
 rocks_stores() -> [].
--endif.
-
--ifdef(ENABLE_HYPER_STORE).
-hyper_stores() ->
-    [
-        #{
-            <<"store-module">> => hyper_lmdb,
-            <<"name">> => <<"cache-TEST/hyper">>
-        }
-    ].
--else.
-hyper_stores() -> [].
 -endif.
 
 generate_test_suite(Suite) ->
