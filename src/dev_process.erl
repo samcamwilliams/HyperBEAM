@@ -60,8 +60,14 @@
 -include_lib("include/hb.hrl").
 
 %% The frequency at which the process state should be cached. Can be overridden
-%% with the `cache_frequency' option.
--define(DEFAULT_CACHE_FREQ, 1).
+%% with the `process_snapshot_interval' or `process_snapshot_secs' options.
+-if(TEST == true).
+-define(DEFAULT_SNAPSHOT_SLOTS, 1).
+-define(DEFAULT_SNAPSHOT_SECS, undefined).
+-else.
+-define(DEFAULT_SNAPSHOT_SLOTS, undefined).
+-define(DEFAULT_SNAPSHOT_SECS, 60).
+-endif.
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1) ->
@@ -312,8 +318,15 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
                 {ok, NewProcStateMsgWithSlot},
                 Opts
             ),
-            store_result(ProcID, NextSlot, NewProcStateMsgWithSlot, ReqMsg, Opts),
-            {ok, NewProcStateMsgWithSlot};
+            ProcStateWithSnapshot =
+                store_result(
+                    ProcID,
+                    NextSlot,
+                    NewProcStateMsgWithSlot,
+                    ReqMsg,
+                    Opts
+                ),
+            {ok, ProcStateWithSnapshot};
         {error, Error} ->
             {error, Error}
     end.
@@ -321,11 +334,11 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
 %% @doc Store the resulting state in the cache, potentially with the snapshot
 %% key.
 store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
-    % Cache the `Memory' key every `Cache-Frequency' slots.
-    Freq = hb_opts:get(process_cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
+    % Cache the `Snapshot' key as frequently as the node is configured to.
     Msg3MaybeWithSnapshot =
-        case Slot rem Freq of
-            0 ->
+        case should_snapshot(Slot, Msg3, Opts) of
+            false -> Msg3;
+            true ->
                 ?event(compute_debug,
                     {snapshotting, {proc_id, ProcID}, {slot, Slot}}, Opts),
                 {ok, Snapshot} = snapshot(Msg3, Msg2, Opts),
@@ -343,9 +356,21 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
                     },
                     Opts
                 ),
-				Msg3#{ <<"snapshot">> => Snapshot };
-            _ -> 
-                Msg3
+				WithLastSnapshot =
+                    hb_private:set(
+                        Msg3#{ <<"snapshot">> => Snapshot },
+                        <<"last-snapshot">>,
+                        os:system_time(second),
+                        Opts
+                    ),
+                ?event(debug_interval,
+                    {snapshot_with_last_snapshot,
+                        {proc_id, ProcID},
+                        {slot, Slot},
+                        {snapshot, WithLastSnapshot}
+                    }
+                ),
+                hb_cache:ensure_all_loaded(WithLastSnapshot, Opts)
         end,
     ?event(compute, {caching_result, {proc_id, ProcID}, {slot, Slot}}, Opts),
     Writer = 
@@ -359,6 +384,46 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
         false ->
             Writer(),
             ?event(compute, {caching_completed, {proc_id, ProcID}, {slot, Slot}}, Opts)
+    end,
+    hb_maps:without([<<"snapshot">>], Msg3MaybeWithSnapshot, Opts).
+
+%% @doc Should we snapshot a new full state result? First, we check if the 
+%% `process_snapshot_ms' option is set. If it is, we check if the elapsed time
+%% since the last snapshot is greater than the value. Otherwise, we check the
+%% `process_snapshot_interval' option. If it is set, we check if the slot is
+%% a multiple of the interval. If neither are set, we return `true'.
+should_snapshot(Slot, Msg3, Opts) ->
+    case hb_opts:get(process_snapshot_secs, ?DEFAULT_SNAPSHOT_SECS, Opts) of
+        undefined ->
+            SnapshotSlots = 
+                hb_opts:get(
+                    process_snapshot_interval,
+                    ?DEFAULT_SNAPSHOT_SLOTS,
+                    Opts
+                ),
+            Slot rem SnapshotSlots == 0;
+        Secs ->
+            case hb_private:get(<<"last-snapshot">>, Msg3, undefined, Opts) of
+                undefined ->
+                    ?event(
+                        debug_interval,
+                        {no_last_snapshot,
+                            {interval, Secs},
+                            {msg, Msg3}
+                        }
+                    ),
+                    true;
+                OldTimestamp ->
+                    ?event(
+                        debug_interval,
+                        {calculating,
+                            {secs, Secs},
+                            {timestamp, OldTimestamp},
+                            {now, os:system_time(second)}
+                        }
+                    ),
+                    os:system_time(second) > OldTimestamp + hb_util:int(Secs)
+            end
     end.
 
 %% @doc Returns the known state of the process at either the current slot, or
