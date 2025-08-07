@@ -182,7 +182,20 @@ filter(Modules, Filter) ->
 scope(Opts, Scope) when is_map(Opts) ->
     case hb_opts:get(store, no_viable_store, Opts) of
         no_viable_store -> Opts;
-        Store -> Opts#{ store => scope(Store, Scope) }
+        Store when is_list(Store) ->
+            % Store is already a list, apply scope normally
+            Opts#{ store => scope(Store, Scope) };
+        Store when is_map(Store) ->
+            % Check if Store already has a nested 'store' key
+            case maps:find(store, Store) of
+                {ok, _NestedStores} ->
+                    % Already has nested structure, return as-is
+                    Opts;
+                error ->
+                    % Single store map, wrap in list before scoping
+                    % This ensures consistent behavior
+                    Opts#{ store => scope([Store], Scope) }
+            end
     end;
 scope(Store, Scope) ->
     filter(
@@ -409,8 +422,8 @@ generate_test_suite(Suite, Stores) ->
                     hb_store:start(Store)
                 end,
                 fun(_) ->
-                    hb_store:reset(Store),
-                    hb_store:stop(Store)
+                    hb_store:reset(Store)
+                    % hb_store:stop(Store)
                 end,
                 [
                     {
