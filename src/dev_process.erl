@@ -176,7 +176,15 @@ compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = process_id(ProcBase, #{}, Opts),
-    case hb_ao:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts) of
+    TargetSlot =
+        hb_ao:get_first(
+            [
+                {{as, <<"message@1.0">>, Msg2}, <<"compute">>},
+                {{as, <<"message@1.0">>, Msg2}, <<"slot">>}
+            ],
+            Opts
+        ),
+    case TargetSlot of
         not_found ->
             % The slot is not set, so we need to serve the latest known state.
             % We do this by setting the `process_now_from_cache' option to `true'.
