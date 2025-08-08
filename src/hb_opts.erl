@@ -266,11 +266,6 @@ default_message() ->
                     <<"name">> => <<"cache-mainnet">>
                 },
                 #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> => <<"cache-mainnet/scheduler">>,
-                    <<"access">> => [<<"read">>]
-                },
-                #{
                     <<"store-module">> => hb_store_gateway,
                     <<"subindex">> => [
                         #{
@@ -290,13 +285,6 @@ default_message() ->
                 #{
                     <<"store-module">> => hb_store_fs,
                     <<"name">> => <<"cache-priv">>
-                }
-            ],
-        scheduler_store =>
-            [
-                #{
-                    <<"store-module">> => hb_store_fs,
-                    <<"name">> => <<"cache-mainnet/scheduler">>
                 }
             ],
         %default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
