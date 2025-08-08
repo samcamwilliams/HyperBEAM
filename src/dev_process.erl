@@ -265,7 +265,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 {error, Res} ->
                     % If the scheduler device cannot provide a next message,
                     % we return its error details, along with the current slot.
-                    ?event(compute, {error_getting_schedule, {error, Res}, {phase, <<"get-schedule">>}, {attempted_slot, NextSlot}}),
+                    ?event(compute,
+                        {error_getting_schedule,
+                            {error, Res},
+                            {phase, <<"get-schedule">>},
+                            {attempted_slot, NextSlot}
+                        }
+                    ),
                     {error, Res#{
                         <<"phase">> => <<"get-schedule">>,
                         <<"attempted-slot">> => NextSlot
@@ -291,7 +297,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                                     Error;
                                 true -> #{ <<"error">> => Error }
                                 end,
-                            ?event(compute, {error_computing_slot, {error, ErrMsg}, {phase, <<"compute">>}, {attempted_slot, NextSlot}}),
+                            ?event(compute,
+                                {error_computing_slot,
+                                    {error, ErrMsg},
+                                    {phase, <<"compute">>},
+                                    {attempted_slot, NextSlot}
+                                }
+                            ),
                             {error,
                                 ErrMsg#{
                                     <<"phase">> => <<"compute">>,
