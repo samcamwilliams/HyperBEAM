@@ -74,6 +74,13 @@ behavior_info(callbacks) ->
 -define(DEFAULT_SCOPE, local).
 -define(DEFAULT_RETRIES, 1).
 
+%% @doc Store access groups to function names.
+-define(STORE_ACCESS_GROUPS, #{
+    <<"read">> => [read, resolve, list, type, path, add_path, join],
+    <<"write">> => [write, make_link, make_group, reset, path, add_path, join],
+    <<"admin">> => [start, stop, reset]
+}).
+
 %%% Store named terms registry functions.
 
 %% @doc Set the instance options for a given store module and name combination.
@@ -310,7 +317,30 @@ do_call_function(X, _Function, _Args) when not is_list(X) ->
     do_call_function([X], _Function, _Args);
 do_call_function([], _Function, _Args) ->
     not_found;
+do_call_function([Store = #{<<"access">> := Access} | Rest], Function, Args) ->
+    % If the store has an access group, check if the function is in it.
+    IsAdmissible =
+        lists:any(
+            fun(Group) ->
+                lists:any(
+                    fun(F) -> F == Function end,
+                    maps:get(Group, ?STORE_ACCESS_GROUPS, [])
+                )
+            end,
+            Access
+        ),
+    case IsAdmissible of
+        true ->
+            do_call_function(
+                [maps:remove(<<"access">>, Store) | Rest],
+                Function,
+                Args
+            );
+        false ->
+            do_call_function(Rest, Function, Args)
+    end;
 do_call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
+    % Attempt to apply the function. If it fails, try the next store.
     try apply_store_function(Mod, Store, Function, Args) of
         not_found ->
             do_call_function(Rest, Function, Args);
