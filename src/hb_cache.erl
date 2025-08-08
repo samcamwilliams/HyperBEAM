@@ -234,15 +234,15 @@ do_write_message(List, Store, Opts) when is_list(List) ->
 do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     ?event(debug_cache, {writing_message, Msg}),
     % Calculate the IDs of the message.
-    UncommittedID = hb_message:id(Msg, none, Opts#{ linkify_mode => discard }),
-    AltIDs = calculate_all_ids(Msg, Opts) -- [UncommittedID],
+    CommittedID = hb_message:id(Msg, signed, Opts#{ linkify_mode => discard }),
+    AltIDs = calculate_all_ids(Msg, Opts) -- [CommittedID],
     MsgHashpathAlg = hb_path:hashpath_alg(Msg, Opts),
-    ?event(debug_cache, {writing_message, {id, UncommittedID}, {alt_ids, AltIDs}, {original, Msg}}),
+    ?event(debug_cache, {writing_message, {id, CommittedID}, {alt_ids, AltIDs}, {original, Msg}}),
     % Write all of the keys of the message into the store.
-    hb_store:make_group(Store, UncommittedID),
+    hb_store:make_group(Store, CommittedID),
     maps:map(
         fun(Key, Value) ->
-            write_key(UncommittedID, Key, MsgHashpathAlg, Value, Store, Opts)
+            write_key(CommittedID, Key, MsgHashpathAlg, Value, Store, Opts)
         end,
         maps:without([<<"priv">>], Msg)
     ),
@@ -252,14 +252,14 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
         fun(AltID) ->
             ?event(debug_cache,
                 {linking_commitment,
-                    {uncommitted_id, UncommittedID},
-                    {committed_id, AltID}
+                    {committed_id, CommittedID},
+                    {alt_id, AltID}
             }),
-            hb_store:make_link(Store, UncommittedID, AltID)
+            hb_store:make_link(Store, CommittedID, AltID)
         end,
         AltIDs
     ),
-    {ok, UncommittedID}.
+    {ok, CommittedID}.
 
 %% @doc Write a single key for a message into the store.
 write_key(Base, <<"commitments">>, _HPAlg, RawCommitments, Store, Opts) ->
