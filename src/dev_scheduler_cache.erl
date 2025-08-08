@@ -216,21 +216,26 @@ concurrent_scheduler_write_test() ->
             Assignment = #{
                 <<"process">> => ProcID,
                 <<"slot">> => Slot,
-                <<"hash-chain">> => <<"concurrent-test-", (integer_to_binary(Slot))/binary>>
+                <<"hash-chain">> =>
+                    <<"concurrent-test-", (integer_to_binary(Slot))/binary>>
             },
             Result = write(Assignment, Opts),
             Parent ! {write_result, Slot, Result}
         end)
     end, lists:seq(1, Workers)),
-    Results = lists:map(fun(Slot) ->
-        receive
-            {write_result, Slot, Result} -> 
-                ?event(testing, {write_result, Slot, Result}),
-                Result
-        after 5000 ->
-            timeout
-        end
-    end, lists:seq(1, Workers)),
+    Results =
+        lists:map(
+            fun(Slot) ->
+                receive
+                    {write_result, Slot, Result} -> 
+                        ?event(testing, {write_result, Slot, Result}),
+                        Result
+                after 5000 ->
+                    timeout
+                end
+            end,
+            lists:seq(1, Workers)
+        ),
     ?event(testing, {concurrent_write_results, Results,Workers}),
     ?assertEqual(lists:duplicate(Workers, ok), Results),
     AllSlots = list(ProcID, Opts),
@@ -264,20 +269,23 @@ concurrent_read_write_test() ->
         ?event(testing, {writer_completed}),
         Parent ! writer_done
     end),
-    lists:foreach(fun(ReaderNum) ->
-        spawn_link(fun() ->
-            ReadResults = lists:map(fun(Slot) ->
-                timer:sleep(rand:uniform(5)),
-                case read(ProcID, Slot, Opts) of
-                    {ok, _} -> success;
-                    not_found -> not_found
-                end
-            end, lists:seq(1, 100)),
-            SuccessCount = length([R || R <- ReadResults, R == success]),
-            ?event(testing, {reader_done, ReaderNum, SuccessCount}),
-            Parent ! {reader_done, ReaderNum, ReadResults}
-        end)
-    end, lists:seq(1, 10)),
+    lists:foreach(
+        fun(ReaderNum) ->
+            spawn_link(fun() ->
+                ReadResults = lists:map(fun(Slot) ->
+                    timer:sleep(rand:uniform(5)),
+                    case read(ProcID, Slot, Opts) of
+                        {ok, _} -> success;
+                        not_found -> not_found
+                    end
+                end, lists:seq(1, 100)),
+                SuccessCount = length([R || R <- ReadResults, R == success]),
+                ?event(testing, {reader_done, ReaderNum, SuccessCount}),
+                Parent ! {reader_done, ReaderNum, ReadResults}
+            end)
+        end,
+        lists:seq(1, 10)
+    ),
     receive 
         writer_done -> ok
     after 15000 -> 
@@ -318,14 +326,17 @@ large_assignment_volume_test() ->
     VolumeSize = 1000,
     ProcID = hb_util:human_id(crypto:strong_rand_bytes(32)),
     StartTime = erlang:monotonic_time(millisecond),
-    lists:foreach(fun(Slot) ->
-        Assignment = #{
-            <<"process">> => ProcID,
-            <<"slot">> => Slot,
-            <<"hash-chain">> => crypto:strong_rand_bytes(64)
-        },
-        ?assertEqual(ok, write(Assignment, Opts))
-    end, lists:seq(1, VolumeSize)),
+    lists:foreach(
+        fun(Slot) ->
+            Assignment = #{
+                <<"process">> => ProcID,
+                <<"slot">> => Slot,
+                <<"hash-chain">> => crypto:strong_rand_bytes(64)
+            },
+            ?assertEqual(ok, write(Assignment, Opts))
+        end,
+        lists:seq(1, VolumeSize)
+    ),
     EndTime = erlang:monotonic_time(millisecond),
     ?event(testing, {large_volume_write_time, EndTime - StartTime}),
     AllSlots = list(ProcID, Opts),
@@ -349,28 +360,35 @@ rapid_restart_test() ->
     hb_store:start(VolStore),
     hb_store:start(NonVolStore),
     ProcID = hb_util:human_id(crypto:strong_rand_bytes(32)),
-    lists:foreach(fun(Cycle) ->
-        lists:foreach(fun(Slot) ->
-            Assignment = #{
-                <<"process">> => ProcID,
-                <<"slot">> => Slot + (Cycle * 10),
-                <<"hash-chain">> => <<"restart-cycle-", (integer_to_binary(Cycle))/binary>>
-            },
-            ?assertEqual(ok, write(Assignment, Opts))
-        end, lists:seq(1, 10)),
-        SlotsBeforeRestart = list(ProcID, Opts),
-        ?assertMatch([_|_], SlotsBeforeRestart),
-        ?event(testing, {
-            restart_cycle, Cycle, {slots_before, length(SlotsBeforeRestart)}
-        }),
-        hb_store:stop(VolStore),
-        timer:sleep(10),
-        hb_store:reset(VolStore),
-        hb_store:start(VolStore),
-        SlotsAfterRestart = list(ProcID, Opts),
-        ?assertEqual([], SlotsAfterRestart),
-        ?event(testing, {restart_verified, Cycle, {slots_after, length(SlotsAfterRestart)}})
-    end, lists:seq(1, 5)).
+    lists:foreach(
+        fun(Cycle) ->
+            lists:foreach(
+                fun(Slot) ->
+                    Assignment = #{
+                        <<"process">> => ProcID,
+                        <<"slot">> => Slot + (Cycle * 10),
+                        <<"hash-chain">> =>
+                            <<"restart-cycle-", (integer_to_binary(Cycle))/binary>>
+                    },
+                    ?assertEqual(ok, write(Assignment, Opts))
+                end,
+                lists:seq(1, 10)
+            ),
+            SlotsBeforeRestart = list(ProcID, Opts),
+            ?assertMatch([_|_], SlotsBeforeRestart),
+            ?event(testing, {
+                restart_cycle, Cycle, {slots_before, length(SlotsBeforeRestart)}
+            }),
+            hb_store:stop(VolStore),
+            timer:sleep(10),
+            hb_store:reset(VolStore),
+            hb_store:start(VolStore),
+            SlotsAfterRestart = list(ProcID, Opts),
+            ?assertEqual([], SlotsAfterRestart),
+            ?event({restart_verified, Cycle, {slots_after, length(SlotsAfterRestart)}})
+        end,
+        lists:seq(1, 5)
+    ).
 
 %% @doc Test scheduler store behavior during reset store operations.
 mixed_store_reset_operations_test() ->
@@ -429,7 +447,12 @@ invalid_assignment_stress_test() ->
     end, InvalidAssignments),
     
     ErrorCount = length([R || R <- Results, R == error]),
-    ?event(testing, {invalid_assignment_results, {errors, ErrorCount}, {total, length(InvalidAssignments)}}),
+    ?event(
+        {invalid_assignment_results,
+            {errors, ErrorCount},
+            {total, length(InvalidAssignments)}
+        }
+    ),
     ?assertEqual(6, ErrorCount).
 
 %% @doc Test scheduler location operations under stress.
@@ -446,26 +469,41 @@ scheduler_location_stress_test() ->
     hb_store:start(NonVolStore),
     LocationCount = 10,
     ?event(testing, {location_stress_test_starting, LocationCount}),
-    Results = lists:map(fun(N) ->
-        LocationMsg = #{
-            <<"scheduler">> => hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"location">> => <<"http://scheduler", (integer_to_binary(N))/binary, ".com">>,
-            <<"timestamp">> => erlang:system_time(millisecond),
-            <<"ttl">> => 3600000
-        },
-        Result = try
-            write_location(LocationMsg, Opts)     % TOASK: Is it okay that this returns ok even tho
-            % with wrong and unsigned scheduler location
-        catch
-            Res -> 
-                ?event(testing, {location_write_error, {error, Res}}),
-                ok 
-        end,
-        ?assert(Result == ok orelse element(1, Result) == error),
-        Result
-    end, lists:seq(1, LocationCount)),
+    Results =
+        lists:map(
+            fun(N) ->
+                LocationMsg = #{
+                    <<"scheduler">> =>
+                        hb_util:human_id(ar_wallet:to_address(Wallet)),
+                    <<"location">> =>
+                        <<
+                            "http://scheduler",
+                            (integer_to_binary(N))/binary,
+                            ".com"
+                        >>,
+                    <<"timestamp">> => erlang:system_time(millisecond),
+                    <<"ttl">> => 3600000
+                },
+                Result =
+                    try
+                        write_location(LocationMsg, Opts)
+                    catch
+                        Res -> 
+                            ?event(testing, {location_write_error, {error, Res}}),
+                            ok 
+                    end,
+                ?assert(Result == ok orelse element(1, Result) == error),
+                Result
+            end,
+            lists:seq(1, LocationCount)
+        ),
     SuccessCount = length([R || R <- Results, R == ok]),
-    ?event(testing, {location_stress_results, {successes, SuccessCount}, {total, LocationCount}}).
+    ?event(
+        {location_stress_results,
+            {successes, SuccessCount},
+            {total, LocationCount}
+        }
+    ).
 
 %% @doc Test system behavior with corrupted data in volatile store.
 volatile_store_corruption_test() ->

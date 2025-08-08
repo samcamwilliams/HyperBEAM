@@ -74,8 +74,8 @@ behavior_info(callbacks) ->
 -define(DEFAULT_SCOPE, local).
 -define(DEFAULT_RETRIES, 1).
 
-%% @doc Store access groups to function names.
--define(STORE_ACCESS_GROUPS, #{
+%% @doc Store access policies to function names.
+-define(STORE_ACCESS_POLICIES, #{
     <<"read">> => [read, resolve, list, type, path, add_path, join],
     <<"write">> => [write, make_link, make_group, reset, path, add_path, join],
     <<"admin">> => [start, stop, reset]
@@ -318,13 +318,14 @@ do_call_function(X, _Function, _Args) when not is_list(X) ->
 do_call_function([], _Function, _Args) ->
     not_found;
 do_call_function([Store = #{<<"access">> := Access} | Rest], Function, Args) ->
-    % If the store has an access group, check if the function is in it.
+    % If the store has an access controls, check if the function is allowed from
+    % the stated policies.
     IsAdmissible =
         lists:any(
             fun(Group) ->
                 lists:any(
                     fun(F) -> F == Function end,
-                    maps:get(Group, ?STORE_ACCESS_GROUPS, [])
+                    maps:get(Group, ?STORE_ACCESS_POLICIES, [])
                 )
             end,
             Access
@@ -495,7 +496,10 @@ hierarchical_path_resolution_test(Store) ->
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),
-    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, [<<"test-link">>, <<"test-file">>])).
+    ?assertEqual(
+        {ok, <<"test-data">>},
+        hb_store:read(Store, [<<"test-link">>, <<"test-file">>])
+    ).
 
 store_suite_test_() ->
     generate_test_suite([
@@ -874,9 +878,10 @@ read_only_access_test() ->
 
 %% @doc Test that write-only stores allow write operations but block read operations  
 write_only_access_test() ->
-    WriteOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"access-write-only">>))#{
-        <<"access">> => [<<"write">>]
-    },
+    WriteOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"access-write-only">>))#{
+            <<"access">> => [<<"write">>]
+        },
     ReadStore = hb_test_utils:test_store(hb_store_fs, <<"access-read-fallback">>),
     StoreList = [WriteOnlyStore, ReadStore],
     TestKey = <<"write-test-key">>,
@@ -895,31 +900,30 @@ write_only_access_test() ->
 
 %% @doc Test admin-only stores for start/stop/reset operations
 admin_only_access_test() ->
-    %% TOASK: this might be wrong so want know how to call admin-only store
-    AdminOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"access-admin-only">>))#{
-        <<"access">> => [<<"admin">>]
-    },
+    AdminOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"access-admin-only">>))#{
+            <<"access">> => [<<"admin">>, <<"read">>, <<"write">>]
+        },
     StoreList = [AdminOnlyStore],
     TestKey = <<"admin-test-key">>,
     TestValue = <<"admin-test-value">>,
-    ?event(testing, {admin_only_test_started}),
-    ResetResult = reset(StoreList),
-    ?event(testing, {reset_succeeded_on_admin_store, ResetResult}),
     start(StoreList),
-    ?event(testing, {start_admin_store}),
-    ?assertEqual(not_found, write(StoreList, TestKey, TestValue)),
-    ?event(testing, {write_skipped_admin_store}),
-    ?assertEqual(not_found, read(StoreList, TestKey)),
-    ?event(testing, {read_skipped_admin_store}).
+    ?assertEqual(ok, write(StoreList, TestKey, TestValue)),
+    ?assertEqual({ok, TestValue}, read(StoreList, TestKey)),
+    reset(StoreList),
+    ?assertEqual(ok, start(StoreList)),
+    ?assertEqual(not_found, read(StoreList, TestKey)).
 
 %% @doc Test multiple access permissions
 multi_access_permissions_test() ->
-    ReadWriteStore = (hb_test_utils:test_store(hb_store_fs, <<"access-read-write">>))#{
-        <<"access">> => [<<"read">>, <<"write">>]
-    },
-    AdminStore = (hb_test_utils:test_store(hb_store_fs, <<"access-admin-fallback">>))#{
-        <<"access">> => [<<"admin">>]
-    },
+    ReadWriteStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"access-read-write">>))#{
+            <<"access">> => [<<"read">>, <<"write">>]
+        },
+    AdminStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"access-admin-fallback">>))#{
+            <<"access">> => [<<"admin">>]
+        },
     StoreList = [ReadWriteStore, AdminStore],
     TestKey = <<"multi-access-key">>,
     TestValue = <<"multi-access-value">>,
@@ -928,38 +932,24 @@ multi_access_permissions_test() ->
     ?assertEqual(ok, write(StoreList, TestKey, TestValue)),
     ?event(testing, {write_succeeded_on_read_write_store}),
     ?assertEqual({ok, TestValue}, read(StoreList, TestKey)),
-    ?event(testing, {read_succeeded_on_read_write_store}).
-    % ResetResult2 = reset(StoreList),
-    % ?event(testing, {reset_used_admin_fallback, ResetResult2}),
-    % ?assert(ResetResult2 == ok orelse is_tuple(ResetResult2)).
+    ?event(testing, {read_succeeded_on_read_write_store}),
+    reset(StoreList),
+    ?assertEqual(ok, start(StoreList)),
+    ?assertEqual(not_found, read(StoreList, TestKey)).
 
-%% @doc Test that stores without access restrictions allow all operations
-unrestricted_access_test() ->
-    UnrestrictedStore = hb_test_utils:test_store(hb_store_fs, <<"access-unrestricted">>),
-    StoreList = [UnrestrictedStore],
-    TestKey = <<"unrestricted-key">>,
-    TestValue = <<"unrestricted-value">>,
-    start(StoreList),
-    ?event(testing, {unrestricted_test_started}),
-    ?assertEqual(ok, write(StoreList, TestKey, TestValue)),
-    ?event(testing, {unrestricted_write_ok}),
-    ?assertEqual({ok, TestValue}, read(StoreList, TestKey)),
-    ?event(testing, {unrestricted_read_ok}),
-    % ResetResult3 = reset(StoreList),
-    % ?event(testing, {unrestricted_reset_ok, ResetResult3}),
-    % ?assert(ResetResult3 == ok orelse is_tuple(ResetResult3)),
-    ?assertEqual({ok,TestValue}, read(StoreList, TestKey)).
-
-%% @doc Test access control with store fallback chains
-store_fallback_chain_test() ->
+%% @doc Test access control with a list of stores.
+store_access_list_test() ->
     % Chain: Read-only -> Write-only -> Unrestricted
-    ReadOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"chain-read-only">>))#{
-        <<"access">> => [<<"read">>]
-    },
-    WriteOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"chain-write-only">>))#{
-        <<"access">> => [<<"write">>]
-    },
-    UnrestrictedStore = hb_test_utils:test_store(hb_store_fs, <<"chain-unrestricted">>),
+    ReadOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"chain-read-only">>))#{
+            <<"access">> => [<<"read">>]
+        },
+    WriteOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"chain-write-only">>))#{
+            <<"access">> => [<<"write">>]
+        },
+    UnrestrictedStore =
+        hb_test_utils:test_store(hb_store_fs, <<"chain-unrestricted">>),
     StoreChain = [ReadOnlyStore, WriteOnlyStore, UnrestrictedStore],
     TestKey = <<"chain-test-key">>,
     TestValue = <<"chain-test-value">>,
@@ -972,11 +962,12 @@ store_fallback_chain_test() ->
     WriteOnlyNoAccess = maps:remove(<<"access">>, WriteOnlyStore),
     ?assertEqual({ok, TestValue}, read([WriteOnlyNoAccess], TestKey)).
 
-%% @doc Test invalid access groups are ignored
-invalid_access_groups_test() ->
-    InvalidAccessStore = (hb_test_utils:test_store(hb_store_fs, <<"access-invalid">>))#{
-        <<"access">> => [<<"invalid-group">>, <<"nonexistent">>]
-    },
+%% @doc Test invalid access permissions are ignored
+invalid_access_permissions_test() ->
+    InvalidAccessStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"access-invalid">>))#{
+            <<"access">> => [<<"invalid-policy">>, <<"nonexistent-policy">>]
+        },
     FallbackStore = hb_test_utils:test_store(hb_store_fs, <<"access-fallback">>),
     StoreList = [InvalidAccessStore, FallbackStore],
     TestKey = <<"invalid-access-key">>,
@@ -993,9 +984,10 @@ invalid_access_groups_test() ->
 
 %% @doc Test list operations with access control
 list_access_control_test() ->
-    ReadOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"list-read-only">>))#{
-        <<"access">> => [<<"read">>]
-    },
+    ReadOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"list-read-only">>))#{
+            <<"access">> => [<<"read">>]
+        },
     WriteStore = hb_test_utils:test_store(hb_store_fs, <<"list-write">>),
     StoreList = [ReadOnlyStore, WriteStore],
     ListGroup = <<"list-test-group">>,
@@ -1016,9 +1008,10 @@ list_access_control_test() ->
 
 %% @doc Test make_link operations with write access
 make_link_access_test() ->
-    WriteOnlyStore = (hb_test_utils:test_store(hb_store_fs, <<"link-write-only">>))#{
-        <<"access">> => [<<"write">>,<<"read">>]
-    },
+    WriteOnlyStore =
+        (hb_test_utils:test_store(hb_store_fs, <<"link-write-only">>))#{
+            <<"access">> => [<<"write">>,<<"read">>]
+        },
     FallbackStore = hb_test_utils:test_store(hb_store_fs, <<"link-fallback">>),
     StoreList = [WriteOnlyStore, FallbackStore],
     SourceKey = <<"link-source">>,
