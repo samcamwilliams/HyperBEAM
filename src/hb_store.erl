@@ -306,6 +306,20 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 -ifdef(STORE_EVENTS).
 call_function(X, Function, Args) ->
     {Time, Result} = timer:tc(fun() -> do_call_function(X, Function, Args) end),
+    ?event(store_events,
+        {store_call,
+            {function, Function},
+            {args, Args},
+            {primary_store,
+                case X of
+                    [PrimaryStore | _] -> PrimaryStore;
+                    _ -> X
+                end
+            },
+            {time, Time},
+            {result, Result}
+        }
+    ),
     hb_event:increment(<<"store_duration">>, hb_util:bin(Function), #{}, Time),
     hb_event:increment(<<"store">>, hb_util:bin(Function), #{}, 1),
     Result.

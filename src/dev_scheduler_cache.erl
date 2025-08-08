@@ -1,5 +1,8 @@
 -module(dev_scheduler_cache).
--export([write/2, read/3, list/2, latest/2, read_location/2, write_location/2]).
+-export([write/2, write_spawn/2, write_location/2]).
+-export([read/3, read_location/2]).
+-export([list/2, latest/2]).
+
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -18,7 +21,8 @@ opts(Opts) ->
     }.
 
 %% @doc Write an assignment message into the cache.
-write(Assignment, RawOpts) ->
+write(RawAssignment, RawOpts) ->
+    Assignment = hb_cache:ensure_all_loaded(RawAssignment, RawOpts),
     Opts = opts(RawOpts),
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
@@ -53,9 +57,14 @@ write(Assignment, RawOpts) ->
             {error, Reason}
     end.
 
+%% @doc Write the initial assignment message to the cache.
+write_spawn(RawInitMessage, Opts) ->
+    InitMessage = hb_cache:ensure_all_loaded(RawInitMessage, Opts),
+    hb_cache:write(InitMessage, opts(Opts)).
+
 %% @doc Get an assignment message from the cache.
 read(ProcID, Slot, Opts) when is_integer(Slot) ->
-    read(ProcID, integer_to_list(Slot), Opts);
+    read(ProcID, hb_util:bin(Slot), Opts);
 read(ProcID, Slot, RawOpts) ->
     Opts = opts(RawOpts),
     Store = hb_opts:get(store, no_viable_store, Opts),
@@ -68,6 +77,14 @@ read(ProcID, Slot, RawOpts) ->
                 Slot
             ])
         ),
+    ?event(
+        {read_assignment,
+            {proc_id, ProcID},
+            {slot, Slot},
+            {store, Store},
+            {opts, Opts}
+        }
+    ),
     ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     case hb_cache:read(ResolvedPath, Opts) of
         {ok, Assignment} ->
