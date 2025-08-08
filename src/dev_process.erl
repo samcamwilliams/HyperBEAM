@@ -246,8 +246,16 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 }
             );
         CurrentSlot when CurrentSlot == TargetSlot ->
-            % We reached the target height so we return.
+            % We reached the target height so we force a snapshot and return.
             ?event(compute, {reached_target_slot_returning_state, TargetSlot}),
+            store_result(
+                true,
+                ProcID,
+                TargetSlot,
+                Msg1,
+                Msg2,
+                Opts
+            ),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Compute the next state transition.
@@ -328,6 +336,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
             ),
             ProcStateWithSnapshot =
                 store_result(
+                    false,
                     ProcID,
                     NextSlot,
                     NewProcStateMsgWithSlot,
@@ -341,10 +350,10 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
 
 %% @doc Store the resulting state in the cache, potentially with the snapshot
 %% key.
-store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
+store_result(ForceSnapshot, ProcID, Slot, Msg3, Msg2, Opts) ->
     % Cache the `Snapshot' key as frequently as the node is configured to.
     Msg3MaybeWithSnapshot =
-        case should_snapshot(Slot, Msg3, Opts) of
+        case ForceSnapshot orelse should_snapshot(Slot, Msg3, Opts) of
             false -> Msg3;
             true ->
                 ?event(compute_debug,
