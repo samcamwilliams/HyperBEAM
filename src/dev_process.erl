@@ -246,8 +246,16 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 }
             );
         CurrentSlot when CurrentSlot == TargetSlot ->
-            % We reached the target height so we return.
+            % We reached the target height so we force a snapshot and return.
             ?event(compute, {reached_target_slot_returning_state, TargetSlot}),
+            store_result(
+                true,
+                ProcID,
+                TargetSlot,
+                Msg1,
+                Msg2,
+                Opts
+            ),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Compute the next state transition.
@@ -257,7 +265,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 {error, Res} ->
                     % If the scheduler device cannot provide a next message,
                     % we return its error details, along with the current slot.
-                    ?event(compute, {error_getting_schedule, {error, Res}, {phase, <<"get-schedule">>}, {attempted_slot, NextSlot}}),
+                    ?event(compute,
+                        {error_getting_schedule,
+                            {error, Res},
+                            {phase, <<"get-schedule">>},
+                            {attempted_slot, NextSlot}
+                        }
+                    ),
                     {error, Res#{
                         <<"phase">> => <<"get-schedule">>,
                         <<"attempted-slot">> => NextSlot
@@ -283,7 +297,13 @@ compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                                     Error;
                                 true -> #{ <<"error">> => Error }
                                 end,
-                            ?event(compute, {error_computing_slot, {error, ErrMsg}, {phase, <<"compute">>}, {attempted_slot, NextSlot}}),
+                            ?event(compute,
+                                {error_computing_slot,
+                                    {error, ErrMsg},
+                                    {phase, <<"compute">>},
+                                    {attempted_slot, NextSlot}
+                                }
+                            ),
                             {error,
                                 ErrMsg#{
                                     <<"phase">> => <<"compute">>,
@@ -328,6 +348,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
             ),
             ProcStateWithSnapshot =
                 store_result(
+                    false,
                     ProcID,
                     NextSlot,
                     NewProcStateMsgWithSlot,
@@ -341,10 +362,10 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
 
 %% @doc Store the resulting state in the cache, potentially with the snapshot
 %% key.
-store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
+store_result(ForceSnapshot, ProcID, Slot, Msg3, Msg2, Opts) ->
     % Cache the `Snapshot' key as frequently as the node is configured to.
     Msg3MaybeWithSnapshot =
-        case should_snapshot(Slot, Msg3, Opts) of
+        case ForceSnapshot orelse should_snapshot(Slot, Msg3, Opts) of
             false -> Msg3;
             true ->
                 ?event(compute_debug,
