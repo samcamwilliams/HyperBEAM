@@ -1,11 +1,25 @@
 -module(dev_scheduler_cache).
 -export([write/2, read/3, list/2, latest/2, read_location/2, write_location/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% Assignment cache functions
 
+%% @doc Merge the scheduler store with the main store. Used before writing
+%% to the cache.
+opts(Opts) ->
+    Opts#{
+        store =>
+            hb_opts:get(
+                scheduler_store,
+                hb_opts:get(store, no_viable_store, Opts),
+                Opts
+            )
+    }.
+
 %% @doc Write an assignment message into the cache.
-write(Assignment, Opts) ->
+write(Assignment, RawOpts) ->
+    Opts = opts(RawOpts),
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
     ProcID = hb_ao:get(<<"process">>, Assignment, Opts),
@@ -42,7 +56,8 @@ write(Assignment, Opts) ->
 %% @doc Get an assignment message from the cache.
 read(ProcID, Slot, Opts) when is_integer(Slot) ->
     read(ProcID, integer_to_list(Slot), Opts);
-read(ProcID, Slot, Opts) ->
+read(ProcID, Slot, RawOpts) ->
+    Opts = opts(RawOpts),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResolvedPath =
         P2 = hb_store:resolve(
@@ -61,9 +76,9 @@ read(ProcID, Slot, Opts) ->
             case hb_ao:get(<<"slot">>, Assignment, Opts) of
                 not_found ->
                     Norm = dev_scheduler_formats:aos2_normalize_types(Assignment),
-                    {ok, Norm};
+                    {ok, hb_cache:ensure_all_loaded(Norm, Opts)};
                 _ ->
-                    {ok, Assignment}
+                    {ok, hb_cache:ensure_all_loaded(Assignment, Opts)}
             end;
         not_found ->
             ?event(debug_sched, {read_assignment, {res, not_found}}),
@@ -71,7 +86,8 @@ read(ProcID, Slot, Opts) ->
     end.
 
 %% @doc Get the assignments for a process.
-list(ProcID, Opts) ->
+list(ProcID, RawOpts) ->
+    Opts = opts(RawOpts),
     hb_cache:list_numbered(
         hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
             "assignments",
@@ -81,7 +97,8 @@ list(ProcID, Opts) ->
     ).
 
 %% @doc Get the latest assignment from the cache.
-latest(ProcID, Opts) ->
+latest(ProcID, RawOpts) ->
+    Opts = opts(RawOpts),
     ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
     case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
@@ -108,7 +125,8 @@ latest(ProcID, Opts) ->
     end.
 
 %% @doc Read the latest known scheduler location for an address.
-read_location(Address, Opts) ->
+read_location(Address, RawOpts) ->
+    Opts = opts(RawOpts),
     Res = hb_cache:read(
         hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
             "scheduler-locations",
@@ -120,7 +138,8 @@ read_location(Address, Opts) ->
     Res.
 
 %% @doc Write the latest known scheduler location for an address.
-write_location(LocationMsg, Opts) ->
+write_location(LocationMsg, RawOpts) ->
+    Opts = opts(RawOpts),
     Signers = hb_message:signers(LocationMsg, Opts),
     ?event({writing_location_msg,
         {signers, Signers},
@@ -152,3 +171,29 @@ write_location(LocationMsg, Opts) ->
             ?event(warning, {failed_to_cache_location_msg, {reason, Reason}}),
             {error, Reason}
     end.
+
+%%% Tests
+
+%% @doc Test that a volatile schedule is lost on restart.
+volatile_schedule_test() ->
+    VolStore = hb_test_utils:test_store(hb_store_fs, <<"volatile-sched">>),
+    NonVolStore = hb_test_utils:test_store(hb_store_fs, <<"non-volatile-sched">>),
+    Opts = #{
+        store => [NonVolStore],
+        scheduler_store => [VolStore]
+    },
+    hb_store:start(VolStore),
+    hb_store:start(NonVolStore),
+    Assignment = #{
+        <<"process">> => ProcID = hb_util:human_id(crypto:strong_rand_bytes(32)),
+        <<"slot">> => 1,
+        <<"hash-chain">> => <<"test-hash-chain">>
+    },
+    ?assertEqual(ok, write(Assignment, Opts)),
+    ?assertMatch({1, _}, latest(ProcID, Opts)),
+    ?assertEqual({ok, Assignment}, read(ProcID, 1, Opts)),
+    hb_store:stop(VolStore),
+    hb_store:reset(VolStore),
+    hb_store:start(VolStore),
+    ?assertMatch(not_found, latest(ProcID, Opts)),
+    ?assertMatch(not_found, read(ProcID, 1, Opts)).
