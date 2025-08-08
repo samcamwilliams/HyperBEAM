@@ -16,7 +16,7 @@
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
--export([indent/1, indent/2]).
+-export([indent/1, indent/2, escape_format/1]).
 -export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
 -export([debug_print/1, debug_print/2, debug_print/4, eunit_print/2]).
@@ -820,18 +820,28 @@ remove_trailing_noise(Str, Noise) ->
 
 %% @doc Format a string with an indentation level.
 format_indented(Str, Indent) -> format_indented(Str, #{}, Indent).
-format_indented(Str, Opts, Indent) -> format_indented(Str, "", Opts, Indent).
-format_indented(RawStr, Fmt, Opts, Ind) ->
+format_indented(Str, Opts, Indent) -> format_indented(Str, [], Opts, Indent).
+format_indented(FmtStr, Terms, Opts, Ind) ->
     IndentSpaces = hb_opts:get(debug_print_indent, Opts),
+    EscapedFmt = escape_format(FmtStr),
     lists:droplast(
         lists:flatten(
             io_lib:format(
                 [$\s || _ <- lists:seq(1, Ind * IndentSpaces)] ++
-                    lists:flatten(RawStr) ++ "\n",
-                Fmt
+                    lists:flatten(EscapedFmt) ++ "\n",
+                Terms
             )
         )
     ).
+
+%% @doc Escape a string for use as an io_lib:format specifier.
+escape_format(Str) when is_list(Str) ->
+    re:replace(
+        Str,
+        "~([a-z\\-_]+@[0-9]+\\.[0-9]+)", "~~\\1",
+        [global, {return, list}]
+    );
+escape_format(Else) -> Else.
 
 %% @doc Take a series of strings or a combined string and format as a
 %% single string with newlines and indentation to the given level. Note: This

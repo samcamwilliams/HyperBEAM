@@ -60,13 +60,13 @@
 -include_lib("include/hb.hrl").
 
 %% The frequency at which the process state should be cached. Can be overridden
-%% with the `process_snapshot_interval' or `process_snapshot_secs' options.
+%% with the `process_snapshot_slots' or `process_snapshot_time' options.
 -if(TEST == true).
 -define(DEFAULT_SNAPSHOT_SLOTS, 1).
--define(DEFAULT_SNAPSHOT_SECS, undefined).
+-define(DEFAULT_SNAPSHOT_TIME, undefined).
 -else.
 -define(DEFAULT_SNAPSHOT_SLOTS, undefined).
--define(DEFAULT_SNAPSHOT_SECS, 60).
+-define(DEFAULT_SNAPSHOT_TIME, 60).
 -endif.
 
 %% @doc When the info key is called, we should return the process exports.
@@ -176,7 +176,15 @@ compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = process_id(ProcBase, #{}, Opts),
-    case hb_ao:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts) of
+    TargetSlot =
+        hb_ao:get_first(
+            [
+                {{as, <<"message@1.0">>, Msg2}, <<"compute">>},
+                {{as, <<"message@1.0">>, Msg2}, <<"slot">>}
+            ],
+            Opts
+        ),
+    case TargetSlot of
         not_found ->
             % The slot is not set, so we need to serve the latest known state.
             % We do this by setting the `process_now_from_cache' option to `true'.
@@ -388,21 +396,32 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
     hb_maps:without([<<"snapshot">>], Msg3MaybeWithSnapshot, Opts).
 
 %% @doc Should we snapshot a new full state result? First, we check if the 
-%% `process_snapshot_ms' option is set. If it is, we check if the elapsed time
-%% since the last snapshot is greater than the value. Otherwise, we check the
-%% `process_snapshot_interval' option. If it is set, we check if the slot is
-%% a multiple of the interval. If neither are set, we return `true'.
+%% `process_snapshot_time' option is set. If it is, we check if the elapsed time
+%% since the last snapshot is greater than the value. We also check the
+%% `process_snapshot_slots' option. If it is set, we check if the slot is
+%% a multiple of the interval. If either are true, we must snapshot.
 should_snapshot(Slot, Msg3, Opts) ->
-    case hb_opts:get(process_snapshot_secs, ?DEFAULT_SNAPSHOT_SECS, Opts) of
-        undefined ->
-            SnapshotSlots = 
-                hb_opts:get(
-                    process_snapshot_interval,
-                    ?DEFAULT_SNAPSHOT_SLOTS,
-                    Opts
-                ),
-            Slot rem SnapshotSlots == 0;
-        Secs ->
+    should_snapshot_slots(Slot, Opts)
+        orelse should_snapshot_time(Msg3, Opts).
+
+%% @doc Calculate if we should snapshot based on the number of slots.
+should_snapshot_slots(Slot, Opts) ->
+    case hb_opts:get(process_snapshot_slots, ?DEFAULT_SNAPSHOT_SLOTS, Opts) of
+        Undef when (Undef == undefined) or (Undef == <<"false">>) ->
+            false;
+        RawSnapshotSlots ->
+            SnapshotSlots = hb_util:int(RawSnapshotSlots),
+            Slot rem SnapshotSlots == 0
+    end.
+
+%% @doc Calculate if we should snapshot based on the elapsed time since the last
+%% snapshot.
+should_snapshot_time(Msg3, Opts) ->
+    case hb_opts:get(process_snapshot_time, ?DEFAULT_SNAPSHOT_TIME, Opts) of
+        Undef when (Undef == undefined) or (Undef == <<"false">>) ->
+            false;
+        RawSecs ->
+            Secs = hb_util:int(RawSecs),
             case hb_private:get(<<"last-snapshot">>, Msg3, undefined, Opts) of
                 undefined ->
                     ?event(

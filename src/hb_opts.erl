@@ -55,12 +55,12 @@
         lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests},
         default_index =>
             {
-                "INDEX",
+                "HB_INDEX",
                 fun("ui") ->
                     #{
                         <<"device">> => <<"hyperbuddy@1.0">>
                     };
-                   ("format") ->
+                   ("text") ->
                     #{
                         <<"device">> => <<"hyperbuddy@1.0">>,
                         <<"path">> => <<"format">>
