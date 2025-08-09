@@ -66,10 +66,15 @@ request(Method, Config = #{ <<"nodes">> := Nodes }, Path, Message, Opts) when is
     % The request has a `route' (see `dev_router' for more details), so we use the
     % `multirequest' functionality, rather than a single request.
     multirequest(Config, Method, Path, Message, Opts);
-request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, Opts) ->
+request(Method, #{ <<"opts">> := ReqOpts, <<"uri">> := URI }, _Path, Message, Opts) ->
     % The request has a set of additional options, so we apply them to the
     % request.
-    MergedOpts = hb_maps:merge(Opts, NodeOpts, Opts),
+    MergedOpts =
+        hb_maps:merge(
+            Opts,
+            hb_opts:mimic_default_types(ReqOpts, new_atoms, Opts),
+            Opts
+        ),
     % We also recalculate the request. The order of precidence here is subtle:
     % We favor the args given to the function, but the URI rules take precidence
     % over that.
