@@ -304,7 +304,7 @@ default_message() ->
         % Should the node use persistent processes?
         process_workers => false,
         % Options for the router device
-        <<"router_opts">> => #{
+        router_opts => #{
             routes => []
         },
         on => #{
