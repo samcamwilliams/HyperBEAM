@@ -442,12 +442,45 @@ config_lookup(Key, Default, _Opts) -> maps:get(Key, default_message(), Default).
 %% keys to those in the default message.
 load(Path) -> load(Path, #{}).
 load(Path, Opts) ->
+    {ok, Device} = path_to_device(Path),
     case file:read_file(Path) of
         {ok, Bin} ->
-            load_bin(Bin, Opts);
+            load_bin(Device, Bin, Opts);
         _ -> {error, not_found}
     end.
+
+%% @doc Convert a path to a device from its file extension. If no extension is
+%% provided, we default to `flat@1.0'.
+path_to_device(Path) ->
+    case binary:split(hb_util:bin(Path), <<".">>, []) of
+        [_, Extension] ->
+            ?event(debug_node_msg,
+                {path_to_device,
+                    {path, Path},
+                    {extension, Extension}
+                }
+            ),
+            extension_to_device(Extension);
+        _ -> {ok, <<"flat@1.0">>}
+    end.
+
+%% @doc Convert a file extension to a device name.
+extension_to_device(Ext) ->
+    extension_to_device(Ext, maps:get(preloaded_devices, default_message())).
+extension_to_device(_, []) -> {error, not_found};
+extension_to_device(Ext, [#{ <<"name">> := Name }|Rest]) ->
+    ?event(debug_node_msg, {extension_to_device, {extension, Ext}, {name, Name}}),
+    case binary:match(Name, Ext) of
+        nomatch -> extension_to_device(Ext, Rest);
+        {0, _} -> {ok, Name}
+    end.
+
+%% @doc Parse a given binary with a device (defaulting to `flat@1.0') into a
+%% node message. Types are converted to match those in the default message, if
+%% applicable.
 load_bin(Bin, Opts) ->
+    load_bin(<<"flat@1.0">>, Bin, Opts).
+load_bin(<<"flat@1.0">>, Bin, Opts) ->
     % Trim trailing whitespace from each line in the file.
     Ls =
         lists:map(
@@ -459,6 +492,18 @@ load_bin(Bin, Opts) ->
             {ok, mimic_default_types(Map, new_atoms, Opts)}
     catch
         error:B -> {error, B}
+    end;
+load_bin(Device, Bin, Opts) ->
+    try
+        {
+            ok,
+            mimic_default_types(
+                hb_message:convert(Bin, <<"structured@1.0">>, Device, Opts),
+                new_atoms,
+                Opts
+            )
+        }
+    catch error:B -> {error, B}
     end.
 
 %% @doc Mimic the types of the default message for a given map.
@@ -680,7 +725,7 @@ global_preference_test() ->
         ?MODULE:get(mode, undefined, Global#{ mode => incorrect })),
     ?assertNotEqual(undefined, ?MODULE:get(mode, undefined, Global)).
 
-load_test() ->
+load_flat_test() ->
     % File contents:
     % port: 1234
     % host: https://ao.computer
@@ -689,6 +734,16 @@ load_test() ->
     ?event({loaded, {explicit, Conf}}),
     % Ensure we convert types as expected.
     ?assertEqual(1234, hb_maps:get(port, Conf)),
+    % A binary
+    ?assertEqual(<<"https://ao.computer">>, hb_maps:get(host, Conf)),
+    % An atom, where the key contained a header-key `-' rather than a `_'.
+    ?assertEqual(false, hb_maps:get(await_inprogress, Conf)).
+
+load_json_test() ->
+    {ok, Conf} = load("test/config.json", #{}),
+    ?event(debug_node_msg, {loaded, {explicit, Conf}}),
+    ?assertEqual(1234, hb_maps:get(port, Conf)),
+    ?assertEqual(9001, hb_maps:get(example, Conf)),
     % A binary
     ?assertEqual(<<"https://ao.computer">>, hb_maps:get(host, Conf)),
     % An atom, where the key contained a header-key `-' rather than a `_'.
