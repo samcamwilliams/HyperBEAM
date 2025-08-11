@@ -565,9 +565,11 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
                             hb_util:format_maybe_multiline(NextMap, Opts, Indent + 2);
                         NextList when is_list(NextList) ->
                             hb_util:debug_format(NextList, Opts, Indent + 2);
-                        _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
+                        _ when (byte_size(Val) == 32) ->
                             Short = hb_util:short_id(Val),
                             io_lib:format("~s [*]", [Short]);
+                        _ when byte_size(Val) == 43 ->
+                            hb_util:short_id(Val);
                         _ when byte_size(Val) == 87 ->
                             io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
                         Bin when is_binary(Bin) ->
