@@ -47,7 +47,7 @@
 %%%                      assignments, in addition to `/Results'.
 -module(dev_process).
 %%% Public API
--export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
+-export([info/1, as/3, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
 -export([ensure_process_key/2]).
 %%% Public utilities
 -export([as_process/2, process_id/3]).
@@ -84,6 +84,50 @@ info(_Msg1) ->
             <<"dev_test_process">>,
             <<"test_wasm_process">>
         ]
+    }.
+
+%% @doc Return the process state with the device swapped out for the device
+%% of the given key.
+as(RawMsg1, Msg2, Opts) ->
+    {ok, Msg1} = ensure_loaded(RawMsg1, Msg2, Opts),
+    Key = 
+        hb_ao:get_first(
+            [
+                {{as, <<"message@1.0">>, Msg2}, <<"as">>},
+                {{as, <<"message@1.0">>, Msg2}, <<"as-device">>}
+            ],
+            <<"execution">>,
+            Opts
+        ),
+    {ok,
+        hb_util:deep_merge(
+            ensure_process_key(Msg1, Opts),
+            #{
+                <<"device">> =>
+                    hb_maps:get(
+                        << Key/binary, "-device">>,
+                        Msg1,
+                        default_device(Msg1, Key, Opts),
+                        Opts
+                    ),
+                % Configure input prefix for proper message routing within the
+                % device
+                <<"input-prefix">> =>
+                    case hb_maps:get(<<"input-prefix">>, Msg1, not_found, Opts) of
+                        not_found -> <<"process">>;
+                        Prefix -> Prefix
+                    end,
+                % Configure output prefixes for result organization
+                <<"output-prefixes">> =>
+                    hb_maps:get(
+                        <<Key/binary, "-output-prefixes">>,
+                        Msg1,
+                        undefined, % Undefined in set will be ignored.
+                        Opts
+                    )
+            },
+            Opts
+        )
     }.
 
 %% @doc Returns the default device for a given piece of functionality. Expects
@@ -628,7 +672,11 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                         Process,
                         Opts
                     ),
-                    LoadedSnapshotMsg2 = LoadedSnapshotMsg#{ <<"process">> => UpdateProcess },
+                    LoadedSnapshotMsg2 =
+                        LoadedSnapshotMsg#{
+                            <<"process">> => UpdateProcess,
+                            <<"initialized">> => <<"true">>
+                        },
                     LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
                     ?event(compute, {found_state_checkpoint, ProcID, LoadedSnapshotMsg2}),
                     {ok, Normalized} =
@@ -667,11 +715,12 @@ without_snapshot(Msg, Opts) ->
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key'. After execution, the device is swapped back
 %% to the original device if the device is the same as we left it.
+run_as(Key, Msg1, Path, Opts) when not is_map(Path) ->
+    run_as(Key, Msg1, #{ <<"path">> => Path }, Opts);
 run_as(Key, Msg1, Msg2, Opts) ->
     % Store the original device so we can restore it after execution
     BaseDevice = hb_maps:get(<<"device">>, Msg1, not_found, Opts),
     ?event({running_as, {key, {explicit, Key}}, {req, Msg2}}),
-    
     % Prepare the message with the specialized device configuration.
     % This sets up the device context for the specific operation type.
     PreparedMsg =
