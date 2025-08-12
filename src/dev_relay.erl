@@ -307,7 +307,7 @@ relay_schedule_ans104_test() ->
     SchedulerWallet = ar_wallet:new(),
     ComputeWallet = ar_wallet:new(),
     RelayWallet = ar_wallet:new(),
-    ?event(
+    ?event(debug_test,
         {wallets,
             {scheduler, hb_util:human_id(SchedulerWallet)},
             {compute, hb_util:human_id(ComputeWallet)},
@@ -334,7 +334,7 @@ relay_schedule_ans104_test() ->
                 priv_wallet => SchedulerWallet
             }
         ),
-        ?event(x, {scheduler, Scheduler}),
+    ?event(debug_test, {scheduler, Scheduler}),
     Compute =
         hb_http_server:start_node(
             #{
@@ -401,7 +401,7 @@ relay_schedule_ans104_test() ->
                     }
             }
         }),
-    ?event(
+    ?event(debug_test,
         {nodes,
             {scheduler, {url, Scheduler}, {wallet, hb_util:human_id(SchedulerWallet)}},
             {compute, {url, Compute}, {wallet, hb_util:human_id(ComputeWallet)}},
@@ -438,7 +438,7 @@ relay_schedule_ans104_test() ->
             },
             ClientOpts
         ),
-    ?event({post_result, ScheduleRes}),
+    ?event(debug_test, {post_result, ScheduleRes}),
     ?assertMatch({ok, #{ <<"status">> := 200, <<"slot">> := 0 }}, ScheduleRes),
     % Push another message via the compute node.
     ProcID = hb_message:id(Process, all, ClientOpts),
@@ -460,5 +460,5 @@ relay_schedule_ans104_test() ->
             },
             ClientOpts
         ),
-    ?event({post_result, PushRes}),
+    ?event(debug_test, {post_result, PushRes}),
     ?assertMatch({ok, #{ <<"status">> := 200, <<"slot">> := 1 }}, PushRes).
