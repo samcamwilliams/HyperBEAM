@@ -304,29 +304,89 @@ commit_request_test() ->
 %% data item, which should then be correctly deserialized and sent to the
 %% scheduler node.
 relay_schedule_ans104_test() ->
-    Port = 10000 + rand:uniform(10000),
-    Wallet = ar_wallet:new(),
+    SchedulerWallet = ar_wallet:new(),
+    ComputeWallet = ar_wallet:new(),
+    RelayWallet = ar_wallet:new(),
+    ?event(
+        {wallets,
+            {scheduler, hb_util:human_id(SchedulerWallet)},
+            {compute, hb_util:human_id(ComputeWallet)},
+            {relay, hb_util:human_id(RelayWallet)}
+        }
+    ),
     Scheduler =
         hb_http_server:start_node(
             #{
+                on => #{
+                    <<"start">> => #{
+                        <<"device">> => <<"scheduler@1.0">>,
+                        <<"path">> => <<"location">>,
+                        <<"method">> => <<"POST">>,
+                        <<"target">> => <<"self">>,
+                        <<"accept-codec">> => <<"ans104@1.0">>,
+                        <<"hook">> => #{
+                            <<"result">> => <<"ignore">>,
+                            <<"commit-request">> => true
+                        }
+                    }
+                },
                 store => [hb_test_utils:test_store()],
-                priv_wallet => Wallet,
-                port => Port
+                priv_wallet => SchedulerWallet
             }
         ),
-    Node =
+    Compute =
+        hb_http_server:start_node(
+            #{
+                priv_wallet => ComputeWallet,
+                store =>
+                    [
+                        ComputeStore = hb_test_utils:test_store(),
+                        #{
+                            <<"store-module">> => hb_store_remote_node,
+                            <<"name">> => <<"cache-TEST/remote-node">>,
+                            <<"node">> => Scheduler
+                        }
+                    ]
+            }
+        ),
+    % Get the scheduler location of the scheduling node and write it to the
+    % compute node's store.
+    {ok, SchedulerLocation} =
+        hb_http:get(
+            Scheduler,
+            <<"/~scheduler@1.0/location">>,
+            #{}
+        ),
+    ?event({scheduler_location, SchedulerLocation}),
+    dev_scheduler_cache:write_location(
+        hb_maps:get(<<"body">>, SchedulerLocation, <<"NO BODY">>, #{}),
+        #{ store => [ComputeStore] }
+    ),
+    % Create the relaying server.
+    Relay =
         hb_http_server:start_node(#{
+            priv_wallet => RelayWallet,
             relay_allow_commit_request => true,
             store => [hb_test_utils:test_store()],
             routes =>
                 [
                     #{
-                        <<"template">> => <<"/push">>,
+                        <<"template">> => <<"^/push">>,
                         <<"strategy">> => <<"Nearest">>,
                         <<"nodes">> => [
                             #{
-                                <<"wallet">> => hb_util:human_id(Wallet),
+                                <<"wallet">> => hb_util:human_id(SchedulerWallet),
                                 <<"prefix">> => Scheduler
+                            }
+                        ]
+                    },
+                    #{
+                        <<"template">> => <<"^/.*">>,
+                        <<"strategy">> => <<"Nearest">>,
+                        <<"nodes">> => [
+                            #{
+                                <<"wallet">> => hb_util:human_id(ComputeWallet),
+                                <<"prefix">> => Compute
                             }
                         ]
                     }
@@ -340,6 +400,13 @@ relay_schedule_ans104_test() ->
                     }
             }
         }),
+    ?event(
+        {nodes,
+            {scheduler, {url, Scheduler}, {wallet, hb_util:human_id(SchedulerWallet)}},
+            {compute, {url, Compute}, {wallet, hb_util:human_id(ComputeWallet)}},
+            {relay, {url, Relay}, {wallet, hb_util:human_id(RelayWallet)}}
+        }
+    ),
     ClientOpts =
         #{
             store => [hb_test_utils:test_store()],
@@ -353,21 +420,44 @@ relay_schedule_ans104_test() ->
                 <<"device">> => <<"process@1.0">>,
                 <<"execution-device">> => <<"test-device@1.0">>,
                 <<"push-device">> => <<"push@1.0">>,
-                <<"scheduler">> => hb_util:human_id(Wallet),
+                <<"scheduler">> => hb_util:human_id(SchedulerWallet),
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
                 <<"module">> => <<"URgYpPQzvxxfYQtjrIQ116bl3YBfcImo3JEnNo8Hlrk">>
             },
             ClientOpts,
             #{ <<"commitment-device">> => <<"ans104@1.0">> }
         ),
-    Res =
+    % Push the initial message via the scheduler node.
+    ScheduleRes =
         hb_http:post(
-            Node,
+            Relay,
             Process#{
                 <<"path">> => <<"push">>,
                 <<"codec-device">> => <<"ans104@1.0">>
             },
             ClientOpts
         ),
-    ?event({post_result, Res}),
-    ?assertMatch({ok, #{ <<"status">> := 200, <<"slot">> := _ }}, Res).
+    ?event({post_result, ScheduleRes}),
+    ?assertMatch({ok, #{ <<"status">> := 200, <<"slot">> := 0 }}, ScheduleRes),
+    % Push another message via the compute node.
+    ProcID = hb_message:id(Process, all, ClientOpts),
+    ToPush =
+        hb_message:commit(
+            #{
+                <<"test-key">> => <<"value">>,
+                <<"rand-key">> => hb_util:encode(crypto:strong_rand_bytes(32))
+            },
+            ClientOpts,
+            #{ <<"commitment-device">> => <<"ans104@1.0">> }
+        ),
+    PushRes =
+        hb_http:post(
+            Relay,
+            ToPush#{
+                <<"path">> => <<ProcID/binary, "/push">>,
+                <<"codec-device">> => <<"ans104@1.0">>
+            },
+            ClientOpts
+        ),
+    ?event({post_result, PushRes}),
+    ?assertMatch({ok, #{ <<"status">> := 200, <<"slot">> := 1 }}, PushRes).
