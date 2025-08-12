@@ -602,10 +602,12 @@ debug_format(X, Opts) -> debug_format(X, Opts, 0).
 debug_format(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
-        case hb_opts:get(debug_print_fail_mode, quiet, Opts) of
-            quiet ->
+        Mode = hb_opts:get(mode, prod, Opts),
+        PrintFailPreference = hb_opts:get(debug_print_fail_mode, quiet, Opts),
+        case {Mode, PrintFailPreference} of
+            {debug, quiet} ->
                 format_indented("[!Format failed!] ~p", [X], Opts, Indent);
-            _ ->
+            {debug, _} ->
                 format_indented(
                     "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~s",
                     [
@@ -621,7 +623,9 @@ debug_format(X, Opts, Indent) ->
                     ],
                     Opts,
                     Indent
-                )
+                );
+            _ ->
+                format_indented("[!Format failed!]", [], Opts, Indent)
         end
     end.
 
@@ -710,8 +714,8 @@ do_debug_fmt(X, Opts, Indent) ->
 
 %% @doc If the user attempts to print a wallet, format it as an address.
 format_address(Wallet, Opts, Indent) ->
-    format_indented("Address: ~s",
-        [human_id(ar_wallet:to_address(Wallet))], 
+    format_indented("Wallet [Addr: ~s]",
+        [short_id(human_id(ar_wallet:to_address(Wallet)))], 
         Opts, 
         Indent
     ).
