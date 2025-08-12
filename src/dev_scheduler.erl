@@ -1133,7 +1133,6 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                     "&to", MaybeNonce/binary, "=", (integer_to_binary(To))/binary
                 >>
         end,
-    ?event({debug_schedule, {from, FromBin}, {to, ToParam}, {variant, Variant}, {proc_id, ProcID}}),
     Path =
         case Variant of
             <<"ao.N.1">> ->
