@@ -1138,7 +1138,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
             <<"ao.N.1">> ->
                 <<
                     ProcID/binary,
-                    "/schedule?from=", FromBin/binary, ToParam
+                    "/schedule?from=", FromBin/binary, ToParam/binary
                 >>;
             <<"ao.TN.1">> ->
                 <<
