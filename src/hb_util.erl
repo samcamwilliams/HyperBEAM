@@ -17,6 +17,7 @@
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
 -export([indent/1, indent/2, escape_format/1]).
+-export([format_error/2]).
 -export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
 -export([format_maybe_multiline/3, remove_trailing_noise/2]).
 -export([debug_print/1, debug_print/2, debug_print/4, eunit_print/2]).
@@ -843,6 +844,19 @@ escape_format(Str) when is_list(Str) ->
     );
 escape_format(Else) -> Else.
 
+%% @doc Format an error message as a string.
+format_error(ErrorMsg, Opts) ->
+    Type = hb_ao:get(<<"type">>, ErrorMsg, <<"">>, Opts),
+    Details = hb_ao:get(<<"details">>, ErrorMsg, <<"">>, Opts),
+    Stacktrace = hb_ao:get(<<"stacktrace">>, ErrorMsg, <<"">>, Opts),
+    hb_util:bin(
+        [
+            <<"Termination type: '">>, Type,
+            <<"'\n\nStacktrace:\n\n">>, Stacktrace,
+            <<"\n\nError details:\n\n">>, Details
+        ]
+    ).
+
 %% @doc Take a series of strings or a combined string and format as a
 %% single string with newlines and indentation to the given level. Note: This
 %% function returns a binary.
@@ -1028,42 +1042,30 @@ print_trace_short(Trace, Mod, Func, Line) ->
         ]
     ).
 
-%% @doc Return a list of calling modules and lines from a trace.
+%% @doc Return a list of calling modules and lines from a trace, removing all
+%% frames that do not match the `stack_print_prefixes' option.
 trace_to_list(Trace) ->
-    lists:reverse(format_trace_short(
-        hb_opts:get(short_trace_len, 6, #{}),
-        false,
-        Trace,
-        hb_opts:get(stack_print_prefixes, [], #{})
-    )).
+    Prefixes = hb_opts:get(stack_print_prefixes, [], #{}),
+    lists:filtermap(
+        fun(TraceItem) ->
+            Formatted = format_trace_element(TraceItem),
+            case is_hb_module(Formatted, Prefixes) of
+                true -> {true, Formatted};
+                false -> false
+            end
+        end,
+        Trace
+    ).
 
 %% @doc Format a trace to a short string.
 format_trace_short() -> format_trace_short(get_trace()).
-format_trace_short(Trace) -> 
-    lists:join(
-        " / ",
-        trace_to_list(Trace)
-    ).
-format_trace_short(_Max, _Latch, [], _Prefixes) -> [];
-format_trace_short(0, _Latch, _Trace, _Prefixes) -> [];
-format_trace_short(Max, Latch, [Item|Rest], Prefixes) ->
-    Formatted = format_trace_short(Max, Latch, Item, Prefixes),
-    case {Latch, is_hb_module(Formatted, Prefixes)} of
-        {false, true} ->
-            [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
-        {false, false} ->
-            format_trace_short(Max, false, Rest, Prefixes);
-        {true, true} ->
-            [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
-        {true, false} -> []
-    end;
-format_trace_short(Max, Latch, {Func, ArityOrTerm, Extras}, Prefixes) ->
-    format_trace_short(
-        Max, Latch, {no_module, Func, ArityOrTerm, Extras}, Prefixes
-    );
-format_trace_short(_, _Latch, {Mod, _, _, [{file, _}, {line, Line}|_]}, _) ->
+format_trace_short(Trace) when is_list(Trace) ->
+    lists:join(" / ", lists:reverse(trace_to_list(Trace))).
+
+%% @doc Format a trace element in form `mod:line' or `mod:func'.
+format_trace_element({Mod, _, _, [{file, _}, {line, Line}|_]}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
-format_trace_short(_, _Latch, {Mod, Func, _ArityOrTerm, _Extras}, _Prefixes) ->
+format_trace_element({Mod, Func, _ArityOrTerm, _Extras}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Func])).
 
 %% @doc Utility function to help macro `?trace/0' remove the first frame of the

@@ -718,6 +718,20 @@ encode_reply(Status, TABMReq, Message, Opts) ->
     % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
     case {Status, Codec, AcceptBundle} of
+        {500, <<"httpsig@1.0">>, false} ->
+            ?event(debug_accept,
+                {returning_500_error,
+                    {status, Status},
+                    {codec, Codec},
+                    {bundle, AcceptBundle}
+                }
+            ),
+            {ok, ErrMsg} =
+                dev_hyperbuddy:return_error(Message),
+            {ok,
+                maps:without([<<"body">>], ErrMsg),
+                maps:get(<<"body">>, ErrMsg, <<>>)
+            };
         {404, <<"httpsig@1.0">>, false} ->
             {ok, ErrMsg} =
                 dev_hyperbuddy:return_file(
