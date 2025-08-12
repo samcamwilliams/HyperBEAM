@@ -727,7 +727,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                 }
             ),
             {ok, ErrMsg} =
-                dev_hyperbuddy:return_error(Message),
+                dev_hyperbuddy:return_error(Message, Opts),
             {ok,
                 maps:without([<<"body">>], ErrMsg),
                 maps:get(<<"body">>, ErrMsg, <<>>)
