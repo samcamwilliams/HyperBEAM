@@ -110,7 +110,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
     Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
 	Owner =
         case hb_message:signers(RawMsg, Opts) of
-            [] -> <<>>;
+            [] -> hb_ao:get(<<"owner">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<"1234">>, Opts);
             [Signer|_] ->
                 case lists:member(owner_as_address, Features) of
                     true -> hb_util:native_id(Signer);
