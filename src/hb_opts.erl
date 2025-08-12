@@ -273,11 +273,11 @@ default_message() ->
                             <<"value">> => <<"ao">>
                         }
                     ],
-                    <<"store">> => [?DEFAULT_PRIMARY_STORE]
+                    <<"local-store">> => [?DEFAULT_PRIMARY_STORE]
                 },
                 #{
                     <<"store-module">> => hb_store_gateway,
-                    <<"store">> => [?DEFAULT_PRIMARY_STORE]
+                    <<"local-store">> => [?DEFAULT_PRIMARY_STORE]
                 }
             ],
         priv_store =>
