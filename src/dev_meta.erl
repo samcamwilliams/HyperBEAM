@@ -227,35 +227,10 @@ handle_resolve(Req, Msgs, NodeMsg) ->
 				NodeMsg
             ),
             Res =
-                try
-                    hb_ao:resolve_many(
-                        PreProcessedMsg,
-                        HTTPOpts#{ force_message => true, trace => TracePID }
-                    )
-                catch
-                    throw:{necessary_message_not_found, RefPath, Link} ->
-                        BaseBody =
-                            <<
-                                "Data necessary to load message was not found. "
-                            >>,
-                        Body =
-                            try 
-                                <<
-                                    BaseBody/binary,
-                                    "Error occurred at relative path `",
-                                    RefPath/binary, "'. Link was: ",
-                                    Link/binary
-                                >>
-                            catch
-                                _:_ -> BaseBody
-                            end,
-                        {error, #{
-                            <<"status">> => 404,
-                            <<"unavailable">> => Link,
-                            <<"while-resolving">> => RefPath,
-                            <<"body">> => Body
-                        }}
-                end,
+                hb_ao:resolve_many(
+                    PreProcessedMsg,
+                    HTTPOpts#{ force_message => true, trace => TracePID }
+                ),
             {ok, StatusEmbeddedRes} =
                 embed_status(
                     Res,
