@@ -633,7 +633,7 @@ do_debug_fmt(
 ) ->
     format_address(Pub, Opts, Indent);
 do_debug_fmt(
-    { _,
+    { AtomValue,
       {
         { {rsa, _PublicExpnt1}, _Priv1, _Priv2 },
         { {rsa, _PublicExpnt2}, Pub }
@@ -641,7 +641,8 @@ do_debug_fmt(
     },
     Opts, Indent
 ) ->
-    format_address(Pub, Opts, Indent);
+    AddressString = format_address(Pub, Opts, Indent),
+    format_indented("~p: ~s", [AtomValue, AddressString], Opts, Indent);
 do_debug_fmt({explicit, X}, Opts, Indent) ->
     format_indented("[Explicit:] ~p", [X], Opts, Indent);
 do_debug_fmt({string, X}, Opts, Indent) ->
