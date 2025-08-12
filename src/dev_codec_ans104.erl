@@ -426,7 +426,10 @@ httpsig_bundle_with_nested_ans104_test() ->
     hb:init(),
     Inner =
         hb_message:commit(
-            #{ <<"test-key">> => <<"test-value">> },
+            #{
+                <<"test-key">> => <<"test-value">>,
+                <<"rand-key">> => hb_util:encode(crypto:strong_rand_bytes(32))
+            },
             #{ priv_wallet => ar_wallet:new() },
             #{
                 <<"commitment-device">> => <<"ans104@1.0">>

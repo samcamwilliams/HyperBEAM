@@ -246,25 +246,15 @@ from_body_part(InlinedKey, Part, Opts) ->
                             false -> no_part_name_found
                         end
                 end,
-            ?event(debug_grouping,
-                {from_body_part,
-                    {part_name, PartName},
-                    {headers, Headers},
-                    {raw_body, {string, RawBody}}
-                }
-            ),
             Commitments =
                 dev_codec_httpsig_siginfo:siginfo_to_commitments(
                     Headers#{ PartName => RawBody },
                     [PartName],
                     Opts
                 ),
-            ?event(debug_grouping, {parsed_inner_commitments, Commitments}),
-            FilteredHeaders =
+            RestHeaders =
                 hb_maps:without(
                     [
-                        <<"signature">>,
-                        <<"signature-input">>,
                         <<"content-disposition">>, 
                         <<"content-type">>, 
                         <<"ao-body-key">>, 
@@ -273,38 +263,39 @@ from_body_part(InlinedKey, Part, Opts) ->
                     Headers,
                     Opts
                 ),
-            HeadersWithComms =
-                case hb_maps:size(Commitments, Opts) of
-                    0 -> FilteredHeaders;
-                    _ -> FilteredHeaders#{ <<"commitments">> => Commitments }
-                end,
-            WithoutTypes = maps:without([<<"ao-types">>], HeadersWithComms),
-            Types =
-                hb_maps:get(
-                    <<"ao-types">>,
-                    HeadersWithComms,
-                    <<>>,
-                    Opts
-                ),
+            PartNameSplit = binary:split(PartName, <<"/">>, [global]),
+            NestedPartName = lists:last(PartNameSplit),
             ParsedPart =
-                case {hb_maps:size(WithoutTypes, Opts), Types, RawBody} of
-                    {0, <<"empty-message">>, <<>>} ->
-                        % The message is empty, so we return an empty
-                        % map.
-                        #{};
-                    {_, _, <<>>} ->
-                        % There is no body to the message, so we return
-                        % just the headers.
-                        HeadersWithComms;
-                    {0, _, _} ->
-                        % There are no headers besides content-disposition,
-                        % so we return the body as is.
-                        RawBody;
-                    {_, _, _} ->
-                        % There are other headers, so we need to parse
-                        % the body as a TABM.
-                        {_, RawBodyKey} = inline_key(Headers),
-                        HeadersWithComms#{ RawBodyKey => RawBody }
+                case hb_maps:size(Commitments, Opts) of
+                    0 ->
+                        WithoutTypes = maps:without([<<"ao-types">>], RestHeaders),
+                        Types =
+                            hb_maps:get(
+                                <<"ao-types">>,
+                                RestHeaders,
+                                <<>>,
+                                Opts
+                            ),
+                        case {hb_maps:size(WithoutTypes, Opts), Types, RawBody} of
+                            {0, <<"empty-message">>, <<>>} ->
+                                % The message is empty, so we return an empty
+                                % map.
+                                #{};
+                            {_, _, <<>>} ->
+                                % There is no body to the message, so we return
+                                % just the headers.
+                                RestHeaders;
+                            {0, _, _} ->
+                                % There are no headers besides content-disposition,
+                                % so we return the body as is.
+                                RawBody;
+                            {_, _, _} ->
+                                % There are other headers, so we need to parse
+                                % the body as a TABM.
+                                {_, RawBodyKey} = inline_key(Headers),
+                                RestHeaders#{ RawBodyKey => RawBody }
+                        end;
+                    _ -> maps:get(NestedPartName, Commitments, #{})
                 end,
             {PartName, ParsedPart}
     end.
@@ -522,19 +513,7 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
                                 Opts
                             );
                         (Key, Value) ->
-                            Committed =
-                                maps:get(
-                                    <<Key/binary, "/committed">>,
-                                    GroupedBodyMap,
-                                    undefined
-                                ),
-                            ValueWithCommitted =
-                                case Committed of
-                                    undefined -> Value;
-                                    Committed ->
-                                        maps:put(<<"committed">>, Committed, Value)
-                                end,
-                            encode_body_part(Key, ValueWithCommitted, InlineKey, Opts)
+                            encode_body_part(Key, Value, InlineKey, Opts)
                         end,
                         GroupedBodyMap,
                         Opts
@@ -668,12 +647,11 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
                                 )
                             };
                         _ ->
-                            WithNormSigInfo = generate_nested_siginfo(NormMsg, Opts),
-                            NewTop = group_maps(WithNormSigInfo, FlatK, CurTop, Opts),
+                            NewTop = group_maps(NormMsg, FlatK, CurTop, Opts),
                             {CurMap, NewTop}
                     end;
                 _ ->
-                    ?event(debug_grouping, {group_maps, {norm_key, NormKey}, {value, Value}}),
+                    ?event({group_maps, {norm_key, NormKey}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
                         % the value is too large to be encoded as a header
                         % within a part, so instead lift it to be a top level
@@ -698,33 +676,9 @@ group_maps(Map, Parent, Top, Opts) when is_map(Map) ->
             <<>> -> hb_maps:merge(NewTop, Flattened, Opts);
             _ ->
                 Res = NewTop#{ Parent => Flattened },
-                ?event(debug_grouping, {returning_res, {res, Res}}),
+                ?event({returning_res, {res, Res}}),
                 Res
         end
-    end.
-
-%% @doc Create the signature information keys for a nested httpsig@1.0 message.
-generate_nested_siginfo(Msg, Opts) ->
-    case maps:get(<<"commitments">>, Msg, undefined) of
-        undefined -> Msg;
-        Commitments ->
-            SigInfo =
-                dev_codec_httpsig_siginfo:commitments_to_siginfo(
-                    Msg,
-                    Commitments,
-                    Opts
-                ),
-            ?event(debug_grouping,
-                {generated_nested_siginfo,
-                    {signature,
-                        {string, maps:get(<<"signature">>, SigInfo, undefined)}
-                    },
-                    {signature_input,
-                        {string, maps:get(<<"signature-input">>, SigInfo, undefined)}
-                    }
-                }
-            ),
-            maps:merge(maps:without([<<"commitments">>], Msg), SigInfo)
     end.
 
 %% @doc Generate a unique, reproducible boundary for the
@@ -766,12 +720,13 @@ encode_body_part(PartName, BodyPart, InlineKey, Opts) ->
     % HB message field that resolves to the sub-message
     case BodyPart of
         BPMap when is_map(BPMap) ->
-            WithDisposition = hb_maps:put(
-                <<"content-disposition">>,
-                Disposition,
-                BPMap,
-                Opts
-            ),
+            WithDisposition =
+                hb_maps:put(
+                    <<"content-disposition">>,
+                    Disposition,
+                    BPMap,
+                    Opts
+                ),
             encode_http_flat_msg(WithDisposition, Opts);
         BPBin when is_binary(BPBin) ->
             % A properly encoded inlined body part MUST have a CRLF between
