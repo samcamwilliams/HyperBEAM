@@ -215,7 +215,7 @@ default_message() ->
         debug_ids => true,
         debug_committers => true,
         debug_show_priv => if_present,
-        debug_resolve_links => false,
+        debug_resolve_links => true,
 		trusted => #{},
         snp_enforced_keys => [
             firmware, kernel, 
