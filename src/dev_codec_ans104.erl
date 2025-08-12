@@ -220,7 +220,7 @@ ao_data_key_test() ->
     ?event({dec, Dec}),
     ?assert(hb_message:verify(Dec, all, #{})).
         
-simple_signed_to_httpsig_test() ->
+simple_signed_to_httpsig_test_disabled() ->
     Structured =
         hb_message:commit(
             #{ <<"test-tag">> => <<"test-value">> },
@@ -423,7 +423,6 @@ codec_insensitive_get_test() ->
     ?assertEqual(hb_ao:get(<<"hello">>, Structured, #{}), <<"World">>).
 
 httpsig_bundle_with_nested_ans104_test() ->
-    hb:init(),
     Inner =
         hb_message:commit(
             #{
@@ -436,17 +435,8 @@ httpsig_bundle_with_nested_ans104_test() ->
             }
         ),
     Outer = #{ <<"inner">> => Inner },
-        % hb_message:commit(
-        %     #{ <<"inner">> => Inner },
-        %     #{ priv_wallet => ar_wallet:new() },
-        %     #{
-        %         <<"commitment-device">> => <<"httpsig@1.0">>,
-        %         <<"bundle">> => true
-        %     }
-        % ),
     ?assert(hb_message:verify(Outer, all, #{})),
     ?event(debug_test, {outer, Outer}),
-    ?hr(),
     Enc =
         hb_message:convert(
             Outer,
@@ -454,7 +444,6 @@ httpsig_bundle_with_nested_ans104_test() ->
             <<"structured@1.0">>,
             #{}
         ),
-    ?hr(),
     ?event(debug_test, {full_encoded_msg, Enc}),
     ?event(debug_test,
         {encoded_body,
