@@ -625,10 +625,23 @@ debug_format(X, Opts, Indent) ->
         end
     end.
 
-do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Opts, Indent) ->
-    format_address(Wallet, Opts, Indent);
-do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Opts, Indent) ->
-    format_address(Wallet, Opts, Indent);
+do_debug_fmt(
+    { { {rsa, _PublicExpnt1}, _Priv1, _Priv2 },
+      { {rsa, _PublicExpnt2}, Pub }
+    },
+    Opts, Indent
+) ->
+    format_address(Pub, Opts, Indent);
+do_debug_fmt(
+    { _,
+      {
+        { {rsa, _PublicExpnt1}, _Priv1, _Priv2 },
+        { {rsa, _PublicExpnt2}, Pub }
+      }
+    },
+    Opts, Indent
+) ->
+    format_address(Pub, Opts, Indent);
 do_debug_fmt({explicit, X}, Opts, Indent) ->
     format_indented("[Explicit:] ~p", [X], Opts, Indent);
 do_debug_fmt({string, X}, Opts, Indent) ->
@@ -696,7 +709,11 @@ do_debug_fmt(X, Opts, Indent) ->
 
 %% @doc If the user attempts to print a wallet, format it as an address.
 format_address(Wallet, Opts, Indent) ->
-    format_indented(human_id(ar_wallet:to_address(Wallet)), Opts, Indent).
+    format_indented("Address: ~s",
+        [human_id(ar_wallet:to_address(Wallet))], 
+        Opts, 
+        Indent
+    ).
 
 %% @doc Helper function to format tuples with arity greater than 2.
 format_tuple(Tuple, Opts, Indent) ->
