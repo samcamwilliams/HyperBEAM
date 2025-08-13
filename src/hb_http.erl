@@ -610,7 +610,6 @@ reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
     ),
     ReqBeforeStream = Req#{ resp_headers => EncodedHeaders },
     PostStreamReq = cowboy_req:stream_reply(Status, #{}, ReqBeforeStream),
-    ?event(x, {PostStreamReq}),
     cowboy_req:stream_body(EncodedBody, nofin, PostStreamReq),
     EndTime = os:system_time(millisecond),
     ?event(http, {reply_headers, {explicit, PostStreamReq}}),
@@ -805,10 +804,21 @@ encode_reply(Status, TABMReq, Message, Opts) ->
         _ ->
             % Other codecs are already in binary format, so we can just convert
             % the message to the codec. We also include all of the top-level 
-            % fields in the message and return them as headers.
-            %?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
+            % fields, except for maps and lists, in the message and return them 
+            % as headers.
+            ExtraHdrs = hb_maps:filter(fun(_, V) ->
+                not is_map(V) andalso 
+                not is_list(V)
+            end, Message, Opts),
+            % Encode all header values as strings.
+            EncodedExtraHdrs = maps:map(fun(K, V) ->
+                case is_binary(V) of
+                    true -> V;
+                    false -> hb_util:bin(V)
+                end
+            end, ExtraHdrs),
             {ok,
-                hb_maps:merge(BaseHdrs, #{}, Opts),
+                hb_maps:merge(BaseHdrs, EncodedExtraHdrs, Opts),
                 hb_message:convert(
                     Message,
                     Codec,
@@ -836,15 +846,13 @@ accept_to_codec(TABMReq, Opts) ->
             mime_to_codec(Accept, Opts),
 			Opts
         ),
-        ?event(x, {singleton, Singleton, Accept, AcceptCodec}),
     case AcceptCodec of
         not_specified ->
             % We hold off until confirming that the codec is not directly in the
             % message before calling `hb_opts:get/3', as it is comparatively
             % expensive.
             default_codec(Opts);
-        _ -> 
-            AcceptCodec
+        _ -> AcceptCodec
     end.
 
 %% @doc Find a codec name from a mime-type.
