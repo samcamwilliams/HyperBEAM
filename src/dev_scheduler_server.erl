@@ -174,7 +174,8 @@ do_assign(State, Message, ReplyPID) ->
                         % Note: Local time on the SU, not Arweave
                         <<"timestamp">> => erlang:system_time(millisecond),
                         <<"hash-chain">> => hb_util:id(HashChain),
-                        <<"body">> => OnlyAttested
+                        <<"body">> => OnlyAttested,
+                        <<"type">> => <<"assignment">>
                     },
                     State
                 ),
