@@ -227,38 +227,6 @@ init(Msg1, Msg2, Opts) ->
 %%   for the dryrun functionality that allows external clients to test
 %%   message processing without side effects.
 compute(Msg1, Msg2, Opts) ->
-    Method =
-        hb_ao:get(<<"method">>, {as, <<"message@1.0">>, Msg2}, <<"GET">>, Opts),
-    ?event({incoming_process_compute, {method, Method}, {msg2, Msg2}}),
-    case Method of
-        <<"POST">> -> post_compute(
-            Msg1,
-            Msg2,
-            Opts
-        );
-        <<"GET">> -> get_compute(Msg1, Msg2, Opts)
-    end.
-
-%% @doc Handle POST method compute requests - this is the core dryrun functionality.
-%% POST compute allows external clients to test message processing without permanent
-%% state changes. Essentially allows backwards compatibility with the old AO-Core
-%% dryrun functionality.
-post_compute(Msg1, Msg2, Opts) ->
-    % Ensure the process key is available - this contains process metadata
-    % like device configuration, scheduler info, etc.
-    ProcBase = ensure_process_key(Msg1, Opts),
-    % Load the current process state from cache or initialize if needed.
-    % This gives us the most recent state to run the dryrun against.
-    {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
-    % Clear any previous results from the state to ensure clean execution.
-    % This prevents old results from interfering with the dryrun.
-    UnsetResults = hb_ao:set(Loaded, #{ <<"results">> => unset }, Opts),
-    % Execute dry-run computation via the execution device.
-    % This delegates to the configured execution device (typically genesis-wasm@1.0)
-    % which will handle the actual message processing in dryrun mode.
-    run_as(<<"execution">>, UnsetResults, Msg2, Opts).
-get_compute(Msg1, Msg2, Opts) ->
-    % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = process_id(ProcBase, #{}, Opts),
     TargetSlot =
