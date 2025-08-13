@@ -11,6 +11,7 @@
 -export([debug_format/1, debug_format/2, debug_format/3]).
 -export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([format_trace/1, trace_to_list/1, format_trace_short/0, format_trace_short/1]).
+-export([format_msg/1, format_msg/2, format_msg/3]).
 -include("include/hb.hrl").
 
 %%% Characters that are considered noise and should be removed from strings
@@ -203,7 +204,7 @@ do_debug_fmt(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
     case maybe_format_short(Map, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
-            "\n" ++ lists:flatten(hb_message:format(Map, Opts, Indent))
+            "\n" ++ lists:flatten(format_msg(Map, Opts, Indent))
     end;
 do_debug_fmt(Tuple, Opts, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Opts, Indent);
@@ -444,7 +445,7 @@ format_maybe_multiline(X, Opts, Indent) ->
     case maybe_format_short(X, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
-            "\n" ++ lists:flatten(hb_message:format(X, Opts, Indent))
+            "\n" ++ lists:flatten(format_msg(X, Opts, Indent))
     end.
 
 %% @doc Attempt to generate a short formatting of a message, using the given
@@ -583,3 +584,203 @@ normalize_trace([]) -> [];
 normalize_trace([{Mod, _, _, _}|Rest]) when Mod == ?MODULE ->
     normalize_trace(Rest);
 normalize_trace(Trace) -> Trace.
+
+%% @doc Format a message for printing, optionally taking an indentation level
+%% to start from.
+format_msg(Item) -> format_msg(Item, #{}).
+format_msg(Item, Opts) -> format_msg(Item, Opts, 0).
+format_msg(Bin, Opts, Indent) when is_binary(Bin) ->
+    format_indented(
+        format_binary(Bin),
+        Opts,
+        Indent
+    );
+format_msg(List, Opts, Indent) when is_list(List) ->
+    % Remove the leading newline from the formatted list, if it exists.
+    case debug_format(List, Opts, Indent) of
+        [$\n | String] -> String;
+        String -> String
+    end;
+format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
+    % Should we filter out the priv key?
+    FilterPriv = hb_opts:get(debug_show_priv, false, Opts),
+    MainPriv = hb_maps:get(<<"priv">>, RawMap, #{}, Opts),
+    % Add private keys to the output if they are not hidden. Opt takes 3 forms:
+    % 1. `false' -- never show priv
+    % 2. `if_present' -- show priv only if there are keys inside
+    % 2. `always' -- always show priv
+    FooterKeys =
+        case {FilterPriv, MainPriv} of
+            {false, _} -> [];
+            {if_present, #{}} -> [];
+            {_, Priv} -> [{<<"!Private!">>, Priv}]
+        end,
+    Map =
+        case FilterPriv of
+            false -> RawMap;
+            _ -> hb_private:reset(RawMap)
+        end,
+    % Define helper functions for formatting elements of the map.
+    ValOrUndef =
+        fun(<<"hashpath">>) ->
+            case Map of
+                #{ <<"priv">> := #{ <<"hashpath">> := HashPath } } ->
+                    short_id(HashPath);
+                _ ->
+                    undefined
+            end;
+        (Key) ->
+            case dev_message:get(Key, Map, Opts) of
+                {ok, Val} ->
+                    case short_id(Val) of
+                        undefined -> Val;
+                        ShortID -> ShortID
+                    end;
+                {error, _} -> undefined
+            end
+        end,
+    FilterUndef =
+        fun(List) ->
+            lists:filter(fun({_, undefined}) -> false; (_) -> true end, List)
+        end,
+    % Prepare the metadata row for formatting.
+    % Note: We try to get the IDs _if_ they are *already* in the map. We do not
+    % force calculation of the IDs here because that may cause significant
+    % overhead unless the `debug_ids' option is set.
+    IDMetadata =
+        case hb_opts:get(debug_ids, false, #{}) of
+            false ->
+                [
+                    {<<"#P">>, ValOrUndef(<<"hashpath">>)},
+                    {<<"*U">>, ValOrUndef(<<"unsigned_id">>)},
+                    {<<"*S">>, ValOrUndef(<<"id">>)}
+                ];
+            true ->
+                {ok, UID} = dev_message:id(Map, #{}, Opts),
+                {ok, ID} =
+                    dev_message:id(Map, #{ <<"commitments">> => <<"all">> }, Opts),
+                [
+                    {<<"#P">>, short_id(ValOrUndef(<<"hashpath">>))},
+                    {<<"*U">>, short_id(UID)}
+                ] ++
+                case ID of
+                    UID -> [];
+                    _ -> [{<<"*S">>, short_id(ID)}]
+                end
+        end,
+    CommitterMetadata =
+        case hb_opts:get(debug_committers, true, Opts) of
+            false -> [];
+            true ->
+                case dev_message:committers(Map, #{}, Opts) of
+                    {ok, []} -> [];
+                    {ok, [Committer]} ->
+                        [{<<"Comm.">>, short_id(Committer)}];
+                    {ok, Committers} ->
+                        [
+                            {
+                                <<"Comms.">>,
+                                string:join(
+                                    lists:map(
+                                        fun(X) ->
+                                            [short_id(X)]
+                                        end,
+                                        Committers
+                                    ),
+                                    ", "
+                                )
+                            }
+                        ]
+                end
+        end,
+    % Concatenate the present metadata rows.
+    Metadata = FilterUndef(lists:flatten([IDMetadata, CommitterMetadata])),
+    % Format the metadata row.
+    Header =
+        format_indented("Message [~s] {",
+            [
+                string:join(
+                    [
+                        io_lib:format("~s: ~s", [Lbl, Val])
+                        ||
+                            {Lbl, Val} <- Metadata,
+                            Val /= undefined
+                    ],
+                    ", "
+                )
+            ],
+            Opts,
+            Indent
+        ),
+    % Put the path and device rows into the output at the _top_ of the map.
+    PriorityKeys =
+        [
+            {<<"path">>, ValOrUndef(<<"path">>)},
+            {<<"device">>, ValOrUndef(<<"device">>)}
+        ],
+    % Concatenate the path and device rows with the rest of the key values.
+    UnsortedGeneralKeyVals =
+        maps:to_list(
+            maps:without(
+                [<<"path">>, <<"device">>],
+                Map
+            )
+        ),
+    KeyVals =
+        FilterUndef(PriorityKeys) ++
+        lists:sort(
+            fun({K1, _}, {K2, _}) -> K1 < K2 end,
+            UnsortedGeneralKeyVals
+        ) ++
+        FooterKeys,
+    % Format the remaining 'normal' keys and values.
+    Res = lists:map(
+        fun({Key, Val}) ->
+            NormKey = hb_ao:normalize_key(Key, Opts#{ error_strategy => ignore }),
+            KeyStr = 
+                case NormKey of
+                    undefined ->
+                        io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
+                    _ ->
+                        hb_ao:normalize_key(Key)
+                end,
+            format_indented(
+                "~s => ~s~n",
+                [
+                    lists:flatten([KeyStr]),
+                    case Val of
+                        NextMap when is_map(NextMap) ->
+                            format_maybe_multiline(NextMap, Opts, Indent + 2);
+                        NextList when is_list(NextList) ->
+                            debug_format(NextList, Opts, Indent + 2);
+                        _ when (byte_size(Val) == 32) ->
+                            Short = short_id(Val),
+                            io_lib:format("~s [*]", [Short]);
+                        _ when byte_size(Val) == 43 ->
+                            short_id(Val);
+                        _ when byte_size(Val) == 87 ->
+                            io_lib:format("~s [#p]", [short_id(Val)]);
+                        Bin when is_binary(Bin) ->
+                            format_binary(Bin);
+                        Link when ?IS_LINK(Link) ->
+                            hb_link:format(Link, Opts);
+                        Other ->
+                            io_lib:format("~p", [Other])
+                    end
+                ],
+                Opts,
+                Indent + 1
+            )
+        end,
+        KeyVals
+    ),
+    case Res of
+        [] -> lists:flatten(Header ++ " [Empty] }");
+        _ ->
+            lists:flatten(
+                Header ++ ["\n"] ++ Res ++ format_indented("}", Indent)
+            )
+    end;
+format_msg(Item, Opts, Indent) ->
+    % Whatever we have is not a message map.
+    format_indented("~p", [Item], Opts, Indent).
