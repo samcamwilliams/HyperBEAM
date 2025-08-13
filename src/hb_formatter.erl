@@ -1,6 +1,12 @@
-%%% @doc A module that provides formatting utilities for HyperBEAM.
-%%% This module contains functions for debugging output, trace formatting,
-%%% string manipulation, and other text formatting operations.
+%%% @doc Formatting and debugging utilities for HyperBEAM.
+%%%
+%%% This module provides text formatting capabilities for debugging output,
+%%% message pretty-printing, stack trace formatting, and human-readable
+%%% representations of binary data and cryptographic identifiers.
+%%% 
+%%% The functions in this module are primarily used for development and
+%%% debugging purposes, supporting the logging and diagnostic infrastructure
+%%% throughout the HyperBEAM system.
 -module(hb_formatter).
 %%% Public API.
 -export([indent/1, indent/2, escape_format/1, short_id/1]).
