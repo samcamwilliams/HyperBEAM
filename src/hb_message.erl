@@ -395,7 +395,7 @@ signers(Msg, Opts) ->
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
 print(Msg, Indent) ->
-    io:format(standard_error, "~s", [lists:flatten(hb_formatter:format_msg(Msg, #{}, Indent))]).
+    io:format(standard_error, "~s", [lists:flatten(hb_format:message(Msg, #{}, Indent))]).
 
 %% @doc Return the type of an encoded message.
 type(TX) when is_record(TX, tx) -> tx;
@@ -481,7 +481,7 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
                                         false ->
                                             throw(
                                                 {value_mismatch,
-                                                    hb_formatter:short_id(
+                                                    hb_format:short_id(
                                                         hb_path:to_binary(
                                                             Path ++ [Key]
                                                         )
@@ -499,7 +499,7 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
         false ->
             throw(
                 {keys_mismatch,
-                    {path, hb_formatter:short_id(hb_path:to_binary(Path))},
+                    {path, hb_format:short_id(hb_path:to_binary(Path))},
                     {keys1, Keys1},
                     {keys2, Keys2}
                 }

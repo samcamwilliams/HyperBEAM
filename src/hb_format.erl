@@ -7,17 +7,17 @@
 %%% The functions in this module are primarily used for development and
 %%% debugging purposes, supporting the logging and diagnostic infrastructure
 %%% throughout the HyperBEAM system.
--module(hb_formatter).
+-module(hb_format).
 %%% Public API.
--export([indent/1, indent/2, escape_format/1, short_id/1]).
--export([format_error/2]).
--export([format_indented/2, format_indented/3, format_indented/4, format_binary/1]).
--export([format_maybe_multiline/3, remove_trailing_noise/2]).
--export([debug_print/1, debug_print/3, debug_print/4, debug_print/5, eunit_print/2]).
--export([debug_format/1, debug_format/2, debug_format/3]).
+-export([term/1, term/2, term/3]).
+-export([print/1, print/3, print/4, print/5, eunit_print/2]).
+-export([message/1, message/2, message/3]).
+-export([binary/1, error/2, trace/1, trace_short/0, trace_short/1]).
+-export([indent/2, indent/3, indent/4, indent_lines/2]).
+-export([maybe_multiline/3, removing_trailing_noise/2]).
+%%% Public Utility Functions.
+-export([escape_format/1, short_id/1, trace_to_list/1]).
 -export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
--export([format_trace/1, trace_to_list/1, format_trace_short/0, format_trace_short/1]).
--export([format_msg/1, format_msg/2, format_msg/3]).
 -include("include/hb.hrl").
 
 %%% Characters that are considered noise and should be removed from strings
@@ -26,18 +26,18 @@
 
 %% @doc Print a message to the standard error stream, prefixed by the amount
 %% of time that has elapsed since the last call to this function.
-debug_print(X) ->
-    debug_print(X, <<>>, #{}).
-debug_print(X, Info, Opts) ->
+print(X) ->
+    print(X, <<>>, #{}).
+print(X, Info, Opts) ->
     io:format(
         standard_error,
         "=== HB DEBUG ===~s==>~n~s~n",
-        [Info, debug_format(X, Opts, 0)]
+        [Info, term(X, Opts, 0)]
     ),
     X.
-debug_print(X, Mod, Func, LineNum) ->
-    debug_print(X, format_debug_trace(Mod, Func, LineNum), #{}).
-debug_print(X, Mod, Func, LineNum, Opts) ->
+print(X, Mod, Func, LineNum) ->
+    print(X, format_debug_trace(Mod, Func, LineNum), #{}).
+print(X, Mod, Func, LineNum, Opts) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
@@ -61,7 +61,7 @@ debug_print(X, Mod, Func, LineNum, Opts) ->
                 ]
             )
         ),
-    debug_print(X, Info, Opts).
+    print(X, Info, Opts).
 
 %% @doc Retreive the server ID of the calling process, if known.
 server_id() ->
@@ -76,24 +76,24 @@ server_id(Opts) ->
 format_debug_trace(Mod, Func, Line) ->
     case hb_opts:get(debug_print_trace, false, #{}) of
         short ->
-            format_trace_short(get_trace());
+            trace_short(get_trace());
         false ->
             io_lib:format("~p:~w ~p", [Mod, Line, Func])
     end.
 
 %% @doc Convert a term to a string for debugging print purposes.
-debug_format(X) -> debug_format(X, #{}).
-debug_format(X, Opts) -> debug_format(X, Opts, 0).
-debug_format(X, Opts, Indent) ->
+term(X) -> term(X, #{}).
+term(X, Opts) -> term(X, Opts, 0).
+term(X, Opts, Indent) ->
     try do_debug_fmt(X, Opts, Indent)
     catch A:B:C ->
         Mode = hb_opts:get(mode, prod, Opts),
         PrintFailPreference = hb_opts:get(debug_print_fail_mode, quiet, Opts),
         case {Mode, PrintFailPreference} of
             {debug, quiet} ->
-                format_indented("[!Format failed!] ~p", [X], Opts, Indent);
+                indent("[!Format failed!] ~p", [X], Opts, Indent);
             {debug, _} ->
-                format_indented(
+                indent(
                     "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~s",
                     [
                         X,
@@ -110,7 +110,7 @@ debug_format(X, Opts, Indent) ->
                     Indent
                 );
             _ ->
-                format_indented("[!Format failed!]", [], Opts, Indent)
+                indent("[!Format failed!]", [], Opts, Indent)
         end
     end.
 
@@ -131,30 +131,30 @@ do_debug_fmt(
     Opts, Indent
 ) ->
     AddressString = format_address(Pub, Opts, Indent),
-    format_indented("~p: ~s", [AtomValue, AddressString], Opts, Indent);
+    indent("~p: ~s", [AtomValue, AddressString], Opts, Indent);
 do_debug_fmt({explicit, X}, Opts, Indent) ->
-    format_indented("[Explicit:] ~p", [X], Opts, Indent);
+    indent("[Explicit:] ~p", [X], Opts, Indent);
 do_debug_fmt({string, X}, Opts, Indent) ->
-    format_indented("~s", [X], Opts, Indent);
+    indent("~s", [X], Opts, Indent);
 do_debug_fmt({trace, Trace}, Opts, Indent) ->
-    format_indented("~n~s", [format_trace(Trace)], Opts, Indent);
+    indent("~n~s", [trace(Trace)], Opts, Indent);
 do_debug_fmt({as, undefined, Msg}, Opts, Indent) ->
-    "\n" ++ format_indented("Subresolve => ", [], Opts, Indent) ++
-        format_maybe_multiline(Msg, Opts, Indent + 1);
+    "\n" ++ indent("Subresolve => ", [], Opts, Indent) ++
+        maybe_multiline(Msg, Opts, Indent + 1);
 do_debug_fmt({as, DevID, Msg}, Opts, Indent) ->
-    "\n" ++ format_indented("Subresolve as ~s => ", [DevID], Opts, Indent) ++
-        format_maybe_multiline(Msg, Opts, Indent + 1);
+    "\n" ++ indent("Subresolve as ~s => ", [DevID], Opts, Indent) ++
+        maybe_multiline(Msg, Opts, Indent + 1);
 do_debug_fmt({X, Y}, Opts, Indent) when is_atom(X) and is_atom(Y) ->
-    format_indented("~p: ~p", [X, Y], Opts, Indent);
+    indent("~p: ~p", [X, Y], Opts, Indent);
 do_debug_fmt({X, Y}, Opts, Indent) when is_record(Y, tx) ->
-    format_indented("~p: [TX item]~n~s",
+    indent("~p: [TX item]~n~s",
         [X, hb_tx:format(Y, Indent + 1)],
         Opts,
         Indent
     );
 do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
-    Formatted = format_maybe_multiline(Y, Opts, Indent + 1),
-    format_indented(
+    Formatted = maybe_multiline(Y, Opts, Indent + 1),
+    indent(
         case is_binary(X) of
             true -> "~s";
             false -> "~p"
@@ -170,11 +170,11 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
         Indent
     );
 do_debug_fmt({X, Y}, Opts, Indent) ->
-    format_indented(
+    indent(
         "~s: ~s",
         [
-            remove_leading_noise(debug_format(X, Opts, Indent)),
-            remove_leading_noise(debug_format(Y, Opts, Indent))
+            remove_leading_noise(term(X, Opts, Indent)),
+            remove_leading_noise(term(Y, Opts, Indent))
         ],
         Opts,
         Indent
@@ -184,22 +184,22 @@ do_debug_fmt(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
     case maybe_format_short(Map, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
-            "\n" ++ lists:flatten(format_msg(Map, Opts, Indent))
+            "\n" ++ lists:flatten(message(Map, Opts, Indent))
     end;
 do_debug_fmt(Tuple, Opts, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Opts, Indent);
 do_debug_fmt(X, Opts, Indent) when is_binary(X) ->
-    format_indented("~s", [format_binary(X)], Opts, Indent);
+    indent("~s", [binary(X)], Opts, Indent);
 do_debug_fmt(Str = [X | _], Opts, Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
-    format_indented("~s", [Str], Opts, Indent);
+    indent("~s", [Str], Opts, Indent);
 do_debug_fmt(MsgList, Opts, Indent) when is_list(MsgList) ->
     format_list(MsgList, Opts, Indent);
 do_debug_fmt(X, Opts, Indent) ->
-    format_indented("~80p", [X], Opts, Indent).
+    indent("~80p", [X], Opts, Indent).
 
 %% @doc If the user attempts to print a wallet, format it as an address.
 format_address(Wallet, Opts, Indent) ->
-    format_indented("Wallet [Addr: ~s]",
+    indent("Wallet [Addr: ~s]",
         [short_id(hb_util:human_id(ar_wallet:to_address(Wallet)))], 
         Opts, 
         Indent
@@ -209,7 +209,7 @@ format_address(Wallet, Opts, Indent) ->
 format_tuple(Tuple, Opts, Indent) ->
     to_lines(lists:map(
         fun(Elem) ->
-            debug_format(Elem, Opts, Indent)
+            term(Elem, Opts, Indent)
         end,
         tuple_to_list(Tuple)
     )).
@@ -221,7 +221,7 @@ format_list(MsgList, Opts, Indent) ->
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
             "\n" ++
-                format_indented("List [~w] {", [length(MsgList)], Opts, Indent) ++
+                indent("List [~w] {", [length(MsgList)], Opts, Indent) ++
                 format_list_lines(MsgList, Opts, Indent)
     end.
 
@@ -254,7 +254,7 @@ format_list_lines(MsgList, Opts, Indent) ->
                     )
                 ) ++
                 "\n" ++
-                format_indented("}", [], Opts, Indent);
+                indent("}", [], Opts, Indent);
         true ->
             "\n" ++
             lists:flatten(lists:map(
@@ -263,7 +263,7 @@ format_list_lines(MsgList, Opts, Indent) ->
                     Line
                 end,
                 Numbered
-            )) ++ format_indented("}", [], Opts, Indent)
+            )) ++ indent("}", [], Opts, Indent)
     end.
 
 %% @doc Format a single element of a list.
@@ -275,18 +275,18 @@ format_list_item(N, Msg, Opts, Indent) ->
 format_list_item(short, N, Msg, Opts, Indent) ->
     case maybe_format_short(Msg, Opts, Indent) of
         {ok, SimpleFmt} ->
-            {short, format_indented("~s => ~s~n", [N, SimpleFmt], Opts, Indent + 1)};
+            {short, indent("~s => ~s~n", [N, SimpleFmt], Opts, Indent + 1)};
         error -> error
     end;
 format_list_item(multiline, N, Msg, Opts, Indent) ->
     Formatted =
-        case is_multiline(Base = debug_format(Msg, Opts, Indent + 2)) of
+        case is_multiline(Base = term(Msg, Opts, Indent + 2)) of
             true -> Base;
             false -> remove_leading_noise(Base)
         end,
     {
         multiline,
-        format_indented(
+        indent(
             "~s => ~s~n",
             [N, Formatted], 
             Opts,
@@ -318,18 +318,18 @@ remove_leading_noise([Char|Str], Noise) ->
 %% @doc Remove trailing noise characters from a string. By default, this is
 %% whitespace, newlines, and `,'.
 remove_trailing_noise(Str) ->
-    remove_trailing_noise(Str, ?NOISE_CHARS).
-remove_trailing_noise(Str, Noise) ->
+    removing_trailing_noise(Str, ?NOISE_CHARS).
+removing_trailing_noise(Str, Noise) ->
     case lists:member(lists:last(Str), Noise) of
         true ->
-            remove_trailing_noise(lists:droplast(Str), Noise);
+            removing_trailing_noise(lists:droplast(Str), Noise);
         false -> Str
     end.
 
 %% @doc Format a string with an indentation level.
-format_indented(Str, Indent) -> format_indented(Str, #{}, Indent).
-format_indented(Str, Opts, Indent) -> format_indented(Str, [], Opts, Indent).
-format_indented(FmtStr, Terms, Opts, Ind) ->
+indent(Str, Indent) -> indent(Str, #{}, Indent).
+indent(Str, Opts, Indent) -> indent(Str, [], Opts, Indent).
+indent(FmtStr, Terms, Opts, Ind) ->
     IndentSpaces = hb_opts:get(debug_print_indent, Opts),
     EscapedFmt = escape_format(FmtStr),
     lists:droplast(
@@ -352,7 +352,7 @@ escape_format(Str) when is_list(Str) ->
 escape_format(Else) -> Else.
 
 %% @doc Format an error message as a string.
-format_error(ErrorMsg, Opts) ->
+error(ErrorMsg, Opts) ->
     Type = hb_ao:get(<<"type">>, ErrorMsg, <<"">>, Opts),
     Details = hb_ao:get(<<"details">>, ErrorMsg, <<"">>, Opts),
     Stacktrace = hb_ao:get(<<"stacktrace">>, ErrorMsg, <<"">>, Opts),
@@ -367,22 +367,20 @@ format_error(ErrorMsg, Opts) ->
 %% @doc Take a series of strings or a combined string and format as a
 %% single string with newlines and indentation to the given level. Note: This
 %% function returns a binary.
-indent(Strings) ->
-    indent(Strings, 0).
-indent(Strings, Indent) when is_binary(Strings) ->
-    indent(binary:split(Strings, <<"\n">>, [global]), Indent);
-indent(Strings, Indent) when is_list(Strings) ->
+indent_lines(Strings, Indent) when is_binary(Strings) ->
+    indent_lines(binary:split(Strings, <<"\n">>, [global]), Indent);
+indent_lines(Strings, Indent) when is_list(Strings) ->
     hb_util:bin(lists:join(
         "\n",
         [
-            format_indented(hb_util:list(String), #{}, Indent)
+            indent(hb_util:list(String), #{}, Indent)
         ||
             String <- Strings
         ]
     )).
 
 %% @doc Format a binary as a short string suitable for printing.
-format_binary(Bin) ->
+binary(Bin) ->
     case short_id(Bin) of
         undefined ->
             MaxBinPrint = hb_opts:get(debug_print_binary_max),
@@ -421,11 +419,11 @@ format_binary(Bin) ->
 
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
-format_maybe_multiline(X, Opts, Indent) ->
+maybe_multiline(X, Opts, Indent) ->
     case maybe_format_short(X, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
-            "\n" ++ lists:flatten(format_msg(X, Opts, Indent))
+            "\n" ++ lists:flatten(message(X, Opts, Indent))
     end.
 
 %% @doc Attempt to generate a short formatting of a message, using the given
@@ -434,7 +432,7 @@ maybe_format_short(X, Opts, _Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold, 100, Opts),
     SimpleFmt =
         case is_binary(X) of
-            true -> format_binary(X);
+            true -> binary(X);
             false -> io_lib:format("~p", [X])
         end,
     case is_multiline(SimpleFmt) orelse (lists:flatlength(SimpleFmt) > MaxLen) of
@@ -451,7 +449,7 @@ eunit_print(FmtStr, FmtArgs) ->
     io:format(
         standard_error,
         "~n~s ",
-        [format_indented(FmtStr ++ "...", FmtArgs, #{}, 4)]
+        [indent(FmtStr ++ "...", FmtArgs, #{}, 4)]
     ).
 
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
@@ -469,14 +467,14 @@ print_trace(Stack, Label, CallerInfo) ->
     io:format(standard_error, "=== ~s ===~s==>~n~s",
         [
             Label, CallerInfo,
-            lists:flatten(format_trace(Stack))
+            lists:flatten(trace(Stack))
         ]).
 
 %% @doc Format a stack trace as a list of strings, one for each stack frame.
 %% Each stack frame is formatted if it matches the `stack_print_prefixes'
 %% option. At the first frame that does not match a prefix in the
 %% `stack_print_prefixes' option, the rest of the stack is not formatted.
-format_trace(Stack) ->
+trace(Stack) ->
     format_trace(Stack, hb_opts:get(stack_print_prefixes, [], #{})).
 format_trace([], _) -> [];
 format_trace([Item|Rest], Prefixes) ->
@@ -496,7 +494,7 @@ format_trace({Func, ArityOrTerm, Extras}, Prefixes) ->
     format_trace({no_module, Func, ArityOrTerm, Extras}, Prefixes);
 format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
     ExtraMap = hb_maps:from_list(Extras),
-    format_indented(
+    indent(
         "~p:~p/~p [~s]~n",
         [
             Mod, Func, ArityOrTerm,
@@ -516,7 +514,7 @@ print_trace_short(Trace, Mod, Func, Line) ->
     io:format(standard_error, "=== [ HB SHORT TRACE ~p:~w ~p ] ==> ~s~n",
         [
             Mod, Line, Func,
-            format_trace_short(Trace)
+            trace_short(Trace)
         ]
     ).
 
@@ -536,8 +534,8 @@ trace_to_list(Trace) ->
     ).
 
 %% @doc Format a trace to a short string.
-format_trace_short() -> format_trace_short(get_trace()).
-format_trace_short(Trace) when is_list(Trace) ->
+trace_short() -> trace_short(get_trace()).
+trace_short(Trace) when is_list(Trace) ->
     lists:join(" / ", lists:reverse(trace_to_list(Trace))).
 
 %% @doc Format a trace element in form `mod:line' or `mod:func'.
@@ -567,21 +565,21 @@ normalize_trace(Trace) -> Trace.
 
 %% @doc Format a message for printing, optionally taking an indentation level
 %% to start from.
-format_msg(Item) -> format_msg(Item, #{}).
-format_msg(Item, Opts) -> format_msg(Item, Opts, 0).
-format_msg(Bin, Opts, Indent) when is_binary(Bin) ->
-    format_indented(
-        format_binary(Bin),
+message(Item) -> message(Item, #{}).
+message(Item, Opts) -> message(Item, Opts, 0).
+message(Bin, Opts, Indent) when is_binary(Bin) ->
+    indent(
+        binary(Bin),
         Opts,
         Indent
     );
-format_msg(List, Opts, Indent) when is_list(List) ->
+message(List, Opts, Indent) when is_list(List) ->
     % Remove the leading newline from the formatted list, if it exists.
-    case debug_format(List, Opts, Indent) of
+    case term(List, Opts, Indent) of
         [$\n | String] -> String;
         String -> String
     end;
-format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
+message(RawMap, Opts, Indent) when is_map(RawMap) ->
     % Should we filter out the priv key?
     FilterPriv = hb_opts:get(debug_show_priv, false, Opts),
     MainPriv = hb_maps:get(<<"priv">>, RawMap, #{}, Opts),
@@ -677,7 +675,7 @@ format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
     Metadata = FilterUndef(lists:flatten([IDMetadata, CommitterMetadata])),
     % Format the metadata row.
     Header =
-        format_indented("Message [~s] {",
+        indent("Message [~s] {",
             [
                 string:join(
                     [
@@ -724,15 +722,15 @@ format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
                     _ ->
                         hb_ao:normalize_key(Key)
                 end,
-            format_indented(
+            indent(
                 "~s => ~s~n",
                 [
                     lists:flatten([KeyStr]),
                     case Val of
                         NextMap when is_map(NextMap) ->
-                            format_maybe_multiline(NextMap, Opts, Indent + 2);
+                            maybe_multiline(NextMap, Opts, Indent + 2);
                         NextList when is_list(NextList) ->
-                            debug_format(NextList, Opts, Indent + 2);
+                            term(NextList, Opts, Indent + 2);
                         _ when (byte_size(Val) == 32) ->
                             Short = short_id(Val),
                             io_lib:format("~s [*]", [Short]);
@@ -741,7 +739,7 @@ format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
                         _ when byte_size(Val) == 87 ->
                             io_lib:format("~s [#p]", [short_id(Val)]);
                         Bin when is_binary(Bin) ->
-                            format_binary(Bin);
+                            binary(Bin);
                         Link when ?IS_LINK(Link) ->
                             hb_link:format(Link, Opts);
                         Other ->
@@ -758,12 +756,12 @@ format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
         [] -> lists:flatten(Header ++ " [Empty] }");
         _ ->
             lists:flatten(
-                Header ++ ["\n"] ++ Res ++ format_indented("}", Indent)
+                Header ++ ["\n"] ++ Res ++ indent("}", Indent)
             )
     end;
-format_msg(Item, Opts, Indent) ->
+message(Item, Opts, Indent) ->
     % Whatever we have is not a message map.
-    format_indented("~p", [Item], Opts, Indent).
+    indent("~p", [Item], Opts, Indent).
 
 %%% Utility functions.
 
