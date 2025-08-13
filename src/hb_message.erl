@@ -402,14 +402,14 @@ print(Msg, Indent) ->
 format(Item) -> format(Item, #{}).
 format(Item, Opts) -> format(Item, Opts, 0).
 format(Bin, Opts, Indent) when is_binary(Bin) ->
-    hb_util:format_indented(
-        hb_util:format_binary(Bin),
+    hb_formatter:format_indented(
+        hb_formatter:format_binary(Bin),
         Opts,
         Indent
     );
 format(List, Opts, Indent) when is_list(List) ->
     % Remove the leading newline from the formatted list, if it exists.
-    case hb_util:debug_format(List, Opts, Indent) of
+    case hb_formatter:debug_format(List, Opts, Indent) of
         [$\n | String] -> String;
         String -> String
     end;
@@ -437,14 +437,14 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
         fun(<<"hashpath">>) ->
             case Map of
                 #{ <<"priv">> := #{ <<"hashpath">> := HashPath } } ->
-                    hb_util:short_id(HashPath);
+                    hb_formatter:short_id(HashPath);
                 _ ->
                     undefined
             end;
         (Key) ->
             case dev_message:get(Key, Map, Opts) of
                 {ok, Val} ->
-                    case hb_util:short_id(Val) of
+                    case hb_formatter:short_id(Val) of
                         undefined -> Val;
                         ShortID -> ShortID
                     end;
@@ -472,12 +472,12 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
                 {ok, ID} =
                     dev_message:id(Map, #{ <<"commitments">> => <<"all">> }, Opts),
                 [
-                    {<<"#P">>, hb_util:short_id(ValOrUndef(<<"hashpath">>))},
-                    {<<"*U">>, hb_util:short_id(UID)}
+                    {<<"#P">>, hb_formatter:short_id(ValOrUndef(<<"hashpath">>))},
+                    {<<"*U">>, hb_formatter:short_id(UID)}
                 ] ++
                 case ID of
                     UID -> [];
-                    _ -> [{<<"*S">>, hb_util:short_id(ID)}]
+                    _ -> [{<<"*S">>, hb_formatter:short_id(ID)}]
                 end
         end,
     CommitterMetadata =
@@ -487,7 +487,7 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
                 case dev_message:committers(Map, #{}, Opts) of
                     {ok, []} -> [];
                     {ok, [Committer]} ->
-                        [{<<"Comm.">>, hb_util:short_id(Committer)}];
+                        [{<<"Comm.">>, hb_formatter:short_id(Committer)}];
                     {ok, Committers} ->
                         [
                             {
@@ -495,7 +495,7 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
                                 string:join(
                                     lists:map(
                                         fun(X) ->
-                                            [hb_util:short_id(X)]
+                                            [hb_formatter:short_id(X)]
                                         end,
                                         Committers
                                     ),
@@ -509,7 +509,7 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
     Metadata = FilterUndef(lists:flatten([IDMetadata, CommitterMetadata])),
     % Format the metadata row.
     Header =
-        hb_util:format_indented("Message [~s] {",
+        hb_formatter:format_indented("Message [~s] {",
             [
                 string:join(
                     [
@@ -556,24 +556,24 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
                     _ ->
                         hb_ao:normalize_key(Key)
                 end,
-            hb_util:format_indented(
+            hb_formatter:format_indented(
                 "~s => ~s~n",
                 [
                     lists:flatten([KeyStr]),
                     case Val of
                         NextMap when is_map(NextMap) ->
-                            hb_util:format_maybe_multiline(NextMap, Opts, Indent + 2);
+                            hb_formatter:format_maybe_multiline(NextMap, Opts, Indent + 2);
                         NextList when is_list(NextList) ->
-                            hb_util:debug_format(NextList, Opts, Indent + 2);
+                            hb_formatter:debug_format(NextList, Opts, Indent + 2);
                         _ when (byte_size(Val) == 32) ->
-                            Short = hb_util:short_id(Val),
+                            Short = hb_formatter:short_id(Val),
                             io_lib:format("~s [*]", [Short]);
                         _ when byte_size(Val) == 43 ->
-                            hb_util:short_id(Val);
+                            hb_formatter:short_id(Val);
                         _ when byte_size(Val) == 87 ->
-                            io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
+                            io_lib:format("~s [#p]", [hb_formatter:short_id(Val)]);
                         Bin when is_binary(Bin) ->
-                            hb_util:format_binary(Bin);
+                            hb_formatter:format_binary(Bin);
                         Link when ?IS_LINK(Link) ->
                             hb_link:format(Link, Opts);
                         Other ->
@@ -590,12 +590,12 @@ format(RawMap, Opts, Indent) when is_map(RawMap) ->
         [] -> lists:flatten(Header ++ " [Empty] }");
         _ ->
             lists:flatten(
-                Header ++ ["\n"] ++ Res ++ hb_util:format_indented("}", Indent)
+                Header ++ ["\n"] ++ Res ++ hb_formatter:format_indented("}", Indent)
             )
     end;
 format(Item, Opts, Indent) ->
     % Whatever we have is not a message map.
-    hb_util:format_indented("~p", [Item], Opts, Indent).
+    hb_formatter:format_indented("~p", [Item], Opts, Indent).
 
 %% @doc Return the type of an encoded message.
 type(TX) when is_record(TX, tx) -> tx;
@@ -681,7 +681,7 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
                                         false ->
                                             throw(
                                                 {value_mismatch,
-                                                    hb_util:short_id(
+                                                    hb_formatter:short_id(
                                                         hb_path:to_binary(
                                                             Path ++ [Key]
                                                         )
@@ -699,7 +699,7 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
         false ->
             throw(
                 {keys_mismatch,
-                    {path, hb_util:short_id(hb_path:to_binary(Path))},
+                    {path, hb_formatter:short_id(hb_path:to_binary(Path))},
                     {keys1, Keys1},
                     {keys2, Keys2}
                 }
