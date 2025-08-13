@@ -598,7 +598,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                             Opts#{ hashpath => ignore }
                         ),
                     NormalizedWithoutSnapshot = without_snapshot(Normalized, Opts),
-                    ?event(debug_snapshot,
+                    ?event(snapshot,
                         {loaded_state_checkpoint_result,
                             {proc_id, ProcID},
                             {slot, LoadedSlot},
