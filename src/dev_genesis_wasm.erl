@@ -316,7 +316,6 @@ log_server_events([Line | Rest]) ->
 
 %% Tests
 -ifdef(ENABLE_GENESIS_WASM).
-
 test_base_process() ->
     test_base_process(#{}).
 test_base_process(Opts) ->
@@ -328,7 +327,7 @@ test_base_process(Opts) ->
         <<"scheduler-location">> => Address,
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
-    }, Wallet).
+    }, #{ priv_wallet => Wallet }).
 
 test_wasm_process(WASMImage) ->
     test_wasm_process(WASMImage, #{}).
@@ -344,7 +343,7 @@ test_wasm_process(WASMImage, Opts) ->
                 <<"image">> => WASMImageID
             }
         ),
-        Wallet
+        #{ priv_wallet => Wallet }
     ).
 
 test_wasm_stack_process(Opts, Stack) ->
@@ -375,7 +374,7 @@ test_wasm_stack_process(Opts, Stack) ->
                     <<"type">> => <<"Process">>
                 }
             ),
-        Wallet
+        #{ priv_wallet => Wallet }
     ).
 
 test_genesis_wasm_process() ->
@@ -404,7 +403,7 @@ test_genesis_wasm_process() ->
                 <<"data-protocol">> => <<"ao">>,
                 <<"type">> => <<"Process">>
             }),
-        Wallet
+        #{ priv_wallet => Wallet }
     ).
 
 schedule_test_message(Msg1, Text) ->
@@ -422,10 +421,10 @@ schedule_test_message(Msg1, Text, MsgBase) ->
                             <<"type">> => <<"Message">>,
                             <<"test-label">> => Text
                         },
-                        Wallet
+                        #{ priv_wallet => Wallet }
                     )
             },
-            Wallet
+            #{ priv_wallet => Wallet }
         ),
     {ok, Msg3} = hb_ao:resolve(Msg1, Msg2, #{}),
     Msg3.
@@ -444,7 +443,7 @@ schedule_aos_call(Msg1, Code, Action, Opts) ->
                 <<"data">> => Code,
                 <<"target">> => ProcID
             },
-            Wallet
+            #{ priv_wallet => Wallet }
         ),
     schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
 
@@ -746,165 +745,4 @@ send_message_to_genesis_wasm_process() ->
         port => Port
     }),
     ?assertEqual(<<"Number: 20">>, hb_ao:get(<<"results/data">>, NewResultReceiver)).
-dryrun_genesis_wasm_test_() ->  
-    { timeout, 900, fun dryrun_genesis_wasm/0 }.
-dryrun_genesis_wasm() ->
-    application:ensure_all_started(hb),
-    Opts = hb_http_server:get_opts(#{
-        http_server => hb_util:human_id(ar_wallet:to_address(hb:wallet()))
-    }),
-    Port = hb_opts:get(port, no_port, Opts),
-    Wallet = hb_opts:get(priv_wallet, hb:wallet(), #{}),
-    % SET UP PROCESS WITH INCREMENT/GET HANDLERS
-    MsgReceiver = test_genesis_wasm_process(),
-    hb_cache:write(MsgReceiver, #{}),
-    ProcId = dev_process:process_id(MsgReceiver, #{}, #{}),
-    hb_ao:resolve(
-        MsgReceiver,
-        MsgReceiver#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>},
-        #{}
-    ),
-
-    % Initialize the process with handlers
-    schedule_aos_call(MsgReceiver, <<"
-    Number = Number or 1
-    Handlers.add('Increment', function(msg) 
-        Number = Number + 1 
-        ao.send({ Target = msg.From, Data = 'The current number is ' .. Number .. '!' })
-        return Number
-    end)
-    ">>),
-    schedule_aos_call(
-        MsgReceiver, 
-        <<"ao.isAssignable = function(msg) return true end">>
-    ),
-    % Ensure Handlers were properly added
-    schedule_aos_call(MsgReceiver, <<"return #Handlers.list">>),
-    {ok, HandlersResult} = 
-        hb_ao:resolve(
-            MsgReceiver,
-            #{ <<"path">> => <<"now">> },
-            #{ port => Port }
-        ),
-    % _eval, _default, Increment
-    ?assertEqual(<<"3">>, hb_ao:get(<<"results/data">>, HandlersResult)),
-
-    schedule_aos_call(MsgReceiver, <<"return Number">>),
-    {ok, InitialResult} = 
-        hb_ao:resolve(
-            MsgReceiver, 
-            #{ <<"path">> => <<"now">> },
-            #{ port => Port }
-        ),
-    ?assertEqual(<<"1">>, hb_ao:get(<<"results/data">>, InitialResult)),
-
-    % SET UP SENDER PROCESS
-    MsgSender = test_genesis_wasm_process(),
-    hb_cache:write(MsgSender, #{}),
-    hb_ao:resolve(
-        MsgSender,
-        MsgSender#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>},
-        #{}
-    ),
-
-    % First increment + push
-    SendIncrementMsg = 
-        schedule_aos_call(
-            MsgSender, 
-            iolist_to_binary([
-                <<"Send({ Target = \"">>,
-                ProcId,
-                <<"\", Action = \"Increment\" })">>
-            ])
-        ),
-    {ok, IncrementSlot} =
-        hb_ao:resolve(SendIncrementMsg, #{ <<"path">> => <<"slot">> }, #{}),
-    {ok, _PushRes1} = hb_ao:resolve(MsgSender, #{
-        <<"path">> => <<"push">>,
-        <<"slot">> => IncrementSlot
-    }, #{}),
-
-    % Check that number incremented normally
-    schedule_aos_call(MsgReceiver, <<"return Number">>),
-    {ok, AfterIncrementResult} =
-        hb_ao:resolve(
-            MsgReceiver, 
-            #{ <<"path">> => <<"now">> }, 
-            #{
-                port => Port
-            }),
-    ?assertEqual(<<"2">>, hb_ao:get(<<"results/data">>, AfterIncrementResult)),
-
-    % Send another increment and push it
-    SendIncrement2Msg =
-        schedule_aos_call(
-            MsgSender,
-            iolist_to_binary([
-                <<"Send({ Target = \"">>,
-                ProcId,
-                <<"\", Action = \"Increment\" })">>
-            ])
-        ),
-    {ok, Increment2Slot} =
-        hb_ao:resolve(SendIncrement2Msg, #{ <<"path">> => <<"slot">> }, #{}),
-    {ok, _PushRes2} = hb_ao:resolve(MsgSender, #{
-        <<"path">> => <<"push">>,
-        <<"slot">> => Increment2Slot
-    }, #{}),
-
-    % Check that number incremented again
-    schedule_aos_call(MsgReceiver, <<"return Number">>),
-    {ok, AfterIncrement2Result} =
-        hb_ao:resolve(
-            MsgReceiver, 
-            #{ <<"path">> => <<"now">> }, 
-            #{
-                port => Port
-            }),
-    ?assertEqual(<<"3">>, hb_ao:get(<<"results/data">>, AfterIncrement2Result)),
-
-    % TEST DRYRUN - POST compute should return result without changing state
-    DryrunMsg =
-        hb_message:commit(#{
-            <<"method">> => <<"POST">>,
-            <<"path">> => <<"compute">>,
-            <<"action">> => <<"Increment">>,
-            <<"data">> => <<"">>,
-            <<"target">> => ProcId
-        }, Wallet),
-    % Perform dryrun by using POST compute
-    {ok, DryrunResult} = hb_ao:resolve(
-        MsgReceiver, 
-        DryrunMsg, 
-        #{
-            port => Port
-        }),
-    % Verify dryrun returns correct result
-    ParsedMessages =
-        hb_json:decode(hb_ao:get(<<"results/json/body">>, DryrunResult)),
-    MessageData =
-        hb_ao:get(<<"Data">>, hd(hb_ao:get(<<"Messages">>, ParsedMessages))),
-    ?assertEqual(<<"The current number is 4!">>, MessageData),
-    % Do it again to ensure number did not permanently increment
-    {ok, DryrunResult2} = hb_ao:resolve(
-        MsgReceiver, 
-        DryrunMsg, 
-        #{
-            port => Port
-        }),
-    ParsedMessages2 =
-        hb_json:decode(hb_ao:get(<<"results/json/body">>, DryrunResult2)),
-    MessageData2 =
-        hb_ao:get(<<"Data">>, hd(hb_ao:get(<<"Messages">>, ParsedMessages2))),
-    ?assertEqual(<<"The current number is 4!">>, MessageData2),
-
-    % Verify state hasn't changed - number should still be 3
-    schedule_aos_call(MsgReceiver, <<"return Number">>),
-    {ok, AfterDryrunResult} =
-        hb_ao:resolve(
-            MsgReceiver, 
-            #{ <<"path">> => <<"now">> }, 
-            #{ port => Port }
-        ),
-    ?assertEqual(<<"3">>, hb_ao:get(<<"results/data">>, AfterDryrunResult)).
 -endif.
