@@ -28,7 +28,7 @@ compute(Msg1, Msg2, Opts) ->
     % If request is an assignment, we will compute the result
     % Otherwise, it is a dryrun
     Type = hb_ao:get(<<"type">>, Msg2, Opts),
-    ?event(debug_req, {d_c_compute, {msg2, Msg2}, {type, Type}}),
+    ?event({doing_delegated_compute, {msg2, Msg2}, {type, Type}}),
     % Execute the compute via external CU
     case Type of
         <<"assignment">> ->
