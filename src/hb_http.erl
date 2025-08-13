@@ -864,8 +864,7 @@ mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
         end,
     try 
         DeviceId = hb_ao:message_to_device(#{ <<"device">> => Name }, Opts),
-        DeviceName = hb_ao:get_device_name(DeviceId, Opts),
-        DeviceName
+        hb_ao:get_device_name(DeviceId, Opts)
     catch _:Error ->
         ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
         default_codec(Opts)
