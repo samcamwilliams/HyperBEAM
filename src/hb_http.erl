@@ -610,6 +610,7 @@ reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
     ),
     ReqBeforeStream = Req#{ resp_headers => EncodedHeaders },
     PostStreamReq = cowboy_req:stream_reply(Status, #{}, ReqBeforeStream),
+    ?event(x, {PostStreamReq}),
     cowboy_req:stream_body(EncodedBody, nofin, PostStreamReq),
     EndTime = os:system_time(millisecond),
     ?event(http, {reply_headers, {explicit, PostStreamReq}}),
@@ -805,14 +806,13 @@ encode_reply(Status, TABMReq, Message, Opts) ->
             % Other codecs are already in binary format, so we can just convert
             % the message to the codec. We also include all of the top-level 
             % fields in the message and return them as headers.
-            ExtraHdrs = hb_maps:filter(fun(_, V) -> not is_map(V) end, Message, Opts),
-            ?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
+            %?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
             {ok,
-                hb_maps:merge(BaseHdrs, ExtraHdrs, Opts),
+                hb_maps:merge(BaseHdrs, #{}, Opts),
                 hb_message:convert(
                     Message,
                     Codec,
-                    <<"structured@1.0">>,
+                    tabm,
                     Opts#{ topic => ao_internal }
                 )
             }
@@ -827,34 +827,34 @@ encode_reply(Status, TABMReq, Message, Opts) ->
 %% Options can be specified in mime-type format (`application/*') or in
 %% AO device format (`device@1.0').
 accept_to_codec(TABMReq, Opts) ->
+    Singleton = lists:last(hb_singleton:from(TABMReq, Opts)),
+    Accept = hb_ao:get(<<"accept">>, Singleton, <<"*/*">>, Opts),
     AcceptCodec =
-        hb_maps:get(
+        hb_ao:get(
             <<"accept-codec">>,
-            TABMReq,
-            mime_to_codec(hb_maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts),
+            Singleton,
+            mime_to_codec(Accept, Opts),
 			Opts
         ),
+        ?event(x, {singleton, Singleton, Accept, AcceptCodec}),
     case AcceptCodec of
         not_specified ->
             % We hold off until confirming that the codec is not directly in the
             % message before calling `hb_opts:get/3', as it is comparatively
             % expensive.
             default_codec(Opts);
-        _ -> AcceptCodec
+        _ -> 
+            AcceptCodec
     end.
 
 %% @doc Find a codec name from a mime-type.
-mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
+mime_to_codec(<<"application/", Mime/binary>>, _Opts) ->
     Name =
         case binary:match(Mime, <<"@">>) of
             nomatch -> << Mime/binary, "@1.0" >>;
             _ -> Mime
         end,
-    try hb_ao:message_to_device(#{ <<"device">> => Name }, Opts)
-    catch _:Error ->
-        ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
-        default_codec(Opts)
-    end;
+    Name;
 mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
 mime_to_codec(_, _Opts) -> not_specified.
 
