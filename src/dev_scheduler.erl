@@ -902,7 +902,7 @@ slot(M1, M2, Opts) ->
     case find_server(ProcID, M1, Opts) of
         {local, PID} ->
             ?event({getting_current_slot, {proc_id, ProcID}}),
-            {Timestamp, Hash, Height} = ar_timestamp:get(),
+            {Timestamp, Height, Hash} = ar_timestamp:get(),
             #{ current := CurrentSlot, wallets := Wallets } =
                 dev_scheduler_server:info(PID),
             {ok, #{
