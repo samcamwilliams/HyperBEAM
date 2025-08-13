@@ -429,8 +429,8 @@ handle_error(Req, Singleton, Type, Details, Stacktrace, NodeMsg) ->
     ErrorMsg =
         #{
             <<"status">> => 500,
-            <<"type">> => hb_message:format(Type),
-            <<"details">> => hb_message:format(Details, NodeMsg, 1),
+            <<"type">> => hb_formatter:format_msg(Type),
+            <<"details">> => hb_formatter:format_msg(Details, NodeMsg, 1),
             <<"stacktrace">> => hb_util:bin(hb_formatter:format_trace(Stacktrace))
         },
     ErrorBin = hb_formatter:format_error(ErrorMsg, NodeMsg),

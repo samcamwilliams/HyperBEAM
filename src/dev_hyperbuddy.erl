@@ -71,7 +71,7 @@ format(Base, Req, Opts) ->
         #{
             <<"body">> =>
                 hb_util:bin(
-                    hb_message:format(
+                    hb_formatter:format_msg(
                         #{
                             <<"base">> =>
                                 maps:without(
