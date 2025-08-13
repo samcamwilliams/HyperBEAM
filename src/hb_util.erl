@@ -207,13 +207,6 @@ human_int(Int) ->
 add_commas([A,B,C,Z|Rest]) -> [A,B,C,$,|add_commas([Z|Rest])];
 add_commas(List) -> List.
 
-%% @doc Determine whether a binary is human-readable.
-is_human_binary(Bin) when is_binary(Bin) ->
-    case unicode:characters_to_binary(Bin) of
-        {error, _, _} -> false;
-        _ -> true
-    end.
-
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
     b64fast:encode(Bin).

@@ -24,32 +24,6 @@
 %%% with the `remove_noise_[leading|trailing]' functions.
 -define(NOISE_CHARS, " \t\n,").
 
-%% @doc Return a short ID for the different types of IDs used in AO-Core.
-short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
-    short_id(hb_util:human_id(Bin));
-short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
-    << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
-    << FirstTag/binary, "..", LastTag/binary >>;
-short_id(Bin) when byte_size(Bin) > 43 andalso byte_size(Bin) < 100 ->
-    case binary:split(Bin, <<"/">>, [trim_all, global]) of
-        [First, Second] when byte_size(Second) == 43 ->
-            FirstEnc = short_id(First),
-            SecondEnc = short_id(Second),
-            << FirstEnc/binary, "/", SecondEnc/binary >>;
-        [First, Key] ->
-            FirstEnc = short_id(First),
-            << FirstEnc/binary, "/", Key/binary >>;
-        _ ->
-            Bin
-    end;
-short_id(<< "/", SingleElemHashpath/binary >>) ->
-    Enc = short_id(SingleElemHashpath),
-    if is_binary(Enc) -> << "/", Enc/binary >>;
-    true -> undefined
-    end;
-short_id(Key) when byte_size(Key) < 43 -> Key;
-short_id(_) -> undefined.
-
 %% @doc Print a message to the standard error stream, prefixed by the amount
 %% of time that has elapsed since the last call to this function.
 debug_print(X) ->
@@ -422,7 +396,7 @@ format_binary(Bin) ->
                     end
                 ),
             PrintSegment =
-                case hb_util:is_human_binary(Printable) of
+                case is_human_binary(Printable) of
                     true -> Printable;
                     false -> hb_util:encode(Printable)
                 end,
@@ -790,3 +764,38 @@ format_msg(RawMap, Opts, Indent) when is_map(RawMap) ->
 format_msg(Item, Opts, Indent) ->
     % Whatever we have is not a message map.
     format_indented("~p", [Item], Opts, Indent).
+
+%%% Utility functions.
+
+%% @doc Return a short ID for the different types of IDs used in AO-Core.
+short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+    short_id(hb_util:human_id(Bin));
+short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+    << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
+    << FirstTag/binary, "..", LastTag/binary >>;
+short_id(Bin) when byte_size(Bin) > 43 andalso byte_size(Bin) < 100 ->
+    case binary:split(Bin, <<"/">>, [trim_all, global]) of
+        [First, Second] when byte_size(Second) == 43 ->
+            FirstEnc = short_id(First),
+            SecondEnc = short_id(Second),
+            << FirstEnc/binary, "/", SecondEnc/binary >>;
+        [First, Key] ->
+            FirstEnc = short_id(First),
+            << FirstEnc/binary, "/", Key/binary >>;
+        _ ->
+            Bin
+    end;
+short_id(<< "/", SingleElemHashpath/binary >>) ->
+    Enc = short_id(SingleElemHashpath),
+    if is_binary(Enc) -> << "/", Enc/binary >>;
+    true -> undefined
+    end;
+short_id(Key) when byte_size(Key) < 43 -> Key;
+short_id(_) -> undefined.
+
+%% @doc Determine whether a binary is human-readable.
+is_human_binary(Bin) when is_binary(Bin) ->
+    case unicode:characters_to_binary(Bin) of
+        {error, _, _} -> false;
+        _ -> true
+    end.
