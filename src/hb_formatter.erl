@@ -193,8 +193,8 @@ do_debug_fmt({X, Y}, Opts, Indent) ->
     format_indented(
         "~s: ~s",
         [
-            debug_format(X, Opts, Indent),
-            debug_format(Y, Opts, Indent)
+            remove_leading_noise(debug_format(X, Opts, Indent)),
+            remove_leading_noise(debug_format(Y, Opts, Indent))
         ],
         Opts,
         Indent
