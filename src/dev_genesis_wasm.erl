@@ -16,9 +16,8 @@ init(Msg, _Msg2, _Opts) -> {ok, Msg}.
 normalize(Msg, Msg2, Opts) ->
     dev_delegated_compute:normalize(Msg, Msg2, Opts).
 
-%% @doc Genesis-wasm device compute handler - routes between normal and dryrun execution.
-%% - GET method: Normal compute execution through external CU with state persistence
-%% - POST method: Dryrun execution through external CU in read-only mode
+%% @doc Genesis-wasm device compute handler.
+%% Normal compute execution through external CU with state persistence
 compute(Msg, Msg2, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
     case delegate_request(Msg, Msg2, Opts) of
@@ -51,17 +50,7 @@ delegate_request(Msg, Msg2, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
     case ensure_started(Opts) of
         true ->
-            Method =
-                hb_ao:get(
-                    <<"method">>,
-                    {as, <<"message@1.0">>, Msg2},
-                    <<"GET">>,
-                    Opts
-                ),
-            case Method of
-                <<"GET">> -> do_compute(Msg, Msg2, Opts);
-                <<"POST">> -> do_dryrun(Msg, Msg2, Opts)
-            end;
+            do_compute(Msg, Msg2, Opts);
         false ->
             % Return an error if the genesis-wasm feature is disabled.
             {error, #{
@@ -71,7 +60,6 @@ delegate_request(Msg, Msg2, Opts) ->
                         "this node.">>
             }}
     end.
-
 
 
 %% @doc Handle normal compute execution with state persistence (GET method).
@@ -96,23 +84,6 @@ do_compute(Msg, Msg2, Opts) ->
             % Return the error.
             {error, Error}
     end.
-
-%% @doc Handle dryrun execution - the core of POST compute functionality.
-%% This function processes POST method requests by setting up dryrun execution
-%% through the delegated-compute device.
-do_dryrun(Msg, Msg2, Opts) ->
-    % Resolve the `delegated-compute@1.0' device for dry-run.
-    hb_ao:resolve(
-        Msg,
-        {
-            as,
-            <<"delegated-compute@1.0">>,
-            % Tell the delegated-compute device
-            % to use the /dry-run endpoint instead of /result endpoint
-            Msg2#{ <<"path">> => <<"dryrun">> }
-        },
-        Opts
-    ).
 
 %% @doc Ensure the local `genesis-wasm@1.0' is live. If it not, start it.
 ensure_started(Opts) ->
