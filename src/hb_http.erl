@@ -856,13 +856,21 @@ accept_to_codec(TABMReq, Opts) ->
     end.
 
 %% @doc Find a codec name from a mime-type.
-mime_to_codec(<<"application/", Mime/binary>>, _Opts) ->
+mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
     Name =
         case binary:match(Mime, <<"@">>) of
             nomatch -> << Mime/binary, "@1.0" >>;
             _ -> Mime
         end,
-    Name;
+    try 
+        DeviceId = hb_ao:message_to_device(#{ <<"device">> => Name }, Opts),
+        DeviceName = hb_ao:get_device_name(DeviceId, Opts),
+        DeviceName
+    catch _:Error ->
+        ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
+        default_codec(Opts)
+    end;
+
 mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
 mime_to_codec(_, _Opts) -> not_specified.
 
