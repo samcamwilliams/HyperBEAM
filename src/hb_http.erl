@@ -822,7 +822,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                 hb_message:convert(
                     Message,
                     Codec,
-                    tabm,
+                    <<"structured@1.0">>,
                     Opts#{ topic => ao_internal }
                 )
             }
