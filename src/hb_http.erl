@@ -839,6 +839,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
 accept_to_codec(TABMReq, Opts) ->
     Singleton = lists:last(hb_singleton:from(TABMReq, Opts)),
     Accept = hb_ao:get(<<"accept">>, Singleton, <<"*/*">>, Opts),
+    ?event(only, {accept_to_codec, {tabm_req, TABMReq}}),
     AcceptCodec =
         hb_ao:get(
             <<"accept-codec">>,
