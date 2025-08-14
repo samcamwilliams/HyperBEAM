@@ -429,8 +429,8 @@ handle_error(Req, Singleton, Type, Details, Stacktrace, NodeMsg) ->
     ErrorMsg =
         #{
             <<"status">> => 500,
-            <<"type">> => hb_format:message(Type),
-            <<"details">> => hb_format:message(Details, NodeMsg, 1),
+            <<"type">> => hb_util:bin(hb_format:message(Type)),
+            <<"details">> => hb_util:bin(hb_format:message(Details, NodeMsg, 1)),
             <<"stacktrace">> => hb_util:bin(hb_format:trace(Stacktrace))
         },
     ErrorBin = hb_format:error(ErrorMsg, NodeMsg),
@@ -445,7 +445,23 @@ handle_error(Req, Singleton, Type, Details, Stacktrace, NodeMsg) ->
             }
         }
     ),
-    hb_http:reply(Req, Singleton, ErrorMsg, NodeMsg).
+
+    % Remove leading and trailing noise from the stacktrace and details.
+    FormattedErrorMsg = ErrorMsg#{
+        <<"stacktrace">> => hb_util:bin(hb_format:remove_trailing_noise(
+            hb_format:remove_leading_noise(
+                hb_maps:get(<<"stacktrace">>, ErrorMsg, <<>>)
+            )
+        )),
+        % <<"stacktrace">> => Stacktrace
+        <<"details">> => hb_util:bin(hb_format:remove_trailing_noise(
+            hb_format:remove_leading_noise(
+                hb_maps:get(<<"details">>, ErrorMsg, <<>>)
+            )
+        ))
+    },
+    
+    hb_http:reply(Req, Singleton, FormattedErrorMsg, NodeMsg).
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
