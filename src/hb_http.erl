@@ -732,7 +732,8 @@ codec_to_content_type(Codec, Opts) ->
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Body, Opts) ->
-    case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
+    Header = cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>),
+    case Header of
         <<"httpsig@1.0">> ->
 			?event({req_to_tabm_singleton, {request, {explicit, Req}, {body, {string, Body}}}}),
             httpsig_to_tabm_singleton(Req, Body, Opts);
@@ -787,14 +788,16 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% node configuration. Additionally, non-committed fields are removed from the
 %% message if it is signed, with the exception of the `path' and `method' fields.
 httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
+    Converted =             
+        hb_message:convert(
+            RawHeaders#{ <<"body">> => Body },
+            <<"structured@1.0">>,
+            <<"httpsig@1.0">>,
+            Opts
+        ),
     {ok, SignedMsg} =
         hb_message:with_only_committed(
-            hb_message:convert(
-                RawHeaders#{ <<"body">> => Body },
-                <<"structured@1.0">>,
-                <<"httpsig@1.0">>,
-                Opts
-            ),
+            Converted,
             Opts
         ),
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
@@ -818,7 +821,26 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                 false ->
                     do_nothing
             end,
-            normalize_unsigned(Req, SignedMsg, Opts);
+            NormalizedUnsigned = normalize_unsigned(Req, SignedMsg, Opts),
+            %% If the message has no commitments,
+            % add a new hmac at the end of the message
+            case hb_maps:get(
+                <<"commitments">>,
+                NormalizedUnsigned,
+                not_found,
+                Opts
+            ) of
+                not_found ->
+                    {ok, Res} = 
+                        dev_message:commit(
+                            NormalizedUnsigned,
+                            #{ <<"type">> => <<"unsigned">> },
+                            Opts
+                        ),
+                    #{ <<"commitments">> := Commitments } = Res,
+                    NormalizedUnsigned#{ <<"commitments">> => Commitments };
+                _ -> NormalizedUnsigned
+            end;
         false ->
             ?event(http_verify,
                 {invalid_signature,
