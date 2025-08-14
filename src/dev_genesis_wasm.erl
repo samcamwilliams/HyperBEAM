@@ -426,8 +426,7 @@ schedule_test_message(Msg1, Text, MsgBase) ->
             },
             #{ priv_wallet => Wallet }
         ),
-    {ok, Msg3} = hb_ao:resolve(Msg1, Msg2, #{}),
-    Msg3.
+    hb_ao:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->
     schedule_aos_call(Msg1, Code, <<"Eval">>, #{}).
@@ -451,24 +450,36 @@ spawn_and_execute_slot_test_() ->
     { timeout, 900, fun spawn_and_execute_slot/0 }.
 spawn_and_execute_slot() ->
     application:ensure_all_started(hb),
-    Opts = hb_http_server:get_opts(#{
-        http_server => hb_util:human_id(ar_wallet:to_address(hb:wallet()))
-    }),
-    Port = hb_opts:get(port, no_port, Opts),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
     Msg1 = test_genesis_wasm_process(),
-    hb_cache:write(Msg1, #{}),
-    hb_ao:resolve(Msg1, Msg1#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-
+    hb_cache:write(Msg1, Opts),
+    {ok, _SchedInit} = 
+        hb_ao:resolve(
+            Msg1,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+    {ok, _} = schedule_aos_call(Msg1, <<"return 1+1">>),
+    {ok, _} = schedule_aos_call(Msg1, <<"return 2+2">>),
     {ok, SchedulerRes} =
         hb_ao:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
-        }, #{}),
-
-    % Verify computation messages
+        }, Opts),
+    % Verify process message is scheduled first
+    ?assertMatch(
+        <<"Process">>,
+        hb_ao:get(<<"assignments/0/body/type">>, SchedulerRes)
+    ),
+    % Verify messages are scheduled
     ?assertMatch(
         <<"return 1+1">>,
         hb_ao:get(<<"assignments/1/body/data">>, SchedulerRes)
@@ -477,272 +488,301 @@ spawn_and_execute_slot() ->
         <<"return 2+2">>,
         hb_ao:get(<<"assignments/2/body/data">>, SchedulerRes)
     ),
-
-    % Verify process message is scheduled first
-    ?assertMatch(
-        <<"Process">>,
-        hb_ao:get(<<"assignments/0/body/type">>, SchedulerRes)
-    ),
-
-    {ok, Result} = hb_ao:resolve(Msg1, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-
+    {ok, Result} = hb_ao:resolve(Msg1, #{ <<"path">> => <<"now">> }, Opts),
     ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Result)).
-
-
 compare_result_genesis_wasm_and_wasm_test_() ->
     { timeout, 900, fun compare_result_genesis_wasm_and_wasm/0 }.
 compare_result_genesis_wasm_and_wasm() ->
     application:ensure_all_started(hb),
-    Opts = hb_http_server:get_opts(#{
-        http_server => hb_util:human_id(ar_wallet:to_address(hb:wallet()))
-    }),
-    Port = hb_opts:get(port, no_port, Opts),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
     % Test with genesis-wasm
     MsgGenesisWasm = test_genesis_wasm_process(),
-    hb_cache:write(MsgGenesisWasm, #{}),
-    hb_ao:resolve(
-        MsgGenesisWasm,
-        MsgGenesisWasm#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
-    schedule_aos_call(MsgGenesisWasm, <<"return 1+1">>),
-    schedule_aos_call(MsgGenesisWasm, <<"return 2+2">>),
-
-    {ok, SchedulerResGenesisWasm} =
-        hb_ao:resolve(MsgGenesisWasm, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{}),
-
-    LoadedSchedulerResGenesisWasm = hb_cache:ensure_all_loaded(SchedulerResGenesisWasm, #{}),
-    % Verify computation messages
-    ?assertMatch(
-        <<"return 1+1">>,
-        hb_ao:get(<<"assignments/1/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"return 2+2">>,
-        hb_ao:get(<<"assignments/2/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-
-    % Verify process message is scheduled first
-    ?assertMatch(
-        <<"Process">>,
-        hb_ao:get(<<"assignments/0/body/type">>, LoadedSchedulerResGenesisWasm)
-    ),
-
-    {ok, ResultGenesisWasm} = hb_ao:resolve(MsgGenesisWasm, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-
-
+    hb_cache:write(MsgGenesisWasm, Opts),
+    {ok, _SchedInitGenesisWasm} =
+        hb_ao:resolve(
+            MsgGenesisWasm,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => MsgGenesisWasm
+            },
+            Opts
+        ),
     % Test with wasm
-    MsgWasm = test_wasm_stack_process(#{
-        port => 8734
-    }, [
+    MsgWasm = test_wasm_stack_process(Opts, [
         <<"WASI@1.0">>,
         <<"JSON-Iface@1.0">>,
         <<"WASM-64@1.0">>,
         <<"Multipass@1.0">>
     ]),
-    hb_cache:write(MsgWasm, #{}),
-    hb_ao:resolve(MsgWasm, MsgWasm#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
-    schedule_aos_call(MsgWasm, <<"return 1+1">>),
-    schedule_aos_call(MsgWasm, <<"return 2+2">>),
-
-    {ok, SchedulerResWasm} =
-        hb_ao:resolve(MsgWasm, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{}),
-
-    LoadedSchedulerResWasm = hb_cache:ensure_all_loaded(SchedulerResWasm, #{}),
-    % Verify computation messages
-    ?assertMatch(
-        <<"return 1+1">>,
-        hb_ao:get(<<"assignments/1/body/data">>, SchedulerResWasm)
-    ),
-
-    ?assertMatch(
-        <<"return 2+2">>,
-        hb_ao:get(<<"assignments/2/body/data">>, LoadedSchedulerResWasm)
-    ),
-
-    {ok, ResultWasm} = hb_ao:resolve(MsgWasm, #{
-        <<"path">> => <<"now">>
-    }, #{}),
-
-    ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, ResultWasm)),
-
-    ?assertEqual(hb_ao:get(<<"results/data">>, ResultGenesisWasm), hb_ao:get(<<"results/data">>, ResultWasm)).
-
-compare_result_genesis_wasm_and_wasm_2_test_() ->
-    { timeout, 900, fun compare_result_genesis_wasm_and_wasm_2/0 }.
-compare_result_genesis_wasm_and_wasm_2() ->
+    hb_cache:write(MsgWasm, Opts),
+    {ok, _SchedInitWasm} =
+        hb_ao:resolve(
+            MsgWasm,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => MsgWasm
+            },
+            Opts
+        ),
+    % Schedule messages
+    {ok, _} = schedule_aos_call(MsgGenesisWasm, <<"return 1+1">>),
+    {ok, _} = schedule_aos_call(MsgGenesisWasm, <<"return 2+2">>),
+    {ok, _} = schedule_aos_call(MsgWasm, <<"return 1+1">>),
+    {ok, _} = schedule_aos_call(MsgWasm, <<"return 2+2">>),
+    % Get results
+    {ok, ResultGenesisWasm} = 
+        hb_ao:resolve(
+            MsgGenesisWasm,
+            #{ <<"path">> => <<"now">> },
+            Opts
+        ),
+    {ok, ResultWasm} = 
+        hb_ao:resolve(
+            MsgWasm,
+            #{ <<"path">> => <<"now">> },
+            Opts
+        ),
+    ?assertEqual(
+        hb_ao:get(<<"results/data">>, ResultGenesisWasm),
+        hb_ao:get(<<"results/data">>, ResultWasm)
+    ).
+send_message_between_genesis_wasm_processes_test_() ->
+    { timeout, 900, fun send_message_between_genesis_wasm_processes/0 }.
+send_message_between_genesis_wasm_processes() ->
     application:ensure_all_started(hb),
-    Opts = hb_http_server:get_opts(#{
-        http_server => hb_util:human_id(ar_wallet:to_address(hb:wallet()))
-    }),
-    Port = hb_opts:get(port, no_port, Opts),
-    % Test with genesis-wasm
-    MsgGenesisWasm = test_genesis_wasm_process(),
-    hb_cache:write(MsgGenesisWasm, #{}),
-    hb_ao:resolve(MsgGenesisWasm, MsgGenesisWasm#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
-    schedule_aos_call(MsgGenesisWasm, <<"Number = 0">>),
-    schedule_aos_call(MsgGenesisWasm, <<"Number = Number + 5">>),
-    schedule_aos_call(MsgGenesisWasm, <<"Number = Number * 10">>),
-    schedule_aos_call(MsgGenesisWasm, <<"return Number">>),
-
-    {ok, SchedulerResGenesisWasm} =
-        hb_ao:resolve(MsgGenesisWasm, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{}),
-
-    LoadedSchedulerResGenesisWasm = hb_cache:ensure_all_loaded(SchedulerResGenesisWasm, #{}),
-    % Verify computation messages
-    ?assertMatch(
-        <<"Number = 0">>,
-        hb_ao:get(<<"assignments/1/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"Number = Number + 5">>,
-        hb_ao:get(<<"assignments/2/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"Number = Number * 10">>,
-        hb_ao:get(<<"assignments/3/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-
-    % Verify process message is scheduled first
-    ?assertMatch(
-        <<"Process">>,
-        hb_ao:get(<<"assignments/0/body/type">>, LoadedSchedulerResGenesisWasm)
-    ),
-
-    {ok, ResultGenesisWasm} = hb_ao:resolve(MsgGenesisWasm, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-
-
-    % Test with wasm
-    MsgWasm = test_wasm_stack_process(#{
-        port => 8734
-    }, [
-        <<"WASI@1.0">>,
-        <<"JSON-Iface@1.0">>,
-        <<"WASM-64@1.0">>,
-        <<"Multipass@1.0">>
-    ]),
-    hb_cache:write(MsgWasm, #{}),
-    hb_ao:resolve(MsgWasm, MsgWasm#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
-    schedule_aos_call(MsgWasm, <<"Number = 0">>),
-    schedule_aos_call(MsgWasm, <<"Number = Number + 5">>),
-    schedule_aos_call(MsgWasm, <<"Number = Number * 10">>),
-    schedule_aos_call(MsgWasm, <<"return Number">>),
-
-    {ok, SchedulerResWasm} =
-        hb_ao:resolve(MsgWasm, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{}),
-
-    LoadedSchedulerResWasm = hb_cache:ensure_all_loaded(SchedulerResWasm, #{}),
-    % Verify computation messages
-    ?assertMatch(
-        <<"Number = 0">>,
-        hb_ao:get(<<"assignments/1/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"Number = Number + 5">>,
-        hb_ao:get(<<"assignments/2/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"Number = Number * 10">>,
-        hb_ao:get(<<"assignments/3/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-    ?assertMatch(
-        <<"return Number">>,
-        hb_ao:get(<<"assignments/4/body/data">>, LoadedSchedulerResGenesisWasm)
-    ),
-
-
-    {ok, ResultWasm} = hb_ao:resolve(MsgWasm, #{
-        <<"path">> => <<"now">>
-    }, #{}),
-
-    ?assertEqual(<<"50">>, hb_ao:get(<<"results/data">>, ResultWasm)),
-
-    ?assertEqual(hb_ao:get(<<"results/data">>, ResultGenesisWasm), hb_ao:get(<<"results/data">>, ResultWasm)).
-
-send_message_to_genesis_wasm_process_test_() ->
-    { timeout, 900, fun send_message_to_genesis_wasm_process/0 }.
-send_message_to_genesis_wasm_process() ->
-    application:ensure_all_started(hb),
-    Opts = hb_http_server:get_opts(#{
-        http_server => hb_util:human_id(ar_wallet:to_address(hb:wallet()))
-    }),
-    Port = hb_opts:get(port, no_port, Opts),
-    % SET UP HANDLER ON RECEIVER PROCESS
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
+    % Create receiver process with handler
     MsgReceiver = test_genesis_wasm_process(),
-    hb_cache:write(MsgReceiver, #{}),
+    hb_cache:write(MsgReceiver, Opts),
     ProcId = dev_process:process_id(MsgReceiver, #{}, #{}),
-    hb_ao:resolve(MsgReceiver, MsgReceiver#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-
+    {ok, _SchedInitReceiver} =
+        hb_ao:resolve(
+            MsgReceiver,
+        #{
+            <<"method">> => <<"POST">>,
+            <<"path">> => <<"schedule">>,
+            <<"body">> => MsgReceiver
+        },
+        Opts
+    ),
     schedule_aos_call(MsgReceiver, <<"Number = 10">>),
-    schedule_aos_call(MsgReceiver, <<"Handlers.add('foo', function(msg) print(\"Number: \" .. Number * 2) return Number * 2 end)">>),
+    schedule_aos_call(MsgReceiver, <<"
+    Handlers.add('foo', function(msg)
+        print(\"Number: \" .. Number * 2)
+        return Number * 2 end)
+    ">>),
     schedule_aos_call(MsgReceiver, <<"return Number">>),
-    {ok, ResultReceiver} = hb_ao:resolve(MsgReceiver, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-
+    {ok, ResultReceiver} = hb_ao:resolve(MsgReceiver, <<"now">>, Opts),
     ?assertEqual(<<"10">>, hb_ao:get(<<"results/data">>, ResultReceiver)),
-
-    % SEND MESSAGE TO RECEIVER PROCESS
+    % Create sender process to send message to receiver
     MsgSender = test_genesis_wasm_process(),
-    hb_cache:write(MsgSender, #{}),
-    hb_ao:resolve(MsgSender, MsgSender#{<<"path">> => <<"schedule">>, <<"method">> => <<"POST">>}, #{}),
-    SendMsgToReceiver = schedule_aos_call(MsgSender,  iolist_to_binary([<<"Send({ Target = \"">>, ProcId, <<"\", Action = \"foo\" })">>])),
-    {ok, ResultSender} = hb_ao:resolve(MsgSender, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-    {ok, Slot} = hb_ao:resolve(SendMsgToReceiver, #{ <<"path">> => <<"slot">> }, #{
-        port => Port
-    }),
-    {ok, Res} = hb_ao:resolve(MsgSender, #{
-        <<"path">> => <<"push">>,
-        <<"slot">> => Slot
-    }, #{
-        port => Port
-    }),
-
-    % GET SCHEDULE FOR RECEIVER
+    hb_cache:write(MsgSender, Opts),
+    {ok, _SchedInitSender} =
+        hb_ao:resolve(
+            MsgSender,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => MsgSender
+            },
+            Opts
+        ),
+    {ok, SendMsgToReceiver} =
+        schedule_aos_call(
+            MsgSender,
+            <<"Send({ Target = \"", ProcId/binary, "\", Action = \"foo\" })">>
+        ),
+    {ok, ResultSender} = hb_ao:resolve(MsgSender, <<"now">>, Opts),
+    {ok, Slot} = hb_ao:resolve(SendMsgToReceiver, <<"slot">>, Opts),
+    {ok, Res} = 
+        hb_ao:resolve(
+            MsgSender,
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => Slot,
+                <<"result-depth">> => 1
+            },
+            Opts
+        ),
+    % Get schedule for receiver
     {ok, ScheduleReceiver} =
-        hb_ao:resolve(MsgReceiver, #{
-            <<"method">> => <<"GET">>,
-            <<"path">> => <<"schedule">>
-        }, #{
-            port => Port
-        }),
-    ?assertEqual(<<"foo">>, hb_ao:get(<<"assignments/4/body/action">>, ScheduleReceiver)),
-    {ok, NewResultReceiver} = hb_ao:resolve(MsgReceiver, #{
-        <<"path">> => <<"now">>
-    }, #{
-        port => Port
-    }),
-    ?assertEqual(<<"Number: 20">>, hb_ao:get(<<"results/data">>, NewResultReceiver)).
+        hb_ao:resolve(
+            MsgReceiver,
+            #{
+                <<"method">> => <<"GET">>,
+                <<"path">> => <<"schedule">>
+            },
+            Opts
+        ),
+    ?assertEqual(
+        <<"foo">>,
+        hb_ao:get(<<"assignments/4/body/action">>, ScheduleReceiver)
+    ),
+    {ok, NewResultReceiver} = hb_ao:resolve(MsgReceiver, <<"now">>, Opts),
+    ?assertEqual(
+        <<"Number: 20">>,
+        hb_ao:get(<<"results/data">>, NewResultReceiver)
+    ).
+dryrun_genesis_wasm_test_() ->  
+    { timeout, 900, fun dryrun_genesis_wasm/0 }.
+dryrun_genesis_wasm() ->
+    application:ensure_all_started(hb),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
+    % Set up process with increment handler to receive messages
+    ProcReceiver = test_genesis_wasm_process(),
+    hb_cache:write(ProcReceiver, #{}),
+    {ok, _SchedInit1} = 
+        hb_ao:resolve(
+            ProcReceiver,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => ProcReceiver
+            },
+            Opts
+        ),
+    ProcReceiverId = dev_process:process_id(ProcReceiver, #{}, #{}),
+    % Initialize increment handler
+    {ok, _} = schedule_aos_call(ProcReceiver, <<"
+    Number = Number or 5
+    Handlers.add('Increment', function(msg) 
+        Number = Number + 1
+        ao.send({ Target = msg.From, Data = 'The current number is ' .. Number .. '!' })
+        return 'The current number is ' .. Number .. '!'
+    end)
+    ">>),
+    % Ensure Handlers were properly added
+    schedule_aos_call(ProcReceiver, <<"return #Handlers.list">>),
+    {ok, NumHandlers} =
+        hb_ao:resolve(
+            ProcReceiver,
+            <<"now/results/data">>,
+            Opts
+        ),
+    % _eval, _default, Increment
+    ?assertEqual(<<"3">>, NumHandlers),
+
+    schedule_aos_call(ProcReceiver, <<"return Number">>),
+    {ok, InitialNumber} = 
+        hb_ao:resolve(
+            ProcReceiver, 
+            <<"now/results/data">>,
+            Opts
+        ),
+    % Number is initialized to 5
+    ?assertEqual(<<"5">>, InitialNumber),
+    % Set up sender process to send Action: Increment to receiver
+    ProcSender = test_genesis_wasm_process(),
+    hb_cache:write(ProcSender, #{}),
+    {ok, _SchedInit2} = hb_ao:resolve(
+        ProcSender,
+        #{
+            <<"method">> => <<"POST">>,
+            <<"path">> => <<"schedule">>,
+            <<"body">> => ProcSender
+        },
+        Opts
+    ),
+    % First increment + push
+    {ok, ToPush}  = 
+        schedule_aos_call(
+            ProcSender,
+            <<
+                "Send({ Target = \"",
+                (ProcReceiverId)/binary,
+                "\", Action = \"Increment\" })"
+            >>
+        ),
+    SlotToPush = hb_ao:get(<<"slot">>, ToPush, Opts),
+    ?assertEqual(1, SlotToPush),
+    {ok, PushRes1} = 
+        hb_ao:resolve(
+            ProcSender,
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => SlotToPush,
+                <<"result-depth">> => 1
+            },
+            Opts
+        ),
+    % Check that number incremented normally
+    schedule_aos_call(ProcReceiver, <<"return Number">>),
+    {ok, AfterIncrementResult} =
+        hb_ao:resolve(
+            ProcReceiver, 
+            <<"now/results/data">>, 
+            Opts
+        ),
+    ?assertEqual(<<"6">>, AfterIncrementResult),
+
+    % Send another increment and push it
+    {ok, ToPush2}  = 
+        schedule_aos_call(
+            ProcSender,
+            <<
+                "Send({ Target = \"",
+                (ProcReceiverId)/binary,
+                "\", Action = \"Increment\" })"
+            >>
+        ),
+    SlotToPush2 = hb_ao:get(<<"slot">>, ToPush2, Opts),
+    ?assertEqual(3, SlotToPush2),
+    {ok, PushRes2} = 
+        hb_ao:resolve(
+            ProcSender,
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => SlotToPush2,
+                <<"result-depth">> => 1
+            },
+            Opts
+        ),
+    % Check that number incremented normally
+    schedule_aos_call(ProcReceiver, <<"return Number">>),
+    {ok, AfterIncrementResult2} =
+        hb_ao:resolve(
+            ProcReceiver, 
+            <<"now/results/data">>, 
+            Opts
+        ),
+    ?assertEqual(<<"7">>, AfterIncrementResult2),
+    % Test dryrun by calling compute with no assignment 
+    % Should return result without changing state
+    DryrunMsg =
+        hb_message:commit(
+            #{
+                <<"path">> => <<"as/compute">>,
+                <<"as-device">> => <<"execution">>,
+                <<"action">> => <<"Increment">>,
+                <<"target">> => ProcReceiverId
+            },
+            Opts
+        ),
+    {ok, DryrunResult} = hb_ao:resolve(ProcReceiver, DryrunMsg, Opts),
+    {ok, DryrunData} = 
+        hb_ao:resolve(DryrunResult, <<"results/outbox/1/Data">>, Opts),
+    ?assertEqual(<<"The current number is 8!">>, DryrunData),
+    % Ensure that number did not increment
+    schedule_aos_call(ProcReceiver, <<"return Number">>),
+    {ok, AfterDryrunResult} =
+        hb_ao:resolve(
+            ProcReceiver, 
+            <<"now/results/data">>, 
+            Opts
+        ),
+    ?assertEqual(<<"7">>, AfterDryrunResult).
 -endif.
