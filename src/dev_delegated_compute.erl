@@ -27,7 +27,7 @@ compute(Msg1, Msg2, Opts) ->
     ProcessID = get_process_id(Msg1, Msg2, Opts),
     % If request is an assignment, we will compute the result
     % Otherwise, it is a dryrun
-    Type = hb_ao:get(<<"type">>, Msg2, Opts),
+    Type = hb_ao:get(<<"type">>, Msg2, not_found, Opts),
     ?event({doing_delegated_compute, {msg2, Msg2}, {type, Type}}),
     % Execute the compute via external CU
     case Type of
@@ -70,7 +70,14 @@ do_compute(ProcID, Msg2, Opts) ->
 %% @doc Execute dry-run computation on a remote machine via relay and the JSON-Iface.
 do_dryrun(ProcID, Msg2, Opts) ->
     ?event({do_dryrun_msg, {req, Msg2}}),
-    Body = hb_json:encode(dev_json_iface:message_to_json_struct(Msg2, Opts)),
+    % Remove commitments from the message before sending to the external CU
+    Body = 
+        hb_json:encode(
+            dev_json_iface:message_to_json_struct(
+                hb_maps:without([<<"commitments">>], Msg2, Opts),
+                Opts
+            )
+        ),
     ?event({do_dryrun_body, {string, Body}}),
     % Send to external CU via relay using /dry-run endpoint
     Response = do_relay(
