@@ -818,7 +818,7 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                 end
             end, ExtraHdrs),
             {ok,
-                hb_maps:merge(BaseHdrs, EncodedExtraHdrs, Opts),
+                hb_maps:merge(EncodedExtraHdrs, BaseHdrs, Opts),
                 hb_message:convert(
                     Message,
                     Codec,
