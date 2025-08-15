@@ -23,7 +23,8 @@ normalize(Msg1, _Msg2, Opts) ->
 %% evaluate.
 compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
-    % Extract the process ID - this identifies which process to run compute against
+    % Extract the process ID - this identifies which process to run compute
+    % against.
     ProcessID = get_process_id(Msg1, Msg2, Opts),
     % If request is an assignment, we will compute the result
     % Otherwise, it is a dryrun
@@ -55,19 +56,21 @@ do_compute(ProcID, Msg2, Opts) ->
         ),
     ?event({do_compute_body, {aos2, {string, Body}}}),
     % Send to external CU via relay using /result endpoint
-    Response = do_relay(
-        <<"POST">>,
-        <<"/result/", (hb_util:bin(Slot))/binary, "?process-id=", ProcID/binary>>,
-        Body,
-        AOS2,
-        Opts#{
-            hashpath => ignore,
-            cache_control => [<<"no-store">>, <<"no-cache">>]
-        }
-    ),
+    Response =
+        do_relay(
+            <<"POST">>,
+            <<"/result/", (hb_util:bin(Slot))/binary, "?process-id=", ProcID/binary>>,
+            Body,
+            AOS2,
+            Opts#{
+                hashpath => ignore,
+                cache_control => [<<"no-store">>, <<"no-cache">>]
+            }
+        ),
     extract_json_res(Response, Opts).
 
-%% @doc Execute dry-run computation on a remote machine via relay and the JSON-Iface.
+%% @doc Execute dry-run computation on a remote machine via relay and use
+%% the JSON-Iface to decode the response.
 do_dryrun(ProcID, Msg2, Opts) ->
     ?event({do_dryrun_msg, {req, Msg2}}),
     % Remove commitments from the message before sending to the external CU
@@ -107,6 +110,8 @@ do_relay(Method, Path, Body, AOS2, Opts) ->
         },
         Opts
     ).
+
+%% @doc Extract the JSON response from the delegated compute response.
 extract_json_res(Response, Opts) ->
     case Response of 
         {ok, Res} ->
@@ -127,6 +132,8 @@ get_process_id(Msg1, Msg2, Opts) ->
         ProcID -> ProcID
     end.
 
+%% @doc Handle the response from the delegated compute server. Assumes that the
+%% response is in AOS2-style format, decoding with the JSON-Iface.
 handle_relay_response(Msg1, Msg2, Opts, Response, OutputPrefix, ProcessID, Slot) ->
     case Response of 
         {ok, JSONRes} ->

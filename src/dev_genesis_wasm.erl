@@ -313,8 +313,8 @@ log_server_events([Line | Rest]) ->
     ?event(genesis_wasm_server, {server_logged, {string, Line}}),
     log_server_events(Rest).
 
+%%% Tests
 
-%% Tests
 -ifdef(ENABLE_GENESIS_WASM).
 test_base_process() ->
     test_base_process(#{}).
@@ -490,6 +490,7 @@ spawn_and_execute_slot() ->
     ),
     {ok, Result} = hb_ao:resolve(Msg1, #{ <<"path">> => <<"now">> }, Opts),
     ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Result)).
+
 compare_result_genesis_wasm_and_wasm_test_() ->
     { timeout, 900, fun compare_result_genesis_wasm_and_wasm/0 }.
 compare_result_genesis_wasm_and_wasm() ->
@@ -552,6 +553,7 @@ compare_result_genesis_wasm_and_wasm() ->
         hb_ao:get(<<"results/data">>, ResultGenesisWasm),
         hb_ao:get(<<"results/data">>, ResultWasm)
     ).
+
 send_message_between_genesis_wasm_processes_test_() ->
     { timeout, 900, fun send_message_between_genesis_wasm_processes/0 }.
 send_message_between_genesis_wasm_processes() ->
@@ -633,6 +635,7 @@ send_message_between_genesis_wasm_processes() ->
         <<"Number: 20">>,
         hb_ao:get(<<"results/data">>, NewResultReceiver)
     ).
+
 dryrun_genesis_wasm_test_() ->  
     { timeout, 900, fun dryrun_genesis_wasm/0 }.
 dryrun_genesis_wasm() ->
