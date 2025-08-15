@@ -104,7 +104,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
             tabm,
             Opts
         ),
-    TABM = hb_tx:normalize_data_field(DeNormTABM),
+    TABM = dev_codec_ans104:normalize_data(DeNormTABM),
     MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
