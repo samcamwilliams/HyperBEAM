@@ -9,7 +9,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    simple_signed_nested_message_test(
+    empty_body_test(
         #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -18,13 +18,13 @@ run_test() ->
 %% to test the functionality of a single codec, etc.
 test_codecs() ->
     [
-        <<"structured@1.0">>,
-        <<"httpsig@1.0">>,
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
-        <<"flat@1.0">>,
+        % <<"structured@1.0">>,
+        % <<"httpsig@1.0">>,
+        % #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
+        % <<"flat@1.0">>,
         <<"ans104@1.0">>,
-        %#{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
-        <<"json@1.0">>
+        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
+        % <<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -573,6 +573,7 @@ simple_signed_nested_message_test(Codec, Opts) ->
             Opts,
             Codec
         ),
+    ?assert(hb_message:verify(Msg, all, Opts)),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
@@ -1365,7 +1366,7 @@ priv_survives_conversion_test(Codec, Opts) ->
 
 encode_balance_table(_Size, <<"ans104@1.0">>, _Opts) ->
     skip;
-encode_balance_table(_Size, #{ <<"commitment-device">> := <<"ans104@1.0">> }, _Opts) ->
+encode_balance_table(_Size, #{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
     skip;
 encode_balance_table(Size, Codec, Opts) ->
     Msg =

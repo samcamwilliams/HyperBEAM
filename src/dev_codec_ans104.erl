@@ -162,17 +162,16 @@ do_from(RawTX, Req, Opts) ->
     MapWithoutData =
         hb_maps:merge(
             TXKeysMap,
-            deduplicating_from_list(TX#tx.tags, Opts),
+            hb_ao:normalize_keys(deduplicating_from_list(TX#tx.tags, Opts), Opts),
 			Opts
         ),
     ?event({tags_from_tx, {explicit, MapWithoutData}}),
-    DataMap =
+    RawData =
         case TX#tx.data of
             Data when is_map(Data) ->
                 % If the data is a map, we need to recursively turn its children
                 % into messages from their tx representations.
-                hb_maps:merge(
-                    MapWithoutData,
+                hb_ao:normalize_keys(
                     hb_maps:map(
                         fun(_, InnerValue) ->
                             hb_util:ok(from(InnerValue, Req, Opts))
@@ -180,64 +179,60 @@ do_from(RawTX, Req, Opts) ->
                         Data,
                         Opts
                     ),
-					Opts
+                    Opts
                 );
-            Data when Data == ?DEFAULT_DATA -> MapWithoutData;
-            Data when is_binary(Data) -> MapWithoutData#{ <<"data">> => Data };
+            Data when is_binary(Data) -> Data;
             Data ->
                 ?event({unexpected_data_type, {explicit, Data}}),
                 ?event({was_processing, {explicit, TX}}),
                 throw(invalid_tx)
         end,
-    % Merge the data map with the rest of the TX map and remove any keys that
-    % are not part of the message.
-    NormKeyDataMap =
-        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData, Opts), Opts),
-    % Normalize the `data` field to the `ao-data-key's value, if set.
+    % Normalize the `data` field to the `ao-data-key' tag's value, if set.
+    DataKey = maps:get(<<"ao-data-key">>, MapWithoutData, <<"data">>),
     NormalizedDataMap =
-        case maps:get(<<"ao-data-key">>, NormKeyDataMap, undefined) of
-            undefined -> NormKeyDataMap;
-            DataKey ->
-                % Remove the `data' and `ao-data-key' fields from the map, then
-                % add the `data' field with the value of the `ao-data-key' field.
-                (maps:without([<<"data">>, <<"ao-data-key">>], NormKeyDataMap))#{
-                    DataKey => maps:get(<<"data">>, NormKeyDataMap, ?DEFAULT_DATA)
-                }
+        case {DataKey, RawData} of
+            {_, ?DEFAULT_DATA} -> #{};
+            {<<"data">>, _Data} when is_map(RawData) -> RawData;
+            {DataKey, _Data} -> #{ DataKey => RawData }
         end,
+    DataKeys = hb_util:to_sorted_keys(NormalizedDataMap, Opts),
+    BaseMessage =
+        hb_maps:merge(
+            hb_maps:without([<<"ao-data-key">>], MapWithoutData, Opts),
+            NormalizedDataMap,
+            Opts
+        ),
     ?event({norm_tx_keys_map, {explicit, NormalizedDataMap}}),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
     CommittedKeys =
         hb_ao:normalize_keys(
             hb_util:list_without(
-                [],%?FILTERED_TAGS,
-                    hb_util:unique(
-                        case hb_maps:find(<<"data">>, NormalizedDataMap, Opts) of
-                            error -> [];
-                            {ok, _} -> [inline_key(NormalizedDataMap)]
-                        end ++
-                        case hb_maps:is_key(<<"target">>, NormalizedDataMap, Opts) of
-                            false -> [];
-                            true -> [<<"target">>]
-                        end ++
-                        [
-                            hb_util:to_lower(hb_ao:normalize_key(Tag))
-                        ||
-                            {Tag, _} <- TX#tx.tags
-                        ]
-                    )
+                [<<"ao-data-key">>],
+                hb_util:unique(
+                    DataKeys ++
+                    case hb_maps:is_key(<<"target">>, BaseMessage, Opts) of
+                        false -> [];
+                        true -> [<<"target">>]
+                    end ++
+                    [
+                        hb_util:to_lower(hb_ao:normalize_key(Tag))
+                    ||
+                        {Tag, _} <- TX#tx.tags
+                    ]
+                )
             ),
             Opts
         ),
     WithCommitments =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
-                ?event({no_signature_detected, NormalizedDataMap}),
+                ?event({no_signature_detected, BaseMessage}),
                 case normal_tags(TX#tx.tags) of
-                    true -> NormalizedDataMap;
+                    true -> BaseMessage;
                     false ->
                         ID = hb_util:human_id(TX#tx.unsigned_id),
-                        NormalizedDataMap#{
+                        BaseMessage#{
                             <<"commitments">> => #{
                                 ID => #{
                                     <<"commitment-device">> => <<"ans104@1.0">>,
@@ -258,11 +253,10 @@ do_from(RawTX, Req, Opts) ->
                             <<"commitment-device">>,
                             <<"original-tags">>
                         ],
-                        NormalizedDataMap,
+                        BaseMessage,
 						Opts
                     ),
                 ID = hb_util:human_id(TX#tx.id),
-                ?event({raw_tx_id, {id, ID}, {explicit, WithoutBaseCommitment}}),
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"committer">> => Address,
@@ -564,7 +558,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                                 % a tag.
                                 Committed =
                                     hb_util:list_without(
-                                        ?FILTERED_TAGS,
+                                        [],
                                         hb_util:message_to_ordered_list(
                                             BaseCommitted
                                         )
