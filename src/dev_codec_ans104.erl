@@ -585,15 +585,16 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                     _ -> OriginalTags
                 end
         },
-    ?event({tx_before_data, TX}),
     % Recursively turn the remaining data items into tx records.
-    DataItems = hb_maps:from_list(lists:map(
-        fun({Key, Value}) ->
-            ?event({data_item, {key, Key}, {value, Value}}),
-            {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
-        end,
-        RawDataItems
-    )),
+    DataItems =
+        hb_maps:from_list(lists:map(
+            fun({Key, Value}) ->
+                ?event({data_item, {key, Key}, {value, Value}}),
+                {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
+            end,
+            RawDataItems
+        )),
+    ?event({tx_before_data, TX}),
     % Set the data based on the remaining keys.
     TXWithData = 
         case {TX#tx.data, hb_maps:size(DataItems, Opts)} of
@@ -607,20 +608,32 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                 TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->
                 TX#tx {
-                    data =
-                        DataItems#{
-                            <<"data">> => hb_util:ok(to(Data, Req, Opts))
-                        }
+                    data = DataItems#{ <<"data">> => Data }
                 }
         end,
+    TXWithNestedItems =
+        case is_map(TXWithData#tx.data) of
+            true ->
+                TX#tx {
+                    data =
+                        hb_maps:map(
+                            fun(_, Item) ->
+                                hb_util:ok(to(Item, Req, Opts))
+                            end,
+                            TXWithData#tx.data
+                        )
+                };
+            false ->
+                TXWithData
+        end,
     Res =
-        try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+        try ar_bundles:reset_ids(ar_bundles:normalize(TXWithNestedItems))
         catch
             _:Error ->
                 ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
                 ?event({prepared_tx_before_ids,
-                    {tags, {explicit, TXWithData#tx.tags}},
-                    {data, TXWithData#tx.data}
+                    {tags, {explicit, TXWithNestedItems#tx.tags}},
+                    {data, TXWithNestedItems#tx.data}
                 }),
                 throw(Error)
         end,
