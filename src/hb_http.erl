@@ -1175,11 +1175,10 @@ ans104_wasm_test() ->
         <<"body">> => Bin
     }, Wallet, #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }),
     ?assert(hb_message:verify(Msg, all, #{})),
-    ?event({msg, {explicit, Msg}}),
+    ?event({msg, Msg}),
     {ok, Res} = post(URL, Msg#{ <<"path">> => <<"/init/compute/results">> }, #{}),
     ?event({res, Res}),
-    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})),
-    ok.
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 send_large_signed_request_test() ->
     % Note: If the signature scheme ever changes, we will need to run the 
