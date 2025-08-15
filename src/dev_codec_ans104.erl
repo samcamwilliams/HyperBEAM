@@ -211,7 +211,7 @@ do_from(RawTX, Req, Opts) ->
             hb_util:unique(
                 ?BASE_COMMITTED_TAGS ++
                 [
-                    hb_ao:normalize_key(Tag)
+                    hb_util:to_lower(hb_ao:normalize_key(Tag))
                 ||
                     {Tag, _} <- TX#tx.tags
                 ] ++
@@ -256,7 +256,11 @@ do_from(RawTX, Req, Opts) ->
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"committer">> => Address,
                     <<"committed">> => CommittedKeys,
-                    <<"keyid">> => hb_util:encode(TX#tx.owner),
+                    <<"keyid">> =>
+                        <<
+                            "publickey:",
+                            (hb_util:safe_encode(TX#tx.owner))/binary
+                        >>,
                     <<"signature">> => hb_util:encode(TX#tx.signature),
                     <<"type">> => <<"rsa-pss-sha256">>
                 },
@@ -289,7 +293,7 @@ deduplicating_from_list(Tags, Opts) ->
     Aggregated =
         lists:foldl(
             fun({Key, Value}, Acc) ->
-                NormKey = hb_ao:normalize_key(Key),
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
                 case hb_maps:get(NormKey, Acc, undefined, Opts) of
                     undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->
@@ -329,7 +333,7 @@ deduplicating_from_list(Tags, Opts) ->
 normal_tags(Tags) ->
     lists:all(
         fun({Key, _}) ->
-            hb_ao:normalize_key(Key) =:= Key
+            hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
         end,
         Tags
     ).
@@ -428,8 +432,12 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                             ),
                         <<"owner">> =>
                             hb_util:decode(
-                                maps:get(<<"keyid">>, Commitment,
-                                    hb_util:encode(?DEFAULT_OWNER)
+                                dev_codec_httpsig_keyid:remove_scheme_prefix(
+                                    maps:get(
+                                        <<"keyid">>,
+                                        Commitment,
+                                        hb_util:encode(?DEFAULT_OWNER)
+                                    )
                                 )
                             )
                     },
@@ -514,7 +522,14 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % original tags. We do this by re-calculating the expected tags from the
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
-        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags, Opts),
+        ExpectedTagsFromOriginal =
+            hb_maps:fold(
+                fun(Key, Value, Acc) ->
+                    maps:put(hb_util:to_lower(Key), Value, Acc)
+                end,
+                #{},
+                deduplicating_from_list(OriginalTags, Opts)
+            ),
         NormRemaining = maps:from_list(Remaining),
         case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
@@ -799,3 +814,24 @@ simple_signed_to_httpsig_test_disabled() ->
     ?event(debug_test, {httpsig2, HTTPSig2}),
     ?assert(hb_message:verify(HTTPSig2, all, #{})),
     ?assert(hb_message:match(HTTPSig, HTTPSig2)).
+
+unsorted_tag_map_test() ->
+    TX =
+        ar_bundles:sign_item(
+            #tx{
+                format = ans104,
+                tags = [
+                    {<<"z">>, <<"position-1">>},
+                    {<<"a">>, <<"position-2">>}
+                ],
+                data = <<"data">>
+            },
+            ar_wallet:new()
+        ),
+    ?assert(ar_bundles:verify_item(TX)),
+    ?event(debug_test, {tx, TX}),
+    {ok, TABM} = dev_codec_ans104:from(TX, #{}, #{}),
+    ?event(debug_test, {tabm, TABM}),
+    {ok, Decoded} = dev_codec_ans104:to(TABM, #{}, #{}),
+    ?event(debug_test, {decoded, Decoded}),
+    ?assert(ar_bundles:verify_item(Decoded)).
