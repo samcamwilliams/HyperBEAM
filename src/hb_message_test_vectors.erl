@@ -9,12 +9,8 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    encode_small_balance_table_test(
-        <<"httpsig@1.0">>,
-        test_opts(normal)
-    ),
-    encode_small_balance_table_test(
-        <<"ans104@1.0">>,
+    simple_signed_nested_message_test(
+        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
 

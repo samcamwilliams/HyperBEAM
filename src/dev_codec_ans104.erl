@@ -19,6 +19,7 @@
         <<"signature">>
     ]
 ).
+
 %%% The list of keys that should be forced into the tag list, rather than being
 %%% encoded as fields in the TX record.
 -define(FORCED_TAG_FIELDS,
@@ -208,15 +209,25 @@ do_from(RawTX, Req, Opts) ->
     ?event({message_before_commitments, NormalizedDataMap}),
     CommittedKeys =
         hb_ao:normalize_keys(
-            hb_util:unique(
-                ?BASE_COMMITTED_TAGS ++
-                [
-                    hb_util:to_lower(hb_ao:normalize_key(Tag))
-                ||
-                    {Tag, _} <- TX#tx.tags
-                ] ++
-                hb_util:to_sorted_keys(NormalizedDataMap)
-            )
+            hb_util:list_without(
+                [],%?FILTERED_TAGS,
+                    hb_util:unique(
+                        case hb_maps:find(<<"data">>, NormalizedDataMap, Opts) of
+                            error -> [];
+                            {ok, _} -> [inline_key(NormalizedDataMap)]
+                        end ++
+                        case hb_maps:is_key(<<"target">>, NormalizedDataMap, Opts) of
+                            false -> [];
+                            true -> [<<"target">>]
+                        end ++
+                        [
+                            hb_util:to_lower(hb_ao:normalize_key(Tag))
+                        ||
+                            {Tag, _} <- TX#tx.tags
+                        ]
+                    )
+            ),
+            Opts
         ),
     WithCommitments =
         case TX#tx.signature of
@@ -269,13 +280,19 @@ do_from(RawTX, Req, Opts) ->
                         true -> Commitment#{ <<"bundle">> => true };
                         false -> Commitment
                     end,
+                CommitmentWithLastTX =
+                    case TX#tx.last_tx == ?DEFAULT_LAST_TX of
+                        true -> CommitmentWithBundle;
+                        false ->
+                            CommitmentWithBundle#{ <<"last_tx">> => TX#tx.last_tx }
+                    end,
                 WithoutBaseCommitment#{
                     <<"commitments">> => #{
                         ID =>
                             case normal_tags(TX#tx.tags) of
-                                true -> CommitmentWithBundle;
+                                true -> CommitmentWithLastTX;
                                 false ->
-                                    CommitmentWithBundle#{
+                                    CommitmentWithLastTX#{
                                         <<"original-tags">> => OriginalTagMap
                                     }
                             end
@@ -417,45 +434,36 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
 			Opts
         ),
     Commitments = hb_maps:get(<<"commitments">>, MaybeBundle, #{}, Opts),
-    TABMWithComm =
+    Commitment =
         case hb_maps:keys(Commitments, Opts) of
             [] -> TABM;
             [ID] ->
-                Commitment = hb_maps:get(ID, Commitments),
-                TABMWithoutCommitmentKeys =
-                    TABM#{
-                        <<"signature">> =>
-                            hb_util:decode(
-                                maps:get(<<"signature">>, Commitment,
-                                    hb_util:encode(?DEFAULT_SIG)
-                                )
-                            ),
-                        <<"owner">> =>
-                            hb_util:decode(
-                                dev_codec_httpsig_keyid:remove_scheme_prefix(
-                                    maps:get(
-                                        <<"keyid">>,
-                                        Commitment,
-                                        hb_util:encode(?DEFAULT_OWNER)
-                                    )
+                Comm = hb_maps:get(ID, Commitments),
+                Comm#{
+                    <<"signature">> =>
+                        hb_util:decode(
+                            maps:get(<<"signature">>, Comm,
+                                hb_util:encode(?DEFAULT_SIG)
+                            )
+                        ),
+                    <<"owner">> =>
+                        hb_util:decode(
+                            dev_codec_httpsig_keyid:remove_scheme_prefix(
+                                maps:get(
+                                    <<"keyid">>,
+                                    Comm,
+                                    hb_util:encode(?DEFAULT_OWNER)
                                 )
                             )
-                    },
-                WithOrigKeys =
-                    case maps:get(<<"original-tags">>, Commitment, undefined) of
-                        undefined -> TABMWithoutCommitmentKeys;
-                        OrigKeys ->
-                            TABMWithoutCommitmentKeys#{
-                                <<"original-tags">> => OrigKeys
-                            }
-                    end,
-                ?event({flattened_tabm, WithOrigKeys}),
-                WithOrigKeys;
+                        ),
+                    <<"original-tags">> =>
+                        tag_map_to_encoded_tags(
+                            hb_maps:get(<<"original-tags">>, Comm, [], Opts)
+                        )
+                };
             _ -> throw({multisignatures_not_supported_by_ans104, NormTABM})
         end,
-    OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}, Opts),
-    OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
-    TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm, Opts),
+    OriginalTags = hb_maps:get(<<"original-tags">>, Commitment, [], Opts),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
     % call message_to_tx/1 on the inner map because that would lead to adding
@@ -465,7 +473,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             fun(_Key, Msg) when is_map(Msg) -> hb_util:ok(to(Msg, Req, Opts));
                (_Key, Value) -> Value
             end,
-            TABMNoOrigTags,
+            TABM,
             Opts
         ),
     NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap, Opts),
@@ -479,21 +487,17 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
                 NormKey = hb_ao:normalize_key(Field),
-                case maps:find(NormKey, NormalizedMsgKeyMap2) of
-                    error -> {RemMap, [Default | Acc]};
-                    {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
-                        % NOTE: Do we really want to do this type coercion?
+                ValOrUndef =
+                    maps:get(
+                        NormKey,
+                        Commitment,
+                        maps:get(NormKey, NormalizedMsgKeyMap2, undefined)
+                    ),
+                case ValOrUndef of
+                    undefined -> {RemMap, [Default | Acc]};
+                    Value ->
                         {
-                            maps:remove(NormKey, RemMap),
-                            [
-                                try hb_util:native_id(Value) catch _:_ -> Value end
-                            |
-                                Acc
-                            ]
-                        };
-                    {ok, Value} ->
-                        {
-                            maps:remove(NormKey, RemMap),
+                            maps:without([NormKey], RemMap),
                             [Value|Acc]
                         }
                 end
@@ -501,6 +505,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             {NormalizedMsgKeyMap2, []},
             hb_message:default_tx_list()
         ),
+    ?event({after_field_extraction, RemainingMapWithoutForcedTags}),
     RemainingMap = maps:merge(RemainingMapWithoutForcedTags, ForcedTagFields),
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
@@ -550,7 +555,33 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
         TXWithoutTags#tx {
             tags =
                 case OriginalTags of
-                    [] -> Remaining;
+                    [] ->
+                        case hb_maps:find(<<"committed">>, Commitment, Opts) of
+                            error -> Remaining;
+                            {ok, BaseCommitted} ->
+                                % We make sure to filter the `target` key from
+                                % the list of keys such that it does not become
+                                % a tag.
+                                Committed =
+                                    hb_util:list_without(
+                                        ?FILTERED_TAGS,
+                                        hb_util:message_to_ordered_list(
+                                            BaseCommitted
+                                        )
+                                    ),
+                                lists:map(
+                                    fun(Key) ->
+                                        case hb_maps:find(Key, TABM, Opts) of
+                                            error ->
+                                                throw({missing_committed_key, Key});
+                                            {ok, Value} ->
+                                                {Key, Value}
+                                        end
+                                    end,
+                                    hb_util:message_to_ordered_list(Committed) --
+                                        [inline_key(TABM), <<"target">>]
+                                )
+                        end;
                     _ -> OriginalTags
                 end
         },
@@ -593,10 +624,10 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                 }),
                 throw(Error)
         end,
-    ?event({to_result, {explicit, Res}}),
+    ?event({to_result, Res}),
     {ok, Res};
-to(_Other, _Req, _Opts) ->
-    throw(invalid_tx).
+to(Other, _Req, _Opts) ->
+    throw({invalid_tx, Other}).
 
 %% @doc Normalize the data field of a message to its appropriate value in a TABM.
 normalize_data(Msg) ->
@@ -745,7 +776,7 @@ only_committed_maintains_target_test() ->
     {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded, #{}),
     ?event({only_committed, OnlyCommitted}),
     Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
-    ?event({encoded, Encoded}),
+    ?event({result, {initial, TX}, {result, Encoded}}),
     ?assertEqual(TX, Encoded).
 
 type_tag_test() ->

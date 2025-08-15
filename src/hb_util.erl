@@ -11,7 +11,7 @@
 -export([find_target_path/2, template_matches/3]).
 -export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([numbered_keys_to_list/2]).
--export([is_string_list/1, list_replace/3]).
+-export([is_string_list/1, list_replace/3, list_without/2, list_with/2]).
 -export([to_sorted_list/1, to_sorted_list/2, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -384,8 +384,12 @@ unique(List) ->
     lists:reverse(Unique).
 
 %% @doc Returns the intersection of two lists, with stable ordering.
-list_intersection(List1, List2) ->
+list_with(List1, List2) ->
     lists:filter(fun(Item) -> lists:member(Item, List2) end, List1).
+
+%% @doc Remove all occurrences of all items in the first list from the second list.
+list_without(List1, List2) ->
+    lists:filter(fun(Item) -> not lists:member(Item, List1) end, List2).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer. Optionally, it takes a standard

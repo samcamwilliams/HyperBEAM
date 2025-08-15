@@ -46,7 +46,15 @@ format(Item, Indent) when is_record(Item, tx) ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [hb_util:encode(id(Item, signed)), hb_util:encode(id(Item, unsigned))]
+                            [
+                                hb_util:encode(
+                                    case id(Item, signed) of
+                                        not_signed -> <<"">>;
+                                        ID -> ID
+                                    end
+                                ),
+                                hb_util:encode(id(Item, unsigned))
+                            ]
                         )
                     );
                 true -> hb_util:encode(id(Item, unsigned))

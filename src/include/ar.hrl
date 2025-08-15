@@ -2,6 +2,7 @@
 -define(DEFAULT_ID, << 0:256 >>).
 -define(DEFAULT_OWNER, << 0:4096 >>).
 -define(DEFAULT_DATA, <<>>).
+-define(DEFAULT_LAST_TX, <<>>).
 
 -define(MAX_TAG_NAME_SIZE, 3072).
 -define(MAX_TAG_VALUE_SIZE, 3072).
@@ -15,7 +16,7 @@
     %% Either the identifier of the previous transaction from
     %% the same wallet or the identifier of one of the
     %% last ?MAX_TX_ANCHOR_DEPTH blocks.
-    last_tx = <<>>,
+    last_tx = ?DEFAULT_LAST_TX,
     %% The public key the transaction is signed with.
     owner =	?DEFAULT_OWNER,
     %% A list of arbitrary key-value pairs. Keys and values are binaries.
