@@ -3,49 +3,11 @@
 -module(dev_codec_ans104).
 -export([to/3, from/3, commit/3, verify/3, content_type/1, normalize_data/1]).
 -export([serialize/3, deserialize/3]).
+%%% Public utilities
+-export([inline_key/1, deduplicating_from_list/2, normal_tags/1, encoded_tags_to_map/1]).
 -include("include/hb.hrl").
+-include("include/dev_codec_ans104.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
-%% The size at which a value should be made into a body item, instead of a
-%% tag.
--define(MAX_TAG_VAL, 4096).
-%% The list of TX fields that users can set directly. Data is excluded because
-%% it may be set by the codec in order to support nested messages.
--define(TX_KEYS,
-    [
-        <<"last_tx">>,
-        <<"owner">>,
-        <<"target">>,
-        <<"signature">>
-    ]
-).
-
-%%% The list of keys that should be forced into the tag list, rather than being
-%%% encoded as fields in the TX record.
--define(FORCED_TAG_FIELDS,
-    [
-        <<"quantity">>,
-        <<"manifest">>,
-        <<"data_size">>,
-        <<"data_tree">>,
-        <<"data_root">>,
-        <<"reward">>,
-        <<"denomination">>,
-        <<"signature_type">>
-    ]
-).
-%%% The list of tags that a user is explicitly committing to when they sign an
-%%% ANS-104 message.
--define(BASE_COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
-%% List of tags that should be removed during `to'. These relate to the nested
-%% ar_bundles format that is used by the `ans104@1.0' codec.
--define(FILTERED_TAGS,
-    [
-        <<"bundle-format">>,
-        <<"bundle-map">>,
-        <<"bundle-version">>
-    ]
-).
 
 %% @doc Return the content type for the codec.
 content_type(_) -> {ok, <<"application/ans104">>}.
@@ -131,214 +93,24 @@ from(TX, Req, Opts) when is_record(TX, tx) ->
 do_from(RawTX, Req, Opts) ->
     % Ensure the TX is fully deserialized.
     TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
-    OriginalTagMap = encoded_tags_to_map(TX#tx.tags),
-    % Get the raw fields and values of the tx record and pair them. Then convert 
-    % the list of key-value pairs into a map, removing irrelevant fields.
-    RawTXKeysMap =
-        hb_maps:with(?TX_KEYS,
-            hb_ao:normalize_keys(
-                hb_maps:from_list(
-                    lists:zip(
-                        record_info(fields, tx),
-                        tl(tuple_to_list(TX))
-                    )
-                ),
-				Opts
-            ),
-			Opts
-        ),
-    % Normalize `owner' to `keyid', remove 'id', and remove 'signature'
-    TXKeysMap =
-        hb_message:filter_default_keys(
-            maps:without(
-                [<<"owner">>, <<"signature">>],
-                case maps:get(<<"owner">>, RawTXKeysMap, ?DEFAULT_OWNER) of
-                    ?DEFAULT_OWNER -> RawTXKeysMap;
-                    Owner -> RawTXKeysMap#{ <<"keyid">> => Owner }
-                end
-            )
-        ),
-    % Generate a TABM from the tags.
-    MapWithoutData =
-        hb_maps:merge(
-            TXKeysMap,
-            hb_ao:normalize_keys(deduplicating_from_list(TX#tx.tags, Opts), Opts),
-			Opts
-        ),
-    ?event({tags_from_tx, {explicit, MapWithoutData}}),
-    RawData =
-        case TX#tx.data of
-            Data when is_map(Data) ->
-                % If the data is a map, we need to recursively turn its children
-                % into messages from their tx representations.
-                hb_ao:normalize_keys(
-                    hb_maps:map(
-                        fun(_, InnerValue) ->
-                            hb_util:ok(from(InnerValue, Req, Opts))
-                        end,
-                        Data,
-                        Opts
-                    ),
-                    Opts
-                );
-            Data when is_binary(Data) -> Data;
-            Data ->
-                ?event({unexpected_data_type, {explicit, Data}}),
-                ?event({was_processing, {explicit, TX}}),
-                throw(invalid_tx)
-        end,
-    % Normalize the `data` field to the `ao-data-key' tag's value, if set.
-    DataKey = maps:get(<<"ao-data-key">>, MapWithoutData, <<"data">>),
-    NormalizedDataMap =
-        case {DataKey, RawData} of
-            {_, ?DEFAULT_DATA} -> #{};
-            {<<"data">>, _Data} when is_map(RawData) -> RawData;
-            {DataKey, _Data} -> #{ DataKey => RawData }
-        end,
-    DataKeys = hb_util:to_sorted_keys(NormalizedDataMap, Opts),
-    BaseMessage =
-        hb_maps:merge(
-            hb_maps:without([<<"ao-data-key">>], MapWithoutData, Opts),
-            NormalizedDataMap,
-            Opts
-        ),
-    ?event({norm_tx_keys_map, {explicit, NormalizedDataMap}}),
-    %% Add the commitments to the message if the TX has a signature.
-    ?event({message_before_commitments, NormalizedDataMap}),
-    CommittedKeys =
-        hb_ao:normalize_keys(
-            hb_util:list_without(
-                [<<"ao-data-key">>],
-                hb_util:unique(
-                    DataKeys ++
-                    case hb_maps:is_key(<<"target">>, BaseMessage, Opts) of
-                        false -> [];
-                        true -> [<<"target">>]
-                    end ++
-                    [
-                        hb_util:to_lower(hb_ao:normalize_key(Tag))
-                    ||
-                        {Tag, _} <- TX#tx.tags
-                    ]
-                )
-            ),
-            Opts
-        ),
+    ?event({parsed_tx, TX}),
+    % Get the fields, tags, and data from the TX.
+    Fields = dev_codec_ans104_decode:fields(TX, Opts),
+    Tags = dev_codec_ans104_decode:tags(TX, Opts),
+    Data = dev_codec_ans104_decode:data(TX, Req, Tags, Opts),
+    ?event({parsed_components, {fields, Fields}, {tags, Tags}, {data, Data}}),
+    % Calculate the committed keys on from the TX.
+    Keys = dev_codec_ans104_decode:committed(TX, Fields, Tags, Data, Opts),
+    ?event({determined_committed_keys, Keys}),
+    % Create the base message from the fields, tags, and data, filtering to
+    % include only the keys that are committed. Will throw if a key is missing.
+    Base = dev_codec_ans104_decode:base(Keys, Fields, Tags, Data, Opts),
+    ?event({calculated_base_message, Base}),
+    % Add the commitments to the message if the TX has a signature.
     WithCommitments =
-        case TX#tx.signature of
-            ?DEFAULT_SIG ->
-                ?event({no_signature_detected, BaseMessage}),
-                case normal_tags(TX#tx.tags) of
-                    true -> BaseMessage;
-                    false ->
-                        ID = hb_util:human_id(TX#tx.unsigned_id),
-                        BaseMessage#{
-                            <<"commitments">> => #{
-                                ID => #{
-                                    <<"commitment-device">> => <<"ans104@1.0">>,
-                                    <<"type">> => <<"unsigned-sha256">>,
-                                    <<"original-tags">> => OriginalTagMap
-                                }
-                            }
-                        }
-                end;
-            _ ->
-                Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
-                WithoutBaseCommitment =
-                    hb_maps:without(
-                        [
-                            <<"id">>,
-                            <<"keyid">>,
-                            <<"signature">>,
-                            <<"commitment-device">>,
-                            <<"original-tags">>
-                        ],
-                        BaseMessage,
-						Opts
-                    ),
-                ID = hb_util:human_id(TX#tx.id),
-                Commitment = #{
-                    <<"commitment-device">> => <<"ans104@1.0">>,
-                    <<"committer">> => Address,
-                    <<"committed">> => CommittedKeys,
-                    <<"keyid">> =>
-                        <<
-                            "publickey:",
-                            (hb_util:safe_encode(TX#tx.owner))/binary
-                        >>,
-                    <<"signature">> => hb_util:encode(TX#tx.signature),
-                    <<"type">> => <<"rsa-pss-sha256">>
-                },
-                CommitmentWithBundle =
-                    case lists:member(<<"bundle-format">>, maps:values(CommittedKeys)) of
-                        true -> Commitment#{ <<"bundle">> => true };
-                        false -> Commitment
-                    end,
-                CommitmentWithLastTX =
-                    case TX#tx.last_tx == ?DEFAULT_LAST_TX of
-                        true -> CommitmentWithBundle;
-                        false ->
-                            CommitmentWithBundle#{ <<"last_tx">> => TX#tx.last_tx }
-                    end,
-                WithoutBaseCommitment#{
-                    <<"commitments">> => #{
-                        ID =>
-                            case normal_tags(TX#tx.tags) of
-                                true -> CommitmentWithLastTX;
-                                false ->
-                                    CommitmentWithLastTX#{
-                                        <<"original-tags">> => OriginalTagMap
-                                    }
-                            end
-                    }
-                }
-        end,
-    Res = hb_maps:without(?FILTERED_TAGS, WithCommitments, Opts),
-    ?event({message_after_commitments, Res}),
-    {ok, Res}.
-
-%% @doc Deduplicate a list of key-value pairs by key, generating a list of
-%% values for each normalized key if there are duplicates.
-deduplicating_from_list(Tags, Opts) ->
-    % Aggregate any duplicated tags into an ordered list of values.
-    Aggregated =
-        lists:foldl(
-            fun({Key, Value}, Acc) ->
-                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
-                case hb_maps:get(NormKey, Acc, undefined, Opts) of
-                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
-                    Existing when is_list(Existing) ->
-                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
-                    ExistingSingle ->
-                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
-                end
-            end,
-            #{},
-            Tags
-        ),
-    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
-    % Convert aggregated values into a structured-field list.
-    Res =
-        hb_maps:map(
-            fun(_Key, Values) when is_list(Values) ->
-                % Convert Erlang lists of binaries into a structured-field list.
-                iolist_to_binary(
-                    hb_structured_fields:list(
-                        [
-                            {item, {string, Value}, []}
-                        ||
-                            Value <- Values
-                        ]
-                    )
-                );
-            (_Key, Value) ->
-                Value
-            end,
-            Aggregated,
-            Opts
-        ),
-    ?event({deduplicating_from_list, {result, Res}}),
-    Res.
+        dev_codec_ans104_decode:with_commitments(TX, Tags, Base, Keys, Opts),
+    ?event({parsed_message, WithCommitments}),
+    {ok, WithCommitments}.
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
 normal_tags(Tags) ->
@@ -671,6 +443,49 @@ inline_key(Msg) ->
             % Default: `data' resolves to `data'.
             <<"data">>
     end.
+
+%% @doc Deduplicate a list of key-value pairs by key, generating a list of
+%% values for each normalized key if there are duplicates.
+deduplicating_from_list(Tags, Opts) ->
+    % Aggregate any duplicated tags into an ordered list of values.
+    Aggregated =
+        lists:foldl(
+            fun({Key, Value}, Acc) ->
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
+                case hb_maps:get(NormKey, Acc, undefined, Opts) of
+                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
+                    Existing when is_list(Existing) ->
+                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
+                    ExistingSingle ->
+                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
+                end
+            end,
+            #{},
+            Tags
+        ),
+    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
+    % Convert aggregated values into a structured-field list.
+    Res =
+        hb_maps:map(
+            fun(_Key, Values) when is_list(Values) ->
+                % Convert Erlang lists of binaries into a structured-field list.
+                iolist_to_binary(
+                    hb_structured_fields:list(
+                        [
+                            {item, {string, Value}, []}
+                        ||
+                            Value <- Values
+                        ]
+                    )
+                );
+            (_Key, Value) ->
+                Value
+            end,
+            Aggregated,
+            Opts
+        ),
+    ?event({deduplicating_from_list, {result, Res}}),
+    Res.
 
 %%% ANS-104-specific testing cases.
 

@@ -3,6 +3,7 @@
 -define(DEFAULT_OWNER, << 0:4096 >>).
 -define(DEFAULT_DATA, <<>>).
 -define(DEFAULT_LAST_TX, <<>>).
+-define(DEFAULT_TARGET, <<>>).
 
 -define(MAX_TAG_NAME_SIZE, 3072).
 -define(MAX_TAG_VALUE_SIZE, 3072).
@@ -22,7 +23,7 @@
     %% A list of arbitrary key-value pairs. Keys and values are binaries.
     tags = [],
     %% The address of the recipient, if any. The SHA2-256 hash of the public key.
-    target = <<>>,
+    target = ?DEFAULT_TARGET,
     %% The amount of Winstons to send to the recipient, if any.
     quantity = 0,
     %% The data to upload, if any. For v2 transactions, the field is optional - a fee
