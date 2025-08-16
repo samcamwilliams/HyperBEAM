@@ -167,7 +167,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
     RawTABM2 = hb_message:filter_default_keys(RawTABM),
     % Calculate and normalize the `data', if applicable.
-    NormTABM = normalize_data(RawTABM2),
+    NormTABM = dev_codec_ans104_encode:data(RawTABM2, Opts),
     ?event({to, {inbound, NormTABM}, {req, Req}}),
     MaybeBundle =
         case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
@@ -194,55 +194,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                 LoadedTABM#{ <<"commitments">> => LoadedComms }
         end,
     ?event({to, {maybe_bundle, MaybeBundle}}),
-    TABM =
-        hb_ao:normalize_keys(
-            hb_maps:without([<<"commitments">>], MaybeBundle, Opts),
-			Opts
-        ),
-    Commitments = hb_maps:get(<<"commitments">>, MaybeBundle, #{}, Opts),
-    Commitment =
-        case hb_maps:keys(Commitments, Opts) of
-            [] -> TABM;
-            [ID] ->
-                Comm = hb_maps:get(ID, Commitments),
-                Comm#{
-                    <<"signature">> =>
-                        hb_util:decode(
-                            maps:get(<<"signature">>, Comm,
-                                hb_util:encode(?DEFAULT_SIG)
-                            )
-                        ),
-                    <<"owner">> =>
-                        hb_util:decode(
-                            dev_codec_httpsig_keyid:remove_scheme_prefix(
-                                maps:get(
-                                    <<"keyid">>,
-                                    Comm,
-                                    hb_util:encode(?DEFAULT_OWNER)
-                                )
-                            )
-                        ),
-                    <<"original-tags">> =>
-                        tag_map_to_encoded_tags(
-                            hb_maps:get(<<"original-tags">>, Comm, [], Opts)
-                        )
-                };
-            _ -> throw({multisignatures_not_supported_by_ans104, NormTABM})
-        end,
-    OriginalTags = hb_maps:get(<<"original-tags">>, Commitment, [], Opts),
-    % Translate the keys into a binary map. If a key has a value that is a map,
-    % we recursively turn its children into messages. Notably, we do not simply
-    % call message_to_tx/1 on the inner map because that would lead to adding
-    % an extra layer of nesting to the data.
-    MsgKeyMap =
-        hb_maps:map(
-            fun(_Key, Msg) when is_map(Msg) -> hb_util:ok(to(Msg, Req, Opts));
-               (_Key, Value) -> Value
-            end,
-            TABM,
-            Opts
-        ),
-    NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap, Opts),
+    OnlyCommittedTABM = hb_message:with_only_committed(MaybeBundle, Opts),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     ForcedTagFields =
@@ -407,21 +359,6 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     {ok, Res};
 to(Other, _Req, _Opts) ->
     throw({invalid_tx, Other}).
-
-%% @doc Normalize the data field of a message to its appropriate value in a TABM.
-normalize_data(Msg) ->
-    case maps:is_key(<<"ao-data-key">>, Msg) of
-        true -> Msg;
-        false ->
-            case inline_key(Msg) of
-                <<"data">> -> Msg;
-                InlineKey ->
-                    (maps:without([InlineKey], Msg))#{
-                        <<"ao-data-key">> => InlineKey,
-                        <<"data">> => maps:get(InlineKey, Msg)
-                    }
-            end
-    end.
 
 %% @doc Determine if an `ao-data-key` should be added to the message.
 inline_key(Msg) ->
