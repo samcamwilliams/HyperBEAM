@@ -111,7 +111,8 @@ data(TABM, Req, Opts) ->
             hb_ao:normalize_keys(UncommittedTABM, Opts),
             Opts
         ),
-    DataVal = hb_maps:get(DataKey, NestedMsgs, ?DEFAULT_DATA),
+    DataVal = hb_maps:get(DataKey, TABM, ?DEFAULT_DATA),
+    ?event(debug_data, {data_val, DataVal}),
     case {DataVal, hb_maps:size(NestedMsgs, Opts)} of
         {Binary, 0} when is_binary(Binary) ->
             % There are no nested messages, so we return the binary alone.
