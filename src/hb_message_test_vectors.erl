@@ -9,7 +9,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    set_body_codec_test(
+    single_layer_message_to_encoding_test(
         #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -22,8 +22,8 @@ test_codecs() ->
         % <<"httpsig@1.0">>,
         % #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         % <<"flat@1.0">>,
-        <<"ans104@1.0">>
-        %#{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
+        <<"ans104@1.0">>,
+        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
         % <<"json@1.0">>
     ].
 
