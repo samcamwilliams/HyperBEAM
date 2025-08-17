@@ -253,20 +253,57 @@ simple_to_conversion_test() ->
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, hb_message:uncommitted(Decoded, #{}))).
 
-only_committed_maintains_target_test() ->
-    TX = ar_bundles:sign_item(#tx {
-        target = crypto:strong_rand_bytes(32),
-        tags = [
-            {<<"test-tag">>, <<"test-value">>},
-            {<<"test-tag-2">>, <<"test-value-2">>}
-        ],
-        data = <<"test-data">>
-    }, ar_wallet:new()),
+% @doc Ensure that items with an explicitly defined target field lead to:
+% 1. A target being set in the `target' field of the TX record on inbound.
+% 2. The parsed message having a `target' field which is committed.
+% 3. The target field being placed back into the record, rather than the `tags',
+%    on re-encoding.
+item_with_target_field_test() ->
+    TX =
+        ar_bundles:sign_item(
+            #tx {
+                target = crypto:strong_rand_bytes(32),
+                tags = [
+                    {<<"test-tag">>, <<"test-value">>},
+                    {<<"test-tag-2">>, <<"test-value-2">>}
+                ],
+                data = <<"test-data">>
+            },
+            ar_wallet:new()
+        ),
+    EncodedTarget = hb_util:encode(TX#tx.target),
     ?event({tx, TX}),
     Decoded = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
     ?event({decoded, Decoded}),
+    ?assertEqual(EncodedTarget, hb_maps:get(<<"target">>, Decoded, #{})),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded, #{}),
     ?event({only_committed, OnlyCommitted}),
+    ?assertEqual(EncodedTarget, hb_maps:get(<<"target">>, OnlyCommitted, #{})),
+    Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?assertEqual(TX#tx.target, Encoded#tx.target),
+    ?event({result, {initial, TX}, {result, Encoded}}),
+    ?assertEqual(TX, Encoded).
+
+% @doc Ensure that items made inside HyperBEAM use the tags to encode `target'
+% values, rather than the `target' field.
+item_with_target_tag_test() ->
+    Msg =
+        #{
+            <<"target">> => Target = hb_util:encode(crypto:strong_rand_bytes(32)),
+            <<"other-key">> => <<"other-value">>
+        },
+    {ok, TX} = to(Msg, #{}, #{}),
+    ?event({encoded_tx, TX}),
+    % The encoded TX should have ignored the `target' field, setting a tag instead.
+    ?assertEqual(?DEFAULT_TARGET, TX#tx.target),
+    Decoded = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({decoded, Decoded}),
+    % The decoded message should have the `target' key set to the tag value.
+    ?assertEqual(Target, hb_maps:get(<<"target">>, Decoded, undefined, #{})),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded, #{}),
+    ?event({only_committed, OnlyCommitted}),
+    % The target key should have been committed.
+    ?assertEqual(Target, hb_maps:get(<<"target">>, OnlyCommitted, undefined, #{})),
     Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({result, {initial, TX}, {result, Encoded}}),
     ?assertEqual(TX, Encoded).
