@@ -95,20 +95,20 @@ do_from(RawTX, Req, Opts) ->
     TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
     ?event({parsed_tx, TX}),
     % Get the fields, tags, and data from the TX.
-    Fields = dev_codec_ans104_decode:fields(TX, Opts),
-    Tags = dev_codec_ans104_decode:tags(TX, Opts),
-    Data = dev_codec_ans104_decode:data(TX, Req, Tags, Opts),
+    Fields = dev_codec_ans104_from:fields(TX, Opts),
+    Tags = dev_codec_ans104_from:tags(TX, Opts),
+    Data = dev_codec_ans104_from:data(TX, Req, Tags, Opts),
     ?event({parsed_components, {fields, Fields}, {tags, Tags}, {data, Data}}),
     % Calculate the committed keys on from the TX.
-    Keys = dev_codec_ans104_decode:committed(TX, Fields, Tags, Data, Opts),
+    Keys = dev_codec_ans104_from:committed(TX, Fields, Tags, Data, Opts),
     ?event({determined_committed_keys, Keys}),
     % Create the base message from the fields, tags, and data, filtering to
     % include only the keys that are committed. Will throw if a key is missing.
-    Base = dev_codec_ans104_decode:base(Keys, Fields, Tags, Data, Opts),
+    Base = dev_codec_ans104_from:base(Keys, Fields, Tags, Data, Opts),
     ?event({calculated_base_message, Base}),
     % Add the commitments to the message if the TX has a signature.
     WithCommitments =
-        dev_codec_ans104_decode:with_commitments(TX, Tags, Base, Keys, Opts),
+        dev_codec_ans104_from:with_commitments(TX, Tags, Base, Keys, Opts),
     ?event({parsed_message, WithCommitments}),
     {ok, WithCommitments}.
 
@@ -166,15 +166,15 @@ to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
     ?event({to, {inbound, RawTABM}, {req, Req}}),
-    MaybeBundle = dev_codec_ans104_encode:maybe_load(RawTABM, Req, Opts),
-    TX0 = dev_codec_ans104_encode:siginfo(MaybeBundle, Opts),
+    MaybeBundle = dev_codec_ans104_to:maybe_load(RawTABM, Req, Opts),
+    TX0 = dev_codec_ans104_to:siginfo(MaybeBundle, Opts),
     ?event({found_siginfo, TX0}),
     % Calculate and normalize the `data', if applicable.
-    Data = dev_codec_ans104_encode:data(MaybeBundle, Req, Opts),
+    Data = dev_codec_ans104_to:data(MaybeBundle, Req, Opts),
     ?event({calculated_data, Data}),
     TX1 = TX0#tx { data = Data },
     % Calculate the tags for the TX.
-    Tags = dev_codec_ans104_encode:tags(TX1, MaybeBundle, Data, Opts),
+    Tags = dev_codec_ans104_to:tags(TX1, MaybeBundle, Data, Opts),
     ?event({calculated_tags, Tags}),
     TX2 = TX1#tx { tags = Tags },
     ?event({tx_before_id_gen, TX2}),

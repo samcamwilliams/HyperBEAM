@@ -1,5 +1,5 @@
 %%% @doc Library functions for encoding messages to the ANS-104 format.
--module(dev_codec_ans104_encode).
+-module(dev_codec_ans104_to).
 -export([maybe_load/3, siginfo/2, data/3, tags/4]).
 -include("include/hb.hrl").
 -include("include/dev_codec_ans104.hrl").
@@ -138,48 +138,54 @@ tags(_TX, TABM, Data, Opts) ->
             TABM,
             Opts
         ),
-    case MaybeCommitment of
-        {ok, _, Commitment} ->
-            % There is already a commitment, so the tags and ordered are 
-            % pre-determined.
-            {ok, Committed} = hb_maps:find(<<"committed">>, Commitment, Opts),
-            lists:map(
-                fun(Key) ->
-                    case hb_maps:find(Key, TABM, Opts) of
-                        error -> throw({missing_committed_key, Key});
-                        {ok, Value} -> {Key, Value}
-                    end
-                end,
-                case DataKey of
-                    <<"data">> -> [];
-                    _ -> [{<<"ao-data-key">>, DataKey}]
-                end ++
+    CommittedKeys =
+        case MaybeCommitment of
+            {ok, _, Commitment} ->
+                % There is already a commitment, so the tags and ordered are 
+                % pre-determined.
+                {ok, Committed} = hb_maps:find(<<"committed">>, Commitment, Opts),
                 hb_util:message_to_ordered_list(Committed) --
-                    [DataKey, <<"target">>]
-            );
-        not_found ->
-            % There is no commitment, so we need to generate the tags. We add
-            % the bundle-format and bundle-version tags, and the ao-data-key
-            % tag if it is set to a non-default value, followed by the keys
-            % from the TABM (less the target key if it is an ID).
-            lists:map(
-                fun(Key) ->
-                    {Key, hb_util:ok(hb_maps:find(Key, TABM, Opts))}
-                end,
+                    [DataKey, <<"target">>];
+            not_found ->
+                % There is no commitment, so we need to generate the tags. We add
+                % the bundle-format and bundle-version tags, and the ao-data-key
+                % tag if it is set to a non-default value, followed by the keys
+                % from the TABM (less the target key if it is an ID).
                 hb_util:list_without(
                     case ?IS_ID(hb_maps:get(<<"target">>, TABM, Opts)) of
                         true -> [<<"target">>];
                         false -> []
                     end ++
-                    if is_map(Data) -> hb_maps:keys(Data, Opts);
+                    if is_map(Data) ->
+                        hb_util:to_sorted_keys(Data, Opts);
                     true -> []
                     end,
                     hb_private:reset(hb_util:to_sorted_keys(TABM, Opts)) --
                         [<<"commitments">>]
-                )
-            );
-        multiple_matches -> throw({multiple_ans104_commitments_unsupported, TABM})
-    end.
+                );
+            multiple_matches ->
+                throw({multiple_ans104_commitments_unsupported, TABM})
+        end,
+    ?event({committed_keys_before_data_key, CommittedKeys}),
+    lists:map(
+        fun(Key) ->
+            case hb_maps:find(Key, TABM, Opts) of
+                error -> throw({missing_committed_key, Key});
+                {ok, Value} -> {Key, Value}
+            end
+        end,
+        apply_data_key_to_committed(DataKey, CommittedKeys)
+    ).
+
+%% @doc Apply the `ao-data-key' to the committed keys to generate the list of
+%% tags to include in the message.
+apply_data_key_to_committed(DataKey, Committed) ->
+    case DataKey of
+        <<"data">> -> [];
+        _ -> [<<"ao-data-key">>]
+    end ++
+    hb_util:message_to_ordered_list(Committed) --
+        [DataKey, <<"target">>].
     
 %% @doc Determine if an `ao-data-key` should be added to the message.
 inline_key(Msg) ->

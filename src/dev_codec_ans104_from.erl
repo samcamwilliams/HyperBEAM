@@ -1,5 +1,5 @@
 %%% @doc Library functions for decoding ANS-104-style data items to TABM form.
--module(dev_codec_ans104_decode).
+-module(dev_codec_ans104_from).
 -export([fields/2, tags/2, data/4, committed/5, base/5]).
 -export([with_commitments/5]).
 -include("include/hb.hrl").
