@@ -20,7 +20,7 @@ fields(Item, _Opts) ->
 %% (e.g. `ao-type', `ao-data-key', etc.)
 tags(Item, Opts) ->
     hb_ao:normalize_keys(
-        dev_codec_ans104:deduplicating_from_list(Item#tx.tags, Opts),
+        deduplicating_from_list(Item#tx.tags, Opts),
         Opts
     ).
 
@@ -127,7 +127,7 @@ base(CommittedKeys, Fields, Tags, Data, Opts) ->
 with_commitments(Item, Tags, Base, CommittedKeys, Opts) ->
     case Item#tx.signature of
         ?DEFAULT_SIG ->
-            case dev_codec_ans104:normal_tags(Item#tx.tags) of
+            case normal_tags(Item#tx.tags) of
                 true -> Base;
                 false -> with_unsigned_commitment(Item, Base, CommittedKeys, Opts)
             end;
@@ -199,13 +199,36 @@ with_signed_commitment(Item, Tags, UncommittedMessage, CommittedKeys, Opts) ->
         }
     }.
 
+%% @doc Check whether a list of key-value pairs contains only normalized keys.
+normal_tags(Tags) ->
+    lists:all(
+        fun({Key, _}) ->
+            hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
+        end,
+        Tags
+    ).
+
 %% @doc Return the original tags of an item if it is applicable. Otherwise,
 %% return `undefined'.
 original_tags(Item, _Opts) ->
-    case dev_codec_ans104:normal_tags(Item#tx.tags) of
+    case normal_tags(Item#tx.tags) of
         true -> unset;
-        false -> dev_codec_ans104:encoded_tags_to_map(Item#tx.tags)
+        false -> encoded_tags_to_map(Item#tx.tags)
     end.
+
+%% @doc Convert an ANS-104 encoded tag list into a HyperBEAM-compatible map.
+encoded_tags_to_map(Tags) ->
+    hb_util:list_to_numbered_message(
+        lists:map(
+            fun({Key, Value}) ->
+                #{
+                    <<"name">> => Key,
+                    <<"value">> => Value
+                }
+            end,
+            Tags
+        )
+    ).
 
 %% @doc Remove all undefined values from a map.
 filter_unset(Map, Opts) ->
@@ -219,3 +242,46 @@ filter_unset(Map, Opts) ->
         Map,
         Opts
     ).
+
+%% @doc Deduplicate a list of key-value pairs by key, generating a list of
+%% values for each normalized key if there are duplicates.
+deduplicating_from_list(Tags, Opts) ->
+    % Aggregate any duplicated tags into an ordered list of values.
+    Aggregated =
+        lists:foldl(
+            fun({Key, Value}, Acc) ->
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
+                case hb_maps:get(NormKey, Acc, undefined, Opts) of
+                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
+                    Existing when is_list(Existing) ->
+                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
+                    ExistingSingle ->
+                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
+                end
+            end,
+            #{},
+            Tags
+        ),
+    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
+    % Convert aggregated values into a structured-field list.
+    Res =
+        hb_maps:map(
+            fun(_Key, Values) when is_list(Values) ->
+                % Convert Erlang lists of binaries into a structured-field list.
+                iolist_to_binary(
+                    hb_structured_fields:list(
+                        [
+                            {item, {string, Value}, []}
+                        ||
+                            Value <- Values
+                        ]
+                    )
+                );
+            (_Key, Value) ->
+                Value
+            end,
+            Aggregated,
+            Opts
+        ),
+    ?event({deduplicating_from_list, {result, Res}}),
+    Res.

@@ -3,8 +3,6 @@
 -module(dev_codec_ans104).
 -export([to/3, from/3, commit/3, verify/3, content_type/1]).
 -export([serialize/3, deserialize/3]).
-%%% Public utilities
--export([deduplicating_from_list/2, normal_tags/1, encoded_tags_to_map/1]).
 -include("include/hb.hrl").
 -include("include/dev_codec_ans104.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -112,41 +110,6 @@ do_from(RawTX, Req, Opts) ->
     ?event({parsed_message, WithCommitments}),
     {ok, WithCommitments}.
 
-%% @doc Check whether a list of key-value pairs contains only normalized keys.
-normal_tags(Tags) ->
-    lists:all(
-        fun({Key, _}) ->
-            hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
-        end,
-        Tags
-    ).
-
-%% @doc Convert an ANS-104 encoded tag list into a HyperBEAM-compatible map.
-encoded_tags_to_map(Tags) ->
-    hb_util:list_to_numbered_message(
-        lists:map(
-            fun({Key, Value}) ->
-                #{
-                    <<"name">> => Key,
-                    <<"value">> => Value
-                }
-            end,
-            Tags
-        )
-    ).
-
-%% @doc Convert a HyperBEAM-compatible map into an ANS-104 encoded tag list,
-%% recreating the original order of the tags.
-tag_map_to_encoded_tags(TagMap) ->
-    OrderedList = hb_util:message_to_ordered_list(hb_private:reset(TagMap)),
-    ?event({ordered_tagmap, {explicit, OrderedList}, {input, {explicit, TagMap}}}),
-    lists:map(
-        fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
-            {Key, Value}
-        end,
-        OrderedList
-    ).
-
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
 %% message's device in order to get the keys that we will be checkpointing. We 
@@ -193,49 +156,6 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     {ok, Res};
 to(Other, _Req, _Opts) ->
     throw({invalid_tx, Other}).
-
-%% @doc Deduplicate a list of key-value pairs by key, generating a list of
-%% values for each normalized key if there are duplicates.
-deduplicating_from_list(Tags, Opts) ->
-    % Aggregate any duplicated tags into an ordered list of values.
-    Aggregated =
-        lists:foldl(
-            fun({Key, Value}, Acc) ->
-                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
-                case hb_maps:get(NormKey, Acc, undefined, Opts) of
-                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
-                    Existing when is_list(Existing) ->
-                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
-                    ExistingSingle ->
-                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
-                end
-            end,
-            #{},
-            Tags
-        ),
-    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
-    % Convert aggregated values into a structured-field list.
-    Res =
-        hb_maps:map(
-            fun(_Key, Values) when is_list(Values) ->
-                % Convert Erlang lists of binaries into a structured-field list.
-                iolist_to_binary(
-                    hb_structured_fields:list(
-                        [
-                            {item, {string, Value}, []}
-                        ||
-                            Value <- Values
-                        ]
-                    )
-                );
-            (_Key, Value) ->
-                Value
-            end,
-            Aggregated,
-            Opts
-        ),
-    ?event({deduplicating_from_list, {result, Res}}),
-    Res.
 
 %%% ANS-104-specific testing cases.
 

@@ -66,19 +66,18 @@ commitment_to_tx(Commitment, Opts) ->
         end,
     Tags =
         case hb_maps:find(<<"original-tags">>, Commitment, Opts) of
-            {ok, OriginalTags} ->
-                lists:map(
-                    fun(#{ <<"name">> := Name, <<"value">> := Value }) ->
-                        {Name, Value}
-                    end,
-                    hb_util:message_to_ordered_list(OriginalTags)
-                );
+            {ok, OriginalTags} -> original_tags_to_tags(OriginalTags);
             error -> []
         end,
     LastTX =
         case hb_maps:find(<<"field-anchor">>, Commitment, Opts) of
             {ok, EncodedLastTX} -> hb_util:decode(EncodedLastTX);
             error -> ?DEFAULT_LAST_TX
+        end,
+    Target =
+        case hb_maps:find(<<"field-target">>, Commitment, Opts) of
+            {ok, EncodedTarget} -> hb_util:decode(EncodedTarget);
+            error -> ?DEFAULT_TARGET
         end,
     ?event({commitment_owner, Owner}),
     ?event({commitment_signature, Signature}),
@@ -88,7 +87,8 @@ commitment_to_tx(Commitment, Opts) ->
         owner = Owner,
         signature = Signature,
         tags = Tags,
-        anchor = LastTX
+        anchor = LastTX,
+        target = Target
     }.
 
 %% @doc Calculate the data field for a message.
@@ -192,6 +192,8 @@ committed_tag_keys_to_tags(DataKey, Committed, TABM, Opts) ->
         hb_util:message_to_ordered_list(Committed) --
             [DataKey, <<"target">>]
     ).
+
+%%% Utility functions
     
 %% @doc Determine if an `ao-data-key` should be added to the message.
 inline_key(Msg) ->
@@ -214,10 +216,14 @@ inline_key(Msg) ->
             <<"data">>
     end.
 
-%% @doc Where should we place the `target' key of a message?
-target_location(Msg) ->
-    case maps:get(<<"target">>, Msg, undefined) of
-        undefined -> undefined;
-        ID when ?IS_ID(ID) -> field;
-        _ -> tag
-    end.
+%% @doc Convert a HyperBEAM-compatible map into an ANS-104 encoded tag list,
+%% recreating the original order of the tags.
+original_tags_to_tags(TagMap) ->
+    OrderedList = hb_util:message_to_ordered_list(hb_private:reset(TagMap)),
+    ?event({ordered_tagmap, {explicit, OrderedList}, {input, {explicit, TagMap}}}),
+    lists:map(
+        fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
+            {Key, Value}
+        end,
+        OrderedList
+    ).
