@@ -138,7 +138,7 @@ tags(_TX, TABM, Data, Opts) ->
             TABM,
             Opts
         ),
-    CommittedKeys =
+    CommittedTagKeys =
         case MaybeCommitment of
             {ok, _, Commitment} ->
                 % There is already a commitment, so the tags and ordered are 
@@ -166,7 +166,22 @@ tags(_TX, TABM, Data, Opts) ->
             multiple_matches ->
                 throw({multiple_ans104_commitments_unsupported, TABM})
         end,
-    ?event({committed_keys_before_data_key, CommittedKeys}),
+    ?event(
+        {tags_before_data_key,
+            {committed_tag_keys, CommittedTagKeys},
+            {data_key, DataKey},
+            {data, Data},
+            {tabm, TABM}
+        }),
+    committed_tag_keys_to_tags(DataKey, CommittedTagKeys, TABM, Opts).
+
+%% @doc Apply the `ao-data-key' to the committed keys to generate the list of
+%% tags to include in the message.
+committed_tag_keys_to_tags(DataKey, Committed, TABM, Opts) ->
+    case DataKey of
+        <<"data">> -> [];
+        _ -> [{<<"ao-data-key">>, DataKey}]
+    end ++
     lists:map(
         fun(Key) ->
             case hb_maps:find(Key, TABM, Opts) of
@@ -174,18 +189,9 @@ tags(_TX, TABM, Data, Opts) ->
                 {ok, Value} -> {Key, Value}
             end
         end,
-        apply_data_key_to_committed(DataKey, CommittedKeys)
+        hb_util:message_to_ordered_list(Committed) --
+            [DataKey, <<"target">>]
     ).
-
-%% @doc Apply the `ao-data-key' to the committed keys to generate the list of
-%% tags to include in the message.
-apply_data_key_to_committed(DataKey, Committed) ->
-    case DataKey of
-        <<"data">> -> [];
-        _ -> [<<"ao-data-key">>]
-    end ++
-    hb_util:message_to_ordered_list(Committed) --
-        [DataKey, <<"target">>].
     
 %% @doc Determine if an `ao-data-key` should be added to the message.
 inline_key(Msg) ->
