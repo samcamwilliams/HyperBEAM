@@ -130,7 +130,7 @@ data(TABM, Req, Opts) ->
 %% keys to use from the `committed' field of the TABM.
 tags(#tx{ tags = ExistingTags }, _, _, _) when ExistingTags =/= [] ->
     ExistingTags;
-tags(_TX, TABM, Data, Opts) ->
+tags(TX, TABM, Data, Opts) ->
     DataKey = inline_key(TABM),
     MaybeCommitment =
         hb_message:commitment(
@@ -142,22 +142,24 @@ tags(_TX, TABM, Data, Opts) ->
         case MaybeCommitment of
             {ok, _, Commitment} ->
                 % There is already a commitment, so the tags and ordered are 
-                % pre-determined.
-                {ok, Committed} = hb_maps:find(<<"committed">>, Commitment, Opts),
-                hb_util:message_to_ordered_list(Committed) --
-                    [DataKey, <<"target">>];
+                % pre-determined. If the target is set in the base TX from the
+                % commitment, we check if the TABM equals that value. If it does,
+                % we do not additionally add the target tag. If they differ, we
+                % include it.
+                hb_util:ok(hb_maps:find(<<"committed">>, Commitment, Opts)) --
+                    case {TX#tx.target, hb_maps:get(<<"target">>, TABM, undefined, Opts)} of
+                        {?DEFAULT_TARGET, _} -> [];
+                        {FieldTarget, TagTarget} when FieldTarget =/= TagTarget ->
+                            [<<"target">>];
+                        _ -> []
+                    end;
             not_found ->
                 % There is no commitment, so we need to generate the tags. We add
                 % the bundle-format and bundle-version tags, and the ao-data-key
                 % tag if it is set to a non-default value, followed by the keys
                 % from the TABM (less the target key if it is an ID).
                 hb_util:list_without(
-                    case ?IS_ID(hb_maps:get(<<"target">>, TABM, Opts)) of
-                        true -> [<<"target">>];
-                        false -> []
-                    end ++
-                    if is_map(Data) ->
-                        hb_util:to_sorted_keys(Data, Opts);
+                    if is_map(Data) -> hb_maps:keys(Data, Opts);
                     true -> []
                     end,
                     hb_private:reset(hb_util:to_sorted_keys(TABM, Opts)) --
@@ -189,8 +191,7 @@ committed_tag_keys_to_tags(DataKey, Committed, TABM, Opts) ->
                 {ok, Value} -> {Key, Value}
             end
         end,
-        hb_util:message_to_ordered_list(Committed) --
-            [DataKey, <<"target">>]
+        hb_util:message_to_ordered_list(Committed) -- [DataKey]
     ).
 
 %%% Utility functions
