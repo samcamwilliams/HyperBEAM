@@ -150,6 +150,10 @@ tags(_TX, TABM, Data, Opts) ->
                         {ok, Value} -> {Key, Value}
                     end
                 end,
+                case DataKey of
+                    <<"data">> -> [];
+                    _ -> [{<<"ao-data-key">>, DataKey}]
+                end ++
                 hb_util:message_to_ordered_list(Committed) --
                     [DataKey, <<"target">>]
             );
@@ -158,10 +162,6 @@ tags(_TX, TABM, Data, Opts) ->
             % the bundle-format and bundle-version tags, and the ao-data-key
             % tag if it is set to a non-default value, followed by the keys
             % from the TABM (less the target key if it is an ID).
-            case DataKey of
-                <<"data">> -> [];
-                _ -> [{<<"ao-data-key">>, DataKey}]
-            end ++
             lists:map(
                 fun(Key) ->
                     {Key, hb_util:ok(hb_maps:find(Key, TABM, Opts))}
