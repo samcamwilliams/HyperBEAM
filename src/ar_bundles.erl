@@ -82,6 +82,12 @@ format(Item, Indent) when is_record(Item, tx) ->
                 Target -> hb_util:id(Target)
             end
         ], Indent + 1) ++
+    format_line("Last TX: ~s", [
+            case Item#tx.anchor of
+                ?DEFAULT_LAST_TX -> "[NONE]";
+                LastTX -> hb_util:encode(LastTX)
+            end
+        ], Indent + 1) ++
     format_line("Tags:", Indent + 1) ++
     lists:map(
         fun({Key, Val}) -> format_line("~s -> ~s", [Key, Val], Indent + 2) end,
@@ -232,7 +238,7 @@ new_item(Target, Anchor, Tags, Data) ->
         #tx{
             format = ans104,
             target = Target,
-            last_tx = Anchor,
+            anchor = Anchor,
             tags = Tags,
             data = Data,
             data_size = byte_size(Data)
@@ -291,7 +297,7 @@ data_item_signature_data(RawItem, signed) ->
         utf8_encoded("1"),
         <<(NormItem#tx.owner)/binary>>,
         <<(NormItem#tx.target)/binary>>,
-        <<(NormItem#tx.last_tx)/binary>>,
+        <<(NormItem#tx.anchor)/binary>>,
         encode_tags(NormItem#tx.tags),
         <<(NormItem#tx.data)/binary>>
     ]).
@@ -389,7 +395,7 @@ serialize(RawTX, binary) ->
         (TX#tx.signature)/binary,
         (TX#tx.owner)/binary,
         (encode_optional_field(TX#tx.target))/binary,
-        (encode_optional_field(TX#tx.last_tx))/binary,
+        (encode_optional_field(TX#tx.anchor))/binary,
         (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
         EncodedTags/binary,
         (TX#tx.data)/binary
@@ -420,8 +426,8 @@ enforce_valid_tx(TX) ->
         {invalid_field, unsigned_id, TX#tx.unsigned_id}
     ),
     ok_or_throw(TX,
-        check_size(TX#tx.last_tx, [0, 32]),
-        {invalid_field, last_tx, TX#tx.last_tx}
+        check_size(TX#tx.anchor, [0, 32]),
+        {invalid_field, last_tx, TX#tx.anchor}
     ),
     ok_or_throw(TX,
         check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
@@ -435,6 +441,10 @@ enforce_valid_tx(TX) ->
         check_size(TX#tx.signature, [0, 65, byte_size(?DEFAULT_SIG)]),
         {invalid_field, signature, TX#tx.signature}
     ),
+    ok_or_throw(TX,
+        check_type(TX#tx.tags, list),
+        {invalid_field, tags, TX#tx.tags}
+    ),
     lists:foreach(
         fun({Name, Value}) ->
             ok_or_throw(TX,
@@ -447,11 +457,11 @@ enforce_valid_tx(TX) ->
             ),
             ok_or_throw(TX,
                 check_type(Value, binary),
-                {invalid_field, tag_value, Value}
+                {invalid_field, tag_value, {Name, Value}}
             ),
             ok_or_throw(TX,
                 check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
-                {invalid_field, tag_value, Value}
+                {invalid_field, tag_value, {Name, Value}}
             );
             (InvalidTagForm) ->
                 throw({invalid_field, tag, InvalidTagForm})
@@ -686,7 +696,7 @@ deserialize(Binary, binary) ->
             signature = Signature,
             owner = Owner,
             target = Target,
-            last_tx = Anchor,
+            anchor = Anchor,
             tags = Tags,
             data = Data,
             data_size = byte_size(Data)
@@ -985,7 +995,7 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
     ?assertEqual(Owner, DataItem#tx.owner),
     ?assertEqual(Target, DataItem#tx.target),
-    ?assertEqual(Anchor, DataItem#tx.last_tx),
+    ?assertEqual(Anchor, DataItem#tx.anchor),
     ?assertEqual(Tags, DataItem#tx.tags),
     ?assertEqual(Data, DataItem#tx.data),
     ?assertEqual(byte_size(Data), DataItem#tx.data_size).
@@ -1031,17 +1041,17 @@ test_recursive_bundle() ->
     W = ar_wallet:new(),
     Item1 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = <<1:256/integer>>
     }, W),
     Item2 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = [Item1]
     }, W),
     Item3 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = [Item2]
     }, W),
     Bundle = serialize([Item3]),
@@ -1061,7 +1071,7 @@ test_bundle_map() ->
     }, W),
     Item2 = sign_item(#tx{
         format = ans104,
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = #{<<"key1">> => Item1}
     }, W),
     Bundle = serialize(Item2),

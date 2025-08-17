@@ -213,7 +213,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     TX =
         #tx {
             format = ans104,
-            last_tx =
+            anchor =
                 normalize_null(hb_maps:get(<<"anchor">>, Item, not_found, GQLOpts)),
             signature = Signature,
             signature_type = SignatureType,

@@ -10,7 +10,10 @@
 fields(Item, _Opts) ->
     case Item#tx.target of
         ?DEFAULT_TARGET -> #{};
-        Target -> #{ <<"target">> => Target }
+        Target ->
+            #{
+                <<"target">> => hb_util:encode(Target)
+            }
     end.
 
 %% @doc Return a TABM of the raw tags of the item, including all metadata
@@ -57,8 +60,8 @@ data(Item, Req, Tags, Opts) ->
 committed(Item, Fields, Tags, Data, Opts) ->
     hb_util:unique(
         field_keys(Fields, Tags, Data, Opts) ++
-        data_keys(Data, Opts) ++
-        tag_keys(Item, Opts)
+            data_keys(Data, Opts) ++
+            tag_keys(Item, Opts)
     ).
 
 %% @doc Return the list of the keys from the fields TABM.
@@ -80,10 +83,9 @@ data_keys(Data, Opts) ->
 %% tags: `ao-data-key', `ao-types', `bundle-format', `bundle-version'.
 tag_keys(Item, _Opts) ->
     MetaTags = [
-        <<"ao-data-key">>,
-        <<"ao-types">>,
         <<"bundle-format">>,
-        <<"bundle-version">>
+        <<"bundle-version">>,
+        <<"ao-data-key">>
     ],
     lists:filtermap(
         fun({Tag, _}) ->
@@ -100,7 +102,6 @@ tag_keys(Item, _Opts) ->
 %% 1. Data
 %% 2. Tags
 %% 3. Fields
-%% 
 base(CommittedKeys, Fields, Tags, Data, Opts) ->
     hb_maps:from_list(
         lists:map(
@@ -128,8 +129,7 @@ with_commitments(Item, Tags, Base, CommittedKeys, Opts) ->
         ?DEFAULT_SIG ->
             case dev_codec_ans104:normal_tags(Item#tx.tags) of
                 true -> Base;
-                false ->
-                    with_unsigned_commitment(Item, Base, CommittedKeys, Opts)
+                false -> with_unsigned_commitment(Item, Base, CommittedKeys, Opts)
             end;
         _ -> with_signed_commitment(Item, Tags, Base, CommittedKeys, Opts)
     end.
@@ -146,7 +146,17 @@ with_unsigned_commitment(Item, UncommittedMessage, CommittedKeys, Opts) ->
                         <<"commitment-device">> => <<"ans104@1.0">>,
                         <<"committed">> => CommittedKeys,
                         <<"type">> => <<"unsigned-sha256">>,
-                        <<"original-tags">> => original_tags(Item, Opts)
+                        <<"original-tags">> => original_tags(Item, Opts),
+                        <<"field-target">> =>
+                            case Item#tx.target of
+                                ?DEFAULT_TARGET -> unset;
+                                Target -> hb_util:encode(Target)
+                            end,
+                        <<"field-anchor">> =>
+                            case Item#tx.anchor of
+                                ?DEFAULT_LAST_TX -> unset;
+                                LastTX -> LastTX
+                            end
                     },
                     Opts
                 )
@@ -165,13 +175,20 @@ with_signed_commitment(Item, Tags, UncommittedMessage, CommittedKeys, Opts) ->
                 <<"committer">> => Address,
                 <<"committed">> => CommittedKeys,
                 <<"signature">> => hb_util:encode(Item#tx.signature),
+                <<"keyid">> =>
+                    <<"publickey:", (hb_util:encode(Item#tx.owner))/binary>>,
                 <<"type">> => <<"rsa-pss-sha256">>,
                 <<"bundle">> => hb_maps:is_key(<<"bundle-format">>, Tags, Opts),
                 <<"original-tags">> => original_tags(Item, Opts),
-                <<"last_tx">> =>
-                    case Item#tx.last_tx of
+                <<"field-anchor">> =>
+                    case Item#tx.anchor of
                         ?DEFAULT_LAST_TX -> unset;
                         LastTX -> LastTX
+                    end,
+                <<"field-target">> =>
+                    case Item#tx.target of
+                        ?DEFAULT_TARGET -> unset;
+                        Target -> hb_util:encode(Target)
                     end
             },
             Opts

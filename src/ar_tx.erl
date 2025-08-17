@@ -14,7 +14,7 @@
 new(Dest, Reward, Qty, Last) ->
     #tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = Last,
+        anchor = Last,
         quantity = Qty,
         target = Dest,
         data = <<>>,
@@ -25,7 +25,7 @@ new(Dest, Reward, Qty, Last) ->
 new(Dest, Reward, Qty, Last, SigType) ->
     #tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = Last,
+        anchor = Last,
         quantity = Qty,
         target = Dest,
         data = <<>>,
@@ -61,7 +61,7 @@ signature_data_segment(TX) ->
         << (TX#tx.target)/binary >>,
         << (list_to_binary(integer_to_list(TX#tx.quantity)))/binary >>,
         << (list_to_binary(integer_to_list(TX#tx.reward)))/binary >>,
-        << (TX#tx.last_tx)/binary >>,
+        << (TX#tx.anchor)/binary >>,
         << (integer_to_binary(TX#tx.data_size))/binary >>,
         << (TX#tx.data_root)/binary >>
     ],
@@ -131,7 +131,7 @@ json_struct_to_tx(TXStruct) ->
     #tx{
         format = Format,
         id = TXID,
-        last_tx = hb_util:decode(hb_util:find_value(<<"last_tx">>, TXStruct)),
+        anchor = hb_util:decode(hb_util:find_value(<<"anchor">>, TXStruct)),
         owner = hb_util:decode(hb_util:find_value(<<"owner">>, TXStruct)),
         tags = [{hb_util:decode(Name), hb_util:decode(Value)}
                 %% Only the elements matching this pattern are included in the list.
@@ -154,7 +154,7 @@ tx_to_json_struct(
     #tx{
         id = ID,
         format = Format,
-        last_tx = Last,
+        anchor = Anchor,
         owner = Owner,
         tags = Tags,
         target = Target,
@@ -175,7 +175,7 @@ tx_to_json_struct(
                     Format
             end},
         {id, hb_util:encode(ID)},
-        {last_tx, hb_util:encode(Last)},
+        {anchor, hb_util:encode(Anchor)},
         {owner, hb_util:encode(Owner)},
         {tags,
             lists:map(

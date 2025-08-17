@@ -17,7 +17,7 @@
     %% Either the identifier of the previous transaction from
     %% the same wallet or the identifier of one of the
     %% last ?MAX_TX_ANCHOR_DEPTH blocks.
-    last_tx = ?DEFAULT_LAST_TX,
+    anchor = ?DEFAULT_LAST_TX,
     %% The public key the transaction is signed with.
     owner =	?DEFAULT_OWNER,
     %% A list of arbitrary key-value pairs. Keys and values are binaries.

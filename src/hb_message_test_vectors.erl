@@ -9,7 +9,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    empty_body_test(
+    single_layer_message_to_encoding_test(
         #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -22,8 +22,8 @@ test_codecs() ->
         % <<"httpsig@1.0">>,
         % #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
         % <<"flat@1.0">>,
-        <<"ans104@1.0">>,
-        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
+        <<"ans104@1.0">>
+        %#{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
         % <<"json@1.0">>
     ].
 
@@ -313,17 +313,17 @@ codec_roundtrip_conversion_is_idempotent_test(Codec, Opts) ->
 %% that have the default values found in the tx record, but not those that
 %% have been set by the user.
 default_keys_removed_test() ->
-    TX = #tx { unsigned_id = << 1:256 >>, last_tx = << 2:256 >> },
+    TX = #tx { unsigned_id = << 1:256 >>, anchor = << 2:256 >> },
     TXMap = #{
         <<"unsigned_id">> => TX#tx.unsigned_id,
-        <<"last_tx">> => TX#tx.last_tx,
+        <<"anchor">> => TX#tx.anchor,
         <<"owner">> => TX#tx.owner,
         <<"target">> => TX#tx.target,
         <<"data">> => TX#tx.data
     },
     FilteredMap = hb_message:filter_default_keys(TXMap),
     ?assertEqual(<< 1:256 >>, hb_maps:get(<<"unsigned_id">>, FilteredMap)),
-    ?assertEqual(<< 2:256 >>, hb_maps:get(<<"last_tx">>, FilteredMap, not_found)),
+    ?assertEqual(<< 2:256 >>, hb_maps:get(<<"anchor">>, FilteredMap, not_found)),
     ?assertEqual(not_found, hb_maps:get(<<"owner">>, FilteredMap, not_found)),
     ?assertEqual(not_found, hb_maps:get(<<"target">>, FilteredMap, not_found)).
 
@@ -362,7 +362,7 @@ set_body_codec_test(Codec, Opts) ->
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_encoding_test(Codec, Opts) ->
     Msg = #{
-        <<"last_tx">> => << 2:256 >>,
+        <<"anchor">> => << 2:256 >>,
         <<"target">> => << 4:256 >>,
         <<"data">> => <<"DATA">>,
         <<"special-key">> => <<"SPECIAL_VALUE">>

@@ -1,10 +1,10 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/3, from/3, commit/3, verify/3, content_type/1, normalize_data/1]).
+-export([to/3, from/3, commit/3, verify/3, content_type/1]).
 -export([serialize/3, deserialize/3]).
 %%% Public utilities
--export([inline_key/1, deduplicating_from_list/2, normal_tags/1, encoded_tags_to_map/1]).
+-export([deduplicating_from_list/2, normal_tags/1, encoded_tags_to_map/1]).
 -include("include/hb.hrl").
 -include("include/dev_codec_ans104.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -165,221 +165,34 @@ to(Binary, _Req, _Opts) when is_binary(Binary) ->
 to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
-    RawTABM2 = hb_message:filter_default_keys(RawTABM),
+    ?event({to, {inbound, RawTABM}, {req, Req}}),
+    MaybeBundle = dev_codec_ans104_encode:maybe_load(RawTABM, Req, Opts),
+    TX0 = dev_codec_ans104_encode:siginfo(MaybeBundle, Opts),
+    ?event({found_siginfo, TX0}),
     % Calculate and normalize the `data', if applicable.
-    NormTABM = dev_codec_ans104_encode:data(RawTABM2, Opts),
-    ?event({to, {inbound, NormTABM}, {req, Req}}),
-    MaybeBundle =
-        case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
-            false -> NormTABM;
-            true ->
-                % Convert back to the fully loaded structured@1.0 message, then
-                % convert to TABM with bundling enabled.
-                Structured = hb_message:convert(NormTABM, <<"structured@1.0">>, Opts),
-                Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
-                % Convert to TABM with bundling enabled.
-                LoadedTABM =
-                    hb_message:convert(
-                        Loaded,
-                        tabm,
-                        #{
-                            <<"device">> => <<"structured@1.0">>,
-                            <<"bundle">> => true
-                        },
-                        Opts
-                    ),
-                % Ensure the commitments from the original message are the only
-                % ones in the fully loaded message.
-                LoadedComms = maps:get(<<"commitments">>, NormTABM, #{}),
-                LoadedTABM#{ <<"commitments">> => LoadedComms }
-        end,
-    ?event({to, {maybe_bundle, MaybeBundle}}),
-    OnlyCommittedTABM = hb_message:with_only_committed(MaybeBundle, Opts),
-    % Iterate through the default fields, replacing them with the values from
-    % the message map if they are present.
-    ForcedTagFields =
-        maps:with(?FORCED_TAG_FIELDS, NormalizedMsgKeyMap),
-    NormalizedMsgKeyMap2 =
-        maps:without(?FORCED_TAG_FIELDS, NormalizedMsgKeyMap),
-    {RemainingMapWithoutForcedTags, BaseTXList} =
-        lists:foldl(
-            fun({Field, Default}, {RemMap, Acc}) ->
-                NormKey = hb_ao:normalize_key(Field),
-                ValOrUndef =
-                    maps:get(
-                        NormKey,
-                        Commitment,
-                        maps:get(NormKey, NormalizedMsgKeyMap2, undefined)
-                    ),
-                case ValOrUndef of
-                    undefined -> {RemMap, [Default | Acc]};
-                    Value ->
-                        {
-                            maps:without([NormKey], RemMap),
-                            [Value|Acc]
-                        }
-                end
-            end,
-            {NormalizedMsgKeyMap2, []},
-            hb_message:default_tx_list()
-        ),
-    ?event({after_field_extraction, RemainingMapWithoutForcedTags}),
-    RemainingMap = maps:merge(RemainingMapWithoutForcedTags, ForcedTagFields),
-    % Rebuild the tx record from the new list of fields and values.
-    TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
-    % Calculate which set of the remaining keys will be used as tags.
-    {Remaining, RawDataItems} =
-        lists:partition(
-            fun({_Key, Value}) when is_binary(Value) ->
-                    case unicode:characters_to_binary(Value) of
-                        {error, _, _} -> false;
-                        _ -> byte_size(Value) =< ?MAX_TAG_VAL
-                    end;
-                (_) -> false
-            end,
-            hb_maps:to_list(RemainingMap, Opts)
-        ),
-    ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
-    ?event({original_tags, {explicit, OriginalTags}}),
-    % Check that the remaining keys are as we expect them to be, given the 
-    % original tags. We do this by re-calculating the expected tags from the
-    % original tags and comparing the result to the remaining keys.
-    if length(OriginalTags) > 0 ->
-        ExpectedTagsFromOriginal =
-            hb_maps:fold(
-                fun(Key, Value, Acc) ->
-                    maps:put(hb_util:to_lower(Key), Value, Acc)
-                end,
-                #{},
-                deduplicating_from_list(OriginalTags, Opts)
-            ),
-        NormRemaining = maps:from_list(Remaining),
-        case NormRemaining == ExpectedTagsFromOriginal of
-            true -> ok;
-            false ->
-                ?event(warning,
-                    {invalid_original_tags,
-                        {expected, ExpectedTagsFromOriginal},
-                        {given, NormRemaining}
-                    }
-                ),
-                throw({invalid_original_tags, OriginalTags, NormRemaining})
-        end;
-    true -> ok
-    end,
-    % Restore the original tags, or the remaining keys if there are no original
-    % tags.
-    TX =
-        TXWithoutTags#tx {
-            tags =
-                case OriginalTags of
-                    [] ->
-                        case hb_maps:find(<<"committed">>, Commitment, Opts) of
-                            error -> Remaining;
-                            {ok, BaseCommitted} ->
-                                % We make sure to filter the `target` key from
-                                % the list of keys such that it does not become
-                                % a tag.
-                                Committed =
-                                    hb_util:list_without(
-                                        [],
-                                        hb_util:message_to_ordered_list(
-                                            BaseCommitted
-                                        )
-                                    ),
-                                lists:map(
-                                    fun(Key) ->
-                                        case hb_maps:find(Key, TABM, Opts) of
-                                            error ->
-                                                throw({missing_committed_key, Key});
-                                            {ok, Value} ->
-                                                {Key, Value}
-                                        end
-                                    end,
-                                    hb_util:message_to_ordered_list(Committed) --
-                                        [inline_key(TABM), <<"target">>]
-                                )
-                        end;
-                    _ -> OriginalTags
-                end
-        },
-    % Recursively turn the remaining data items into tx records.
-    DataItems =
-        hb_maps:from_list(lists:map(
-            fun({Key, Value}) ->
-                ?event({data_item, {key, Key}, {value, Value}}),
-                {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
-            end,
-            RawDataItems
-        )),
-    ?event({tx_before_data, TX}),
-    % Set the data based on the remaining keys.
-    TXWithData = 
-        case {TX#tx.data, hb_maps:size(DataItems, Opts)} of
-            {Binary, 0} when is_binary(Binary) ->
-                TX;
-            {?DEFAULT_DATA, _} ->
-                TX#tx { data = DataItems };
-            {Data, _} when is_map(Data) ->
-                TX#tx { data = hb_maps:merge(Data, DataItems, Opts) };
-            {Data, _} when is_record(Data, tx) ->
-                TX#tx { data = DataItems#{ <<"data">> => Data } };
-            {Data, _} when is_binary(Data) ->
-                TX#tx {
-                    data = DataItems#{ <<"data">> => Data }
-                }
-        end,
-    TXWithNestedItems =
-        case is_map(TXWithData#tx.data) of
-            true ->
-                TX#tx {
-                    data =
-                        hb_maps:map(
-                            fun(_, Item) ->
-                                hb_util:ok(to(Item, Req, Opts))
-                            end,
-                            TXWithData#tx.data
-                        )
-                };
-            false ->
-                TXWithData
-        end,
+    Data = dev_codec_ans104_encode:data(MaybeBundle, Req, Opts),
+    ?event({calculated_data, Data}),
+    TX1 = TX0#tx { data = Data },
+    % Calculate the tags for the TX.
+    Tags = dev_codec_ans104_encode:tags(TX1, MaybeBundle, Data, Opts),
+    ?event({calculated_tags, Tags}),
+    TX2 = TX1#tx { tags = Tags },
+    ?event({tx_before_id_gen, TX2}),
     Res =
-        try ar_bundles:reset_ids(ar_bundles:normalize(TXWithNestedItems))
+        try ar_bundles:reset_ids(ar_bundles:normalize(TX2))
         catch
-            _:Error ->
-                ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
+            Type:Error:Stacktrace ->
+                ?event({{reset_ids_error, Error}, {tx_without_data, TX2}}),
                 ?event({prepared_tx_before_ids,
-                    {tags, {explicit, TXWithNestedItems#tx.tags}},
-                    {data, TXWithNestedItems#tx.data}
+                    {tags, {explicit, TX2#tx.tags}},
+                    {data, TX2#tx.data}
                 }),
-                throw(Error)
+                erlang:raise(Type, Error, Stacktrace)
         end,
     ?event({to_result, Res}),
     {ok, Res};
 to(Other, _Req, _Opts) ->
     throw({invalid_tx, Other}).
-
-%% @doc Determine if an `ao-data-key` should be added to the message.
-inline_key(Msg) ->
-    InlineKey = maps:get(<<"ao-data-key">>, Msg, undefined),
-    case {
-        InlineKey,
-        maps:get(<<"data">>, Msg, ?DEFAULT_DATA) == ?DEFAULT_DATA,
-        maps:is_key(<<"body">>, Msg)
-            andalso not ?IS_LINK(maps:get(<<"body">>, Msg, undefined))
-    } of
-        {Explicit, _, _} when Explicit =/= undefined ->
-            % ao-data-key already exists, so we honor it.
-            InlineKey;
-        {_, true, true} -> 
-            % There is no specific data field set, but there is a body, so we
-            % use that as the `inline-key`.
-            <<"body">>;
-        _ ->
-            % Default: `data' resolves to `data'.
-            <<"data">>
-    end.
 
 %% @doc Deduplicate a list of key-value pairs by key, generating a list of
 %% values for each normalized key if there are duplicates.

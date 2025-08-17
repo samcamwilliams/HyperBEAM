@@ -308,6 +308,7 @@ do_to_lines(In =[RawElem | Rest]) ->
 %% @doc Remove any leading whitespace from a string.
 remove_leading_noise(Str) ->
     remove_leading_noise(Str, ?NOISE_CHARS).
+remove_leading_noise([], _) -> [];
 remove_leading_noise([Char|Str], Noise) ->
     case lists:member(Char, Noise) of
         true ->
