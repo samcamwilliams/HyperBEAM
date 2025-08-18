@@ -31,8 +31,13 @@ maybe_load(RawTABM, Req, Opts) ->
             LoadedTABM#{ <<"commitments">> => LoadedComms }
     end.
 
-%% @doc Calculate the fields field for a message, returning an initial TX
-%% record.
+%% @doc Calculate the fields for a message, returning an initial TX record.
+%% One of the nuances here is that the `target' field must be set correctly.
+%% If the message has a commitment, we extract the `field-target' if found and
+%% place it in the `target' field. If the message does not have a commitment,
+%% we check if the `target' field is set in the message. If it is encodable as
+%% a valid 32-byte binary ID (assuming it is base64url encoded in the `to' call),
+%% we place it in the `target' field. Otherwise, we leave it unset.
 siginfo(Message, Opts) ->
     MaybeCommitment =
         hb_message:commitment(
@@ -41,9 +46,17 @@ siginfo(Message, Opts) ->
             Opts
         ),
     case MaybeCommitment of
-        {ok, _, Commitment} ->
-            commitment_to_tx(Commitment, Opts);
-        not_found -> #tx{};
+        {ok, _, Commitment} -> commitment_to_tx(Commitment, Opts);
+        not_found ->
+            case hb_maps:find(<<"target">>, Message, Opts) of
+                {ok, EncodedTarget} ->
+                    case hb_util:safe_decode(EncodedTarget) of
+                        {ok, Target} when ?IS_ID(Target) ->
+                            #tx{ target = Target };
+                        _ -> #tx{}
+                    end;
+                error -> #tx{}
+            end;
         multiple_matches ->
             throw({multiple_ans104_commitments_unsupported, Message})
     end.
