@@ -175,15 +175,16 @@ tags(TX, TABM, Data, Opts) ->
             {data, Data},
             {tabm, TABM}
         }),
-    committed_tag_keys_to_tags(DataKey, CommittedTagKeys, TABM, TX, Opts).
+    committed_tag_keys_to_tags(TX, TABM, DataKey, CommittedTagKeys, Opts).
 
 %% @doc Apply the `ao-data-key' to the committed keys to generate the list of
 %% tags to include in the message.
-committed_tag_keys_to_tags(DataKey, Committed, TABM, TX, Opts) ->
-    DataKeysToExclude = case TX#tx.data of
-        Data when is_map(Data)-> maps:keys(Data);
-        _ -> []
-    end,
+committed_tag_keys_to_tags(TX, TABM, DataKey, Committed, Opts) ->
+    DataKeysToExclude =
+        case TX#tx.data of
+            Data when is_map(Data)-> maps:keys(Data);
+            _ -> []
+        end,
     case DataKey of
         <<"data">> -> [];
         _ -> [{<<"ao-data-key">>, DataKey}]
@@ -195,7 +196,10 @@ committed_tag_keys_to_tags(DataKey, Committed, TABM, TX, Opts) ->
                 {ok, Value} -> {Key, Value}
             end
         end,
-        hb_util:message_to_ordered_list(Committed -- DataKeysToExclude) -- [DataKey]
+        hb_util:list_without(
+            [DataKey | DataKeysToExclude],
+            Committed
+        )
     ).
 
 %%% Utility functions
