@@ -736,8 +736,8 @@ message(RawMap, Opts, Indent) when is_map(RawMap) ->
                     case Val of
                         NextMap when is_map(NextMap) ->
                             maybe_multiline(NextMap, Opts, Indent + 2);
-                        NextList when is_list(NextList) ->
-                            term(NextList, Opts, Indent + 2);
+                        Next when is_list(Next); is_record(Next, tx) ->
+                            remove_leading_noise(term(Next, Opts, Indent + 2));
                         _ when (byte_size(Val) == 32) ->
                             Short = short_id(Val),
                             io_lib:format("~s [*]", [Short]);
