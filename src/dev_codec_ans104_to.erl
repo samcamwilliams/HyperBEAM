@@ -2,7 +2,6 @@
 -module(dev_codec_ans104_to).
 -export([maybe_load/3, siginfo/2, data/3, tags/4]).
 -include("include/hb.hrl").
--include("include/dev_codec_ans104.hrl").
 
 %% @doc Determine if the message should be loaded from the cache and re-converted
 %% to the TABM format. We do this if the `bundle' key is set to true.

@@ -4,7 +4,6 @@
 -export([to/3, from/3, commit/3, verify/3, content_type/1]).
 -export([serialize/3, deserialize/3]).
 -include("include/hb.hrl").
--include("include/dev_codec_ans104.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Return the content type for the codec.
@@ -258,7 +257,7 @@ simple_to_conversion_test() ->
 % 2. The parsed message having a `target' field which is committed.
 % 3. The target field being placed back into the record, rather than the `tags',
 %    on re-encoding.
-item_with_target_field_test() ->
+external_item_with_target_field_test() ->
     TX =
         ar_bundles:sign_item(
             #tx {
@@ -286,10 +285,10 @@ item_with_target_field_test() ->
 
 % @doc Ensure that items made inside HyperBEAM use the tags to encode `target'
 % values, rather than the `target' field.
-item_with_target_tag_test() ->
+generate_item_with_target_tag_test() ->
     Msg =
         #{
-            <<"target">> => Target = hb_util:encode(crypto:strong_rand_bytes(32)),
+            <<"target">> => Target = <<"NON-ID-TARGET">>,
             <<"other-key">> => <<"other-value">>
         },
     {ok, TX} = to(Msg, #{}, #{}),
@@ -303,6 +302,25 @@ item_with_target_tag_test() ->
     {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded, #{}),
     ?event({only_committed, OnlyCommitted}),
     % The target key should have been committed.
+    ?assertEqual(Target, hb_maps:get(<<"target">>, OnlyCommitted, undefined, #{})),
+    Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?event({result, {initial, TX}, {result, Encoded}}),
+    ?assertEqual(TX, Encoded).
+
+generate_item_with_target_field_test() ->
+    Msg =
+        #{
+            <<"target">> => Target = hb_util:encode(crypto:strong_rand_bytes(32)),
+            <<"other-key">> => <<"other-value">>
+        },
+    {ok, TX} = to(Msg, #{}, #{}),
+    ?event({encoded_tx, TX}),
+    ?assertEqual(Target, hb_util:encode(TX#tx.target)),
+    Decoded = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({decoded, Decoded}),
+    ?assertEqual(Target, hb_maps:get(<<"target">>, Decoded, undefined, #{})),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded, #{}),
+    ?event({only_committed, OnlyCommitted}),
     ?assertEqual(Target, hb_maps:get(<<"target">>, OnlyCommitted, undefined, #{})),
     Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({result, {initial, TX}, {result, Encoded}}),

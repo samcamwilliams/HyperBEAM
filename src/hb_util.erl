@@ -229,8 +229,7 @@ safe_decode(E) ->
         D = decode(E),
         {ok, D}
     catch
-        _:_ ->
-        {error, invalid}
+        _:_ -> {error, invalid}
     end.
 
 %% @doc Convert a binary to a hex string. Do not use this for anything other than

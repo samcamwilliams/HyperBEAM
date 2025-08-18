@@ -3,7 +3,6 @@
 -export([fields/2, tags/2, data/4, committed/5, base/5]).
 -export([with_commitments/5]).
 -include("include/hb.hrl").
--include("include/dev_codec_ans104.hrl").
 
 %% @doc Return a TABM message containing the fields of the given decoded
 %% ANS-104 data item that should be included in the base message.
