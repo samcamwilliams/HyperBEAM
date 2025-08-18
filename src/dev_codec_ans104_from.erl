@@ -130,14 +130,15 @@ with_commitments(Item, Tags, Base, CommittedKeys, Opts) ->
         ?DEFAULT_SIG ->
             case normal_tags(Item#tx.tags) of
                 true -> Base;
-                false -> with_unsigned_commitment(Item, Base, CommittedKeys, Opts)
+                false ->
+                    with_unsigned_commitment(Item, Tags, Base, CommittedKeys, Opts)
             end;
         _ -> with_signed_commitment(Item, Tags, Base, CommittedKeys, Opts)
     end.
 
 %% @doc Returns a commitments message for an item, containing an unsigned
 %% commitment.
-with_unsigned_commitment(Item, UncommittedMessage, CommittedKeys, Opts) ->
+with_unsigned_commitment(Item, Tags, UncommittedMessage, CommittedKeys, Opts) ->
     ID = hb_util:human_id(Item#tx.unsigned_id),
     UncommittedMessage#{
         <<"commitments">> => #{
@@ -147,6 +148,7 @@ with_unsigned_commitment(Item, UncommittedMessage, CommittedKeys, Opts) ->
                         <<"commitment-device">> => <<"ans104@1.0">>,
                         <<"committed">> => CommittedKeys,
                         <<"type">> => <<"unsigned-sha256">>,
+                        <<"bundle">> => bundle_commitment_key(Tags, Opts),
                         <<"original-tags">> => original_tags(Item, Opts),
                         <<"field-target">> =>
                             case Item#tx.target of
@@ -179,7 +181,7 @@ with_signed_commitment(Item, Tags, UncommittedMessage, CommittedKeys, Opts) ->
                 <<"keyid">> =>
                     <<"publickey:", (hb_util:encode(Item#tx.owner))/binary>>,
                 <<"type">> => <<"rsa-pss-sha256">>,
-                <<"bundle">> => hb_maps:is_key(<<"bundle-format">>, Tags, Opts),
+                <<"bundle">> => bundle_commitment_key(Tags, Opts),
                 <<"original-tags">> => original_tags(Item, Opts),
                 <<"field-anchor">> =>
                     case Item#tx.anchor of
@@ -199,6 +201,10 @@ with_signed_commitment(Item, Tags, UncommittedMessage, CommittedKeys, Opts) ->
             ID => Commitment
         }
     }.
+
+%% @doc Return the bundle key for an item.
+bundle_commitment_key(Tags, Opts) ->
+    hb_util:bin(hb_maps:is_key(<<"bundle-format">>, Tags, Opts)).
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
 normal_tags(Tags) ->

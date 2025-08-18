@@ -146,7 +146,11 @@ tags(TX, TABM, Data, Opts) ->
                 % commitment, we check if the TABM equals that value. If it does,
                 % we do not additionally add the target tag. If they differ, we
                 % include it.
-                hb_util:ok(hb_maps:find(<<"committed">>, Commitment, Opts)) --
+                hb_util:message_to_ordered_list(
+                    hb_util:ok(
+                        hb_maps:find(<<"committed">>, Commitment, Opts)
+                    )
+                ) --
                     case {TX#tx.target, hb_maps:get(<<"target">>, TABM, undefined, Opts)} of
                         {?DEFAULT_TARGET, _} -> [];
                         {FieldTarget, TagTarget} when FieldTarget =/= TagTarget ->

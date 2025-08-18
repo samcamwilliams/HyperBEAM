@@ -341,7 +341,7 @@ ao_data_key_test() ->
     ?event({dec, Dec}),
     ?assert(hb_message:verify(Dec, all, #{})).
         
-simple_signed_to_httpsig_test_disabled() ->
+simple_signed_to_httpsig_test() ->
     Structured =
         hb_message:commit(
             #{ <<"test-tag">> => <<"test-value">> },
