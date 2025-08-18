@@ -85,6 +85,7 @@ tag_keys(Item, _Opts) ->
     MetaTags = [
         <<"bundle-format">>,
         <<"bundle-version">>,
+        <<"bundle-map">>,
         <<"ao-data-key">>
     ],
     lists:filtermap(
