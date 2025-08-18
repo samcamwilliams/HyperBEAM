@@ -179,6 +179,12 @@ do_debug_fmt({X, Y}, Opts, Indent) ->
         Opts,
         Indent
     );
+do_debug_fmt(TX, Opts, Indent) when is_record(TX, tx) ->
+    indent("[TX item]~n~s",
+        [ar_bundles:format(TX, Indent, Opts)],
+        Opts,
+        Indent
+    );
 do_debug_fmt(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
     Map = hb_private:reset(MaybePrivMap),
     case maybe_format_short(Map, Opts, Indent) of

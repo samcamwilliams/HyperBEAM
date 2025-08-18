@@ -40,30 +40,33 @@ format(Item, Indent, Opts) when is_list(Item); is_map(Item) ->
 format(Item, Indent, Opts) when is_record(Item, tx) ->
     MustVerify = hb_opts:get(debug_ids, true, Opts),
     Valid =
-        if
-            MustVerify -> verify_item(Item);
-            true -> true
+        if MustVerify -> verify_item(Item);
+        true -> true
+        end,
+    UnsignedID =
+        if MustVerify -> hb_util:encode(id(Item, unsigned));
+        true -> <<"[SKIPPED ID]">>
+        end,
+    SignedID =
+        if MustVerify ->
+            case id(Item, signed) of
+                not_signed -> <<"[NOT SIGNED]">>;
+                ID -> hb_util:encode(ID)
+            end;
+        true -> <<"[SKIPPED ID]">>
         end,
     format_line(
         "TX ( ~s: ~s ) {",
         [
             if
-                Item#tx.signature =/= ?DEFAULT_SIG ->
+                MustVerify andalso Item#tx.signature =/= ?DEFAULT_SIG ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [
-                                hb_util:encode(
-                                    case id(Item, signed) of
-                                        not_signed -> <<"">>;
-                                        ID -> ID
-                                    end
-                                ),
-                                hb_util:encode(id(Item, unsigned))
-                            ]
+                            [SignedID, UnsignedID]
                         )
                     );
-                true -> hb_util:encode(id(Item, unsigned))
+                true -> UnsignedID
             end,
             if
                 not MustVerify -> "[SKIPPED VERIFICATION]";
@@ -73,7 +76,7 @@ format(Item, Indent, Opts) when is_record(Item, tx) ->
         ],
         Indent
     ) ++
-    case (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
+    case MustVerify andalso (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
         true ->
             format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
         false -> []
