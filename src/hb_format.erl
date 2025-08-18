@@ -148,7 +148,7 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_atom(X) and is_atom(Y) ->
     indent("~p: ~p", [X, Y], Opts, Indent);
 do_debug_fmt({X, Y}, Opts, Indent) when is_record(Y, tx) ->
     indent("~p: [TX item]~n~s",
-        [X, ar_bundles:format(Y, Indent + 1)],
+        [X, ar_bundles:format(Y, Indent + 1, Opts)],
         Opts,
         Indent
     );

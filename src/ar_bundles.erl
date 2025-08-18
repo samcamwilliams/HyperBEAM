@@ -7,7 +7,7 @@
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
--export([print/1, format/1, format/2]).
+-export([print/1, format/1, format/2, format/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -34,10 +34,16 @@ print(Item) ->
     io:format(standard_error, "~s", [lists:flatten(format(Item))]).
 
 format(Item) -> format(Item, 0).
-format(Item, Indent) when is_list(Item); is_map(Item) ->
-    format(normalize(Item), Indent);
-format(Item, Indent) when is_record(Item, tx) ->
-    Valid = verify_item(Item),
+format(Item, Indent) -> format(Item, Indent, #{}).
+format(Item, Indent, Opts) when is_list(Item); is_map(Item) ->
+    format(normalize(Item), Indent, Opts);
+format(Item, Indent, Opts) when is_record(Item, tx) ->
+    MustVerify = hb_opts:get(debug_ids, true, Opts),
+    Valid =
+        if
+            MustVerify -> verify_item(Item);
+            true -> true
+        end,
     format_line(
         "TX ( ~s: ~s ) {",
         [
@@ -60,6 +66,7 @@ format(Item, Indent) when is_record(Item, tx) ->
                 true -> hb_util:encode(id(Item, unsigned))
             end,
             if
+                not MustVerify -> "[SKIPPED VERIFICATION]";
                 Valid == true -> "[SIGNED+VALID]";
                 true -> "[UNSIGNED/INVALID]"
             end
@@ -95,7 +102,7 @@ format(Item, Indent) when is_record(Item, tx) ->
     ) ++
     format_line("Data:", Indent + 1) ++ format_data(Item, Indent + 2) ++
     format_line("}", Indent);
-format(Item, Indent) ->
+format(Item, Indent, _Opts) ->
     % Whatever we have, its not a tx...
     format_line("INCORRECT ITEM: ~p", [Item], Indent).
 
