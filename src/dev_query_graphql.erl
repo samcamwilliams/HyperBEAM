@@ -78,7 +78,7 @@ run(QueryReq, OpName, Vars, Opts) ->
                 ok = graphql:validate(AST2),
                 ?event({graphql_validated, {explicit, AST2},{explicit, FunEnv}}),
                 Coerced = graphql:type_check_params(FunEnv, OpName, Vars),
-                ?event({graphql_type_checked_params, FunEnv, OpName, Vars, {explicit, Coerced}}),
+                ?event({graphql_type_checked_params, FunEnv, OpName, Vars}),
                 Ctx =
                     #{
                         params => Coerced,
@@ -217,7 +217,13 @@ lookup_test() ->
                             <<""" 
                                 query GetMessage { 
                                     message(
-                                        keys: [{ name: "basic", value: "binary-value" }]
+                                        keys: 
+                                            [
+                                                { 
+                                                    name: "basic", 
+                                                    value: "binary-value" 
+                                                }
+                                            ]
                                     ) {
                                         id
                                         keys {
@@ -258,8 +264,8 @@ lookup_test() ->
 
 %%% Tests for the GraphQL interface of the dev_query module.
 %%% This test checks if the GraphQL query can be executed with variables.
-%%% NEED_TO_BE_FIXED: due to `application:ensure_all_started(graphql)` in `run/4`, only one
-%%% test can be run at a time, as it will load the schema and context.
+%%% NEED_TO_BE_FIXED: due to `application:ensure_all_started(graphql)` in `run/4`,
+%%% only one test can be run at a time, as it will load the schema and context.
 lookup_with_vars_test() ->
     {ok, Opts, _} = dev_query:test_setup(),
     Node = hb_http_server:start_node(Opts),
