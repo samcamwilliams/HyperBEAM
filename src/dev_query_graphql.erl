@@ -4,50 +4,65 @@
 %%% AO-Core API:
 -export([handle/3]).
 %%% GraphQL Callbacks:
--export([start/1, execute/4]).
+-export([execute/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
--define(DEFAULT_TIMEOUT, 3000).
+%%% Constants.
+-define(DEFAULT_QUERY_TIMEOUT, 10000).
+-define(START_TIMEOUT, 3000).
+
+%%% `Message' query keys.
+-define(MESSAGE_QUERY_KEYS,
+    [
+        <<"id">>,
+        <<"message">>,
+        <<"keys">>,
+        <<"name">>,
+        <<"value">>
+    ]
+).
 
 %% @doc Returns the complete GraphQL schema.
 schema() ->
-    <<"""
-    input KeyInput {
-        name: String!
-        value: String!
-    }
+    hb_util:ok(file:read_file(code:priv_dir(hb) ++ "/schema.gql")).
 
-    type Message {
-        id: ID!
-        keys: [Key]
-    }
+%% @doc Ensure that the GraphQL schema and context are initialized. Can be 
+%% called many times.
+ensure_started() -> ensure_started(#{}).
+ensure_started(Opts) ->
+    case hb_name:lookup(graphql_controller) of
+        PID when is_pid(PID) -> ok;
+        undefined ->
+            Parent = self(),
+            PID =
+                spawn_link(
+                    fun() ->
+                        init(Opts),
+                        Parent ! {started, self()},
+                        receive stop -> ok end
+                    end
+                ),
+            receive {started, PID} -> ok
+            after ?START_TIMEOUT -> exit(graphql_start_timeout)
+            end
+    end.
 
-    type Key {
-        name: String
-        value: String
-    }
-
-    type Query {
-        message(keys: [KeyInput]): Message
-    }
-    """>>.
-
-%% @doc Create the GraphQL schema and context.
-start(_Opts) ->
-    Map =
+%% @doc Initialize the GraphQL schema and context. Should only be called once.
+init(_Opts) ->
+    ?event(graphql_init_called),
+    application:ensure_all_started(graphql),
+    ?event(graphql_application_started),
+    GraphQLOpts =
         #{
-            scalars => #{ default => dev_query_graphql },
-            interfaces => #{ default => dev_query_graphql },
-            unions => #{ default => dev_query_graphql },
-            objects => #{
-                'Message' => dev_query_graphql,
-                'Key' => dev_query_graphql,
-                'Value' => dev_query_graphql,
-                'Query' => dev_query_graphql
-            }
+            scalars => #{ default => ?MODULE },
+            interfaces => #{ default => ?MODULE },
+            unions => #{ default => ?MODULE },
+            objects => #{ default => ?MODULE },
+            enums => #{ default => ?MODULE }
         },
-    ok = graphql:load_schema(Map, schema()),
+    ok = graphql:load_schema(GraphQLOpts, schema()),
+    ?event(graphql_schema_loaded),
     Root =
         {root,
             #{
@@ -56,39 +71,59 @@ start(_Opts) ->
             }
         },
     ok = graphql:insert_schema_definition(Root),
-    ok = graphql:validate_schema().
+    ?event(graphql_schema_definition_inserted),
+    ok = graphql:validate_schema(),
+    ?event(graphql_schema_validated),
+    hb_name:register(graphql_controller, self()),
+    ?event(graphql_controller_registered),
+    ok.
 
-run(QueryReq, OpName, Vars, Opts) ->
+handle(_Base, Req, Opts) ->
+    ?event({request, {explicit, Req}}),
+    Query = hb_maps:get(<<"query">>, Req, <<>>, Opts),
+    OpName = hb_maps:get(<<"operationName">>, Req, undefined, Opts),
+    Vars = hb_maps:get(<<"variables">>, Req, #{}, Opts),
     ?event(
         {graphql_run_called,
-            {query, QueryReq},
+            {query, Query},
             {operation, OpName},
             {variables, Vars}
         }
     ),
-    application:ensure_all_started(graphql),
-    start(Opts),
-    ?event(graphql_started),
-    case graphql:parse(QueryReq) of
+    ensure_started(),
+    case graphql:parse(Query) of
         {ok, AST} ->
-            ?event({graphql_parsed, {explicit, AST}}),
+            ?event(graphql_parsed),
             try
                 {ok, #{fun_env := FunEnv, ast := AST2 }} = graphql:type_check(AST),
-                ?event({graphql_type_checked_successfully, AST2}),
+                ?event(graphql_type_checked_successfully),
                 ok = graphql:validate(AST2),
-                ?event({graphql_validated, {explicit, AST2},{explicit, FunEnv}}),
+                ?event(graphql_validated),
                 Coerced = graphql:type_check_params(FunEnv, OpName, Vars),
-                ?event({graphql_type_checked_params, FunEnv, OpName, Vars}),
+                ?event(graphql_type_checked_params),
                 Ctx =
                     #{
                         params => Coerced,
                         operation_name => OpName,
-                        default_timeout => ?DEFAULT_TIMEOUT,
+                        default_timeout =>
+                            hb_opts:get(
+                                query_timeout,
+                                ?DEFAULT_QUERY_TIMEOUT,
+                                Opts
+                            ),
                         opts => Opts
                     },
-                ?event({graphql_context_created, Ctx}),
+                ?event(graphql_context_created),
                 Response = graphql:execute(Ctx, AST2),
-                {ok, Response}
+                ?event({graphql_executed, Response}),
+                JSON = hb_json:encode(Response),
+                ?event({graphql_response, JSON}),
+                {ok,
+                    #{
+                        <<"content-type">> => <<"application/json">>,
+                        <<"body">> => JSON
+                    }
+                }
             catch
                 throw:Error:Stacktrace ->
                     ?event({graphql_error, {error, Error}, {trace, Stacktrace}}),
@@ -96,7 +131,19 @@ run(QueryReq, OpName, Vars, Opts) ->
             end
     end.
 
-execute(#{opts := Opts}, Obj, <<"message">>, #{<<"keys">> := Keys}) ->
+%% @doc The main entrypoint for resolving GraphQL elements, called by the
+%% GraphQL library. We split the resolution flows into two separated functions:
+%% `message_query/4' for the HyperBEAM native API, and `dev_query_arweave:query/4'
+%% for the Arweave-compatible API.
+execute(#{opts := Opts}, Obj, Field, Args) ->
+    ?event({graphql_query, {object, Obj}, {field, Field}, {args, Args}}),
+    case lists:member(Field, ?MESSAGE_QUERY_KEYS) of
+        true -> message_query(Obj, Field, Args, Opts);
+        false -> dev_query_arweave:query(Obj, Field, Args, Opts)
+    end.
+
+%% @doc Handle a HyperBEAM `message' query.
+message_query(Obj, <<"message">>, #{<<"keys">> := Keys}, Opts) ->
     Template = keys_to_template(Keys),
     ?event(
         {graphql_execute_called,
@@ -117,48 +164,22 @@ execute(#{opts := Opts}, Obj, <<"message">>, #{<<"keys">> := Keys}) ->
             ?event(graphql_cache_match_not_found),
             {ok, #{<<"id">> => <<"not-found">>, <<"keys">> => #{}}}
     end;
-execute(_, Obj = #{<<"keys">> := Keys}, <<"keys">>, Args) ->
-    ?event(
-        {graphql_execute_called,
-            {object, Obj},
-            {field, <<"keys">>},
-            {args, Args}
-        }
-    ),
+message_query(#{<<"keys">> := Keys}, <<"keys">>, _Args, Opts) ->
     {
         ok,
         [
             {ok, #{ <<"name">> => Name, <<"value">> => Value }}
         ||
-            {Name, Value} <- maps:to_list(Keys)
+            {Name, Value} <- hb_maps:to_list(Keys, Opts)
         ]
     };
-execute(_, Obj, Field, Args) when Field =:= <<"name">> orelse Field =:= <<"value">> ->
-    ?event(
-        {graphql_execute_called,
-            {object, Obj},
-            {field, Field},
-            {args, Args}
-        }
-    ),
-    {ok, maps:get(Field, Obj, null)};
-execute(_, Obj, <<"id">>, Args) ->
-    ?event(
-        {graphql_execute_called,
-            {object, Obj},
-            {field, <<"id">>},
-            {args, Args}
-        }
-    ),
-    {ok, maps:get(<<"id">>, Obj, null)};
-execute(_, Obj, Field, Args) ->
-    ?event(
-        {graphql_unhandled_field,
-            {object, Obj},
-            {field, Field},
-            {args, Args}
-        }
-    ),
+message_query(Obj, Field, _Args, Opts)
+        when Field =:= <<"name">> orelse Field =:= <<"value">> ->
+    {ok, hb_maps:get(Field, Obj, null, Opts)};
+message_query(Obj, <<"id">>, _Args, Opts) ->
+    ?event({message_query_id, {object, Obj}}),
+    {ok, hb_maps:get(<<"id">>, Obj, null, Opts)};
+message_query(_Obj, _Field, _, _) ->
     {ok, <<"Not found.">>}.
 
 keys_to_template(Keys) ->
@@ -170,39 +191,8 @@ keys_to_template(Keys) ->
         Keys
     )).
 
-message_to_keys(Msg) ->
-    maps:fold(
-        fun(Name, Value, Acc) ->
-            [{Name, Value} | Acc]
-        end,
-        [],
-        maps:to_list(Msg)
-    ).
-
-handle(Base, Req, Opts) ->
-    QueryDoc =
-        hb_ao:get_first(
-            [
-                {Req, <<"query">>},
-                {Base, <<"query">>},
-                {Req, <<"body">>},
-                {Base, <<"body">>}
-            ],
-            Opts
-        ),
-    % TODO: Should we throw an error if QueryDoc/Query is not found?
-    % As there is no default query, but rest can be defaulted.
-    Query = hb_maps:get(<<"query">>, QueryDoc),
-    OpName = hb_maps:get(<<"operationName">>, QueryDoc, undefined),
-    Vars = hb_maps:get(<<"variables">>, QueryDoc, #{}),
-    case run(Query, OpName, Vars, Opts) of
-        {ok, Response} ->
-            {ok, Response};
-        {error, Error} ->
-            {error, Error}
-    end.
-
 %%% Tests
+
 lookup_test() ->
     {ok, Opts, _} = dev_query:test_setup(),
     Node = hb_http_server:start_node(Opts),
@@ -211,8 +201,10 @@ lookup_test() ->
             Node,
             #{
                 <<"path">> => <<"~query@1.0/graphql">>,
+                <<"content-type">> => <<"application/json">>,
+                <<"codec-device">> => <<"json@1.0">>,
                 <<"body">> =>
-                    #{
+                    hb_json:encode(#{
                         <<"query">> => 
                             <<""" 
                                 query GetMessage { 
@@ -234,7 +226,7 @@ lookup_test() ->
                                 }
                             """>>,
                         <<"operationName">> => <<"GetMessage">>
-                    }
+                    })
             },
             Opts
         ),
@@ -274,8 +266,10 @@ lookup_with_vars_test() ->
             Node,
             #{
                 <<"path">> => <<"~query@1.0/graphql">>,
+                <<"content-type">> => <<"application/json">>,
+                <<"codec-device">> => <<"json@1.0">>,
                 <<"body">> =>
-                    #{
+                    hb_json:encode(#{
                         <<"query">> => 
                             <<""" 
                                 query GetMessage($keys: [KeyInput]) { 
@@ -300,7 +294,7 @@ lookup_with_vars_test() ->
                                     }
                                 ]
                         }
-                    }
+                    })
             },
             Opts
         ),
@@ -336,8 +330,10 @@ lookup_without_opname_test() ->
             Node,
             #{
                 <<"path">> => <<"~query@1.0/graphql">>,
+                <<"content-type">> => <<"application/json">>,
+                <<"codec-device">> => <<"json@1.0">>,
                 <<"body">> =>
-                    #{
+                    hb_json:encode(#{
                         <<"query">> => 
                             <<""" 
                                 query($keys: [KeyInput]) { 
@@ -361,11 +357,12 @@ lookup_without_opname_test() ->
                                     }
                                 ]
                         }
-                    }
+                    })
             },
             Opts
         ),
     ?event({test_response, Res}),
+    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, #{}, Opts)),
     ?assertMatch(
         #{ <<"data">> := 
             #{ 
@@ -386,5 +383,5 @@ lookup_without_opname_test() ->
                     } 
             } 
         },
-        Res
+        Object
     ).
