@@ -321,3 +321,64 @@ lookup_with_vars_test() ->
         },
         Res
     ).
+
+lookup_without_opname_test() ->
+    {ok, Opts, _} = dev_query:test_setup(),
+    Node = hb_http_server:start_node(Opts),
+    {ok, Res} =
+        hb_http:post(
+            Node,
+            #{
+                <<"path">> => <<"~query@1.0/graphql">>,
+                <<"body">> =>
+                    #{
+                        <<"query">> => 
+                            <<""" 
+                                query($keys: [KeyInput]) { 
+                                    message(
+                                        keys: $keys
+                                    ) {
+                                        id
+                                        keys {
+                                        name
+                                        value
+                                        }
+                                    }
+                                }
+                            """>>,
+                        <<"variables">> => #{
+                            <<"keys">> => 
+                                [
+                                    #{
+                                        <<"name">> => <<"basic">>,
+                                        <<"value">> => <<"binary-value">>
+                                    }
+                                ]
+                        }
+                    }
+            },
+            Opts
+        ),
+    ?event({test_response, Res}),
+    ?assertMatch(
+        #{ <<"data">> := 
+            #{ 
+                <<"message">> :=
+                    #{ 
+                        <<"id">> := _,
+                        <<"keys">> := 
+                            [
+                                #{ 
+                                    <<"name">> := <<"basic">>,
+                                    <<"value">> := <<"binary-value">>
+                                },
+                                #{ 
+                                    <<"name">> := <<"basic-2">>,
+                                    <<"value">> := <<"binary-value-2">> 
+                                }
+                            ] 
+                    } 
+            } 
+        },
+        Res
+    ).
