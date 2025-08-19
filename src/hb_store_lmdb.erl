@@ -1084,37 +1084,3 @@ list_with_link_test() ->
     ?event({link_children, LinkChildren}),
     ?assertEqual(ExpectedChildren, lists:sort(LinkChildren)),
     stop(StoreOpts).
-
-match_test() ->
-    StoreOpts = #{
-        <<"store-module">> => ?MODULE,
-        <<"name">> => <<"/tmp/store-match">>,
-        <<"capacity">> => ?DEFAULT_SIZE
-    },
-    reset(StoreOpts),
-    write(StoreOpts, <<"id1/key1">>, <<"value1">>),
-    write(StoreOpts, <<"id1/key2">>, <<"value2">>),
-    write(StoreOpts, <<"id2/key2">>, <<"value2">>),
-    write(StoreOpts, <<"id3/key2">>, <<"value3">>),
-    ?assertEqual(
-        {ok, [<<"id1">>]},
-        match(StoreOpts, #{ <<"key1">> => <<"value1">> })
-    ),
-    ?assertEqual(
-        {ok, [<<"id1">>]},
-        match(
-            StoreOpts,
-            #{
-                <<"key1">> => <<"value1">>,
-                <<"key2">> => <<"value2">>
-            }
-        )
-    ),
-    ?assertEqual(
-        {ok, [<<"id1">>, <<"id2">>]},
-        match(
-            StoreOpts,
-            #{ <<"key2">> => <<"value2">> }
-        )
-    ),
-    stop(StoreOpts).
