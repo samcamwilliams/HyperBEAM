@@ -58,37 +58,36 @@ start(_Opts) ->
     ok = graphql:insert_schema_definition(Root),
     ok = graphql:validate_schema().
 
-run(QueryBin, Operation, Req, Opts) ->
+run(QueryReq, OpName, Vars, Opts) ->
     ?event(
         {graphql_run_called,
-            {query, QueryBin},
-            {operation, Operation},
-            {request, Req}
+            {query, QueryReq},
+            {operation, OpName},
+            {variables, Vars}
         }
     ),
     application:ensure_all_started(graphql),
     start(Opts),
     ?event(graphql_started),
-    case graphql:parse(QueryBin) of
+    case graphql:parse(QueryReq) of
         {ok, AST} ->
             ?event({graphql_parsed, {explicit, AST}}),
             try
                 {ok, #{fun_env := FunEnv, ast := AST2 }} = graphql:type_check(AST),
                 ?event({graphql_type_checked_successfully, AST2}),
                 ok = graphql:validate(AST2),
-                ?event({graphql_validated, {explicit, AST2}}),
-                % Coerced = graphql:type_check_params(FunEnv, Operation, Req),
-                % ?event({graphql_type_checked_params, FunEnv, Operation, Req}),
-                % Ctx = #{ params => Coerced, operation_name => Operation },
-                % ?event({graphql_context_created, Ctx}),
+                ?event({graphql_validated, {explicit, AST2},{explicit, FunEnv}}),
+                Coerced = graphql:type_check_params(FunEnv, OpName, Vars),
+                ?event({graphql_type_checked_params, FunEnv, OpName, Vars, {explicit, Coerced}}),
                 Ctx =
                     #{
-                        params => #{},
+                        params => Coerced,
+                        operation_name => OpName,
                         default_timeout => ?DEFAULT_TIMEOUT,
                         opts => Opts
                     },
+                ?event({graphql_context_created, Ctx}),
                 Response = graphql:execute(Ctx, AST2),
-                ?event({graphql_response, Response}),
                 {ok, Response}
             catch
                 throw:Error:Stacktrace ->
@@ -181,7 +180,7 @@ message_to_keys(Msg) ->
     ).
 
 handle(Base, Req, Opts) ->
-    Query =
+    QueryDoc =
         hb_ao:get_first(
             [
                 {Req, <<"query">>},
@@ -191,7 +190,12 @@ handle(Base, Req, Opts) ->
             ],
             Opts
         ),
-    case run(Query, <<"query">>, Req, Opts) of
+    % TODO: Should we throw an error if QueryDoc/Query is not found?
+    % As there is no default query, but rest can be defaulted.
+    Query = hb_maps:get(<<"query">>, QueryDoc),
+    OpName = hb_maps:get(<<"operationName">>, QueryDoc, undefined),
+    Vars = hb_maps:get(<<"variables">>, QueryDoc, #{}),
+    case run(Query, OpName, Vars, Opts) of
         {ok, Response} ->
             {ok, Response};
         {error, Error} ->
@@ -199,7 +203,6 @@ handle(Base, Req, Opts) ->
     end.
 
 %%% Tests
-
 lookup_test() ->
     {ok, Opts, _} = dev_query:test_setup(),
     Node = hb_http_server:start_node(Opts),
@@ -209,34 +212,46 @@ lookup_test() ->
             #{
                 <<"path">> => <<"~query@1.0/graphql">>,
                 <<"body">> =>
-                    <<"""
-                    query Q { message(keys: [{ name: "basic", value: "binary-value" }])
-                        { id keys { name value } }
+                    #{
+                        <<"query">> => 
+                            <<""" 
+                                query GetMessage { 
+                                    message(
+                                        keys: [{ name: "basic", value: "binary-value" }]
+                                    ) {
+                                        id
+                                        keys {
+                                        name
+                                        value
+                                        }
+                                    }
+                                }
+                            """>>,
+                        <<"operationName">> => <<"GetMessage">>
                     }
-                    """>>
             },
             Opts
         ),
+    ?event({test_response, Res}),
     ?assertMatch(
-        {
-            ok,
-            [
-                #{
-                    <<"id">> := _,
-                    <<"keys">> :=
-                        [
-                            #{
-                                <<"name">> := <<"basic">>,
-                                <<"value">> := <<"binary-value">>
-                            },
-                            #{
-                                <<"name">> := <<"basic-2">>,
-                                <<"value">> := <<"binary-value-2">>
-                            }
-                        ]
-                }
-            ]
+        #{ <<"data">> := 
+            #{ 
+                <<"message">> :=
+                    #{ 
+                        <<"id">> := _,
+                        <<"keys">> := 
+                            [
+                                #{ 
+                                    <<"name">> := <<"basic">>,
+                                    <<"value">> := <<"binary-value">>
+                                },
+                                #{ 
+                                    <<"name">> := <<"basic-2">>,
+                                    <<"value">> := <<"binary-value-2">> 
+                                }
+                            ] 
+                    } 
+            } 
         },
         Res
-    ),
-    ok.
+    ).
