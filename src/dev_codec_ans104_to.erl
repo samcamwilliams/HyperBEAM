@@ -132,7 +132,16 @@ data(TABM, Req, Opts) ->
         {?DEFAULT_DATA, _} ->
             NestedMsgs;
         {Data, _} when is_map(Data) ->
-            hb_maps:merge(Data, NestedMsgs, Opts);
+            % If the inline key is 'data', we merge the inline map entries into
+            % the top-level data alongside any nested messages. For any other
+            % inline key (e.g. 'body'), we avoid promoting the inline map's
+            % entries to the parent level to prevent duplication. The nested
+            % message corresponding to the inline key will carry those entries
+            % as its tags.
+            case DataKey of
+                <<"data">> -> hb_maps:merge(Data, NestedMsgs, Opts);
+                _ -> NestedMsgs
+            end;
         {Data, _} when is_record(Data, tx); is_binary(Data) ->
             NestedMsgs#{ <<"data">> => Data }
     end.

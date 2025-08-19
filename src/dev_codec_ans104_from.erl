@@ -51,6 +51,12 @@ data(Item, Req, Tags, Opts) ->
     case {DataKey, RawData} of
         {_, ?DEFAULT_DATA} -> #{};
         {<<"data">>, _Data} when is_map(RawData) -> RawData;
+        % If the data was encoded using a non-default data key (e.g. 'body')
+        % and the encoded map already contains that data key at the top level
+        % (because nested messages are placed under it), avoid double-wrapping.
+        {DataKey, Map} when 
+            is_binary(DataKey), is_map(Map), is_map_key(DataKey, Map) ->
+            Map;
         {DataKey, _Data} -> #{ DataKey => RawData }
     end.
 
