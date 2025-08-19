@@ -255,3 +255,69 @@ lookup_test() ->
         },
         Res
     ).
+
+%%% Tests for the GraphQL interface of the dev_query module.
+%%% This test checks if the GraphQL query can be executed with variables.
+%%% NEED_TO_BE_FIXED: due to `application:ensure_all_started(graphql)` in `run/4`, only one
+%%% test can be run at a time, as it will load the schema and context.
+lookup_with_vars_test() ->
+    {ok, Opts, _} = dev_query:test_setup(),
+    Node = hb_http_server:start_node(Opts),
+    {ok, Res} =
+        hb_http:post(
+            Node,
+            #{
+                <<"path">> => <<"~query@1.0/graphql">>,
+                <<"body">> =>
+                    #{
+                        <<"query">> => 
+                            <<""" 
+                                query GetMessage($keys: [KeyInput]) { 
+                                    message(
+                                        keys: $keys
+                                    ) {
+                                        id
+                                        keys {
+                                        name
+                                        value
+                                        }
+                                    }
+                                }
+                            """>>,
+                        <<"operationName">> => <<"GetMessage">>,
+                        <<"variables">> => #{
+                            <<"keys">> => 
+                                [
+                                    #{
+                                        <<"name">> => <<"basic">>,
+                                        <<"value">> => <<"binary-value">>
+                                    }
+                                ]
+                        }
+                    }
+            },
+            Opts
+        ),
+    ?event({test_response, Res}),
+    ?assertMatch(
+        #{ <<"data">> := 
+            #{ 
+                <<"message">> :=
+                    #{ 
+                        <<"id">> := _,
+                        <<"keys">> := 
+                            [
+                                #{ 
+                                    <<"name">> := <<"basic">>,
+                                    <<"value">> := <<"binary-value">>
+                                },
+                                #{ 
+                                    <<"name">> := <<"basic-2">>,
+                                    <<"value">> := <<"binary-value-2">> 
+                                }
+                            ] 
+                    } 
+            } 
+        },
+        Res
+    ).
