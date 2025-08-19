@@ -33,12 +33,9 @@ commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
 commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
     % Convert the given message to an ANS-104 TX record, sign it, and convert
     % it back to a structured message.
-    ?event({committing, {input, Msg}}),
-    Signed =
-        ar_bundles:sign_item(
-            hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
-            hb_opts:get(priv_wallet, no_viable_wallet, Opts)
-        ),
+    {ok, TX} = to(hb_private:reset(Msg), Req, Opts),
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    Signed = ar_bundles:sign_item(TX, Wallet),
     SignedStructured =
         hb_message:convert(
             Signed,
@@ -309,10 +306,14 @@ generate_item_with_target_tag_test() ->
 
 generate_item_with_target_field_test() ->
     Msg =
-        #{
-            <<"target">> => Target = hb_util:encode(crypto:strong_rand_bytes(32)),
-            <<"other-key">> => <<"other-value">>
-        },
+        hb_message:commit(
+            #{
+                <<"target">> => Target = hb_util:encode(crypto:strong_rand_bytes(32)),
+                <<"other-key">> => <<"other-value">>
+            },
+            #{ priv_wallet => hb:wallet() },
+            <<"ans104@1.0">>
+        ),
     {ok, TX} = to(Msg, #{}, #{}),
     ?event({encoded_tx, TX}),
     ?assertEqual(Target, hb_util:encode(TX#tx.target)),

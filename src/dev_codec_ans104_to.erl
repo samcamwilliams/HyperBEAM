@@ -163,11 +163,9 @@ tags(TX, TABM, Data, Opts) ->
                         hb_maps:find(<<"committed">>, Commitment, Opts)
                     )
                 ) --
-                    case {TX#tx.target, hb_maps:get(<<"target">>, TABM, undefined, Opts)} of
-                        {?DEFAULT_TARGET, _} -> [];
-                        {FieldTarget, TagTarget} when FieldTarget =/= TagTarget ->
-                            [<<"target">>];
-                        _ -> []
+                    case include_target_tag(TX, TABM, Opts) of
+                        false -> [<<"target">>];
+                        true -> []
                     end;
             not_found ->
                 % There is no commitment, so we need to generate the tags. We add
@@ -175,11 +173,15 @@ tags(TX, TABM, Data, Opts) ->
                 % tag if it is set to a non-default value, followed by the keys
                 % from the TABM (less the target key if it is an ID).
                 hb_util:list_without(
-                    if is_map(Data) -> hb_maps:keys(Data, Opts);
-                    true -> []
-                    end,
-                    hb_private:reset(hb_util:to_sorted_keys(TABM, Opts)) --
-                        [<<"commitments">>]
+                    [<<"commitments">>] ++
+                        if is_map(Data) -> hb_maps:keys(Data, Opts);
+                        true -> []
+                        end ++
+                        case include_target_tag(TX, TABM, Opts) of
+                            false -> [<<"target">>];
+                            true -> []
+                        end,
+                    hb_util:to_sorted_keys(hb_private:reset(TABM), Opts)
                 );
             multiple_matches ->
                 throw({multiple_ans104_commitments_unsupported, TABM})
@@ -192,6 +194,14 @@ tags(TX, TABM, Data, Opts) ->
             {tabm, TABM}
         }),
     committed_tag_keys_to_tags(TX, TABM, DataKey, CommittedTagKeys, Opts).
+
+%% @doc Return whether to include the `target' tag in the tags list.
+include_target_tag(TX, TABM, Opts) ->
+    case {TX#tx.target, hb_maps:get(<<"target">>, TABM, undefined, Opts)} of
+        {?DEFAULT_TARGET, _} -> true;
+        {FieldTarget, TagTarget} when FieldTarget =/= TagTarget -> false;
+        _ -> true
+    end.
 
 %% @doc Apply the `ao-data-key' to the committed keys to generate the list of
 %% tags to include in the message.

@@ -242,7 +242,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                 ],
             data_size = DataSize,
             data = Data
-        },
+        }),
     ?event({raw_ans104, TX}),
     ?event({ans104_form_response, TX}),
     TABM = hb_util:ok(dev_codec_ans104:from(TX, #{}, Opts)),
