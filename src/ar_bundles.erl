@@ -566,6 +566,10 @@ finalize_bundle_data(Processed) ->
     Items = <<<<Data/binary>> || {_, Data} <- Processed>>,
     <<Length/binary, Index/binary, Items/binary>>.
 
+to_serialized_pair(Item) when is_binary(Item) ->
+    % Support bundling of bare binary payloads by wrapping them in a TX that
+    % is explicitly marked as a binary data item.
+    to_serialized_pair(#tx{ tags = [{<<"ao-type">>, <<"binary">>}], data = Item });
 to_serialized_pair(Item) ->
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
