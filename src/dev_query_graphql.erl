@@ -230,7 +230,8 @@ lookup_test() ->
             },
             Opts
         ),
-    ?event({test_response, Res}),
+    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, <<>>, Opts)),
+    ?event({test_response, Object}),
     ?assertMatch(
         #{ <<"data">> := 
             #{ 
@@ -251,7 +252,7 @@ lookup_test() ->
                     } 
             } 
         },
-        Res
+        Object
     ).
 
 %%% Tests for the GraphQL interface of the dev_query module.
@@ -298,7 +299,8 @@ lookup_with_vars_test() ->
             },
             Opts
         ),
-    ?event({test_response, Res}),
+    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, <<>>, Opts)),
+    ?event({test_response, Object}),
     ?assertMatch(
         #{ <<"data">> := 
             #{ 
@@ -319,7 +321,7 @@ lookup_with_vars_test() ->
                     } 
             } 
         },
-        Res
+        Object
     ).
 
 lookup_without_opname_test() ->
@@ -361,8 +363,8 @@ lookup_without_opname_test() ->
             },
             Opts
         ),
-    ?event({test_response, Res}),
-    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, #{}, Opts)),
+    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, <<>>, Opts)),
+    ?event({test_response, Object}),
     ?assertMatch(
         #{ <<"data">> := 
             #{ 
