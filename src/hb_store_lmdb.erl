@@ -21,7 +21,7 @@
 
 %% Public API exports
 -export([start/1, stop/1, scope/0, scope/1, reset/1]).
--export([read/2, write/3, list/2]).
+-export([read/2, write/3, list/2, match/2]).
 -export([make_group/2, make_link/3, type/2]).
 -export([path/2, add_path/3, resolve/2]).
 
@@ -127,6 +127,7 @@ write(Opts, PathParts, Value) when is_list(PathParts) ->
     write(Opts, PathBin, Value);
 write(Opts, Path, Value) ->
     #{ <<"db">> := DBInstance } = find_env(Opts),
+    ?event(debug, {elmdb_write, {db, DBInstance}, {path, Path}, {value, Value}}),
     case elmdb:put(DBInstance, Path, Value) of
         ok -> ok;
         {error, Type, Description} ->
@@ -368,6 +369,30 @@ list(Opts, Path) ->
         {ok, Children} -> {ok, Children};
         {error, not_found} -> {ok, []};  % Normalize new error format
         not_found -> {ok, []}  % Handle both old and new format
+    end.
+
+%% @doc Match a series of keys and values against the database. Returns 
+%% `{ok, Matches}' if the match is successful, or `not_found' if there are no
+%% messages in the store that feature all of the given key-value pairs. `Matches'
+%% is given as a list of IDs.
+match(Opts, MatchMap) when is_map(MatchMap) ->
+    match(Opts, maps:to_list(MatchMap));
+match(Opts, MatchKVs) ->
+    #{ <<"db">> := DBInstance } = find_env(Opts),
+    WithPrefixes =
+        lists:map(
+            fun({Key, Path}) ->
+                {Key, <<"link:", Path/binary>>}
+            end,
+            MatchKVs
+        ),
+    ?event(debug, {elmdb_match, MatchKVs}),
+    case elmdb:match(DBInstance, WithPrefixes) of
+        {ok, Matches} ->
+            ?event(debug, {elmdb_matched, Matches}),
+            {ok, Matches};
+        {error, not_found} -> not_found;
+        not_found -> not_found
     end.
 
 
@@ -1058,4 +1083,38 @@ list_with_link_test() ->
     {ok, LinkChildren} = list(StoreOpts, <<"link-to-group">>),
     ?event({link_children, LinkChildren}),
     ?assertEqual(ExpectedChildren, lists:sort(LinkChildren)),
+    stop(StoreOpts).
+
+match_test() ->
+    StoreOpts = #{
+        <<"store-module">> => ?MODULE,
+        <<"name">> => <<"/tmp/store-match">>,
+        <<"capacity">> => ?DEFAULT_SIZE
+    },
+    reset(StoreOpts),
+    write(StoreOpts, <<"id1/key1">>, <<"value1">>),
+    write(StoreOpts, <<"id1/key2">>, <<"value2">>),
+    write(StoreOpts, <<"id2/key2">>, <<"value2">>),
+    write(StoreOpts, <<"id3/key2">>, <<"value3">>),
+    ?assertEqual(
+        {ok, [<<"id1">>]},
+        match(StoreOpts, #{ <<"key1">> => <<"value1">> })
+    ),
+    ?assertEqual(
+        {ok, [<<"id1">>]},
+        match(
+            StoreOpts,
+            #{
+                <<"key1">> => <<"value1">>,
+                <<"key2">> => <<"value2">>
+            }
+        )
+    ),
+    ?assertEqual(
+        {ok, [<<"id1">>, <<"id2">>]},
+        match(
+            StoreOpts,
+            #{ <<"key2">> => <<"value2">> }
+        )
+    ),
     stop(StoreOpts).
