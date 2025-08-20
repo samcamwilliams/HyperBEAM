@@ -9,8 +9,8 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    bundled_and_unbundled_ids_differ_test(
-        #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
+    encode_small_balance_table_test(
+        <<"ans104@1.0">>,
         test_opts(normal)
     ).
 
@@ -1364,10 +1364,6 @@ priv_survives_conversion_test(Codec, Opts) ->
         maps:get(<<"priv">>, Decoded)
     ).
 
-encode_balance_table(_Size, <<"ans104@1.0">>, _Opts) ->
-    skip;
-encode_balance_table(_Size, #{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
-    skip;
 encode_balance_table(Size, Codec, Opts) ->
     Msg =
         #{
@@ -1377,18 +1373,22 @@ encode_balance_table(Size, Codec, Opts) ->
             _ <- lists:seq(1, Size)
         },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
-    ?event({encoded, {explicit, Encoded}}),
+    ?event(debug, {encoded, {explicit, Encoded}}),
     Decoded =
         hb_message:uncommitted(
             hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
             Opts
         ),
-    ?event({decoded, {explicit, Decoded}}),
+    ?event(debug, {decoded, {explicit, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, if_present, Opts)).
 
 encode_small_balance_table_test(Codec, Opts) ->
     encode_balance_table(5, Codec, Opts).
 
+encode_large_balance_table_test(<<"ans104@1.0">>, _Opts) ->
+    skip;
+encode_large_balance_table_test(#{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
+    skip;
 encode_large_balance_table_test(Codec, Opts) ->
     encode_balance_table(1000, Codec, Opts).
 

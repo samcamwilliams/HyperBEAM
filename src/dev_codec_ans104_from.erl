@@ -18,10 +18,30 @@ fields(Item, _Opts) ->
 %% @doc Return a TABM of the raw tags of the item, including all metadata
 %% (e.g. `ao-type', `ao-data-key', etc.)
 tags(Item, Opts) ->
-    hb_ao:normalize_keys(
+    Tags = hb_ao:normalize_keys(
         deduplicating_from_list(Item#tx.tags, Opts),
         Opts
-    ).
+    ),
+    ao_types(Tags, Opts).
+
+%% @doc Ensure the encoded keys in the `ao-types' field are lowercased and
+%% normalized like the other keys in the tags field.
+ao_types(#{ <<"ao-types">> := AoTypes } = Tags, Opts) ->
+    AOTypes = dev_codec_structured:decode_ao_types(AoTypes, Opts),
+    % Normalize all keys in the ao-types map and re-encode
+    NormAOTypes =
+        maps:fold(
+            fun(Key, Val, Acc) ->
+                NormKey = hb_util:to_lower(hb_ao:normalize_key(Key)),
+                Acc#{ NormKey => Val }
+            end,
+            #{},
+            AOTypes
+        ),
+    EncodedAOTypes = dev_codec_structured:encode_ao_types(NormAOTypes, Opts),
+    Tags#{ <<"ao-types">> := EncodedAOTypes };
+ao_types(Tags, _Opts) ->
+    Tags.
 
 %% @doc Return a TABM of the keys and values found in the data field of the item.
 data(Item, Req, Tags, Opts) ->
