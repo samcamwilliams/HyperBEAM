@@ -481,19 +481,20 @@ basic_aos_call_test_() ->
 aos_stack_benchmark_test_() ->
     {timeout, 20, fun() ->
         BenchTime = 5,
+        Opts = #{ store => hb_test_utils:test_store() },
         RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
-        Proc = hb_ao:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
+        Proc = hb_ao:get(<<"process">>, RawWASMMsg, Opts#{ hashpath => ignore }),
         ProcID = hb_ao:get(id, Proc, #{}),
         {ok, Initialized} =
         hb_ao:resolve(
             RawWASMMsg,
             generate_aos_msg(ProcID, <<"return 1">>),
-            #{}
+            Opts
         ),
         Msg = generate_aos_msg(ProcID, <<"return 1+1">>),
         Iterations =
             hb_test_utils:benchmark(
-                fun() -> hb_ao:resolve(Initialized, Msg, #{}) end,
+                fun() -> hb_ao:resolve(Initialized, Msg, Opts) end,
                 BenchTime
             ),
         hb_test_utils:benchmark_print(
