@@ -14,20 +14,19 @@ query(Obj, Field, Args, _Opts) ->
 %%% Tests
 
 write_test_messages(Opts) ->
-    Item =
-        hb_message:commit(
-            #{
-                <<"data-protocol">> => <<"ao">>,
-                <<"variant">> => <<"ao.N.1">>,
-                <<"type">> => <<"Message">>,
-                <<"action">> => <<"Eval">>,
-                <<"data">> => <<"test data">>
-            },
-            Opts,
-            #{
-                <<"commitment-device">> => <<"ans104@1.0">>
-            }
-        ),
+    hb_message:commit(
+        #{
+            <<"data-protocol">> => <<"ao">>,
+            <<"variant">> => <<"ao.N.1">>,
+            <<"type">> => <<"Message">>,
+            <<"action">> => <<"Eval">>,
+            <<"data">> => <<"test data">>
+        },
+        Opts,
+        #{
+            <<"commitment-device">> => <<"ans104@1.0">>
+        }
+    ),
     ok.
 
 simple_ans104_query_test() ->
@@ -39,7 +38,7 @@ simple_ans104_query_test() ->
     Query =
         <<"""
             query {
-                transactions(first: 1) {
+                transactions(first: 1, tags: [{type: "type", action: "Message"}]) {
                     edges {
                         node {
                             id,

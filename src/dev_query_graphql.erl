@@ -25,7 +25,7 @@
 
 %% @doc Returns the complete GraphQL schema.
 schema() ->
-    hb_util:ok(file:read_file(code:priv_dir(hb) ++ "/schema.gql")).
+    hb_util:ok(file:read_file("scripts/schema.gql")).
 
 %% @doc Ensure that the GraphQL schema and context are initialized. Can be 
 %% called many times.
