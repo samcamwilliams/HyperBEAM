@@ -9,7 +9,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    single_layer_message_to_encoding_test(
+    bundled_and_unbundled_ids_differ_test(
         #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true },
         test_opts(normal)
     ).
@@ -1406,9 +1406,12 @@ sign_links_test(Codec, Opts) ->
     ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
-bundled_and_unbundled_ids_differ_test(#{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
-    skip;
 bundled_and_unbundled_ids_differ_test(Codec = #{ <<"bundle">> := true }, Opts) ->
+    SignatureType =
+        case maps:get(<<"device">>, Codec, undefined) of
+            <<"ans104@1.0">> -> <<"rsa-pss-sha256">>;
+            _ -> <<"hmac-sha256">>
+        end,
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"nested">> => #{
@@ -1422,15 +1425,17 @@ bundled_and_unbundled_ids_differ_test(Codec = #{ <<"bundle">> := true }, Opts) -
             maps:without([<<"bundle">>], Codec)
         ),
     SignedBundled = hb_message:commit(Msg, Opts, Codec),
+    ?event(debug, {signed_no_bundle, SignedNoBundle}),
+    ?event(debug, {signed_bundled, SignedBundled}),
     {ok, UnbundledID, _} =
         hb_message:commitment(
-            #{ <<"type">> => <<"hmac-sha256">> },
+            #{ <<"type">> => SignatureType },
             SignedNoBundle,
             Opts
         ),
     {ok, BundledID, _} =
         hb_message:commitment(
-            #{ <<"type">> => <<"hmac-sha256">> },
+            #{ <<"type">> => SignatureType },
             SignedBundled,
             Opts
         ),
