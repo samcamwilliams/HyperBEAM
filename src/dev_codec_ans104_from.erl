@@ -57,6 +57,19 @@ data(Item, Req, Tags, Opts) ->
         {DataKey, Map} when 
             is_binary(DataKey), is_map(Map), is_map_key(DataKey, Map) ->
             Map;
+        % If the message was encoded with a non-default data key (e.g. 'body'),
+        % and the encoded map contains a 'data' key alongside other nested
+        % messages (e.g. 'parameters'), lift those siblings to the top-level and
+        % place the 'data' value under the inline key. 
+        {DataKey, _Data} when
+            is_map(RawData), is_map_key(<<"data">>, RawData) ->
+            WithoutData = hb_maps:without([<<"data">>], RawData, Opts),
+            hb_maps:put(
+                DataKey, 
+                maps:get(<<"data">>, RawData), 
+                WithoutData,
+                Opts
+            );
         {DataKey, _Data} -> #{ DataKey => RawData }
     end.
 
