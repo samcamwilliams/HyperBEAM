@@ -25,6 +25,7 @@
 -export([check_size/2, check_value/2, check_type/2, ok_or_throw/3]).
 -export([all_atoms/0, binary_is_atom/1]).
 -export([lower_case_key_map/2]).
+-export([list_with/2, list_without/2, list_intersection/2]).
 -include("include/hb.hrl").
 
 
@@ -384,6 +385,14 @@ unique(List) ->
 %% @doc Returns the intersection of two lists, with stable ordering.
 list_intersection(List1, List2) ->
     lists:filter(fun(Item) -> lists:member(Item, List2) end, List1).
+
+%% @doc Returns the intersection of two lists, with stable ordering.
+list_with(List1, List2) ->
+    lists:filter(fun(Item) -> lists:member(Item, List2) end, List1).
+
+%% @doc Remove all occurrences of all items in the first list from the second list.
+list_without(List1, List2) ->
+    lists:filter(fun(Item) -> not lists:member(Item, List1) end, List2).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer. Optionally, it takes a standard

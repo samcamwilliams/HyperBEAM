@@ -98,7 +98,7 @@ handle(_Base, Req, Opts) ->
         {ok, AST} ->
             ?event(graphql_parsed),
             try
-                ?event({graphql_type_checking, AST}),
+                ?event(graphql_type_checking),
                 {ok, #{fun_env := FunEnv, ast := AST2 }} = graphql:type_check(AST),
                 ?event(graphql_type_checked_successfully),
                 ok = graphql:validate(AST2),

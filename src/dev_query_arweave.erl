@@ -58,15 +58,25 @@ match_args(Args, Opts) when is_map(Args) ->
                 Args
             )
         ),
-        not_started,
+        [],
         Opts
     ).
-match_args([], IDs, _) when is_list(IDs) -> IDs;
-match_args([], _NoResults, _) -> not_found;
+match_args([], Results, Opts) ->
+    hb_util:unique(
+        lists:flatten(
+            [
+                all_ids(ID, Opts)
+            ||
+                ID <- lists:flatten(Results)
+            ]
+        )
+    );
 match_args([{Field, X} | Rest], Acc, Opts) ->
-    case match(Field, X, Opts) of
-        {ok, Result} when is_list(Acc) ->
-            match_args(Rest, hb_util:list_with(Acc, Result), Opts);
+    MatchRes = match(Field, X, Opts),
+    ?event({match, {field, Field}, {arg, X}, {match_res, MatchRes}}),
+    case MatchRes of
+        {ok, Result} ->
+            match_args(Rest, [Result | Acc], Opts);
         {ok, Result} ->
             match_args(Rest, Result, Opts);
         _ ->
@@ -78,13 +88,23 @@ match(_, null, _) -> ignore;
 match(<<"ids">>, IDs, _Opts) ->
     {ok, IDs};
 match(<<"tags">>, Tags, Opts) ->
-    Template = dev_query_graphql:keys_to_template(Tags),
-    ?event({tags_template, Template}),
-    hb_cache:match(Template, Opts);
+    hb_cache:match(dev_query_graphql:keys_to_template(Tags), Opts);
 match(<<"owners">>, Owners, Opts) ->
     {ok, matching_commitments(<<"committer">>, Owners, Opts)};
 match(<<"recipients">>, Recipients, Opts) ->
-    {ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
+    % Uncomment when `fix/ans104-bundles` is merged.
+    %{ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
+    {ok,
+        lists:flatten(lists:map(
+            fun(Recipient) ->
+                case hb_cache:match(#{ <<"target">> => Recipient }, Opts) of
+                    {ok, IDs} -> IDs;
+                    not_found -> []
+                end
+            end,
+            Recipients
+        ))
+    };
 match(UnsupportedFilter, _, _) ->
     throw({unsupported_query_filter, UnsupportedFilter}).
 
@@ -99,6 +119,7 @@ matching_commitments(Field, Values, Opts) when is_list(Values) ->
 matching_commitments(Field, Value, Opts) when is_binary(Value) ->
     case hb_cache:match(#{ Field => Value }, Opts) of
         {ok, IDs} ->
+            ?event({found_matching_commitments, {field, Field}, {value, Value}, {ids, IDs}}),
             lists:map(fun(ID) -> commitment_id_to_base_id(ID, Opts) end, IDs);
         not_found -> not_found
     end.
@@ -110,16 +131,24 @@ commitment_id_to_base_id(ID, Opts) ->
     case hb_store:read(Store, << ID/binary, "/signature">>) of
         {ok, EncSig} ->
             Sig = hb_util:decode(EncSig),
+            ?event({commitment_id_to_base_id_sig, Sig}),
             hb_util:encode(hb_crypto:sha256(Sig));
-        not_found ->
-            not_found
+        not_found -> not_found
+    end.
+
+%% @doc Find all IDs for a message, by any of its other IDs.
+all_ids(ID, Opts) ->
+    Store = hb_opts:get(store, no_store, Opts),
+    case hb_store:list(Store, << ID/binary, "/commitments">>) of
+        {ok, CommitmentIDs} -> CommitmentIDs;
+        _ -> []
     end.
 
 %% @doc Generate a match upon `ids' in the arguments, if given.
 
 %%% Tests
 
-write_test_message(Opts) ->
+write_test_message(Recipient, Opts) ->
     hb_cache:write(
         Msg = hb_message:commit(
             #{
@@ -145,7 +174,8 @@ simple_ans104_query_test() ->
             store => [hb_test_utils:test_store(hb_store_lmdb)]
         },
     Node = hb_http_server:start_node(Opts),
-    {ok, WrittenMsg} = write_test_message(Opts),
+    Recipient = crypto:strong_rand_bytes(32),
+    {ok, WrittenMsg} = write_test_message(Recipient, Opts),
     ?assertMatch(
         {ok, [_]},
         hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
@@ -159,7 +189,7 @@ simple_ans104_query_test() ->
                             {name: "type" values: ["Message"]},
                             {name: "variant" values: ["ao.N.1"]}
                         ],
-                    owners: $owners
+                        owners: $owners
                     ) {
                     edges {
                         node {
