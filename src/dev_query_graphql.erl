@@ -6,7 +6,7 @@
 %%% GraphQL Callbacks:
 -export([execute/4]).
 %%% Submodule helpers:
--export([keys_to_template/1, test_query/3]).
+-export([keys_to_template/1, test_query/3, test_query/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -98,6 +98,7 @@ handle(_Base, Req, Opts) ->
         {ok, AST} ->
             ?event(graphql_parsed),
             try
+                ?event({graphql_type_checking, AST}),
                 {ok, #{fun_env := FunEnv, ast := AST2 }} = graphql:type_check(AST),
                 ?event(graphql_type_checked_successfully),
                 ok = graphql:validate(AST2),
@@ -167,22 +168,32 @@ message_query(Obj, <<"message">>, #{<<"keys">> := Keys}, Opts) ->
             {ok, #{<<"id">> => <<"not-found">>, <<"keys">> => #{}}}
     end;
 message_query(Msg, Field, _Args, Opts) when Field =:= <<"keys">>; Field =:= <<"tags">> ->
-    {
+    OnlyKeys =
+        hb_maps:to_list(
+            hb_private:reset(
+                hb_message:uncommitted(Msg, Opts)
+            ),
+            Opts
+        ),
+    ?event({message_query_keys_or_tags, {object, Msg}, {only_keys, OnlyKeys}}),
+    Res = {
         ok,
         [
-            {ok, #{ <<"name">> => Name, <<"value">> => Value }}
+            {ok,
+                #{
+                    <<"name">> => Name,
+                    <<"value">> => hb_cache:ensure_loaded(Value, Opts)
+                }
+            }
         ||
-            {Name, Value} <-
-                hb_maps:to_list(
-                    hb_private:reset(
-                        hb_message:uncommitted(Msg, Opts)
-                    ),
-                    Opts
-                )
+            {Name, Value} <- OnlyKeys
         ]
-    };
+    },
+    ?event({message_query_keys_or_tags_result, Res}),
+    Res;
 message_query(Msg, Field, _Args, Opts)
         when Field =:= <<"name">> orelse Field =:= <<"value">> ->
+    ?event({message_query_name_or_value, {object, Msg}, {field, Field}}),
     {ok, hb_maps:get(Field, Msg, null, Opts)};
 message_query(Msg, <<"id">>, _Args, Opts) ->
     ?event({message_query_id, {object, Msg}}),
@@ -193,7 +204,16 @@ message_query(_Obj, _Field, _, _) ->
 keys_to_template(Keys) ->
     maps:from_list(lists:foldl(
         fun(#{<<"name">> := Name, <<"value">> := Value}, Acc) ->
-            [{Name, Value} | Acc]
+            [{Name, Value} | Acc];
+        (#{<<"name">> := Name, <<"values">> := [Value]}, Acc) ->
+            [{Name, Value} | Acc];
+        (#{<<"name">> := Name, <<"values">> := Values}, _Acc) ->
+            throw(
+                {multivalue_tag_search_not_supported, #{
+                    <<"name">> => Name,
+                    <<"values">> => Values
+                }}
+            )
         end,
         [],
         Keys
@@ -202,6 +222,22 @@ keys_to_template(Keys) ->
 %%% Test helpers.
 
 test_query(Node, Query, Opts) ->
+    test_query(Node, Query, undefined, Opts).
+test_query(Node, Query, Variables, Opts) ->
+    test_query(Node, Query, Variables, undefined, Opts).
+test_query(Node, Query, Variables, OperationName, Opts) ->
+    UnencodedPayload =
+        maps:filter(
+            fun(_, undefined) -> false;
+                (_, _) -> true
+            end,
+            #{
+                <<"query">> => Query,
+                <<"variables">> => Variables,
+                <<"operationName">> => OperationName
+            }
+        ),
+    ?event({test_query_unencoded_payload, UnencodedPayload}),
     {ok, Res} =
         hb_http:post(
             Node,
@@ -209,10 +245,7 @@ test_query(Node, Query, Opts) ->
                 <<"path">> => <<"~query@1.0/graphql">>,
                 <<"content-type">> => <<"application/json">>,
                 <<"codec-device">> => <<"json@1.0">>,
-                <<"body">> =>
-                    hb_json:encode(#{
-                        <<"query">> => Query
-                    })
+                <<"body">> => hb_json:encode(UnencodedPayload)
             },
             Opts
         ),

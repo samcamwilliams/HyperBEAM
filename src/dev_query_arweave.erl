@@ -6,6 +6,16 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
+%% @doc The arguments that are supported by the Arweave GraphQL API.
+-define(SUPPORTED_QUERY_ARGS,
+    [
+        <<"ids">>,
+        <<"tags">>,
+        <<"owners">>,
+        <<"recipients">>
+    ]
+).
+
 %% @doc Handle an Arweave GraphQL query.
 query(Obj, <<"transactions">>, Args, Opts) ->
     ?event({transactions_query,
@@ -25,58 +35,79 @@ query(Obj, <<"transactions">>, Args, Opts) ->
             end,
             Matches
         ),
-    {ok, [{ok, Msg} || Msg <- Messages]};
-query(_, _, _, _) ->
+    {ok, Messages};
+query(List, <<"edges">>, _Args, _Opts) ->
+    {ok, [{ok, Msg} || Msg <- List]};
+query(Msg, <<"node">>, _Args, _Opts) ->
+    {ok, Msg};
+query(Obj, Field, Args, _Opts) ->
+    ?event({unimplemented_transactions_query,
+        {object, Obj},
+        {field, Field},
+        {args, Args}
+    }),
     {ok, <<"Not implemented.">>}.
 
 %% @doc Progressively generate matches from each argument for a transaction
 %% query.
-match_args(Args, Opts) when is_map(Args) -> match_args(maps:to_list(Args), Opts);
-match_args([], _) -> [];
-match_args([{Field, Values} | Rest], Opts) ->
-    match_args(Rest, match(Field, Values, Opts), Opts).
-
-match_args([], Acc, _) -> Acc;
-match_args([{Field, Values } | Rest], Acc, Opts) ->
-    match_args(Rest, hb_util:list_with(Acc, match(Field, Values, Opts)), Opts).
+match_args(Args, Opts) when is_map(Args) ->
+    match_args(
+        maps:to_list(
+            maps:with(
+                ?SUPPORTED_QUERY_ARGS,
+                Args
+            )
+        ),
+        not_started,
+        Opts
+    ).
+match_args([], IDs, _) when is_list(IDs) -> IDs;
+match_args([], _NoResults, _) -> not_found;
+match_args([{Field, X} | Rest], Acc, Opts) ->
+    case match(Field, X, Opts) of
+        {ok, Result} when is_list(Acc) ->
+            match_args(Rest, hb_util:list_with(Acc, Result), Opts);
+        {ok, Result} ->
+            match_args(Rest, Result, Opts);
+        _ ->
+            match_args(Rest, Acc, Opts)
+    end.
 
 %% @doc Generate a match upon `tags' in the arguments, if given.
+match(_, null, _) -> ignore;
 match(<<"ids">>, IDs, _Opts) ->
-    {<<"ids">>, IDs};
+    {ok, IDs};
 match(<<"tags">>, Tags, Opts) ->
-    {ok, IDs} = hb_cache:match(dev_query_graphql:keys_to_template(Tags), Opts),
-    {<<"tags">>, IDs};
+    Template = dev_query_graphql:keys_to_template(Tags),
+    ?event({tags_template, Template}),
+    hb_cache:match(Template, Opts);
 match(<<"owners">>, Owners, Opts) ->
-    {<<"owners">>, matching_commitments(<<"committer">>, Owners, Opts)};
+    {ok, matching_commitments(<<"committer">>, Owners, Opts)};
 match(<<"recipients">>, Recipients, Opts) ->
-    {<<"recipients">>, matching_commitments(<<"field-target">>, Recipients, Opts)};
+    {ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
 match(UnsupportedFilter, _, _) ->
     throw({unsupported_query_filter, UnsupportedFilter}).
 
 %% @doc Return the base IDs for messages that have a matching commitment.
-matching_commitments(Field, Values, Opts) ->
+matching_commitments(Field, Values, Opts) when is_list(Values) ->
     hb_util:unique(lists:flatten(
         lists:map(
-            fun(Value) ->
-                lists:map(
-                    fun(ID) -> commitment_id_to_base_id(ID, Opts) end,
-                    case hb_cache:match(#{ Field => Value }, Opts) of
-                        {ok, IDs} ->
-                            lists:map(
-                                fun(ID) -> commitment_id_to_base_id(ID, Opts) end,
-                                IDs
-                            );
-                        not_found -> []
-                    end
-                )
-            end,
+            fun(Value) -> matching_commitments(Field, Value, Opts) end,
             Values
         )
-    )).
+    ));
+matching_commitments(Field, Value, Opts) when is_binary(Value) ->
+    case hb_cache:match(#{ Field => Value }, Opts) of
+        {ok, IDs} ->
+            lists:map(fun(ID) -> commitment_id_to_base_id(ID, Opts) end, IDs);
+        not_found -> not_found
+    end.
 
 %% @doc Convert a commitment message's ID to a base ID.
 commitment_id_to_base_id(ID, Opts) ->
-    case hb_store:read(<< ID/binary, "signature">>, Opts) of
+    Store = hb_opts:get(store, no_store, Opts),
+    ?event({commitment_id_to_base_id, ID}),
+    case hb_store:read(Store, << ID/binary, "/signature">>) of
         {ok, EncSig} ->
             Sig = hb_util:decode(EncSig),
             hb_util:encode(hb_crypto:sha256(Sig));
@@ -88,21 +119,24 @@ commitment_id_to_base_id(ID, Opts) ->
 
 %%% Tests
 
-write_test_messages(Opts) ->
-    hb_message:commit(
-        #{
-            <<"data-protocol">> => <<"ao">>,
-            <<"variant">> => <<"ao.N.1">>,
-            <<"type">> => <<"Message">>,
-            <<"action">> => <<"Eval">>,
-            <<"data">> => <<"test data">>
-        },
-        Opts,
-        #{
-            <<"commitment-device">> => <<"ans104@1.0">>
-        }
+write_test_message(Opts) ->
+    hb_cache:write(
+        Msg = hb_message:commit(
+            #{
+                <<"data-protocol">> => <<"ao">>,
+                <<"variant">> => <<"ao.N.1">>,
+                <<"type">> => <<"Message">>,
+                <<"action">> => <<"Eval">>,
+                <<"data">> => <<"test data">>
+            },
+            Opts,
+            #{
+                <<"commitment-device">> => <<"ans104@1.0">>
+            }
+        ),
+        Opts
     ),
-    ok.
+    {ok, Msg}.
 
 simple_ans104_query_test() ->
     Opts =
@@ -111,42 +145,61 @@ simple_ans104_query_test() ->
             store => [hb_test_utils:test_store(hb_store_lmdb)]
         },
     Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
     Query =
         <<"""
-            query {
+            query($owners: [String!]) {
                 transactions(
                     tags:
                         [
-                            {name: "type", value: "Message"},
-                            {name: "action", value: "Eval"}
-                        ]
+                            {name: "type" values: ["Message"]},
+                            {name: "variant" values: ["ao.N.1"]}
+                        ],
+                    owners: $owners
                     ) {
                     edges {
                         node {
                             id,
-                            tags
+                            tags {
+                                name,
+                                value
+                            }
                         }
                     }
                 }
             }
         """>>,
-    ok = write_test_messages(Opts),
-    Res = dev_query_graphql:test_query(Node, Query, Opts),
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"owners">> => [hb:address()]
+            },
+            Opts
+        ),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?event({expected_id, ExpectedID}),
+    ?event({simple_ans104_query_test, Res}),
     ?assertMatch(
         #{
             <<"data">> := #{
                 <<"transactions">> := #{
                     <<"edges">> :=
-                        #{
-                            <<"node">> := #{<<"id">> := _},
-                            <<"tags">> :=
-                                [
-                                    {<<"type">>, <<"Message">>},
-                                    {<<"action">>, <<"Eval">>}
-                                ]
-                        }
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
                 }
             }
-        },
+        } when ?IS_ID(ExpectedID),
         Res
     ).
