@@ -39,7 +39,7 @@ type Query {
     after: String
 
     # Optionally specify the result sort order.
-    sort: SortOrder = HEIGHT_DESC
+    #sort: SortOrder = HEIGHT_DESC
   ): TransactionConnection!
   block(id: String): Block
   blocks(
@@ -241,10 +241,10 @@ input TagFilter {
   values: [String!]
 
   # The operator to apply to to the tag filter. Defaults to EQ (equal).
-  op: TagOperator! = EQ
+  #op: TagOperator! = EQ
 
   # How tag names and values are matched. Defaults to EXACT.
-  match: TagMatch! = EXACT
+  #match: TagMatch! = EXACT
 }
 
 # The operator to apply to a tag value.

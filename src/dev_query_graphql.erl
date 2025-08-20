@@ -5,6 +5,8 @@
 -export([handle/3]).
 %%% GraphQL Callbacks:
 -export([execute/4]).
+%%% Submodule helpers:
+-export([keys_to_template/1, test_query/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -18,6 +20,7 @@
         <<"id">>,
         <<"message">>,
         <<"keys">>,
+        <<"tags">>,
         <<"name">>,
         <<"value">>
     ]
@@ -157,28 +160,33 @@ message_query(Obj, <<"message">>, #{<<"keys">> := Keys}, Opts) ->
         {ok, [ID | _IDs]} ->
             ?event({graphql_cache_match_found, ID}),
             {ok, Msg} = hb_cache:read(ID, Opts),
-            Loaded = hb_cache:ensure_all_loaded(Msg, Opts),
-            ?event({graphql_cache_read, Loaded}),
-            {ok, #{<<"id">> => ID, <<"keys">> => Loaded}};
+            ?event({graphql_cache_read, Msg}),
+            {ok, Msg};
         not_found ->
             ?event(graphql_cache_match_not_found),
             {ok, #{<<"id">> => <<"not-found">>, <<"keys">> => #{}}}
     end;
-message_query(#{<<"keys">> := Keys}, <<"keys">>, _Args, Opts) ->
+message_query(Msg, Field, _Args, Opts) when Field =:= <<"keys">>; Field =:= <<"tags">> ->
     {
         ok,
         [
             {ok, #{ <<"name">> => Name, <<"value">> => Value }}
         ||
-            {Name, Value} <- hb_maps:to_list(Keys, Opts)
+            {Name, Value} <-
+                hb_maps:to_list(
+                    hb_private:reset(
+                        hb_message:uncommitted(Msg, Opts)
+                    ),
+                    Opts
+                )
         ]
     };
-message_query(Obj, Field, _Args, Opts)
+message_query(Msg, Field, _Args, Opts)
         when Field =:= <<"name">> orelse Field =:= <<"value">> ->
-    {ok, hb_maps:get(Field, Obj, null, Opts)};
-message_query(Obj, <<"id">>, _Args, Opts) ->
-    ?event({message_query_id, {object, Obj}}),
-    {ok, hb_maps:get(<<"id">>, Obj, null, Opts)};
+    {ok, hb_maps:get(Field, Msg, null, Opts)};
+message_query(Msg, <<"id">>, _Args, Opts) ->
+    ?event({message_query_id, {object, Msg}}),
+    {ok, hb_message:id(Msg, all, Opts)};
 message_query(_Obj, _Field, _, _) ->
     {ok, <<"Not found.">>}.
 
@@ -191,11 +199,9 @@ keys_to_template(Keys) ->
         Keys
     )).
 
-%%% Tests
+%%% Test helpers.
 
-lookup_test() ->
-    {ok, Opts, _} = dev_query:test_setup(),
-    Node = hb_http_server:start_node(Opts),
+test_query(Node, Query, Opts) ->
     {ok, Res} =
         hb_http:post(
             Node,
@@ -205,33 +211,40 @@ lookup_test() ->
                 <<"codec-device">> => <<"json@1.0">>,
                 <<"body">> =>
                     hb_json:encode(#{
-                        <<"query">> => 
-                            <<""" 
-                                query GetMessage { 
-                                    message(
-                                        keys: 
-                                            [
-                                                { 
-                                                    name: "basic", 
-                                                    value: "binary-value" 
-                                                }
-                                            ]
-                                    ) {
-                                        id
-                                        keys {
-                                        name
-                                        value
-                                        }
-                                    }
-                                }
-                            """>>,
-                        <<"operationName">> => <<"GetMessage">>
+                        <<"query">> => Query
                     })
             },
             Opts
         ),
-    Object = hb_json:decode(hb_maps:get(<<"body">>, Res, <<>>, Opts)),
-    ?event({test_response, Object}),
+    hb_json:decode(hb_maps:get(<<"body">>, Res, <<>>, Opts)).
+
+%%% Tests
+
+lookup_test() ->
+    {ok, Opts, _} = dev_query:test_setup(),
+    Node = hb_http_server:start_node(Opts),
+    Query =
+        <<""" 
+            query GetMessage { 
+                message(
+                    keys: 
+                        [
+                            { 
+                                name: "basic", 
+                                value: "binary-value" 
+                            }
+                        ]
+                ) {
+                    id
+                    keys {
+                        name
+                        value
+                    }
+                }
+            }
+        """>>,
+    Res = test_query(Node, Query, Opts),
+    ?event({test_response, Res}),
     ?assertMatch(
         #{ <<"data">> := 
             #{ 
@@ -252,7 +265,7 @@ lookup_test() ->
                     } 
             } 
         },
-        Object
+        Res
     ).
 
 %%% Tests for the GraphQL interface of the dev_query module.
@@ -279,8 +292,8 @@ lookup_with_vars_test() ->
                                     ) {
                                         id
                                         keys {
-                                        name
-                                        value
+                                            name
+                                            value
                                         }
                                     }
                                 }
@@ -344,8 +357,8 @@ lookup_without_opname_test() ->
                                     ) {
                                         id
                                         keys {
-                                        name
-                                        value
+                                            name
+                                            value
                                         }
                                     }
                                 }
