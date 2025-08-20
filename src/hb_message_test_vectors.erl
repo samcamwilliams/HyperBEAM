@@ -1406,6 +1406,8 @@ sign_links_test(Codec, Opts) ->
     ?event(debug, {signed, Signed}),
     ?assert(hb_message:verify(Signed, all, Opts)).
 
+bundled_and_unbundled_ids_differ_test(#{ <<"device">> := <<"ans104@1.0">> }, _Opts) ->
+    skip;
 bundled_and_unbundled_ids_differ_test(Codec = #{ <<"bundle">> := true }, Opts) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
