@@ -106,21 +106,15 @@ commitment_to_tx(Commitment, Opts) ->
 %% @doc Calculate the data field for a message.
 data(TABM, Req, Opts) ->
     DataKey = inline_key(TABM),
-    UncommittedTABM =
-        hb_maps:without(
-            [<<"commitments">>],
-            hb_private:reset(TABM),
-            Opts
-        ),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages.
+    UnencodedNestedMsgs = data_messages(TABM, Opts),
     NestedMsgs =
-        hb_maps:filtermap(
-            fun(_Key, Msg) when is_map(Msg) ->
-                {true, hb_util:ok(dev_codec_ans104:to(Msg, Req, Opts))};
-                (_Key, _Value) -> false
+        hb_maps:map(
+            fun(_, Msg) ->
+                hb_util:ok(dev_codec_ans104:to(Msg, Req, Opts))
             end,
-            hb_ao:normalize_keys(UncommittedTABM, Opts),
+            UnencodedNestedMsgs,
             Opts
         ),
     DataVal = hb_maps:get(DataKey, TABM, ?DEFAULT_DATA),
@@ -135,6 +129,34 @@ data(TABM, Req, Opts) ->
             NestedMsgs#{
                 DataKey => hb_util:ok(dev_codec_ans104:to(DataVal, Req, Opts))
             }
+    end.
+
+%% @doc Calculate the data value for a message. The rules are:
+%% 1. There should be no more than 128 keys in the tags.
+%% 2. Each key must be equal or less to 1024 bytes.
+%% 3. Each value must be equal or less to 3072 bytes.
+data_messages(TABM, Opts) when is_map(TABM) ->
+    UncommittedTABM =
+        hb_maps:without(
+            [<<"commitments">>, <<"data">>, <<"target">>],
+            hb_private:reset(TABM),
+            Opts
+        ),
+    % If there are too many keys in the TABM, all are promoted to the data.
+    if map_size(UncommittedTABM) > 128 -> UncommittedTABM;
+    true ->
+        % If there are less than 128 keys, we return those that are large, or
+        % are nested messages.
+        hb_maps:filter(
+            fun(Key, Value) ->
+                case is_map(Value) of
+                    true -> true;
+                    false -> byte_size(Value) > 3072 orelse byte_size(Key) > 1024
+                end
+            end,
+            UncommittedTABM,
+            Opts
+        )
     end.
 
 %% @doc Calculate the tags field for a data item. If the TX already has tags
@@ -188,10 +210,12 @@ tags(TX, TABM, Data, Opts) ->
                         true -> []
                     end;
             not_found ->
-                % There is no commitment, so we need to generate the tags. We add
-                % the bundle-format and bundle-version tags, and the ao-data-key
-                % tag if it is set to a non-default value, followed by the keys
-                % from the TABM (less the target key if it is an ID).
+                % There is no commitment, so we need to generate the tags. The
+                % bundle-format and bundle-version tags are added by `ar_bundles`
+                % so we do not add them here. The ao-data-key tag is added if it
+                % is set to a non-default value, followed by the keys from the
+                % TABM (less the data keys and target key -- see 
+                % `include_target_tag/3` for rationale).
                 hb_util:list_without(
                     [<<"commitments">>] ++
                         if is_map(Data) -> hb_maps:keys(Data, Opts);
