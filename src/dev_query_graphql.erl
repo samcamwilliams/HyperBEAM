@@ -81,8 +81,17 @@ init(_Opts) ->
     ?event(graphql_controller_registered),
     ok.
 
-handle(_Base, Req, Opts) ->
-    ?event({request, {explicit, Req}}),
+handle(_Base, RawReq, Opts) ->
+    ?event({request, RawReq}),
+    Req =
+        case hb_maps:find(<<"query">>, RawReq, Opts) of
+            {ok, _} -> RawReq;
+            error ->
+                % Parse the query, assuming that the request body is a JSON
+                % object with the necessary fields.
+                hb_json:decode(hb_maps:get(<<"body">>, RawReq, <<>>, Opts))
+        end,
+    ?event({request, {processed, Req}}),
     Query = hb_maps:get(<<"query">>, Req, <<>>, Opts),
     OpName = hb_maps:get(<<"operationName">>, Req, undefined, Opts),
     Vars = hb_maps:get(<<"variables">>, Req, #{}, Opts),
@@ -119,9 +128,9 @@ handle(_Base, Req, Opts) ->
                     },
                 ?event(graphql_context_created),
                 Response = graphql:execute(Ctx, AST2),
-                ?event({graphql_executed, Response}),
+                ?event(graphql_executed),
                 JSON = hb_json:encode(Response),
-                ?event({graphql_response, JSON}),
+                ?event({graphql_response, {bytes, byte_size(JSON)}}),
                 {ok,
                     #{
                         <<"content-type">> => <<"application/json">>,

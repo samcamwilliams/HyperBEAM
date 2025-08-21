@@ -77,9 +77,7 @@ match_args([{Field, X} | Rest], Acc, Opts) ->
     case MatchRes of
         {ok, Result} ->
             match_args(Rest, [Result | Acc], Opts);
-        {ok, Result} ->
-            match_args(Rest, Result, Opts);
-        _ ->
+        _Error ->
             match_args(Rest, Acc, Opts)
     end.
 
