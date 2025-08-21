@@ -8,7 +8,8 @@
 %%% module will be deprecated.
 -module(hb_gateway_client).
 %% Raw access primitives:
--export([read/2, data/2, result_to_message/2]).
+-export([query/2, query/3, query/4, query/5]).
+-export([read/2, data/2, result_to_message/2, item_spec/0]).
 %% Application-specific data access functions:
 -export([scheduler_location/2]).
 -include_lib("include/hb.hrl").
@@ -33,42 +34,38 @@
 %%   ar: String!
 %% }
 read(ID, Opts) ->
-    Query = case maps:is_key(<<"subindex">>, Opts) of
+    {Query, Variables} = case maps:is_key(<<"subindex">>, Opts) of
       true -> 
         Tags = subindex_to_tags(maps:get(<<"subindex">>, Opts)),
-        #{
-            <<"query">> =>
-                <<
-                    "query($transactionIds: [ID!]!) { ",
-                        "transactions(ids: $transactionIds,",
-                        "tags: ", (Tags)/binary , ",",
-                        "first: 1){ ",
-                            "edges { ", (item_spec())/binary , " } ",
-                        "} ",
-                    "} "
-                >>,
-            <<"variables">> =>
-                #{
-                    <<"transactionIds">> => [hb_util:human_id(ID)]
-                }
+        {
+            <<
+                "query($transactionIds: [ID!]!) { ",
+                    "transactions(ids: $transactionIds,",
+                    "tags: ", (Tags)/binary , ",",
+                    "first: 1){ ",
+                        "edges { ", (item_spec())/binary , " } ",
+                    "} ",
+                "} "
+            >>,
+            #{
+                <<"transactionIds">> => [hb_util:human_id(ID)]
+            }
         };
       false -> 
-        #{
-            <<"query">> =>
-                <<
-                    "query($transactionIds: [ID!]!) { ",
-                        "transactions(ids: $transactionIds, first: 1){ ",
-                            "edges { ", (item_spec())/binary , " } ",
-                        "} ",
-                    "} "
-                >>,
-            <<"variables">> =>
-                #{
-                    <<"transactionIds">> => [hb_util:human_id(ID)]
-                }
+        {
+            <<
+                "query($transactionIds: [ID!]!) { ",
+                    "transactions(ids: $transactionIds, first: 1){ ",
+                        "edges { ", (item_spec())/binary , " } ",
+                    "} ",
+                "} "
+            >>,
+            #{
+                <<"transactionIds">> => [hb_util:human_id(ID)]
+            }
         }
     end,
-    case query(Query, Opts) of
+    case query(Query, Variables, Opts) of
         {error, Reason} -> {error, Reason};
         {ok, GqlMsg} ->
             case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
@@ -90,13 +87,14 @@ item_spec() ->
         "quantity { winston } ",
         "tags { name value } ",
         "data { size } "
-    "}">>.
+    "} ",
+    "cursor ">>.
 
 %% @doc Get the data associated with a transaction by its ID, using the node's
 %% Arweave `gateway' peers. The item is expected to be available in its 
 %% unmodified (by caches or other proxies) form at the following location:
-%%      https://&lt;gateway&gt;/raw/&lt;id&gt;
-%% where `&lt;id&gt;' is the base64-url-encoded transaction ID.
+%%      https://<gateway>/raw/<id>
+%% where `<id>' is the base64-url-encoded transaction ID.
 data(ID, Opts) ->
     Req = #{
         <<"multirequest-accept-status">> => 200,
@@ -122,21 +120,18 @@ data(ID, Opts) ->
 %% @doc Find the location of the scheduler based on its ID, through GraphQL.
 scheduler_location(Address, Opts) ->
     Query =
+        <<"query($SchedulerAddrs: [String!]!) { ",
+            "transactions(owners: $SchedulerAddrs, tags: { name: \"Type\" values: [\"Scheduler-Location\"] }, first: 1){ ",
+                "edges { ",
+                    (item_spec())/binary ,
+                " } ",
+            "} ",
+        "}">>,
+    Variables =
         #{
-            <<"query">> =>
-                <<"query($SchedulerAddrs: [String!]!) { ",
-                    "transactions(owners: $SchedulerAddrs, tags: { name: \"Type\" values: [\"Scheduler-Location\"] }, first: 1){ ",
-                        "edges { ",
-                            (item_spec())/binary ,
-                        " } ",
-                    "} ",
-                "}">>,
-            <<"variables">> =>
-                #{
-                    <<"SchedulerAddrs">> => [Address]
-                }
+            <<"SchedulerAddrs">> => [Address]
         },
-    case query(Query, Opts) of
+    case query(Query, Variables, Opts) of
         {error, Reason} -> {error, Reason};
         {ok, GqlMsg} ->
             case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
@@ -149,27 +144,54 @@ scheduler_location(Address, Opts) ->
 %% a list of URLs to use, optionally as a tuple with an additional map of options
 %% to use for the request.
 query(Query, Opts) ->
-    Res = hb_http:request(
-        #{
-            % Add options for the HTTP request, in case it is being made to
-            % many nodes.
-            <<"multirequest-accept-status">> => 200,
-            <<"multirequest-responses">> => 1,
-            % Main request fields
-            <<"method">> => <<"POST">>,
-            <<"path">> => <<"/graphql">>,
-            <<"content-type">> => <<"application/json">>,
-            <<"body">> => hb_json:encode(Query)
-        },
-        Opts
+    query(Query, undefined, Opts).
+query(Query, Variables, Opts) ->
+    query(Query, Variables, undefined, Opts).
+query(Query, Variables, Node, Opts) ->
+    query(Query, Variables, Node, undefined, Opts).
+query(Query, Variables, Node, Operation, Opts) ->
+    % Either use the given node if provided, or use the local machine's routes
+    % to find the GraphQL endpoint.
+    Path =
+        case Node of
+            undefined -> <<"/graphql">>;
+            _ -> << Node/binary, "/graphql">>
+        end,
+    ?event(graphql,
+        {request,
+            {path, Path},
+            {query, Query},
+            {variables, Variables},
+            {operation, Operation}
+        }
     ),
+    CombinedQuery =
+        maps:filter(
+            fun(_, V) -> V =/= undefined end,
+            #{
+                <<"query">> => Query,
+                <<"variables">> => Variables,
+                <<"operationName">> => Operation
+            }
+        ),
+    Res =
+        hb_http:request(
+            #{
+                <<"path">> => Path,
+                % Add options for the HTTP request, in case it is being made to
+                % many nodes.
+                <<"multirequest-accept-status">> => 200,
+                <<"multirequest-responses">> => 1,
+                % Main request fields
+                <<"method">> => <<"POST">>,
+                <<"content-type">> => <<"application/json">>,
+                <<"body">> => hb_json:encode(CombinedQuery)
+            },
+            Opts
+        ),
     case Res of
         {ok, Msg} ->
-            {ok,
-                hb_json:decode(
-                    hb_ao:get(<<"body">>, Msg, <<>>, Opts)
-                )
-            };
+            {ok, hb_json:decode(hb_ao:get(<<"body">>, Msg, <<>>, Opts))};
         {error, Reason} -> {error, Reason}
     end.
 
