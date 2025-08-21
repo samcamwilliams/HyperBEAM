@@ -271,7 +271,6 @@ verify_item(DataItem) ->
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
-    lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags),
     case lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags) of
         {<<"bundle-map">>, _} ->
             case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
@@ -338,8 +337,12 @@ verify_data_item_tags(DataItem) ->
 
 normalize(Item) -> reset_ids(normalize_data(Item)).
 
-%% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
+%% @doc Ensure that a data item (potentially containing a map or list) has a
+%% standard, serialized form.
 normalize_data(not_found) -> throw(not_found);
+normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) ->
+    ?event({normalize_data, binary, Item}),
+    normalize_data_size(Item);
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
     ?event({normalize_data, bundle, Bundle}),
     normalize_data(#tx{ data = Bundle });
@@ -363,9 +366,6 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
                 )
         }
     );
-normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) ->
-    ?event({normalize_data, binary, Item}),
-    normalize_data_size(Item);
 normalize_data(Item = #tx{data = Data}) ->
     ?event({normalize_data, map, Item}),
     normalize_data_size(
@@ -374,10 +374,11 @@ normalize_data(Item = #tx{data = Data}) ->
                 Item#tx{
                     data = Bin,
                     manifest = Manifest,
-                    tags = add_manifest_tags(
-                        add_bundle_tags(Item#tx.tags),
-                        id(Manifest, unsigned)
-                    )
+                    tags =
+                        add_manifest_tags(
+                            add_bundle_tags(Item#tx.tags),
+                            id(Manifest, unsigned)
+                        )
                 };
             DirectBin ->
                 Item#tx{
