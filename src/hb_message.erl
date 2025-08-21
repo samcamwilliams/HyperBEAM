@@ -64,7 +64,7 @@
 -export([with_commitments/3, without_commitments/3, normalize_commitments/2]).
 -export([diff/3, match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
--export([default_tx_list/0, default_tx_keys/0, filter_default_keys/1]).
+-export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
 -export([print/1]).
 -include("include/hb.hrl").
@@ -708,8 +708,5 @@ default_tx_message() ->
 %% @doc Get the ordered list of fields as AO-Core keys and default values of
 %% the tx record.
 default_tx_list() ->
-    lists:zip(default_tx_keys(), tl(tuple_to_list(#tx{}))).
-
-%% @doc Get the ordered list of tx record fields, normalized as AO-Core keys.
-default_tx_keys() ->
-    lists:map(fun hb_ao:normalize_key/1, record_info(fields, tx)).
+    Keys = lists:map(fun hb_ao:normalize_key/1, record_info(fields, tx)),
+    lists:zip(Keys, tl(tuple_to_list(#tx{}))).

@@ -1163,23 +1163,40 @@ cors_get_test() ->
     ).
 
 ans104_wasm_test() ->
-    URL = hb_http_server:start_node(#{force_signed => true}),
+    TestStore = [hb_test_utils:test_store()],
+    TestOpts =
+        #{
+            force_signed => true,
+            store => TestStore,
+            priv_wallet => ar_wallet:new()
+        },
+    ClientStore = [hb_test_utils:test_store()],
+    ClientOpts = #{ store => ClientStore, priv_wallet => hb:wallet() },
+    URL = hb_http_server:start_node(TestOpts),
     {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
-    Wallet = hb:wallet(),
-    Msg = hb_message:commit(#{
-        <<"accept-codec">> => <<"ans104@1.0">>,
-        <<"codec-device">> => <<"ans104@1.0">>,
-        <<"device">> => <<"wasm-64@1.0">>,
-        <<"function">> => <<"fac">>,
-        <<"parameters">> => [3.0],
-        <<"body">> => Bin
-    }, Wallet, #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }),
-    ?assert(hb_message:verify(Msg, all, #{})),
-    ?event({msg, {explicit, Msg}}),
-    {ok, Res} = post(URL, Msg#{ <<"path">> => <<"/init/compute/results">> }, #{}),
+    Msg =
+        hb_message:commit(
+            #{
+                <<"accept-codec">> => <<"ans104@1.0">>,
+                <<"codec-device">> => <<"ans104@1.0">>,
+                <<"device">> => <<"wasm-64@1.0">>,
+                <<"function">> => <<"fac">>,
+                <<"parameters">> => [3.0],
+                <<"body">> => Bin
+            },
+            ClientOpts,
+            #{ <<"device">> => <<"ans104@1.0">>, <<"bundle">> => true }
+        ),
+    ?assert(hb_message:verify(Msg, all, ClientOpts)),
+    ?event({msg, Msg}),
+    {ok, Res} =
+        post(
+            URL,
+            Msg#{ <<"path">> => <<"/init/compute/results">> },
+            ClientOpts
+        ),
     ?event({res, Res}),
-    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})),
-    ok.
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, ClientOpts)).
 
 send_large_signed_request_test() ->
     % Note: If the signature scheme ever changes, we will need to run the 

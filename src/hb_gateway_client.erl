@@ -137,8 +137,11 @@ scheduler_location(Address, Opts) ->
                 }
         },
     case query(Query, Opts) of
-        {error, Reason} -> {error, Reason};
+        {error, Reason} ->
+            ?event(error, {scheduler_location, {query, Query}, {error, Reason}}),
+            {error, Reason};
         {ok, GqlMsg} ->
+            ?event({scheduler_location_req, {query, Query}, {response, GqlMsg}}),
             case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
                 not_found -> {error, not_found};
                 Item = #{ <<"id">> := ID } -> result_to_message(ID, Item, Opts)
@@ -211,9 +214,9 @@ result_to_message(ExpectedID, Item, Opts) ->
             _ -> unsupported_tx_signature_type
         end,
     TX =
-        #tx {
+        ar_bundles:reset_ids(#tx {
             format = ans104,
-            last_tx =
+            anchor =
                 normalize_null(hb_maps:get(<<"anchor">>, Item, not_found, GQLOpts)),
             signature = Signature,
             signature_type = SignatureType,
@@ -239,7 +242,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                 ],
             data_size = DataSize,
             data = Data
-        },
+        }),
     ?event({raw_ans104, TX}),
     ?event({ans104_form_response, TX}),
     TABM = hb_util:ok(dev_codec_ans104:from(TX, #{}, Opts)),
