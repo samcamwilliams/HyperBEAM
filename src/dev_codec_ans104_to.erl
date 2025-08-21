@@ -162,16 +162,36 @@ tags(TX, TABM, Data, Opts) ->
     CommittedTagKeys =
         case MaybeCommitment of
             {ok, _, Commitment} ->
-                % There is already a commitment, so the tags and ordered are 
-                % pre-determined. If the target is set in the base TX from the
-                % commitment, we check if the TABM equals that value. If it does,
-                % we do not additionally add the target tag. If they differ, we
-                % include it.
-                hb_util:message_to_ordered_list(
-                    hb_util:ok(
-                        hb_maps:find(<<"committed">>, Commitment, Opts)
+                % There is already a commitment, so the tags and order are
+                % pre-determined. However, if the message has been bundled,
+                % any `+link`-suffixed keys in the committed list may need to
+                % be resolved to their base keys (e.g., `output+link` -> `output`).
+                % We normalize each committed key to whichever form actually
+                % exists in the current TABM to avoid missing keys.
+                lists:map(
+                    fun(CommittedKey) ->
+                        NormalizedKey = hb_ao:normalize_key(CommittedKey),
+                        BaseKey = hb_link:remove_link_specifier(NormalizedKey),
+                        case hb_maps:find(BaseKey, TABM, Opts) of
+                            {ok, _} -> BaseKey;
+                            error ->
+                                BaseKeyLink = <<BaseKey/binary, "+link">>,
+                                case hb_maps:find(BaseKeyLink, TABM, Opts) of
+                                    {ok, _} -> BaseKeyLink;
+                                    error -> BaseKey
+                                end
+                        end
+                    end,
+                    hb_util:message_to_ordered_list(
+                        hb_util:ok(
+                            hb_maps:find(<<"committed">>, Commitment, Opts)
+                        )
                     )
                 ) --
+                    % If the target is set in the base TX from the
+                    % commitment, we check if the TABM equals that value. If it does,
+                    % we do not additionally add the target tag. If they differ, we
+                    % include it.
                     case include_target_tag(TX, TABM, Opts) of
                         false -> [<<"target">>];
                         true -> []
