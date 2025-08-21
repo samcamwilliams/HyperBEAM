@@ -135,6 +135,7 @@ data(TABM, Req, Opts) ->
 %% 1. There should be no more than 128 keys in the tags.
 %% 2. Each key must be equal or less to 1024 bytes.
 %% 3. Each value must be equal or less to 3072 bytes.
+%% Presently, if we exceed these limits, we throw an error.
 data_messages(TABM, Opts) when is_map(TABM) ->
     UncommittedTABM =
         hb_maps:without(
@@ -142,8 +143,9 @@ data_messages(TABM, Opts) when is_map(TABM) ->
             hb_private:reset(TABM),
             Opts
         ),
-    % If there are too many keys in the TABM, all are promoted to the data.
-    if map_size(UncommittedTABM) > 128 -> UncommittedTABM;
+    % If there are too many keys in the TABM, throw an error.
+    if map_size(UncommittedTABM) > 128 ->
+        throw({too_many_keys, UncommittedTABM});
     true ->
         % If there are less than 128 keys, we return those that are large, or
         % are nested messages.
