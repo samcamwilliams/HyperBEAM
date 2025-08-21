@@ -45,39 +45,27 @@ ao_types(Tags, _Opts) ->
 
 %% @doc Return a TABM of the keys and values found in the data field of the item.
 data(Item, Req, Tags, Opts) ->
-    RawData =
-        case Item#tx.data of
-            Data when is_map(Data) ->
-                % If the data is a map, we need to recursively turn its children
-                % into messages from their tx representations.
-                hb_ao:normalize_keys(
-                    hb_maps:map(
-                        fun(_, InnerValue) ->
-                            hb_util:ok(dev_codec_ans104:from(InnerValue, Req, Opts))
-                        end,
-                        Data,
-                        Opts
-                    ),
-                    Opts
-                );
-            Data when is_binary(Data) -> Data;
-            Data ->
-                ?event({unexpected_data_type, {explicit, Data}}),
-                ?event({was_processing, {explicit, Item}}),
-                throw(invalid_tx)
-        end,
-    % Normalize the `data` field to the `ao-data-key' tag's value, if set.
+    % If the data field is empty, we return an empty map. If it is a map, we
+    % return it as such. Otherwise, we return a map with the data key set to
+    % the raw data value. This handles unbundling nested messages, as well as 
+    % applying the `ao-data-key' tag if given.
     DataKey = maps:get(<<"ao-data-key">>, Tags, <<"data">>),
-    case {DataKey, RawData} of
+    case {DataKey, Item#tx.data} of
         {_, ?DEFAULT_DATA} -> #{};
-        {<<"data">>, _Data} when is_map(RawData) -> RawData;
-        % If the data was encoded using a non-default data key (e.g. 'body')
-        % and the encoded map already contains that data key at the top level
-        % (because nested messages are placed under it), avoid double-wrapping.
-        {DataKey, Map} when 
-            is_binary(DataKey), is_map(Map), is_map_key(DataKey, Map) ->
-            Map;
-        {DataKey, _Data} -> #{ DataKey => RawData }
+        {DataKey, Map} when is_map(Map) ->
+            % If the data is a map, we need to recursively turn its children
+            % into messages from their tx representations.
+            hb_ao:normalize_keys(
+                hb_maps:map(
+                    fun(_, InnerValue) ->
+                        hb_util:ok(dev_codec_ans104:from(InnerValue, Req, Opts))
+                    end,
+                    Map,
+                    Opts
+                ),
+                Opts
+            );
+        {DataKey, Data} -> #{ DataKey => Data }
     end.
 
 %% @doc Calculate the list of committed keys for an item, based on its 
