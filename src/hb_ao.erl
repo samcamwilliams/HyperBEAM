@@ -128,6 +128,9 @@
 %%     13: Recurse or terminate.
 resolve(Path, Opts) when is_binary(Path) ->
     resolve(#{ <<"path">> => Path }, Opts);
+resolve(SingletonMsg, _Opts)
+        when is_map(SingletonMsg), not is_map_key(<<"path">>, SingletonMsg) ->
+    {error, <<"Attempted to resolve a message without a path.">>};
 resolve(SingletonMsg, Opts) ->
     resolve_many(hb_singleton:from(SingletonMsg, Opts), Opts).
 
