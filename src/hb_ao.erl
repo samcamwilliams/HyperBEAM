@@ -183,6 +183,8 @@ resolve_many(MsgList, Opts) ->
     Res = do_resolve_many(MsgList, Opts),
     ?event(ao_core, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
     Res.
+do_resolve_many([], _Opts) ->
+    {failure, <<"Attempted to resolve an empty message sequence.">>};
 do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
     {ok, hb_cache:ensure_loaded(Msg3, Opts)};

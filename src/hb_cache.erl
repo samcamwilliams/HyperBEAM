@@ -212,30 +212,26 @@ generate_binary_path(Bin, Opts) ->
 %% the commitments of the inner messages. We do not, however, store the IDs from
 %% commitments on signed _inner_ messages. We may wish to revisit this.
 write(RawMsg, Opts) when is_map(RawMsg) ->
-    TABM = hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
-    case hb_message:with_only_committed(TABM, Opts) of
-        {ok, Msg} ->
-            ?event(debug_cache, {writing_full_message, {msg, Msg}}),
-            %try
-                do_write_message(
-                    TABM,
-                    hb_opts:get(store, no_viable_store, Opts),
-                    Opts
-                );
-            % catch
-            %     Type:Reason:Stacktrace ->
-            %         ?event(error,
-            %             {cache_write_error,
-            %                 {type, Type},
-            %                 {reason, Reason},
-            %                 {stacktrace, Stacktrace}
-            %             },
-            %             Opts
-            %         ),
-            %         {error, no_viable_store}
-            % end;
-        {error, Err} ->
-            {error, Err}
+    {ok, Msg} = hb_message:with_only_committed(RawMsg, Opts),
+    TABM = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
+    ?event(debug_cache, {writing_full_message, {msg, TABM}}),
+    try
+        do_write_message(
+            TABM,
+            hb_opts:get(store, no_viable_store, Opts),
+            Opts
+        )
+    catch
+        Type:Reason:Stacktrace ->
+            ?event(error,
+                {cache_write_error,
+                    {type, Type},
+                    {reason, Reason},
+                    {stacktrace, {trace, Stacktrace}}
+                },
+                Opts
+            ),
+            erlang:raise(Type, Reason, Stacktrace)
     end;
 write(List, Opts) when is_list(List) ->
     write(hb_message:convert(List, tabm, <<"structured@1.0">>, Opts), Opts);
