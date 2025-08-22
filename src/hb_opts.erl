@@ -240,6 +240,10 @@ default_message() ->
                 <<"nodes">> =>
                     [
                         #{
+                            <<"prefix">> => <<"https://ao-search-gateway.goldsky.com">>,
+                            <<"opts">> => #{ http_client => httpc, protocol => http2 }
+                        },
+                        #{
                             <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
                             <<"opts">> => #{ http_client => httpc, protocol => http2 }
                         },
