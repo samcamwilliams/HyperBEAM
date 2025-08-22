@@ -125,7 +125,11 @@ scheduler_location(Address, Opts) ->
         #{
             <<"query">> =>
                 <<"query($SchedulerAddrs: [String!]!) { ",
-                    "transactions(owners: $SchedulerAddrs, tags: { name: \"Type\" values: [\"Scheduler-Location\"] }, first: 1){ ",
+                    "transactions(",
+                        "owners: $SchedulerAddrs, ",
+                        "tags: { name: \"Type\" values: [\"Scheduler-Location\"] }, ",
+                        "first: 1",
+                    "){ ",
                         "edges { ",
                             (item_spec())/binary ,
                         " } ",
@@ -152,12 +156,18 @@ scheduler_location(Address, Opts) ->
 %% a list of URLs to use, optionally as a tuple with an additional map of options
 %% to use for the request.
 query(Query, Opts) ->
+    % Find the routes for the GraphQL API.
     Res = hb_http:request(
         #{
             % Add options for the HTTP request, in case it is being made to
             % many nodes.
-            <<"multirequest-accept-status">> => 200,
             <<"multirequest-responses">> => 1,
+            <<"multirequest-admissible-status">> => 200,
+            <<"multirequest-admissible">> =>
+                #{
+                    <<"device">> =>
+                        #{ <<"is-admissible">> => fun is_admissible/3 }
+                },
             % Main request fields
             <<"method">> => <<"POST">>,
             <<"path">> => <<"/graphql">>,
@@ -174,6 +184,19 @@ query(Query, Opts) ->
                 )
             };
         {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Return whether a GraphQL response has transaction results. This function
+%% is used in the client library's multirequest configuration to determine if
+%% the response from the node should be considered admissible.
+is_admissible(_Base, Req, _Opts) ->
+    JSON = hb_maps:get(<<"body">>, Req, <<"false">>),
+    Decoded = hb_json:decode(JSON),
+    ?event(debug_multi, {is_admissible, {decoded_json, Decoded}}),
+    case Decoded of
+        #{ <<"data">> := #{ <<"transactions">> := #{ <<"edges">> := [] } } } ->
+            false;
+        _ -> true
     end.
 
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a

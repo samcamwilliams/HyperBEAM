@@ -61,6 +61,7 @@
 -export([with_only_committers/2, with_only_committers/3, commitment_devices/2]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
 -export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
+-export([without_unless_signed/3]).
 -export([with_commitments/3, without_commitments/3, normalize_commitments/2]).
 -export([diff/3, match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
@@ -289,6 +290,16 @@ with_only_committers(Msg, _Committers, _Opts) ->
 %% @doc Determine whether a specific key is part of a message's commitments.
 is_signed_key(Key, Msg, Opts) ->
     lists:member(Key, hb_message:committed(Msg, all, Opts)).
+
+%% @doc Remove the any of the given keys that are not signed from a message.
+without_unless_signed(Key, Msg, Opts) when not is_list(Key) ->
+    without_unless_signed([Key], Msg, Opts);
+without_unless_signed(Keys, Msg, Opts) ->
+    SignedKeys = hb_message:committed(Msg, all, Opts),
+    maps:without(
+        lists:filter(fun(K) -> not lists:member(K, SignedKeys) end, Keys),
+        Msg
+    ).
 
 %% @doc Sign a message with the given wallet.
 commit(Msg, WalletOrOpts) ->
