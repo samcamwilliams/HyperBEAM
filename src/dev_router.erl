@@ -574,14 +574,10 @@ preprocess(Msg1, Msg2, Opts) ->
                 #{
                     <<"device">> => <<"apply@1.0">>,
                     <<"path">> => <<"pair">>,
-                    <<"base">> => UserReqWithCommit,
-                    <<"request">> =>
-                        #{
-                            <<"path">> =>
-                                hb_util:ok(
-                                    hb_maps:get(<<"path">>, Req, Opts)
-                                )
-                        }
+                    <<"base">> => <<"user-message">>,
+                    <<"request">> => <<"user-path">>,
+                    <<"user-path">> => hb_maps:get(<<"path">>, Req, Opts),
+                    <<"user-message">> => UserReqWithCommit
                 },
             ?event(debug_relay, {prepared_relay_req, RelayReq}),
             {
