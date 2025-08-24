@@ -133,7 +133,7 @@ report_ensure_loaded_not_found(Ref, Lk, Opts) ->
     throw(
         {necessary_message_not_found,
             hb_path:to_binary(lists:reverse(Ref)),
-            hb_link:format_unresolved(Lk)
+            hb_link:format_unresolved(Lk, Opts, 0)
         }
     ).
 

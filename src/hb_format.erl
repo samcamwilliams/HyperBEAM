@@ -319,8 +319,8 @@ remove_noise(Str) ->
 remove_leading_noise(Str) ->
     remove_leading_noise(Str, ?NOISE_CHARS).
 remove_leading_noise(Bin, Noise) when is_binary(Bin) ->
-    remove_leading_noise(binary:bin_to_list(Bin), Noise);
-remove_leading_noise([], _Noise) -> [];
+    hb_util:bin(remove_leading_noise(hb_util:list(Bin), Noise));
+remove_leading_noise([], _) -> [];
 remove_leading_noise([Char|Str], Noise) ->
     case lists:member(Char, Noise) of
         true ->
@@ -756,7 +756,11 @@ message(RawMap, Opts, Indent) when is_map(RawMap) ->
                         Bin when is_binary(Bin) ->
                             binary(Bin);
                         Link when ?IS_LINK(Link) ->
-                            hb_link:format(Link, Opts);
+                            remove_leading_noise(
+                                hb_util:bin(
+                                    hb_link:format(Link, Opts, Indent + 2)
+                                )
+                            );
                         Other ->
                             io_lib:format("~p", [Other])
                     end
