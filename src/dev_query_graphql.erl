@@ -180,7 +180,11 @@ message_query(Msg, Field, _Args, Opts) when Field =:= <<"keys">>; Field =:= <<"t
     OnlyKeys =
         hb_maps:to_list(
             hb_private:reset(
-                hb_message:uncommitted(Msg, Opts)
+                hb_maps:without(
+                    [<<"data">>, <<"body">>],
+                    hb_message:uncommitted(Msg, Opts),
+                    Opts
+                )
             ),
             Opts
         ),
