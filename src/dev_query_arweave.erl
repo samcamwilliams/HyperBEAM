@@ -166,6 +166,27 @@ write_test_message(Opts) ->
     ),
     {ok, Msg}.
 
+%% Helper function to write test message with Recipient
+write_test_message_with_recipient(Recipient, Opts) ->
+    hb_cache:write(
+        Msg = hb_message:commit(
+            #{
+                <<"data-protocol">> => <<"ao">>,
+                <<"variant">> => <<"ao.N.1">>,
+                <<"type">> => <<"Message">>,
+                <<"action">> => <<"Eval">>,
+                <<"data">> => <<"test data">>,
+                <<"target">> => Recipient
+            },
+            Opts,
+            #{
+                <<"commitment-device">> => <<"ans104@1.0">>
+            }
+        ),
+        Opts
+    ),
+    {ok, Msg}.
+
 simple_ans104_query_test() ->
     Opts =
         #{
@@ -276,6 +297,262 @@ transactions_query_tags_test() ->
     ExpectedID = hb_message:id(WrittenMsg, all, Opts),
     ?event({expected_id, ExpectedID}),
     ?event({transactions_query_tags_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transactions">> := #{
+                    <<"edges">> :=
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test transactions query with owners filter
+transactions_query_owners_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($owners: [String!]) {
+                transactions(
+                    owners: $owners
+                ) {
+                    edges {
+                        node {
+                            id
+                            tags {
+                                name
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"owners">> => [hb:address()]
+            },
+            Opts
+        ),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?event({expected_id, ExpectedID}),
+    ?event({transactions_query_owners_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transactions">> := #{
+                    <<"edges">> :=
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test transactions query with recipients filter
+transactions_query_recipients_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    Alice = ar_wallet:new(),
+    ?event({alice, Alice, {explicit, hb_util:human_id(Alice)}}),
+    AliceAddress = hb_util:human_id(Alice),
+    {ok, WrittenMsg} = write_test_message_with_recipient(AliceAddress, Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($recipients: [String!]) {
+                transactions(
+                    recipients: $recipients
+                ) {
+                    edges {
+                        node {
+                            id
+                            tags {
+                                name
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"recipients">> => [AliceAddress]
+            },
+            Opts
+        ),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?event({expected_id, ExpectedID}),
+    ?event({transactions_query_recipients_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transactions">> := #{
+                    <<"edges">> :=
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test transactions query with ids filter
+transactions_query_ids_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($ids: [ID!]) {
+                transactions(
+                    ids: $ids
+                ) {
+                    edges {
+                        node {
+                            id
+                            tags {
+                                name
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"ids">> => [ExpectedID]
+            },
+            Opts
+        ),
+    ?event({expected_id, ExpectedID}),
+    ?event({transactions_query_ids_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transactions">> := #{
+                    <<"edges">> :=
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test transactions query with combined filters
+transactions_query_combined_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($owners: [String!], $ids: [ID!]) {
+                transactions(
+                    owners: $owners,
+                    ids: $ids,
+                    tags: [
+                        {name: "type", values: ["Message"]}
+                    ]
+                ) {
+                    edges {
+                        node {
+                            id
+                            tags {
+                                name
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"owners">> => [hb:address()],
+                <<"ids">> => [ExpectedID]
+            },
+            Opts
+        ),
+    ?event({expected_id, ExpectedID}),
+    ?event({transactions_query_combined_test, Res}),
     ?assertMatch(
         #{
             <<"data">> := #{
