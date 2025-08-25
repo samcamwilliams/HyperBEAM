@@ -66,25 +66,49 @@ query(Msg, <<"signature">>, _Args, Opts) ->
     end;
 query(Msg, <<"owner">>, _Args, Opts) ->
     ?event({query_owner, Msg}),
-    Res = case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
+    case hb_message:commitments(#{ <<"committer">> => '_' }, Msg, Opts) of
         not_found -> {ok, null};
         Commitments ->
-            case maps:to_list(Commitments) of
+            case hb_maps:keys(Commitments) of
                 [] -> {ok, null};
-                [{_CommitmentID, Commitment} | _] ->
-                    Address = hb_maps:get(<<"committer">>, Commitment, null, Opts),
-                    Key = hb_maps:get(<<"keyid">>, Commitment, null, Opts),
+                [CommID | _] ->
+                    {ok, Commitment} = hb_maps:find(CommID, Commitments, Opts),
+                    {ok, Address} = hb_maps:find(<<"committer">>, Commitment, Opts),
+                    {ok, KeyID} = hb_maps:find(<<"keyid">>, Commitment, Opts),
+                    Key = dev_codec_httpsig_keyid:remove_scheme_prefix(KeyID),
                     {ok, #{
                         <<"address">> => Address,
                         <<"key">> => Key
                     }}
             end
-    end,
-    ?event({query_owner_result, Res}),
-    Res;
+    end;
+query(#{ <<"key">> := Key }, <<"key">>, _Args, _Opts) ->
+    {ok, Key};
+query(#{ <<"address">> := Address }, <<"address">>, _Args, _Opts) ->
+    {ok, Address};
 query(Msg, <<"recipient">>, _Args, Opts) ->
-    ?event({query_recipient, Msg,hb_maps:get(<<"target">>, Msg, null, Opts)}),
-    {ok, hb_maps:get(<<"target">>, Msg, null, Opts)};
+    find_field_key(<<"field-target">>, Msg, Opts);
+query(Msg, <<"anchor">>, _Args, Opts) ->
+    case find_field_key(<<"field-anchor">>, Msg, Opts) of
+        {ok, null} -> {ok, null};
+        {ok, Anchor} -> {ok, hb_util:human_id(Anchor)}
+    end;
+query(Msg, <<"data">>, _Args, Opts) ->
+    Data =
+        hb_ao:get_first(
+            [
+                {{as, <<"message@1.0">>, Msg}, <<"data">>},
+                {{as, <<"message@1.0">>, Msg}, <<"body">>}
+            ],
+            <<>>,
+            Opts
+        ),
+    Type = hb_maps:get(<<"content-type">>, Msg, null, Opts),
+    {ok, #{ <<"data">> => Data, <<"type">> => Type }};
+query(#{ <<"data">> := Data }, <<"size">>, _Args, _Opts) ->
+    {ok, byte_size(Data)};
+query(#{ <<"type">> := Type }, <<"type">>, _Args, _Opts) ->
+    {ok, Type};
 query(Obj, Field, Args, _Opts) ->
     ?event({unimplemented_transactions_query,
         {object, Obj},
@@ -92,6 +116,23 @@ query(Obj, Field, Args, _Opts) ->
         {args, Args}
     }),
     {ok, <<"Not implemented.">>}.
+
+%% @doc Find and return a value from the fields of a message (from its
+%% commitments).
+find_field_key(Field, Msg, Opts) ->
+    case hb_message:commitments(#{ Field => '_' }, Msg, Opts) of
+        not_found -> {ok, null};
+        Commitments ->
+            case hb_maps:keys(Commitments) of
+                [] -> {ok, null};
+                [CommID | _] ->
+                    {ok, Commitment} = hb_maps:find(CommID, Commitments, Opts),
+                    case hb_maps:find(Field, Commitment, Opts) of
+                        {ok, Value} -> {ok, Value};
+                        error -> {ok, null}
+                    end
+            end
+    end.
 
 %% @doc Progressively generate matches from each argument for a transaction
 %% query.
@@ -139,19 +180,7 @@ match(<<"owner">>, Owner, Opts) ->
     ?event({match_owner, Owner, Res}),
     {ok, Res};
 match(<<"recipients">>, Recipients, Opts) ->
-    % Uncomment when `fix/ans104-bundles` is merged.
-    %{ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
-    {ok,
-        lists:flatten(lists:map(
-            fun(Recipient) ->
-                case hb_cache:match(#{ <<"target">> => Recipient }, Opts) of
-                    {ok, IDs} -> IDs;
-                    not_found -> []
-                end
-            end,
-            Recipients
-        ))
-    };
+    {ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
 match(UnsupportedFilter, _, _) ->
     throw({unsupported_query_filter, UnsupportedFilter}).
 
@@ -224,6 +253,7 @@ write_test_message_with_recipient(Recipient, Opts) ->
                 <<"variant">> => <<"ao.N.1">>,
                 <<"type">> => <<"Message">>,
                 <<"action">> => <<"Eval">>,
+                <<"content-type">> => <<"text/plain">>,
                 <<"data">> => <<"test data">>,
                 <<"target">> => Recipient
             },
@@ -676,14 +706,16 @@ transaction_query_by_id_test() ->
 transaction_query_full_test() ->
     Opts =
         #{
-            priv_wallet => hb:wallet(),
+            priv_wallet => SenderKey = hb:wallet(),
             store => [hb_test_utils:test_store(hb_store_lmdb)]
         },
     Node = hb_http_server:start_node(Opts),
     Alice = ar_wallet:new(),
     ?event({alice, Alice, {explicit, hb_util:human_id(Alice)}}),
     AliceAddress = hb_util:human_id(Alice),
-    {ok, WrittenMsg} = write_test_message_with_recipient(AliceAddress,Opts),
+    SenderAddress = hb_util:human_id(SenderKey),
+    SenderPubKey = hb_util:encode(ar_wallet:to_pubkey(SenderKey)),
+    {ok, WrittenMsg} = write_test_message_with_recipient(AliceAddress, Opts),
     ExpectedID = hb_message:id(WrittenMsg, all, Opts),
     ?assertMatch(
         {ok, [_]},
@@ -728,6 +760,16 @@ transaction_query_full_test() ->
             <<"data">> := #{
                 <<"transaction">> := #{
                     <<"id">> := ExpectedID,
+                    <<"recipient">> := AliceAddress,
+                    <<"anchor">> := null,
+                    <<"owner">> := #{
+                        <<"address">> := SenderAddress,
+                        <<"key">> := SenderPubKey
+                    },
+                    <<"data">> := #{
+                        <<"size">> := <<"9">>,
+                        <<"type">> := <<"text/plain">>
+                    },
                     <<"tags">> :=
                         [#{ <<"name">> := _, <<"value">> := _ }|_]
                     % Note: other fields may be "Not implemented." for now

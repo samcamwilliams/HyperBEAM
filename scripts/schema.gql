@@ -155,7 +155,7 @@ type Bundle {
 # Transaction Structure
 type Transaction {
   id: ID!
-  anchor: String!
+  anchor: String
   signature: String!
   recipient: String!
   owner: Owner!
