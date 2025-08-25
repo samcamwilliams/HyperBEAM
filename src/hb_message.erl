@@ -60,9 +60,10 @@
 -export([convert/3, convert/4, uncommitted/1, uncommitted/2, committed/3]).
 -export([with_only_committers/2, with_only_committers/3, commitment_devices/2]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
--export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
--export([without_unless_signed/3]).
--export([with_commitments/3, without_commitments/3, normalize_commitments/2]).
+-export([normalize_commitments/2, is_signed_key/3]).
+-export([commitment/2, commitment/3, commitments/3]).
+-export([with_only_committed/2, without_unless_signed/3]).
+-export([with_commitments/3, without_commitments/3]).
 -export([diff/3, match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -487,9 +488,12 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
                                 true ->
                                     unsafe_match(Val1, Val2, Mode, Path ++ [Key], Opts);
                                 false ->
-                                    case Val1 == Val2 of
-                                        true -> true;
-                                        false ->
+                                    case {Val1, Val2} of
+                                        {V, V} -> true;
+                                        {_V, '_'} -> true;
+                                        {'_', _V} -> true;
+                                        {'_', '_'} -> true;
+                                        _ ->
                                             throw(
                                                 {value_mismatch,
                                                     hb_format:short_id(
@@ -605,39 +609,48 @@ commitment(ID, Msg) ->
     commitment(ID, Msg, #{}).
 commitment(ID, Link, Opts) when ?IS_LINK(Link) ->
     commitment(ID, hb_cache:ensure_loaded(Link, Opts), Opts);
-commitment(ID, Msg, Opts)
-        when is_binary(ID),
-        map_get(ID, map_get(<<"commitments">>, Msg)) /= undefined ->
+commitment(ID, #{ <<"commitments">> := Commitments }, Opts)
+        when is_binary(ID), is_map_key(ID, Commitments) ->
     hb_maps:get(
         ID,
-        hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+        Commitments,
         not_found,
         Opts
     );
-commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
-    commitment(#{ <<"committer">> => CommitterID }, Msg, Opts);
-commitment(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
-    Matches =
-        hb_maps:filtermap(
-            fun(ID, CommMsg) ->
-                case match(Spec, CommMsg, primary) of
-                    true -> {true, {ID, CommMsg}};
-                    _ -> false
-                end
-            end,
-            Commitments,
-            Opts
-        ),
-    case hb_maps:values(Matches, Opts) of
-        [] -> not_found;
-        [{ID, Commitment}] -> {ok, ID, Commitment};
-        _ ->
+commitment(Spec, Msg, Opts) ->
+    Matches = commitments(Spec, Msg, Opts),
+    ?event(debug_commitment, {commitment, {spec, Spec}, {matches, Matches}}),
+    if
+        map_size(Matches) == 0 -> not_found;
+        map_size(Matches) == 1 ->
+            CommID = hd(hb_maps:keys(Matches)),
+            {ok, CommID, hb_util:ok(hb_maps:find(CommID, Matches, Opts))};
+        true ->
             ?event(commitment, {multiple_matches, {matches, Matches}}),
             multiple_matches
     end;
 commitment(_Spec, _Msg, _Opts) ->
     % The message has no commitments, so the spec can never match.
     not_found.
+
+%% @doc Return a list of all commitments that match the spec.
+commitments(ID, Link, Opts) when ?IS_LINK(Link) ->
+    commitments(ID, hb_cache:ensure_loaded(Link, Opts), Opts);
+commitments(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
+    commitments(#{ <<"committer">> => CommitterID }, Msg, Opts);
+commitments(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
+    hb_maps:filtermap(
+        fun(_ID, CommMsg) ->
+            case match(Spec, CommMsg, primary, Opts) of
+                true -> {true, CommMsg};
+                _ -> false
+            end
+        end,
+        Commitments,
+        Opts
+    );
+commitments(_Spec, _Msg, _Opts) ->
+    #{}.
 
 %% @doc Return the devices for which there are commitments on a message.
 commitment_devices(#{ <<"commitments">> := Commitments }, Opts) ->
