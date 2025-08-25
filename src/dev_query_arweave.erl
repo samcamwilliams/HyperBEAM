@@ -820,3 +820,61 @@ transaction_query_not_found_test() ->
         },
         Res
     ).
+
+%% @doc Test parsing, storing, and querying a transaction with an anchor.
+transaction_query_with_anchor_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, ID} =
+        hb_cache:write(
+            hb_message:convert(
+                ar_bundles:sign_item(
+                    #tx {
+                        anchor = AnchorID = crypto:strong_rand_bytes(32),
+                        data = <<"test-data">>
+                    },
+                    hb:wallet()
+                ),
+                <<"structured@1.0">>,
+                <<"ans104@1.0">>,
+                Opts
+            ),
+            Opts
+        ),
+    EncodedAnchor = hb_util:encode(AnchorID),
+    Query =
+        <<"""
+            query($id: ID!) {
+                transaction(id: $id) {
+                    data {
+                        size
+                        type
+                    }
+                    anchor
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"id">> => ID
+            },
+            Opts
+        ),
+    ?event({transaction_query_with_anchor_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transaction">> := #{
+                    <<"anchor">> := EncodedAnchor
+                }
+            }
+        },
+        Res
+    ).
