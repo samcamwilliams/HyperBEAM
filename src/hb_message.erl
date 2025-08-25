@@ -617,8 +617,9 @@ commitment(ID, #{ <<"commitments">> := Commitments }, Opts)
         not_found,
         Opts
     );
-commitment(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
-    Matches = commitments(Spec, Commitments, Opts),
+commitment(Spec, Msg, Opts) ->
+    Matches = commitments(Spec, Msg, Opts),
+    ?event(debug_commitment, {commitment, {spec, Spec}, {matches, Matches}}),
     if
         map_size(Matches) == 0 -> not_found;
         map_size(Matches) == 1 ->
@@ -639,8 +640,8 @@ commitments(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
     commitments(#{ <<"committer">> => CommitterID }, Msg, Opts);
 commitments(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
     hb_maps:filtermap(
-        fun(ID, CommMsg) ->
-            case match(Spec, CommMsg, primary) of
+        fun(_ID, CommMsg) ->
+            case match(Spec, CommMsg, primary, Opts) of
                 true -> {true, CommMsg};
                 _ -> false
             end
