@@ -36,10 +36,55 @@ query(Obj, <<"transactions">>, Args, Opts) ->
             Matches
         ),
     {ok, Messages};
+query(Obj, <<"transaction">>, #{<<"id">> := ID}, Opts) ->
+    ?event({transaction_query, 
+            {object, Obj}, 
+            {field, <<"transaction">>}, 
+            {id, ID}
+        }),
+    case hb_cache:read(ID, Opts) of
+        {ok, Msg} -> 
+            ?event({transaction_found, {id, ID}, {msg, Msg}}),
+            {ok, Msg};
+        not_found -> 
+            ?event({transaction_not_found, {id, ID}}),
+            {ok, null}
+    end;
 query(List, <<"edges">>, _Args, _Opts) ->
     {ok, [{ok, Msg} || Msg <- List]};
 query(Msg, <<"node">>, _Args, _Opts) ->
     {ok, Msg};
+query(Msg, <<"signature">>, _Args, Opts) ->
+    case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
+        not_found -> {ok, null};
+        Commitments ->
+            case maps:to_list(Commitments) of
+                [] -> {ok, null};
+                [{_CommitmentID, Commitment} | _] ->
+                    {ok, hb_maps:get(<<"signature">>, Commitment, null, Opts)}
+            end
+    end;
+query(Msg, <<"owner">>, _Args, Opts) ->
+    ?event({query_owner, Msg}),
+    Res = case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
+        not_found -> {ok, null};
+        Commitments ->
+            case maps:to_list(Commitments) of
+                [] -> {ok, null};
+                [{_CommitmentID, Commitment} | _] ->
+                    Address = hb_maps:get(<<"committer">>, Commitment, null, Opts),
+                    Key = hb_maps:get(<<"keyid">>, Commitment, null, Opts),
+                    {ok, #{
+                        <<"address">> => Address,
+                        <<"key">> => Key
+                    }}
+            end
+    end,
+    ?event({query_owner_result, Res}),
+    Res;
+query(Msg, <<"recipient">>, _Args, Opts) ->
+    ?event({query_recipient, Msg,hb_maps:get(<<"target">>, Msg, null, Opts)}),
+    {ok, hb_maps:get(<<"target">>, Msg, null, Opts)};
 query(Obj, Field, Args, _Opts) ->
     ?event({unimplemented_transactions_query,
         {object, Obj},
@@ -89,6 +134,10 @@ match(<<"tags">>, Tags, Opts) ->
     hb_cache:match(dev_query_graphql:keys_to_template(Tags), Opts);
 match(<<"owners">>, Owners, Opts) ->
     {ok, matching_commitments(<<"committer">>, Owners, Opts)};
+match(<<"owner">>, Owner, Opts) ->
+    Res =  matching_commitments(<<"committer">>, Owner, Opts),
+    ?event({match_owner, Owner, Res}),
+    {ok, Res};
 match(<<"recipients">>, Recipients, Opts) ->
     % Uncomment when `fix/ans104-bundles` is merged.
     %{ok, matching_commitments(<<"field-target">>, Recipients, Opts)};
@@ -569,5 +618,163 @@ transactions_query_combined_test() ->
                 }
             }
         } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+
+%% @doc Test single transaction query by ID
+transaction_query_by_id_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($id: ID!) {
+                transaction(id: $id) {
+                    id
+                    tags {
+                        name
+                        value
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"id">> => ExpectedID
+            },
+            Opts
+        ),
+    ?event({expected_id, ExpectedID}),
+    ?event({transaction_query_by_id_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transaction">> := #{
+                    <<"id">> := ExpectedID,
+                    <<"tags">> :=
+                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test single transaction query with more fields  
+transaction_query_full_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    Alice = ar_wallet:new(),
+    ?event({alice, Alice, {explicit, hb_util:human_id(Alice)}}),
+    AliceAddress = hb_util:human_id(Alice),
+    {ok, WrittenMsg} = write_test_message_with_recipient(AliceAddress,Opts),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query($id: ID!) {
+                transaction(id: $id) {
+                    id
+                    anchor
+                    signature
+                    recipient
+                    owner {
+                        address
+                        key
+                    }
+                    tags {
+                        name
+                        value
+                    }
+                    data {
+                        size
+                        type
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"id">> => ExpectedID
+            },
+            Opts
+        ),
+    ?event({expected_id, ExpectedID}),
+    ?event({transaction_query_full_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transaction">> := #{
+                    <<"id">> := ExpectedID,
+                    <<"tags">> :=
+                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                    % Note: other fields may be "Not implemented." for now
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test single transaction query with non-existent ID
+transaction_query_not_found_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    NonExistentID = hb_util:encode(crypto:strong_rand_bytes(32)),
+    Query =
+        <<"""
+            query($id: ID!) {
+                transaction(id: $id) {
+                    id
+                    tags {
+                        name
+                        value
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{
+                <<"id">> => NonExistentID
+            },
+            Opts
+        ),
+    ?event({non_existent_id, NonExistentID}),
+    ?event({transaction_query_not_found_test, Res}),
+    % Should return null for non-existent transaction
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transaction">> := null
+            }
+        },
         Res
     ).
