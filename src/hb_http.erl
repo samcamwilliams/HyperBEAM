@@ -640,11 +640,21 @@ encode_reply(Status, TABMReq, Message, Opts) ->
         _ ->
             % Other codecs are already in binary format, so we can just convert
             % the message to the codec. We also include all of the top-level 
-            % fields in the message and return them as headers.
-            ExtraHdrs = hb_maps:filter(fun(_, V) -> not is_map(V) end, Message, Opts),
-            ?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
+            % fields, except for maps and lists, in the message and return them 
+            % as headers.
+            ExtraHdrs = hb_maps:filter(fun(_, V) ->
+                not is_map(V) andalso 
+                not is_list(V)
+            end, Message, Opts),
+            % Encode all header values as strings.
+            EncodedExtraHdrs = maps:map(fun(K, V) ->
+                case is_binary(V) of
+                    true -> V;
+                    false -> hb_util:bin(V)
+                end
+            end, ExtraHdrs),
             {ok,
-                hb_maps:merge(BaseHdrs, ExtraHdrs, Opts),
+                hb_maps:merge(EncodedExtraHdrs, BaseHdrs, Opts),
                 hb_message:convert(
                     Message,
                     Codec,
@@ -663,12 +673,14 @@ encode_reply(Status, TABMReq, Message, Opts) ->
 %% Options can be specified in mime-type format (`application/*') or in
 %% AO device format (`device@1.0').
 accept_to_codec(TABMReq, Opts) ->
+    Singleton = lists:last(hb_singleton:from(TABMReq, Opts)),
+    Accept = hb_ao:get(<<"accept">>, Singleton, <<"*/*">>, Opts),
     ?event(only, {accept_to_codec, {tabm_req, TABMReq}}),
     AcceptCodec =
-        hb_maps:get(
+        hb_ao:get(
             <<"accept-codec">>,
-            TABMReq,
-            mime_to_codec(hb_maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts),
+            Singleton,
+            mime_to_codec(Accept, Opts),
 			Opts
         ),
     case AcceptCodec of
@@ -687,11 +699,14 @@ mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
             nomatch -> << Mime/binary, "@1.0" >>;
             _ -> Mime
         end,
-    try hb_ao:message_to_device(#{ <<"device">> => Name }, Opts)
+    try 
+        DeviceId = hb_ao:message_to_device(#{ <<"device">> => Name }, Opts),
+        hb_ao:get_device_name(DeviceId, Opts)
     catch _:Error ->
         ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
         default_codec(Opts)
     end;
+
 mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
 mime_to_codec(_, _Opts) -> not_specified.
 
