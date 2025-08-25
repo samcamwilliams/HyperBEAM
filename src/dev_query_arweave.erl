@@ -138,6 +138,7 @@ commitment_id_to_base_id(ID, Opts) ->
 all_ids(ID, Opts) ->
     Store = hb_opts:get(store, no_store, Opts),
     case hb_store:list(Store, << ID/binary, "/commitments">>) of
+        {ok, []} -> [ID];
         {ok, CommitmentIDs} -> CommitmentIDs;
         _ -> []
     end.
@@ -146,7 +147,7 @@ all_ids(ID, Opts) ->
 
 %%% Tests
 
-write_test_message(Recipient, Opts) ->
+write_test_message(Opts) ->
     hb_cache:write(
         Msg = hb_message:commit(
             #{
@@ -172,8 +173,7 @@ simple_ans104_query_test() ->
             store => [hb_test_utils:test_store(hb_store_lmdb)]
         },
     Node = hb_http_server:start_node(Opts),
-    Recipient = crypto:strong_rand_bytes(32),
-    {ok, WrittenMsg} = write_test_message(Recipient, Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
     ?assertMatch(
         {ok, [_]},
         hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
@@ -213,6 +213,69 @@ simple_ans104_query_test() ->
     ExpectedID = hb_message:id(WrittenMsg, all, Opts),
     ?event({expected_id, ExpectedID}),
     ?event({simple_ans104_query_test, Res}),
+    ?assertMatch(
+        #{
+            <<"data">> := #{
+                <<"transactions">> := #{
+                    <<"edges">> :=
+                        [#{
+                            <<"node">> :=
+                                #{
+                                    <<"id">> := ExpectedID,
+                                    <<"tags">> :=
+                                        [#{ <<"name">> := _, <<"value">> := _ }|_]
+                                }
+                        }]
+                }
+            }
+        } when ?IS_ID(ExpectedID),
+        Res
+    ).
+
+%% @doc Test transactions query with tags filter
+transactions_query_tags_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    {ok, WrittenMsg} = write_test_message(Opts),
+    ?assertMatch(
+        {ok, [_]},
+        hb_cache:match(#{<<"type">> => <<"Message">>}, Opts)
+    ),
+    Query =
+        <<"""
+            query {
+                transactions(
+                    tags: [
+                        {name: "type", values: ["Message"]},
+                        {name: "variant", values: ["ao.N.1"]}
+                    ]
+                ) {
+                    edges {
+                        node {
+                            id
+                            tags {
+                                name
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+        """>>,
+    Res =
+        dev_query_graphql:test_query(
+            Node,
+            Query,
+            #{},
+            Opts
+        ),
+    ExpectedID = hb_message:id(WrittenMsg, all, Opts),
+    ?event({expected_id, ExpectedID}),
+    ?event({transactions_query_tags_test, Res}),
     ?assertMatch(
         #{
             <<"data">> := #{
