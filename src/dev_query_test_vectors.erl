@@ -544,7 +544,7 @@ transaction_query_full_test() ->
                 <<"transaction">> := #{
                     <<"id">> := ExpectedID,
                     <<"recipient">> := AliceAddress,
-                    <<"anchor">> := null,
+                    <<"anchor">> := <<"">>,
                     <<"owner">> := #{
                         <<"address">> := SenderAddress,
                         <<"key">> := SenderPubKey
