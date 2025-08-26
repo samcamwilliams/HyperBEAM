@@ -77,18 +77,20 @@ read(ID, Opts) ->
 %% @doc Gives the fields of a transaction that are needed to construct an
 %% ANS-104 message.
 item_spec() ->
-    <<"node { ",
-        "id ",
-        "anchor ",
-        "signature ",
-        "recipient ",
-        "owner { key } ",
-        "fee { winston } ",
-        "quantity { winston } ",
-        "tags { name value } ",
-        "data { size } "
-    "} ",
-    "cursor ">>.
+    <<"""
+        node {
+            id
+            anchor
+            signature
+            recipient
+            owner { key }
+            fee { winston }
+            quantity { winston }
+            tags { name value }
+            data { size }
+        }
+        cursor
+    """>>.
 
 %% @doc Get the data associated with a transaction by its ID, using the node's
 %% Arweave `gateway' peers. The item is expected to be available in its 

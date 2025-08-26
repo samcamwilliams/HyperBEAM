@@ -94,9 +94,10 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                 end,
                 ParsedMsgs
             ),
+        NewTotal = Total + length(WrittenMsgs),
         ?event(indexer_short,
             {indexer_graphql_wrote,
-                {total, Total},
+                {total, NewTotal},
                 {batch, length(WrittenMsgs)},
                 {batch_failures, length(ParsedMsgs) - length(WrittenMsgs)}
             }
@@ -112,7 +113,7 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                         Opts
                     ),
                 index_graphql(
-                    Total + length(ParsedMsgs),
+                    NewTotal,
                     Query,
                     Vars#{ <<"after">> => Cursor },
                     Node,
@@ -120,7 +121,7 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                     Opts
                 );
             false ->
-                {ok, Total}
+                {ok, NewTotal}
         end
     else
         {error, Reason} ->
@@ -136,9 +137,25 @@ parse_query(Base, Req, Opts) ->
     Merged = hb_maps:merge(Base, Req, Opts),
     Keys = hb_maps:keys(Merged, Opts),
     SupportedKeys = ?SUPPORTED_FILTERS,
+    ?event({finding_query, {supported, SupportedKeys}, {merged_req, Merged}}),
     case lists:filter(fun(K) -> lists:member(K, SupportedKeys) end, Keys) of
         [<<"query">>|_] ->
-            {ok, hb_maps:get(<<"query">>, Merged, <<>>, Opts)};
+            % Find the query in either the `query' field or the `body'.
+            case hb_maps:find(<<"query">>, Merged, Opts) of
+                {ok, Bin} when is_binary(Bin) ->
+                    {ok, Bin};
+                _ ->
+                    case hb_maps:find(<<"body">>, Merged, Opts) of
+                        {ok, Bin} when is_binary(Bin) ->
+                            {ok, Bin};
+                        _ ->
+                            {error,
+                                #{
+                                    <<"body">> => <<"No query found in the request.">>
+                                }
+                            }
+                    end
+            end;
         [<<"tag">>|_] ->
             Key = hb_maps:get(<<"tag">>, Merged, <<>>, Opts),
             Value = hb_maps:get(<<"value">>, Merged, <<>>, Opts),
