@@ -142,7 +142,6 @@ restore_priv(Msg, OldPriv, Opts) ->
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
-
 %% @doc Get a codec device and request params from the given conversion request. 
 %% Expects conversion spec to either be a binary codec name, or a map with a
 %% `device' key and other parameters. Additionally honors the `always_bundle'
@@ -440,8 +439,8 @@ match(Map1, Map2, Mode, Opts) ->
     catch _:Details -> Details
     end.
 
-
-
+%% @doc Match two maps, returning `true' if they match, or throwing an error
+%% if they do not.
 unsafe_match(Map1, Map2, Mode, Path, Opts) ->
     Keys1 =
         hb_maps:keys(
@@ -478,8 +477,16 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
             lists:all(
                 fun(Key) ->
                     ?event(match, {matching_key, Key}),
-                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found, Opts), Opts),
-                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found, Opts), Opts),
+                    Val1 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap1, not_found, Opts),
+                            Opts
+                        ),
+                    Val2 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap2, not_found, Opts),
+                            Opts
+                        ),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
@@ -490,8 +497,8 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
                                 false ->
                                     case {Val1, Val2} of
                                         {V, V} -> true;
-                                        {_V, '_'} -> true;
-                                        {'_', _V} -> true;
+                                        {V, '_'} when V =/= not_found -> true;
+                                        {'_', V} when V =/= not_found -> true;
                                         {'_', '_'} -> true;
                                         _ ->
                                             throw(
