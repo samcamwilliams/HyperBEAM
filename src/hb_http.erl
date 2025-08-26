@@ -699,16 +699,20 @@ mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
             nomatch -> << Mime/binary, "@1.0" >>;
             _ -> Mime
         end,
-    try 
-        DeviceId = hb_ao:message_to_device(#{ <<"device">> => Name }, Opts),
-        hb_ao:get_device_name(DeviceId, Opts)
-    catch _:Error ->
-        ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
-        default_codec(Opts)
+    case hb_ao:load_device(Name, Opts) of
+        {ok, _} -> Name;
+        {error, _} ->
+            Default = default_codec(Opts),
+            ?event(http,
+                {codec_parsing_error,
+                    {given, Name},
+                    {defaulting_to, Default}
+                }
+            ),
+            Default
     end;
-
 mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
-mime_to_codec(_, _Opts) -> not_specified.
+mime_to_codec(_, Opts) -> default_codec(Opts).
 
 %% @doc Return the default codec for the given options.
 default_codec(Opts) ->

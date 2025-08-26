@@ -13,8 +13,8 @@
 -export([print/1, print/3, print/4, print/5, eunit_print/2]).
 -export([message/1, message/2, message/3]).
 -export([binary/1, error/2, trace/1, trace_short/0, trace_short/1]).
--export([indent/2, indent/3, indent/4, indent_lines/2]).
--export([maybe_multiline/3, remove_leading_noise/1, remove_trailing_noise/1]).
+-export([indent/2, indent/3, indent/4, indent_lines/2, maybe_multiline/3]).
+-export([remove_leading_noise/1, remove_trailing_noise/1, remove_noise/1]).
 %%% Public Utility Functions.
 -export([escape_format/1, short_id/1, trace_to_list/1]).
 -export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
@@ -311,11 +311,16 @@ do_to_lines(In =[RawElem | Rest]) ->
         false -> Elem ++ ", " ++ do_to_lines(Rest)
     end.
 
+%% @doc Remove any leading or trailing noise from a string.
+remove_noise(Str) ->
+    remove_leading_noise(remove_trailing_noise(Str)).
+
 %% @doc Remove any leading whitespace from a string.
 remove_leading_noise(Str) ->
     remove_leading_noise(Str, ?NOISE_CHARS).
 remove_leading_noise(Bin, Noise) when is_binary(Bin) ->
     remove_leading_noise(binary:bin_to_list(Bin), Noise);
+remove_leading_noise([], _Noise) -> [];
 remove_leading_noise([Char|Str], Noise) ->
     case lists:member(Char, Noise) of
         true ->
