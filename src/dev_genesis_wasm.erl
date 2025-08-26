@@ -76,7 +76,7 @@ do_compute(Msg, Msg2, Opts) ->
                         Msg2#{ <<"patch-from">> => <<"/results/outbox">> }
                     },
                     Opts
-                ) 
+                ),
             % Resolve the `patch@1.0' device.
             case PatchResult of 
                 {ok, Msg4} ->
