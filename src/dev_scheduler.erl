@@ -570,7 +570,7 @@ schedule(Msg1, Msg2, Opts) ->
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
     % Find the target message to schedule:
-    ToSched = find_message_to_schedule(Msg1, Msg2, Opts),
+    {ok, ToSched} = find_message_to_schedule(Msg1, Msg2, Opts),
     ?event({to_sched, ToSched}),
     % Find the ProcessID of the target message:
     % - If it is a Process, use the ID of the message.
@@ -1194,25 +1194,13 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                 ),
 								Opts
                             )
-                        ),                    
-                    % Normalize the local assignments to get the slot.
-                    FromLocalCacheNormalized = lists:map(
-                        fun (Assignment) ->
-                            Norm = dev_scheduler_formats:aos2_normalize_types(Assignment),
-                            #{
-                                <<"body">> => Norm,
-                                <<"slot">> => 
-                                    hb_maps:get(<<"slot">>, Norm, undefined, Opts)
-                            }
-                        end, 
-                        LocalAssignments
-                    ),
+                        ),
                     % Merge the local assignments with the remote assignments,
                     % and normalize the keys.
                     Merged =
                         dev_scheduler_formats:assignments_to_bundle(
                             ProcID,
-                            MergedAssignments = FromLocalCacheNormalized ++ RemoteAssignments,
+                            MergedAssignments = LocalAssignments ++ RemoteAssignments,
                             hb_ao:get(<<"continues">>, NormSched, false, Opts),
                             Opts
                         ),
@@ -1506,25 +1494,68 @@ find_target_id(Msg1, Msg2, Opts) ->
 
 %% @doc Search the given base and request message pair to find the message to
 %% schedule. The precidence order for search is as follows:
-%% 1. A key in `Msg2' with the value `self', indicating that the entire message
-%%    is the subject.
-%% 2. A key in `Msg2' with another value, present in that message.
-%% 3. The body of the message.
-%% 4. The message itself.
-find_message_to_schedule(_Msg1, Msg2, Opts) ->
+%% 1. A `subject' key in `Msg2' with the value `self', indicating that the entire
+%%    message is the subject.
+%% 2. A `subject' key in `Msg2' with another value, preceded by either `base:'
+%%    `request:', or neither (indicating search in both). The key must be present
+%%    in the search message(s).
+%% 3. The body of the request message, if set.
+%% 4. The request message, if there is a `type' key and the `type' is `Process'
+%%    or `Message'.
+%% 5. The body of the base message, if there is a `type' key and the `type' is
+%%    `Process' or `Message'.
+%% 6. The base message, if it has a `type' of `Process' or `Message'.
+%% 7. The request message itself.
+find_message_to_schedule(Base, Request, Opts) ->
     Subject =
         hb_ao:get(
             <<"subject">>,
-            Msg2,
+            Request,
             not_found,
             Opts#{ hashpath => ignore }
         ),
     case Subject of
-        <<"self">> -> Msg2;
+        <<"self">> -> {ok, Request};
+        Subject when is_binary(Subject) ->
+            find_message_from_ref(Subject, Base, Request, Opts);
         not_found ->
-            hb_ao:get(<<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore });
-        Subject ->
-            hb_ao:get(Subject, Msg2, Opts#{ hashpath => ignore })
+            % If the subject key is not found, we use the `maybe ... end' pattern
+            % in its inverted form to find the message: We match on the error
+            % case to continue the flow, returning the first result that does
+            % not match.
+            maybe
+                error ?= hb_maps:find(<<"body">>, Request, Opts),
+                not_found ?= find_message_from_type(Request, Opts),
+                not_found ?= find_message_from_type(Base, Opts),
+                Request
+            end
+    end.
+
+%% @doc Find a message by resolving a reference.
+find_message_from_ref(Subject, Base, Request, Opts) ->
+    [Prefix, Key] = binary:split(Subject, <<":">>),
+    Search =
+        case Prefix of
+            <<"base">> -> [{{as, <<"message@1.0">>, Base}, Key}];
+            <<"request">> -> [{{as, <<"message@1.0">>, Request}, Key}];
+            _ ->
+                [
+                    {{as, <<"message@1.0">>, Request}, Key},
+                    {{as, <<"message@1.0">>, Base}, Key}
+                ]
+        end,
+    case hb_ao:get_first(Search, not_found, Opts) of
+        not_found ->
+            {error, <<"Subject key `", Subject/binary, "` not found.">>};
+        Msg -> {ok, Msg}
+    end.
+
+%% @doc If the message has a `type' key, return the message.
+find_message_from_type(Msg, Opts) ->
+    case hb_maps:get(<<"type">>, Msg, undefined, Opts) of
+        <<"Process">> -> {ok, Msg};
+        <<"Message">> -> {ok, Msg};
+        _ -> not_found
     end.
 
 %% @doc Generate a `GET /schedule' response for a process.
