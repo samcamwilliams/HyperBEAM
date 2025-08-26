@@ -87,10 +87,13 @@ query(#{ <<"key">> := Key }, <<"key">>, _Args, _Opts) ->
 query(#{ <<"address">> := Address }, <<"address">>, _Args, _Opts) ->
     {ok, Address};
 query(Msg, <<"recipient">>, _Args, Opts) ->
-    find_field_key(<<"field-target">>, Msg, Opts);
+    case find_field_key(<<"field-target">>, Msg, Opts) of
+        {ok, null} -> {ok, <<"">>};
+        OkRes -> OkRes
+    end;
 query(Msg, <<"anchor">>, _Args, Opts) ->
     case find_field_key(<<"field-anchor">>, Msg, Opts) of
-        {ok, null} -> {ok, null};
+        {ok, null} -> {ok, <<"">>};
         {ok, Anchor} -> {ok, hb_util:human_id(Anchor)}
     end;
 query(Msg, <<"data">>, _Args, Opts) ->

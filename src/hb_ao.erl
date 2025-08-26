@@ -96,8 +96,7 @@
 %%% Main AO-Core API:
 -export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1, normalize_keys/2]).
--export([message_to_fun/3, message_to_device/2, load_device/2, get_device_name/2,
-        find_exported_function/5]).
+-export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 -export([force_message/2]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
@@ -1479,16 +1478,6 @@ load_device(ID, Opts) ->
     ) of
         false -> {error, {module_not_admissable, NormKey, Preloaded}};
         {value, #{ <<"module">> := Mod }} -> load_device(Mod, Opts)
-    end.
-
-%% @doc Get the name of a device from its ID.
-get_device_name(DeviceId, Opts) ->
-    case lists:search(
-        fun (#{ <<"module">> := Mod }) -> Mod =:= DeviceId end,
-        hb_opts:get(preloaded_devices, [], Opts)
-    ) of
-        false -> {error, {module_not_admissable, DeviceId}};
-        {value, #{ <<"name">> := Name }} -> Name
     end.
 
 %% @doc Verify that a device is compatible with the current machine.
