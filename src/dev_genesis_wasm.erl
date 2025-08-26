@@ -67,8 +67,7 @@ do_compute(Msg, Msg2, Opts) ->
     % Resolve the `delegated-compute@1.0' device.
     case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
         {ok, Msg3} ->
-            % Resolve the `patch@1.0' device.
-            {ok, Msg4} =
+            PatchResult = 
                 hb_ao:resolve(
                     Msg3,
                     {
@@ -77,9 +76,16 @@ do_compute(Msg, Msg2, Opts) ->
                         Msg2#{ <<"patch-from">> => <<"/results/outbox">> }
                     },
                     Opts
-                ),
-            % Return the patched message.
-            {ok, Msg4};
+                ) 
+            % Resolve the `patch@1.0' device.
+            case PatchResult of 
+                {ok, Msg4} ->
+                    % Return the patched message.
+                    {ok, Msg4};
+                {error, Error} ->
+                    % Return the error.
+                    {error, Error}
+            end;
         {error, Error} ->
             % Return the error.
             {error, Error}
