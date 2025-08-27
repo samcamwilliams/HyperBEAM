@@ -459,7 +459,7 @@ reply(InitReq, TABMReq, Status, RawMessage, Opts) ->
             {path,
                 {string,
                     uri_string:percent_decode(
-                        hb_ao:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
+                        hb_maps:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
                     )
                 }
             },
@@ -905,10 +905,10 @@ normalize_unsigned(PrimMsg, Req = #{ headers := RawHeaders }, Msg, Opts) ->
     ?event({adding_method_and_path_from_request, {explicit, Req}}),
     Method = cowboy_req:method(Req),
     MsgPath =
-        hb_ao:get(
+        hb_maps:get(
             <<"path">>,
             Msg,
-            maps:get(
+            hb_maps:get(
                 <<"path">>, 
                 RawHeaders,
                 iolist_to_binary(
@@ -920,7 +920,8 @@ normalize_unsigned(PrimMsg, Req = #{ headers := RawHeaders }, Msg, Opts) ->
                             scheme => undefined
                         }
                     )
-                )
+                ),
+                Opts
             ),
             Opts
         ),

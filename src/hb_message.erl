@@ -249,11 +249,13 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                 % Add the ao-body-key to the committed list if it is not
                 % already present.
                 ?event(debug_bundle, {committed_keys, CommittedKeys, {msg, Msg}}),
-                {ok, hb_maps:with(
-                    CommittedKeys ++ [<<"commitments">>],
-                    Msg,
-					Opts
-                )}
+                {ok,
+                    with_links(
+                        [<<"commitments">> | CommittedKeys],
+                        Msg,
+                        Opts
+                    )
+                }
             catch Class:Reason:St ->
                 {error,
                     {could_not_normalize,
@@ -269,6 +271,21 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
 with_only_committed(Msg, _) ->
     % If the message is not a map, it cannot be signed.
     {ok, Msg}.
+
+%% @doc Filter keys from a map that do not match either the list of keys or
+%% their relative `+link` variants.
+with_links(Keys, Map, Opts) ->
+    hb_maps:with(
+        Keys ++
+            lists:map(
+                fun(Key) ->
+                    <<(hb_link:remove_link_specifier(Key))/binary, "+link">>
+                end,
+                Keys
+            ),
+        Map,
+        Opts
+    ).
 
 %% @doc Return the message with only the specified committers attached.
 with_only_committers(Msg, Committers) ->
