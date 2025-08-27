@@ -27,6 +27,13 @@
     [error, http_error, http_short, compute_short, push_short]
 ).
 -endif.
+
+-ifdef(AO_PROFILING).
+-define(DEFAULT_TRACE_TYPE, ao).
+-else.
+-define(DEFAULT_TRACE_TYPE, erlang).
+-endif.
+
 -define(DEFAULT_PRIMARY_STORE, #{
     <<"name">> => <<"cache-mainnet/lmdb">>,
     <<"store-module">> => hb_store_lmdb
@@ -211,6 +218,7 @@ default_message() ->
         debug_print_indent => 2,
         stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
+        debug_trace_type => ?DEFAULT_TRACE_TYPE,
         short_trace_len => 20,
         debug_metadata => true,
         debug_ids => true,

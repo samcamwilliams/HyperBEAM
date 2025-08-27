@@ -17,7 +17,7 @@
 -export([remove_leading_noise/1, remove_trailing_noise/1, remove_noise/1]).
 %%% Public Utility Functions.
 -export([escape_format/1, short_id/1, trace_to_list/1]).
--export([get_trace/0, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
+-export([get_trace/1, print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -include("include/hb.hrl").
 
 %%% Characters that are considered noise and should be removed from strings
@@ -36,7 +36,7 @@ print(X, Info, Opts) ->
     ),
     X.
 print(X, Mod, Func, LineNum) ->
-    print(X, format_debug_trace(Mod, Func, LineNum), #{}).
+    print(X, format_debug_trace(Mod, Func, LineNum, #{}), #{}).
 print(X, Mod, Func, LineNum, Opts) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
@@ -57,7 +57,7 @@ print(X, Mod, Func, LineNum, Opts) ->
                                 )
                             )
                     end,
-                    format_debug_trace(Mod, Func, LineNum)
+                    format_debug_trace(Mod, Func, LineNum, Opts)
                 ]
             )
         ),
@@ -73,10 +73,23 @@ server_id(Opts) ->
     end.
 
 %% @doc Generate the appropriate level of trace for a given call.
-format_debug_trace(Mod, Func, Line) ->
+format_debug_trace(Mod, Func, Line, Opts) ->
     case hb_opts:get(debug_print_trace, false, #{}) of
         short ->
-            trace_short(get_trace());
+            Trace =
+                case hb_opts:get(debug_trace_type, erlang, Opts) of
+                    erlang -> get_trace(erlang);
+                    ao ->
+                        % If we are printing AO-Core traces, we add the module
+                        % and line number to the end to show exactly where in
+                        % the handler-flow the event arose.
+                        [
+                            hb_util:bin(format_trace_element({Mod, Line}))
+                        |
+                            get_trace(ao)
+                        ]
+                end,
+            trace_short(Trace);
         false ->
             io_lib:format("~p:~w ~p", [Mod, Line, Func])
     end.
@@ -538,7 +551,9 @@ print_trace_short(Trace, Mod, Func, Line) ->
 trace_to_list(Trace) ->
     Prefixes = hb_opts:get(stack_print_prefixes, [], #{}),
     lists:filtermap(
-        fun(TraceItem) ->
+        fun(TraceItem) when is_binary(TraceItem) ->
+            {true, TraceItem};
+           (TraceItem) ->
             Formatted = format_trace_element(TraceItem),
             case hb_util:is_hb_module(Formatted, Prefixes) of
                 true -> {true, Formatted};
@@ -549,11 +564,16 @@ trace_to_list(Trace) ->
     ).
 
 %% @doc Format a trace to a short string.
-trace_short() -> trace_short(get_trace()).
+trace_short() -> trace_short(get_trace(erlang)).
+trace_short(Type) when is_atom(Type) -> trace_short(get_trace(Type));
 trace_short(Trace) when is_list(Trace) ->
     lists:join(" / ", lists:reverse(trace_to_list(Trace))).
 
-%% @doc Format a trace element in form `mod:line' or `mod:func'.
+%% @doc Format a trace element in form `mod:line' or `mod:func' for Erlang
+%% traces, or their raw form for others.
+format_trace_element(Bin) when is_binary(Bin) -> Bin;
+format_trace_element({Mod, Line}) ->
+    lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
 format_trace_element({Mod, _, _, [{file, _}, {line, Line}|_]}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
 format_trace_element({Mod, Func, _ArityOrTerm, _Extras}) ->
@@ -564,12 +584,18 @@ format_trace_element({Mod, Func, _ArityOrTerm, _Extras}) ->
 trace_macro_helper(Fun, {_, {_, Stack}}, Mod, Func, Line) ->
     Fun(Stack, Mod, Func, Line).
 
-%% @doc Get the trace of the current process.
-get_trace() ->
+%% @doc Get the trace of the current execution. If the argument is `erlang',
+%% we return the Erlang stack trace. If the argument is `ao', we return the
+%% AO-Core execution stack.
+get_trace(erlang) ->
     case catch error(debugging_print) of
-        {_, {_, Stack}} ->
-            normalize_trace(Stack);
+        {_, {_, Stack}} -> normalize_trace(Stack);
         _ -> []
+    end;
+get_trace(ao) ->
+    case get(ao_stack) of
+        undefined -> [];
+        Stack -> Stack
     end.
 
 %% @doc Remove all calls from this module from the top of a trace.
