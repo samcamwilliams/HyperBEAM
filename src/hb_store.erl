@@ -46,7 +46,7 @@
 -export([behavior_info/1]).
 -export([start/1, stop/1, reset/1]).
 -export([filter/2, scope/2, sort/2]).
--export([type/2, read/2, write/3, sync/2, list/2, match/2]).
+-export([type/2, read/2, write/3, sync/2, verify_sync/2, list/2, match/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
 -export([find/1]).
@@ -309,11 +309,12 @@ match(Modules, Match) -> call_function(Modules, match, [Match]).
 sync(FromStore, ToStore) ->
     ?event({sync_start, FromStore, ToStore}),
     FromStoreOpts = maps:put(<<"resolve">>, false, FromStore),
-    {ok, Entries} = hb_store:list(FromStore, <<"/">>),
-    ValidEntries = lists:filter(fun(Key) -> Key =/= <<"lmdb">> end, Entries),
-    case sync_entries(ValidEntries, <<"/">>, FromStoreOpts, ToStore) of
-        [] -> ok;
-        FailedKeyValues -> {error, {sync_failed, FailedKeyValues}}
+    maybe
+        {ok, Entries} ?= hb_store:list(FromStore, <<"/">>),
+        case sync_entries(Entries, <<"/">>, FromStoreOpts, ToStore) of
+            [] -> ok;
+            FailedKeyValues -> {error, {sync_failed, FailedKeyValues}}
+        end
     end.
 
 sync_entries(Entries, ParentDir, FromStore, ToStore) ->
@@ -350,6 +351,22 @@ sync_entries(Entries, ParentDir, FromStore, ToStore) ->
                 Acc
         end
     end, [], Entries).
+
+verify_sync(FromSyncedStore, ToStore) ->
+    FromStore = maps:put(<<"resolve">>, true, FromSyncedStore),
+    {ok, Entries} = hb_store:list(FromStore, <<"/">>),
+    Groups = [X || X <- Entries, composite == hb_store:type(ToStore, X)],
+    Paths = [<<G/binary, "/", F/binary>> || G <- Groups, F <- element(2, hb_store:list(ToStore, G))],
+    lists:all(fun(Path) -> valid_path_sync(FromStore, ToStore, Path) end, Paths).
+
+valid_path_sync(FromStore, ToStore, Path) ->
+    case hb_store:type(ToStore, Path) of
+        simple -> hb_store:read(ToStore, Path) == hb_store:read(FromStore, Path);
+        composite ->
+            {ok, NestedEntries} = hb_store:list(FromStore, Path),
+            Pred = fun(NestedPath) -> valid_path_sync(FromStore, ToStore, NestedPath) end,
+            lists:all(Pred, NestedEntries)
+    end.
 
 %% @doc Call a function on the first store module that succeeds. Returns its
 %% result, or `not_found` if none of the stores succeed. If `TIME_CALLS` is set,

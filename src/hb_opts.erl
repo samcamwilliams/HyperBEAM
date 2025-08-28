@@ -279,7 +279,7 @@ default_message() ->
         ],
         store =>
             [
-                ?DEFAULT_PRIMARY_STORE,
+                % ?DEFAULT_PRIMARY_STORE,
                 #{
                     <<"store-module">> => hb_store_fs,
                     <<"name">> => <<"cache-mainnet">>
