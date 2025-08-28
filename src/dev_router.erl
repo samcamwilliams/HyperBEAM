@@ -578,7 +578,7 @@ preprocess(Msg1, Msg2, Opts) ->
                     <<"user-request">> => hb_maps:get(<<"path">>, Req, Opts),
                     <<"user-message">> => UserReqWithCommit
                 },
-            ?event(debug_relay, {prepared_relay_req, RelayReq}),
+            ?event(debug_preprocess, {prepared_relay_req, RelayReq}),
             {
                 ok,
                 #{

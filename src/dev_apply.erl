@@ -41,11 +41,9 @@ default(Key, Base, Request, Opts) ->
     end.
 
 %% @doc Apply a request. We source the `base' message for the request either
-%% from the `source' key, or we assume that the entire base should be used.
-%% If the base is a list or has a `path' key, we resolve it before using it as
-%% the base.
-%% After sourcing the base, we resolve the `apply-key' on top of it as a
-%% singleton message, if it is present in the request.
+%% from the `source' key if it is present, or we assume that the entire base
+%% should be used. After sourcing the base, we resolve the `apply-path' on top
+%% of it as a singleton message, if it is present in the request.
 eval(Base, Request, Opts) ->
     maybe
         ?event({eval, {base, Base}, {request, Request}}),
@@ -60,20 +58,13 @@ eval(Base, Request, Opts) ->
                     {ok, hb_maps:without([<<"device">>], Base, Opts)}
             end,
         ?event({eval, {apply_base, ApplyBase}}),
-        {ok, PreresolvedBase} ?=
-            if is_list(ApplyBase) or is_map_key(<<"path">>, ApplyBase) ->
-                hb_ao:resolve(ApplyBase, Opts);
-            true ->
-                {ok, ApplyBase}
-            end,
-        ?event({eval, {preresolved_base, PreresolvedBase}}),
         case find_path(<<"apply-path">>, Base, Request, Opts) of
             {error, path_not_found, _} ->
                 ?event({eval, no_path_to_execute}),
-                {ok, PreresolvedBase};
+                {ok, ApplyBase};
             {ok, ApplyPathKey} ->
                 ?event({eval, {key_containing_path_to_execute, ApplyPathKey}}),
-                case find_key(ApplyPathKey, PreresolvedBase, Request, Opts) of
+                case find_key(ApplyPathKey, ApplyBase, Request, Opts) of
                     {error, _, _} ->
                         ?event({eval, path_to_execute_not_found}),
                         {error,
@@ -84,7 +75,7 @@ eval(Base, Request, Opts) ->
                             >>
                         };
                     {ok, ApplyPath} ->
-                        ApplyMsg = PreresolvedBase#{ <<"path">> => ApplyPath },
+                        ApplyMsg = ApplyBase#{ <<"path">> => ApplyPath },
                         ?event({executing, ApplyMsg}),
                         hb_ao:resolve(ApplyMsg, Opts)
                 end
