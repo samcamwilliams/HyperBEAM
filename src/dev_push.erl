@@ -208,10 +208,8 @@ do_push(PrimaryProcess, Assignment, Opts) ->
 maybe_evaluate_message(Message, Opts) ->
     case hb_ao:get(<<"resolve">>, Message, Opts) of
         not_found -> 
-            ?event(x, {not_found, {msg, Message}    }),
             {ok, Message};
         ResolvePath ->
-            ?event(x, {resolve_path, ResolvePath, {msg, Message}}),
             ReqMsg =
                 maps:without(
                     [<<"target">>],
