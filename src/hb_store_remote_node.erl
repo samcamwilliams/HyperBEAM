@@ -51,22 +51,21 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
 %% @param Key The key to read.
 %% @returns {ok, Msg} on success or not_found if the key is missing.
 read(Opts = #{ <<"node">> := Node }, Key) ->
-    ?event({remote_read, {node, Node}, {key, Key}}),
+    ?event(store_remote_node, {executing_read, {node, Node}, {key, Key}}),
     HTTPRes =
         hb_http:get(
             Node,
             #{ <<"path">> => <<"/~cache@1.0/read">>, <<"target">> => Key },
             Opts
         ),
-    ?event({remote_read, {http_response, HTTPRes}}),
     case HTTPRes of
         {ok, Res} ->
             % returning the whole response to get the test-key
             {ok, Msg} = hb_message:with_only_committed(Res, Opts),
-            ?event({read, {result, Msg, response, Res}}),
+            ?event(store_remote_node, {read_found, {result, Msg, response, Res}}),
             {ok, Msg};
         {error, _Err} ->
-            ?event({read, {result, not_found}}),
+            ?event(store_remote_node, {read_not_found, {key, Key}}),
             not_found
     end.
 
@@ -92,7 +91,7 @@ write(Opts = #{ <<"node">> := Node }, Key, Value) ->
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
             Status = hb_ao:get(<<"status">>, Response, 0, #{}),
-            ?event({write, {response, Response}}),
+            ?event(store_remote_node, {write_completed, {response, Response}}),
             case Status of
                 200 -> ok;
                 _ -> {error, {unexpected_status, Status}}
@@ -121,13 +120,13 @@ make_link(Opts = #{ <<"node">> := Node }, Source, Destination) ->
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
             Status = hb_ao:get(<<"status">>, Response, 0, #{}),
-            ?event({make_remote_link, {response, Response}}),
+            ?event(store_remote_node, {make_link_completed, {response, Response}}),
             case Status of
                 200 -> ok;
                 _ -> {error, {unexpected_status, Status}}
             end;
         {error, Err} ->
-            ?event({make_remote_link, {error, Err}}),
+            ?event(store_remote_node, {make_link_error, {error, Err}}),
             {error, Err}
     end.
 
