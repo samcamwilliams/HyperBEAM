@@ -10,6 +10,7 @@ scope(_) -> remote.
 resolve(_, Key) -> Key.
 
 list(StoreOpts, Key) ->
+    ?event(store_gateway, executing_list),
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Message} -> {ok, hb_maps:keys(Message, StoreOpts)}
@@ -19,7 +20,7 @@ list(StoreOpts, Key) ->
 %% result, so that we don't have to read the data from the GraphQL route
 %% multiple times.
 type(StoreOpts, Key) ->
-    ?event({type, StoreOpts, Key}),
+    ?event(store_gateway, executing_type),
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Data} ->
@@ -46,9 +47,11 @@ read(StoreOpts, Key) ->
         [ID] when ?IS_ID(ID) ->
             ?event({read, StoreOpts, Key}),
             case hb_gateway_client:read(Key, StoreOpts) of
-                {error, _} -> not_found;
+                {error, _} ->
+                    ?event(store_gateway, {read_not_found, {key, ID}}),
+                    not_found;
                 {ok, Message} ->
-                    ?event(remote_read, {got_message_from_gateway, Message}),
+                    ?event(store_gateway, {read_found, {key, ID}}),
                     try maybe_cache(StoreOpts, Message) catch _:_ -> ignored end,
                     {ok, Message}
             end;
@@ -66,10 +69,12 @@ maybe_cache(StoreOpts, Data) ->
     case hb_maps:get(<<"local-store">>, StoreOpts, false, StoreOpts) of
         false -> do_nothing;
         Store ->
-            ?event({writing_message_to_local_cache, Data}),
             case hb_cache:write(Data, #{ store => Store }) of
-                {ok, _} -> Data;
+                {ok, _} ->
+                    ?event(store_gateway, cached_received),
+                    Data;
                 {error, Err} ->
+                    ?event(store_gateway, error_on_local_cache_write),
                     ?event(warning, {error_writing_to_local_gateway_cache, Err}),
                     Data
             end

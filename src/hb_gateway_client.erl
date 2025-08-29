@@ -141,8 +141,21 @@ scheduler_location(Address, Opts) ->
         {ok, GqlMsg} ->
             ?event({scheduler_location_req, {query, Query}, {response, GqlMsg}}),
             case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
-                not_found -> {error, not_found};
-                Item = #{ <<"id">> := ID } -> result_to_message(ID, Item, Opts)
+                not_found ->
+                    ?event(scheduler_location,
+                        {graphql_scheduler_location_not_found,
+                            {address, Address}
+                        }
+                    ),
+                    {error, not_found};
+                Item = #{ <<"id">> := ID } ->
+                    ?event(scheduler_location,
+                        {found_via_graphql,
+                            {address, Address},
+                            {id, ID}
+                        }
+                    ),
+                    result_to_message(ID, Item, Opts)
             end
     end.
         
