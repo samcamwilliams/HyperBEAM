@@ -654,7 +654,12 @@ encode_reply(Status, TABMReq, Message, Opts) ->
             % as headers.
             ExtraHdrs =
                 hb_maps:filter(
-                    fun(_, V) -> not is_map(V) andalso not is_list(V) end,
+                    fun(Key, V) ->
+                        not is_map(V)
+                            andalso not is_list(V)
+                            andalso Key =/= <<"body">>
+                            andalso Key =/= <<"data">>
+                    end,
                     Message,
                     Opts
                 ),
