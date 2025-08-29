@@ -152,17 +152,26 @@ read_location(Address, RawOpts) ->
         ]),
         Opts
     ),
-    ?event({read_location_msg, {address, Address}, {res, Res}}),
+    Event =
+        case Res of
+            {ok, _} -> found_locally;
+            not_found -> not_found_locally;
+            _ -> local_lookup_unexpected_result
+        end,
+    ?event(scheduler_location, {Event, {address, Address}, {res, Res}}),
     Res.
 
 %% @doc Write the latest known scheduler location for an address.
 write_location(LocationMsg, RawOpts) ->
     Opts = opts(RawOpts),
     Signers = hb_message:signers(LocationMsg, Opts),
-    ?event({writing_location_msg,
-        {signers, Signers},
-        {location_msg, LocationMsg}
-    }),
+    ?event(
+        scheduler_location,
+        {caching_locally,
+            {signers, Signers},
+            {location_msg, LocationMsg}
+        }
+    ),
     case hb_message:verify(LocationMsg, all) andalso hb_cache:write(LocationMsg, Opts) of
         {ok, RootPath} ->
             lists:foreach(
