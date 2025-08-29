@@ -1002,10 +1002,14 @@ nested_push_prompts_encoding_change() ->
     Msg = hb_message:commit(#{
         <<"path">> => <<"push">>,
         <<"method">> => <<"POST">>,
-        <<"body">> => #{
-            <<"target">> => hb_message:id(Msg1, all, Opts),
-            <<"action">> => <<"Ping">>
-        }
+        <<"body">> =>
+            hb_message:commit(
+                #{
+                    <<"target">> => hb_message:id(Msg1, all, Opts),
+                    <<"action">> => <<"Ping">>
+                },
+                Opts
+            )
     }, Opts),
     ?event(push, {msg1, Msg}),
     Res2 =
