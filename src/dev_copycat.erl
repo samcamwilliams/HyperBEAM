@@ -184,7 +184,8 @@ parse_query(Base, Req, Opts) ->
     end.
 
 %% @doc Return a default query for a given filter type.
-default_query(<<"tags">>, Message, Opts) ->
+default_query(<<"tags">>, RawMessage, Opts) ->
+    Message = hb_cache:ensure_all_loaded(RawMessage, Opts),
     BinaryPairs =
         lists:map(
             fun({Key, Value}) -> {hb_util:bin(Key), hb_util:bin(Value)} end,
