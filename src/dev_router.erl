@@ -281,7 +281,7 @@ load_routes(Opts) ->
             ProviderMsgs = hb_singleton:from(RoutesProvider, Opts),
             ?event({<<"provider">>, ProviderMsgs}),
             case hb_ao:resolve_many(ProviderMsgs, Opts) of
-                {ok, Routes} -> Routes;
+                {ok, Routes} -> hb_cache:ensure_all_loaded(Routes, Opts);
                 {error, Error} -> throw({routes, routes_provider_failed, Error})
             end
     end.
@@ -387,8 +387,8 @@ match(Base, Req, Opts) ->
 
 match_routes(ToMatch, Routes, Opts) ->
     match_routes(
-        ToMatch,
-        Routes,
+        hb_cache:ensure_all_loaded(ToMatch, Opts),
+        hb_cache:ensure_all_loaded(Routes, Opts),
         hb_ao:keys(hb_ao:normalize_keys(Routes, Opts)),
         Opts
     ).
