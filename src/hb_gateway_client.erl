@@ -238,6 +238,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     Data =
         case hb_maps:get(<<"data">>, Item, not_found, GQLOpts) of
             BinData when is_binary(BinData) -> BinData;
+            #{ <<"size">> := 0 } -> <<>>;
             _ ->
                 {ok, Bytes} = data(ExpectedID, Opts),
                 Bytes
