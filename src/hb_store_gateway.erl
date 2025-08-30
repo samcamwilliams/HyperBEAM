@@ -326,3 +326,51 @@ verifiability_test() ->
         ),
     ?event({verifying, {structured, Structured}, {original, Message}}),
     ?assert(hb_message:verify(Structured)).
+
+%% @doc Test that another HyperBEAM node offering the `~query@1.0' device can
+%% be used as a store.
+remote_hyperbeam_node_ans104_test() ->
+    ServerOpts =
+        #{
+            priv_wallet => ar_wallet:new(),
+            store => hb_test_utils:test_store()
+        },
+    Server = hb_http_server:start_node(ServerOpts),
+    Msg =
+        hb_message:commit(
+            #{
+                <<"hello">> => <<"world">>
+            },
+            ServerOpts,
+            #{ <<"commitment-device">> => <<"ans104@1.0">> }
+        ),
+    {ok, ID} = hb_cache:write(Msg, ServerOpts),
+    {ok, ReadMsg} = hb_cache:read(ID, ServerOpts),
+    ?assert(hb_message:verify(ReadMsg)),
+    ClientOpts =
+        #{
+            store =>
+                [
+                    #{
+                        <<"store-module">> => hb_store_gateway,
+                        <<"node">> => Server
+                    },
+                    hb_test_utils:test_store()
+                ],
+            routes => [
+                #{
+                    % Routes for GraphQL requests to use the remote server's
+                    % GraphQL API.
+                    <<"template">> => <<"/graphql">>,
+                    <<"nodes">> =>
+                        [
+                            #{
+                                <<"prefix">> => <<Server/binary, "/~query@1.0">>
+                            }
+                        ]
+                }
+            ]
+        },
+    {ok, Msg2} = hb_cache:read(ID, ClientOpts),
+    ?assert(hb_message:verify(Msg2)),
+    ?assert(hb_message:match(Msg, Msg2)).
