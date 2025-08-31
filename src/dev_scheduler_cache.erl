@@ -172,7 +172,7 @@ write_location(LocationMsg, RawOpts) ->
             {location_msg, LocationMsg}
         }
     ),
-    case hb_message:verify(LocationMsg, all) andalso hb_cache:write(LocationMsg, Opts) of
+    case hb_cache:write(LocationMsg, Opts) of
         {ok, RootPath} ->
             lists:foreach(
                 fun(Signer) ->
