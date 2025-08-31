@@ -52,32 +52,13 @@ read(StoreOpts, Key) ->
                     not_found;
                 {ok, Message} ->
                     ?event(store_gateway, {read_found, {key, ID}}),
-                    try maybe_cache(StoreOpts, Message) catch _:_ -> ignored end,
+                    try hb_store_remote_node:maybe_cache(StoreOpts, Message)
+                    catch _:_ -> ignored end,
                     {ok, Message}
             end;
         _ ->
             ?event({ignoring_non_id, Key}),
             not_found
-    end.
-
-%% @doc Cache the data if the cache is enabled. The `store' option may either
-%% be `false' to disable local caching, or a store definition to use as the
-%% cache.
-maybe_cache(StoreOpts, Data) ->
-    ?event({maybe_cache, StoreOpts, Data}),
-    % Check if the local store is in our store options.
-    case hb_maps:get(<<"local-store">>, StoreOpts, false, StoreOpts) of
-        false -> do_nothing;
-        Store ->
-            case hb_cache:write(Data, #{ store => Store }) of
-                {ok, _} ->
-                    ?event(store_gateway, cached_received),
-                    Data;
-                {error, Err} ->
-                    ?event(store_gateway, error_on_local_cache_write),
-                    ?event(warning, {error_writing_to_local_gateway_cache, Err}),
-                    Data
-            end
     end.
 
 %%% Tests
