@@ -92,7 +92,7 @@ maybe_cache(StoreOpts, Data, Links) ->
                             fun(Link) -> Link /= RootPath end,
                             Links
                         ),
-                    ?event(store_gateway, cached_received),
+                    ?event(store_remote_node, cached_received),
                     LinkResults =
                         lists:filter(
                             fun(Link) ->
@@ -100,7 +100,7 @@ maybe_cache(StoreOpts, Data, Links) ->
                             end,
                             LinksWithoutRootPath
                         ),
-                    ?event(store_gateway,
+                    ?event(store_remote_node,
                         {linked_cached,
                             {failed_links, LinkResults}
                         }
@@ -110,8 +110,8 @@ maybe_cache(StoreOpts, Data, Links) ->
                         _ -> {failed_links, LinkResults}
                     end;
                 {error, Err} ->
-                    ?event(store_gateway, error_on_local_cache_write),
-                    ?event(warning, {error_writing_to_local_gateway_cache, Err}),
+                    ?event(store_remote_node, error_on_local_cache_write),
+                    ?event(warning, {error_caching_remote_node_data, Err}),
                     {error, Err}
             end
     end.

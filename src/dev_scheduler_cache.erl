@@ -160,8 +160,8 @@ read_location(Address, RawOpts) ->
         ),
     Event =
         case Res of
-            {ok, _} -> found_locally;
-            not_found -> not_found_locally;
+            {ok, _} -> found_in_store;
+            not_found -> not_found_in_store;
             _ -> local_lookup_unexpected_result
         end,
     ?event(scheduler_location, {Event, {address, Address}, {res, Res}}),
