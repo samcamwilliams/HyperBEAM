@@ -5,6 +5,8 @@
 %%% to upload it to an Arweave bundler to ensure persistence, too.
 -module(hb_store_remote_node).
 -export([scope/1, type/2, read/2, write/3, make_link/3, resolve/2]).
+%%% Public utilities.
+-export([maybe_cache/2, maybe_cache/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -63,10 +65,55 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
             % returning the whole response to get the test-key
             {ok, Msg} = hb_message:with_only_committed(Res, Opts),
             ?event(store_remote_node, {read_found, {result, Msg, response, Res}}),
+            maybe_cache(Opts, Msg, [Key]),
             {ok, Msg};
         {error, _Err} ->
             ?event(store_remote_node, {read_not_found, {key, Key}}),
             not_found
+    end.
+
+%% @doc Cache the data if the cache is enabled. The `local-store' option may
+%% either be `false' or a store definition to use as the local cache. Additional
+%% paths may be provided that should be linked to the data.
+maybe_cache(StoreOpts, Data) ->
+    maybe_cache(StoreOpts, Data, []).
+maybe_cache(StoreOpts, Data, Links) ->
+    ?event({maybe_cache, StoreOpts, Data}),
+    % Check if the local store is in our store options.
+    case hb_maps:get(<<"local-store">>, StoreOpts, false, StoreOpts) of
+        false ->
+            skipped;
+        Store ->
+            case hb_cache:write(Data, #{ store => Store }) of
+                {ok, RootPath} ->
+                    % Remove the base path from the links.
+                    LinksWithoutRootPath =
+                        lists:filter(
+                            fun(Link) -> Link /= RootPath end,
+                            Links
+                        ),
+                    ?event(store_remote_node, cached_received),
+                    LinkResults =
+                        lists:filter(
+                            fun(Link) ->
+                                hb_store:make_link(Store, RootPath, Link) == false
+                            end,
+                            LinksWithoutRootPath
+                        ),
+                    ?event(store_remote_node,
+                        {linked_cached,
+                            {failed_links, LinkResults}
+                        }
+                    ),
+                    case LinkResults of
+                        [] -> ok;
+                        _ -> {failed_links, LinkResults}
+                    end;
+                {error, Err} ->
+                    ?event(store_remote_node, error_on_local_cache_write),
+                    ?event(warning, {error_caching_remote_node_data, Err}),
+                    {error, Err}
+            end
     end.
 
 %% @doc Write a key to the remote node.

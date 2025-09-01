@@ -897,13 +897,22 @@ find_remote_scheduler(ProcID, Scheduler, Opts) ->
                         {ok, SchedMsg} ->
                             % We have found the location. Cache it and use it to
                             % construct a redirect message.
-                            dev_scheduler_cache:write_location(
-                                SchedMsg,
-                                Opts
+                            Res =
+                                dev_scheduler_cache:write_location(
+                                    SchedMsg,
+                                    Opts
+                                ),
+                            ?event(scheduler_location,
+                                {cached_scheduler_location, {res, Res}}
                             ),
                             generate_redirect(ProcID, SchedMsg, Opts);
                         {error, Res} ->
-                            ?event({error_finding_scheduler, {error, Res}}),
+                            ?event(
+                                scheduler_location,
+                                {failed_to_find_scheduler_location_from_gateway,
+                                    {error, Res}
+                                }
+                            ),
                             {error, Res}
                     end
             end

@@ -1,12 +1,13 @@
+%%% @doc A module that provides a cache for scheduler assignments and locations.
 -module(dev_scheduler_cache).
 -export([write/2, write_spawn/2, write_location/2]).
 -export([read/3, read_location/2]).
 -export([list/2, latest/2]).
-
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% Assignment cache functions
+%%% The pseudo-path prefix which the scheduler cache should use.
+-define(SCHEDULER_CACHE_PREFIX, <<"~scheduler@1.0">>).
 
 %% @doc Merge the scheduler store with the main store. Used before writing
 %% to the cache.
@@ -45,6 +46,7 @@ write(RawAssignment, RawOpts) ->
                 hb_store:path(
                     Store,
                     [
+                        ?SCHEDULER_CACHE_PREFIX,
                         <<"assignments">>,
                         hb_util:human_id(ProcID),
                         hb_ao:normalize_key(Slot)
@@ -72,6 +74,7 @@ read(ProcID, Slot, RawOpts) ->
         P2 = hb_store:resolve(
             Store,
             P1 = hb_store:path(Store, [
+                ?SCHEDULER_CACHE_PREFIX,
                 "assignments",
                 hb_util:human_id(ProcID),
                 Slot
@@ -108,6 +111,7 @@ list(ProcID, RawOpts) ->
     Opts = opts(RawOpts),
     hb_cache:list_numbered(
         hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+            ?SCHEDULER_CACHE_PREFIX,
             "assignments",
             hb_util:human_id(ProcID)
         ]),
@@ -145,17 +149,19 @@ latest(ProcID, RawOpts) ->
 %% @doc Read the latest known scheduler location for an address.
 read_location(Address, RawOpts) ->
     Opts = opts(RawOpts),
-    Res = hb_cache:read(
-        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
-            "scheduler-locations",
-            hb_util:human_id(Address)
-        ]),
-        Opts
-    ),
+    Res =
+        hb_cache:read(
+            hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+                ?SCHEDULER_CACHE_PREFIX,
+                "locations",
+                hb_util:human_id(Address)
+            ]),
+            Opts
+        ),
     Event =
         case Res of
-            {ok, _} -> found_locally;
-            not_found -> not_found_locally;
+            {ok, _} -> found_in_store;
+            not_found -> not_found_in_store;
             _ -> local_lookup_unexpected_result
         end,
     ?event(scheduler_location, {Event, {address, Address}, {res, Res}}),
@@ -172,7 +178,7 @@ write_location(LocationMsg, RawOpts) ->
             {location_msg, LocationMsg}
         }
     ),
-    case hb_message:verify(LocationMsg, all) andalso hb_cache:write(LocationMsg, Opts) of
+    case hb_cache:write(LocationMsg, Opts) of
         {ok, RootPath} ->
             lists:foreach(
                 fun(Signer) ->
@@ -182,7 +188,8 @@ write_location(LocationMsg, RawOpts) ->
                         hb_store:path(
                             hb_opts:get(store, no_viable_store, Opts),
                             [
-                                "scheduler-locations",
+                                ?SCHEDULER_CACHE_PREFIX,
+                                "locations",
                                 hb_util:human_id(Signer)
                             ]
                         )
