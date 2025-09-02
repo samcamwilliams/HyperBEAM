@@ -151,12 +151,20 @@ match_args(Args, Opts) when is_map(Args) ->
         Opts
     ).
 match_args([], Results, Opts) ->
+    Matches =
+        lists:foldl(
+            fun(Result, Acc) ->
+                hb_util:list_with(Result, Acc)
+            end,
+            hd(Results),
+            tl(Results)
+        ),
     hb_util:unique(
         lists:flatten(
             [
                 all_ids(ID, Opts)
             ||
-                ID <- lists:flatten(Results)
+                ID <- Matches
             ]
         )
     );
