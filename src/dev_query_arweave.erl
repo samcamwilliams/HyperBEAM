@@ -50,23 +50,25 @@ query(Obj, <<"transaction">>, #{<<"id">> := ID}, Opts) ->
             ?event({transaction_not_found, {id, ID}}),
             {ok, null}
     end;
-query(Obj, <<"blocks">>, #{<<"ids">> := IDs}, Opts) ->
+query(Obj, <<"blocks">>, Args, Opts) ->
     ?event({blocks, 
             {object, Obj}, 
             {field, <<"blocks">>}, 
-            {ids, IDs}
+            {args, Args}
         }),
-    Res = hb_cache:read(hd(IDs), Opts),
-    % Res = dev_arweave_block_cache:read(1745413, Opts),
-    ?event(blocks, {thisisit, Res}),
-    case Res of
-        {ok, Block} ->
-            {ok, [Block]};
-        not_found ->
-            {ok, []};
-        {error, _} ->
-            {ok, []}
-    end;
+    Matches = match_args(Args, Opts),
+    ?event({blocks_matches, Matches}),
+    Blocks =
+        lists:filtermap(
+            fun(Match) ->
+                case hb_cache:read(Match, Opts) of
+                    {ok, Msg} -> {true, Msg};
+                    not_found -> false
+                end
+            end,
+            Matches
+        ),
+    {ok, Blocks};
 query(List, <<"edges">>, _Args, _Opts) ->
     {ok, [{ok, Msg} || Msg <- List]};
 query(Msg, <<"node">>, _Args, _Opts) ->
