@@ -50,6 +50,23 @@ query(Obj, <<"transaction">>, #{<<"id">> := ID}, Opts) ->
             ?event({transaction_not_found, {id, ID}}),
             {ok, null}
     end;
+query(Obj, <<"blocks">>, #{<<"ids">> := IDs}, Opts) ->
+    ?event({blocks, 
+            {object, Obj}, 
+            {field, <<"blocks">>}, 
+            {ids, IDs}
+        }),
+    Res = hb_cache:read(hd(IDs), Opts),
+    % Res = dev_arweave_block_cache:read(1745413, Opts),
+    ?event(blocks, {thisisit, Res}),
+    case Res of
+        {ok, Block} ->
+            {ok, [Block]};
+        not_found ->
+            {ok, []};
+        {error, _} ->
+            {ok, []}
+    end;
 query(List, <<"edges">>, _Args, _Opts) ->
     {ok, [{ok, Msg} || Msg <- List]};
 query(Msg, <<"node">>, _Args, _Opts) ->
@@ -238,4 +255,46 @@ all_ids(ID, Opts) ->
         _ -> []
     end.
 
-%% @doc Generate a match upon `ids' in the arguments, if given.
+%% Tests
+simple_blocks_query_test() ->
+    Opts =
+        #{
+            priv_wallet => hb:wallet(),
+            store => [hb_test_utils:test_store(hb_store_lmdb)]
+        },
+    Node = hb_http_server:start_node(Opts),
+    Query =
+        <<"""
+            query {
+                blocks(ids: ["zpb9c-gmTG1KrkIEaZn3t54nv9jd6swgHpie4SBkRoKynqlKaob57cELDsF_hEzq"]) {
+                    edges {
+                        node {
+                            id
+                            previous
+                        }
+                    }
+                }
+            }
+        """>>,
+    ?event(blocks, {simple_blocks_query_test, Query}),
+    Res =
+        hb_http:post(
+            Node, 
+            #{
+                <<"path">> => <<"~query@1.0/graphql">>,
+                <<"content-type">> => <<"application/json">>,
+                <<"codec-device">> => <<"json@1.0">>,
+                <<"body">> => hb_json:encode(#{
+                    <<"query">> => Query
+                    }
+                )
+            }, 
+            Opts),
+    case Res of
+        {ok, #{<<"body">> := Body}} ->
+            DecodedBody = hb_json:decode(Body, #{}),
+            ?event(blocks, {response_body_decoded, DecodedBody});
+        Other ->
+            ?event(blocks, {unexpected_response, Other})
+    end,
+    ok.
