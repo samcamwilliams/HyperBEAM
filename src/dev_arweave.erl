@@ -240,3 +240,50 @@ to_message(Path, {ok, #{ <<"body">> := Body }}, Opts) ->
             Opts
         )
     }.
+
+%%% Tests
+
+post_ans104_tx_test() ->
+    ServerOpts = #{ store => [hb_test_utils:test_store()] },
+    Server = hb_http_server:start_node(ServerOpts),
+    ClientOpts =
+        #{
+            store => [hb_test_utils:test_store()],
+            priv_wallet => hb:wallet()
+        },
+    Msg =
+        hb_message:commit(
+            #{
+                <<"variant">> => <<"ao.N.1">>,
+                <<"type">> => <<"Process">>,
+                <<"data">> => <<"test-data">>
+            },
+            ClientOpts,
+            #{ <<"commitment-device">> => <<"ans104@1.0">> }
+        ),
+    {ok, PostRes} =
+        hb_http:post(
+            Server,
+            Msg#{
+                <<"path">> => <<"/~arweave@2.9-pre/tx">>,
+                <<"codec-device">> => <<"ans104@1.0">>
+            },
+            ClientOpts
+        ),
+    ?assertMatch(#{ <<"status">> := 200 }, PostRes),
+    SignedID = hb_message:id(Msg, signed, ClientOpts),
+    {ok, GetRes} =
+        hb_http:get(
+            Server, <<"/", SignedID/binary>>,
+            ClientOpts
+        ),
+    ?assertMatch(
+        #{
+            <<"status">> := 200,
+            <<"variant">> := <<"ao.N.1">>,
+            <<"type">> := <<"Process">>,
+            <<"data">> := <<"test-data">>
+        },
+        GetRes
+    ),
+    ok.
