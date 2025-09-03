@@ -24,11 +24,6 @@ query(List, <<"edges">>, _Args, _Opts) ->
 query(Msg, <<"node">>, _Args, _Opts) ->
     {ok, Msg};
 query(Obj, <<"transaction">>, Args, Opts) ->
-    ?event({transaction_query,
-        {object, Obj},
-        {field, <<"transaction">>},
-        {args, Args}
-    }),
     case query(Obj, <<"transactions">>, Args, Opts) of
         {ok, []} -> {ok, null};
         {ok, [Msg|_]} -> {ok, Msg}
@@ -53,13 +48,8 @@ query(Obj, <<"transactions">>, Args, Opts) ->
         ),
     {ok, Messages};
 query(Obj, <<"block">>, Args, Opts) ->
-    ?event({block_query,
-        {object, Obj},
-        {field, <<"block">>},
-        {args, Args}
-    }),
     case query(Obj, <<"blocks">>, Args, Opts) of
-        {ok, []} -> {ok, []};
+        {ok, []} -> {ok, null};
         {ok, [Msg|_]} -> {ok, Msg}
     end;
 query(Obj, <<"blocks">>, Args, Opts) ->
@@ -188,12 +178,13 @@ match_args(Args, Opts) when is_map(Args) ->
         Opts
     ).
 match_args([], Results, Opts) ->
+    ?event({match_args_results, Results}),
     Matches =
         lists:foldl(
             fun(Result, Acc) ->
-                hb_util:list_with(Result, Acc)
+                hb_util:list_with(resolve_ids(Result, Opts), Acc)
             end,
-            hd(Results),
+            resolve_ids(hd(Results), Opts),
             tl(Results)
         ),
     hb_util:unique(
@@ -304,3 +295,16 @@ all_ids(ID, Opts) ->
 scope(Opts) ->
     Scope = hb_opts:get(query_arweave_scope, [local], Opts),
     hb_store:scope(Opts, Scope).
+
+%% @doc Resolve a list of IDs to their store paths, using the stores provided.
+resolve_ids(IDs, Opts) ->
+    Scoped = scope(Opts),
+    lists:map(
+        fun(ID) ->
+            case hb_cache:read(ID, Opts) of
+                {ok, Msg} -> hb_message:id(Msg, uncommitted, Scoped);
+                not_found -> ID
+            end
+        end,
+        IDs
+    ).
