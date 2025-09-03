@@ -56,24 +56,22 @@ fetch_blocks(Req, Current, To, Opts) ->
     fetch_blocks(Req, Current - 1, To, Opts).
 
 %% @doc Process a block.
-process_block(BlockRes, Req, Current, To, _Opts) ->
+process_block(BlockRes, _Req, Current, To, _Opts) ->
     case BlockRes of
         {ok, _} ->
             ?event(
-                copycat_arweave,
+                copycat_short,
                 {arweave_block_cached,
                     {height, Current},
-                    {target, To},
-                    {initial_request, Req}
+                    {target, To}
                 }
             );
         {error, not_found} ->
             ?event(
-                copycat_arweave,
+                copycat_short,
                 {arweave_block_not_found,
                     {height, Current},
-                    {target, To},
-                    {initial_request, Req}
+                    {target, To}
                 }
             )
     end.

@@ -24,7 +24,7 @@
 -define(DEFAULT_PRINT_OPTS, [error, http_error]).
 -else.
 -define(DEFAULT_PRINT_OPTS,
-    [error, http_error, http_short, compute_short, push_short]
+    [error, http_error, http_short, compute_short, push_short, copycat_short]
 ).
 -endif.
 

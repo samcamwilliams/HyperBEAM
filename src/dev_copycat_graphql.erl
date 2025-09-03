@@ -36,7 +36,7 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
         {ok, RawRes} ?= hb_gateway_client:query(Query, Vars, Node, OpName, Opts),
         Res = hb_util:deep_get(<<"data/transactions">>, RawRes, #{}, Opts),
         NodeStructs = hb_util:deep_get(<<"edges">>, Res, [], Opts),
-        ?event(indexer_short, {graphql_request_returned_items, length(NodeStructs)}),
+        ?event({graphql_request_returned_items, length(NodeStructs)}),
         ?event(
             {graphql_indexing_responses,
                 {query, {string, Query}},
@@ -69,7 +69,7 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                 end,
                 NodeStructs
             ),
-        ?event(indexer_short, {graphql_parsed_msgs, length(ParsedMsgs)}),
+        ?event({graphql_parsed_msgs, length(ParsedMsgs)}),
         WrittenMsgs =
             lists:filter(
                 fun(ParsedMsg) ->
@@ -91,7 +91,7 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                 ParsedMsgs
             ),
         NewTotal = Total + length(WrittenMsgs),
-        ?event(indexer_short,
+        ?event(copycat_short,
             {indexer_graphql_wrote,
                 {total, NewTotal},
                 {batch, length(WrittenMsgs)},
