@@ -9,6 +9,7 @@
 %% @doc The arguments that are supported by the Arweave GraphQL API.
 -define(SUPPORTED_QUERY_ARGS,
     [
+        <<"id">>,
         <<"ids">>,
         <<"tags">>,
         <<"owners">>,
@@ -16,7 +17,21 @@
     ]
 ).
 
-%% @doc Handle an Arweave GraphQL query.
+%% @doc Handle an Arweave GraphQL query for either transactions or blocks.
+query(List, <<"edges">>, _Args, _Opts) ->
+    {ok, [{ok, Msg} || Msg <- List]};
+query(Msg, <<"node">>, _Args, _Opts) ->
+    {ok, Msg};
+query(Obj, <<"transaction">>, Args, Opts) ->
+    ?event({transaction_query,
+        {object, Obj},
+        {field, <<"transaction">>},
+        {args, Args}
+    }),
+    case query(Obj, <<"transactions">>, Args, Opts) of
+        {ok, []} -> {ok, null};
+        {ok, [Msg|_]} -> {ok, Msg}
+    end;
 query(Obj, <<"transactions">>, Args, Opts) ->
     ?event({transactions_query,
         {object, Obj},
@@ -36,19 +51,15 @@ query(Obj, <<"transactions">>, Args, Opts) ->
             Matches
         ),
     {ok, Messages};
-query(Obj, <<"transaction">>, #{<<"id">> := ID}, Opts) ->
-    ?event({transaction_query, 
-            {object, Obj}, 
-            {field, <<"transaction">>}, 
-            {id, ID}
-        }),
-    case hb_cache:read(ID, Opts) of
-        {ok, Msg} -> 
-            ?event({transaction_found, {id, ID}, {msg, Msg}}),
-            {ok, Msg};
-        not_found -> 
-            ?event({transaction_not_found, {id, ID}}),
-            {ok, null}
+query(Obj, <<"block">>, Args, Opts) ->
+    ?event({block_query,
+        {object, Obj},
+        {field, <<"block">>},
+        {args, Args}
+    }),
+    case query(Obj, <<"blocks">>, Args, Opts) of
+        {ok, []} -> {ok, []};
+        {ok, [Msg|_]} -> {ok, Msg}
     end;
 query(Obj, <<"blocks">>, Args, Opts) ->
     ?event({blocks, 
@@ -68,12 +79,18 @@ query(Obj, <<"blocks">>, Args, Opts) ->
             end,
             Matches
         ),
+    % Return the blocks as a list of messages.
+    % Individual access methods are defined below.
     {ok, Blocks};
-query(List, <<"edges">>, _Args, _Opts) ->
-    {ok, [{ok, Msg} || Msg <- List]};
-query(Msg, <<"node">>, _Args, _Opts) ->
-    {ok, Msg};
+query(Block, <<"previous">>, _Args, Opts) ->
+    {ok, hb_maps:get(<<"previous_block">>, Block, null, Opts)};
+query(Block, <<"height">>, _Args, Opts) ->
+    {ok, hb_maps:get(<<"height">>, Block, null, Opts)};
+query(Block, <<"timestamp">>, _Args, Opts) ->
+    {ok, hb_maps:get(<<"timestamp">>, Block, null, Opts)};
 query(Msg, <<"signature">>, _Args, Opts) ->
+    % Return the signature of the transaction.
+    % Other TX access methods are defined below.
     case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
         not_found -> {ok, null};
         Commitments ->
@@ -199,6 +216,8 @@ match_args([{Field, X} | Rest], Acc, Opts) ->
 
 %% @doc Generate a match upon `tags' in the arguments, if given.
 match(_, null, _) -> ignore;
+match(<<"id">>, ID, _Opts) ->
+    {ok, [ID]};
 match(<<"ids">>, IDs, _Opts) ->
     {ok, IDs};
 match(<<"tags">>, Tags, Opts) ->
@@ -256,47 +275,3 @@ all_ids(ID, Opts) ->
         {ok, CommitmentIDs} -> CommitmentIDs;
         _ -> []
     end.
-
-%% Tests
-simple_blocks_query_test() ->
-    Opts =
-        #{
-            priv_wallet => hb:wallet(),
-            store => [hb_test_utils:test_store(hb_store_lmdb)]
-        },
-    Node = hb_http_server:start_node(Opts),
-    Query =
-        <<"""
-            query {
-                blocks(ids: ["zpb9c-gmTG1KrkIEaZn3t54nv9jd6swgHpie4SBkRoKynqlKaob57cELDsF_hEzq"]) {
-                    edges {
-                        node {
-                            id
-                            previous
-                        }
-                    }
-                }
-            }
-        """>>,
-    ?event(blocks, {simple_blocks_query_test, Query}),
-    Res =
-        hb_http:post(
-            Node, 
-            #{
-                <<"path">> => <<"~query@1.0/graphql">>,
-                <<"content-type">> => <<"application/json">>,
-                <<"codec-device">> => <<"json@1.0">>,
-                <<"body">> => hb_json:encode(#{
-                    <<"query">> => Query
-                    }
-                )
-            }, 
-            Opts),
-    case Res of
-        {ok, #{<<"body">> := Body}} ->
-            DecodedBody = hb_json:decode(Body, #{}),
-            ?event(blocks, {response_body_decoded, DecodedBody});
-        Other ->
-            ?event(blocks, {unexpected_response, Other})
-    end,
-    ok.

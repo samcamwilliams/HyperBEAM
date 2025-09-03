@@ -52,10 +52,13 @@ read(Block, Opts) when is_integer(Block) ->
 %% @doc Write a block to the cache and create pseudo-paths for it.
 write(Block, Opts) ->
     {ok, Height} = hb_maps:find(<<"height">>, Block, Opts),
-    {ok, BlockID} = hb_maps:find(<<"hash">>, Block, Opts),
+    {ok, BlockID} = hb_maps:find(<<"indep_hash">>, Block, Opts),
+    {ok, BlockHash} = hb_maps:find(<<"hash">>, Block, Opts),
     {ok, MsgID} = hb_cache:write(Block, Opts),
-    % Link the block ID to the written AO-Core message ID.
+    % Link the independent hash and the dependent hash to the written AO-Core
+    % message ID.
     hb_cache:link(MsgID, BlockID, Opts),
+    hb_cache:link(MsgID, BlockHash, Opts),
     % Link the block height pseudo-path to the message.
     hb_cache:link(
         MsgID,
