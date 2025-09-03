@@ -682,31 +682,25 @@ transaction_query_not_found_test() ->
             priv_wallet => hb:wallet(),
             store => [hb_test_utils:test_store(hb_store_lmdb)]
         },
-    Node = hb_http_server:start_node(Opts),
-    NonExistentID = hb_util:encode(crypto:strong_rand_bytes(32)),
-    Query =
-        <<"""
-            query($id: ID!) {
-                transaction(id: $id) {
-                    id
-                    tags {
-                        name
-                        value
-                    }
-                }
-            }
-        """>>,
     Res =
         dev_query_graphql:test_query(
-            Node,
-            Query,
+            hb_http_server:start_node(Opts),
+            <<"""
+                query($id: ID!) {
+                    transaction(id: $id) {
+                        id
+                        tags {
+                            name
+                            value
+                        }
+                    }
+                }
+            """>>,
             #{
-                <<"id">> => NonExistentID
+                <<"id">> => hb_util:encode(crypto:strong_rand_bytes(32))
             },
             Opts
         ),
-    ?event({non_existent_id, NonExistentID}),
-    ?event({transaction_query_not_found_test, Res}),
     % Should return null for non-existent transaction
     ?assertMatch(
         #{
