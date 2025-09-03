@@ -2,6 +2,7 @@
 %%% focused on ensuring that block metadata is queriable via pseudo-paths.
 -module(dev_arweave_block_cache).
 -export([latest/1, heights/1, read/2, write/2]).
+-export([path/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -35,19 +36,19 @@ heights(Opts) ->
     {ok, AllBlocks}.
 
 %% @doc Read a block from the cache.
-read(Block, Opts) when is_integer(Block) ->
-    Res =
-        hb_cache:read(
-            hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
-                ?ARWEAVE_BLOCK_CACHE_PREFIX,
-                <<"block">>,
-                <<"height">>,
-                hb_util:bin(Block)
-            ]),
-            Opts
-        ),
-    ?event(arweave_cache, {read_block, {height, Block}, {result, Res}}),
+read(Block, Opts) ->
+    Res = hb_cache:read(path(Block, Opts), Opts),
+    ?event(arweave_cache, {read_block, {reference, Block}, {result, Res}}),
     Res.
+
+%% @doc Return the path of a block that will be used in the cache.
+path(Block, Opts) when is_integer(Block) ->
+    hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+        ?ARWEAVE_BLOCK_CACHE_PREFIX,
+        <<"block">>,
+        <<"height">>,
+        hb_util:bin(Block)
+    ]).
 
 %% @doc Write a block to the cache and create pseudo-paths for it.
 write(Block, Opts) ->
@@ -60,16 +61,6 @@ write(Block, Opts) ->
     hb_cache:link(MsgID, BlockID, Opts),
     hb_cache:link(MsgID, BlockHash, Opts),
     % Link the block height pseudo-path to the message.
-    hb_cache:link(
-        MsgID,
-        hb_store:path(
-            hb_opts:get(store, no_viable_store, Opts), [
-            ?ARWEAVE_BLOCK_CACHE_PREFIX,
-            <<"block">>,
-            <<"height">>,
-            hb_util:bin(Height)
-        ]),
-        Opts
-    ),
+    hb_cache:link(MsgID, path(Height, Opts), Opts),
     ?event(arweave_cache, {wrote_block, {height, Height}, {message_id, MsgID}}),
     {ok, MsgID}.

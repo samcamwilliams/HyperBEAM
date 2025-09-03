@@ -9,6 +9,7 @@
 %% @doc The arguments that are supported by the Arweave GraphQL API.
 -define(SUPPORTED_QUERY_ARGS,
     [
+        <<"height">>,
         <<"id">>,
         <<"ids">>,
         <<"tags">>,
@@ -216,6 +217,28 @@ match_args([{Field, X} | Rest], Acc, Opts) ->
 
 %% @doc Generate a match upon `tags' in the arguments, if given.
 match(_, null, _) -> ignore;
+match(<<"height">>, Heights, Opts) ->
+    Min = hb_maps:get(<<"min">>, Heights, 0, Opts),
+    Max =
+        case hb_maps:find(<<"max">>, Heights, Opts) of
+            {ok, GivenMax} -> GivenMax;
+            error ->
+                {ok, Latest} = dev_arweave_block_cache:latest(Opts),
+                Latest
+        end,
+    #{ store := ScopedStores } = scope(Opts),
+    {ok,
+        lists:filtermap(
+            fun(Height) ->
+                Path = dev_arweave_block_cache:path(Height, Opts),
+                case hb_store:type(ScopedStores, Path) of
+                    not_found -> false;
+                    _ -> {true, hb_store:resolve(ScopedStores, Path)}
+                end
+            end,
+            lists:seq(Min, Max)
+        )
+    };
 match(<<"id">>, ID, _Opts) ->
     {ok, [ID]};
 match(<<"ids">>, IDs, _Opts) ->
@@ -275,3 +298,9 @@ all_ids(ID, Opts) ->
         {ok, CommitmentIDs} -> CommitmentIDs;
         _ -> []
     end.
+
+%% @doc Scope the stores used for block matching. The searched stores can be
+%% scoped by setting the `query_arweave_scope' option.
+scope(Opts) ->
+    Scope = hb_opts:get(query_arweave_scope, [local], Opts),
+    hb_store:scope(Opts, Scope).

@@ -27,27 +27,20 @@ write_test_message(Opts) ->
 
 %% @doc Populate the cache with three test blocks.
 get_test_blocks(Node) ->
-    {ok, _} =
-        hb_http:request(
-            <<"GET">>,
-            Node,
-            <<"/~arweave@2.9-pre/block=1745749">>,
-            #{}
-        ),
-    {ok, _} =
-        hb_http:request(
-            <<"GET">>,
-            Node,
-            <<"/~arweave@2.9-pre/block=1745749">>,
-            #{}
-        ),
-    {ok, _} =
-        hb_http:request(
-            <<"GET">>,
-            Node,
-            <<"/~arweave@2.9-pre/block=1745749">>,
-            #{}
-        ).
+    InitialHeight = 1745749,
+    FinalHeight = 1745750,
+    lists:foreach(
+        fun(Height) ->
+            {ok, _} =
+                hb_http:request(
+                    <<"GET">>,
+                    Node,
+                    <<"/~arweave@2.9-pre/block=", (hb_util:bin(Height))/binary>>,
+                    #{}
+                )
+        end,
+        lists:seq(InitialHeight, FinalHeight)
+    ).
 
 %% Helper function to write test message with Recipient
 write_test_message_with_recipient(Recipient, Opts) ->
@@ -129,7 +122,7 @@ block_by_height_query_test() ->
     Query =
         <<"""
             query {
-                blocks( height: 1745749 ) {
+                blocks( height: {min: 1745749, max: 1745750} ) {
                     edges {
                         node {
                             id
@@ -152,6 +145,14 @@ block_by_height_query_test() ->
                                 <<"previous">> := _,
                                 <<"height">> := 1745749,
                                 <<"timestamp">> := 1756866695
+                            }
+                        },
+                        #{
+                            <<"node">> := #{
+                                <<"id">> := _,
+                                <<"previous">> := _,
+                                <<"height">> := 1745750,
+                                <<"timestamp">> := _
                             }
                         }
                     ]
