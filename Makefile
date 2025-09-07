@@ -3,11 +3,12 @@
 compile:
 	rebar3 compile
 
-WAMR_VERSION = 2.1.2
+WAMR_VERSION = 2.2.0
 WAMR_DIR = _build/wamr
 
-# commented out to remove NFR blocking commits
-# GITHOOKS_DIR = .githooks
+GENESIS_WASM_BRANCH = feat/http-checkpoint
+GENESIS_WASM_REPO = https://github.com/permaweb/ao.git
+GENESIS_WASM_SERVER_DIR = _build/genesis_wasm/genesis-wasm-server
 
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DWAMR_BUILD_DUMP_CALL_STACK=1 -DCMAKE_BUILD_TYPE=Debug
@@ -30,8 +31,6 @@ else
     WAMR_BUILD_TARGET = X86_64
 endif
 
-# githooks: $(GITHOOKS_DIR)/_/setup
-
 wamr: $(WAMR_DIR)/lib/libvmlib.a
 
 debug: debug-clean $(WAMR_DIR)
@@ -51,25 +50,29 @@ $(WAMR_DIR):
 		--single-branch
 
 $(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
+	sed -i '742a tbl_inst->is_table64 = 1;' ./_build/wamr/core/iwasm/aot/aot_runtime.c; \
 	cmake \
 		$(WAMR_FLAGS) \
 		-S $(WAMR_DIR) \
 		-B $(WAMR_DIR)/lib \
 		-DWAMR_BUILD_TARGET=$(WAMR_BUILD_TARGET) \
 		-DWAMR_BUILD_PLATFORM=$(WAMR_BUILD_PLATFORM) \
-		-DWAMR_BUILD_LIBC_WASI=0 \
 		-DWAMR_BUILD_MEMORY64=1 \
 		-DWAMR_DISABLE_HW_BOUND_CHECK=1 \
 		-DWAMR_BUILD_EXCE_HANDLING=1 \
 		-DWAMR_BUILD_SHARED_MEMORY=0 \
-		-DWAMR_BUILD_AOT=0 \
+		-DWAMR_BUILD_AOT=1 \
+		-DWAMR_BUILD_LIBC_WASI=0 \
 		-DWAMR_BUILD_FAST_INTERP=0 \
 		-DWAMR_BUILD_INTERP=1 \
-		-DWAMR_BUILD_JIT=0
-	make -C $(WAMR_DIR)/lib
-
-# $(GITHOOKS_DIR)/_/setup:
-#	@sh ./$(GITHOOKS_DIR)/_/install.sh
+		-DWAMR_BUILD_JIT=0 \
+		-DWAMR_BUILD_FAST_JIT=0 \
+        -DWAMR_BUILD_DEBUG_AOT=1 \
+        -DWAMR_BUILD_TAIL_CALL=1 \
+        -DWAMR_BUILD_AOT_STACK_FRAME=1 \
+        -DWAMR_BUILD_MEMORY_PROFILING=1 \
+        -DWAMR_BUILD_DUMP_CALL_STACK=1
+	make -C $(WAMR_DIR)/lib -j8
 
 clean:
 	rebar3 clean
@@ -77,3 +80,27 @@ clean:
 # Add a new target to print the library path
 print-lib-path:
 	@echo $(CURDIR)/lib/libvmlib.a
+
+$(GENESIS_WASM_SERVER_DIR):
+	mkdir -p $(GENESIS_WASM_SERVER_DIR)
+	@echo "Cloning genesis-wasm repository..." && \
+        tmp_dir=$$(mktemp -d) && \
+        git clone --depth=1 -b $(GENESIS_WASM_BRANCH) $(GENESIS_WASM_REPO) $$tmp_dir && \
+        mkdir -p $(GENESIS_WASM_SERVER_DIR) && \
+        cp -r $$tmp_dir/servers/cu/* $(GENESIS_WASM_SERVER_DIR) && \
+        rm -rf $$tmp_dir && \
+        echo "Extracted servers/genesis-wasm to $(GENESIS_WASM_SERVER_DIR)"
+
+# Set up genesis-wasm@1.0 environment
+setup-genesis-wasm: $(GENESIS_WASM_SERVER_DIR)
+	@cp native/genesis-wasm/launch-monitored.sh $(GENESIS_WASM_SERVER_DIR) && \
+	if ! command -v node > /dev/null; then \
+		echo "Error: Node.js is not installed. Please install Node.js before continuing."; \
+		echo "For Ubuntu/Debian, you can install it with:"; \
+		echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \\"; \
+		echo "  apt-get install -y nodejs=22.16.0-1nodesource1 --allow-downgrades && \\"; \
+		echo "  node -v && npm -v"; \
+		exit 1; \
+	fi
+	@cd $(GENESIS_WASM_SERVER_DIR) && npm install > /dev/null 2>&1 && \
+		echo "Installed genesis-wasm@1.0 server."

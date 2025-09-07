@@ -26,10 +26,17 @@ write(ProcID, Slot, Msg, Opts) ->
     MsgIDPath =
         path(
             ProcID,
-            ID = hb_util:human_id(hb_converge:get(id, Msg)),
+            ID = hb_util:human_id(hb_ao:get(id, Msg, Opts)),
             Opts
         ),
-    ?event({linking_id, {proc_id, ProcID}, {id, ID}, {path, MsgIDPath}}),
+    ?event(
+        {linking_id,
+            {proc_id, ProcID},
+            {slot, Slot},
+            {id, ID},
+            {path, MsgIDPath}
+        }
+    ),
     hb_cache:link(Root, MsgIDPath, Opts),
     % Return the slot number path.
     {ok, SlotNumPath}.
@@ -42,13 +49,13 @@ path(ProcID, Ref, PathSuffix, Opts) ->
     hb_store:path(
         Store,
         [
-            <<"Computed">>,
+            <<"computed">>,
             hb_util:human_id(ProcID)
         ] ++
         case Ref of
-            Int when is_integer(Int) -> ["Slot", integer_to_binary(Int)];
+            Int when is_integer(Int) -> ["slot", integer_to_binary(Int)];
             root -> [];
-            slot_root -> ["Slot"];
+            slot_root -> ["slot"];
             _ -> [Ref]
         end ++ PathSuffix
     ).
@@ -60,6 +67,13 @@ latest(ProcID, Opts) -> latest(ProcID, [], Opts).
 latest(ProcID, RequiredPath, Opts) ->
     latest(ProcID, RequiredPath, undefined, Opts).
 latest(ProcID, RawRequiredPath, Limit, Opts) ->
+    ?event(
+        {latest_called,
+            {proc_id, ProcID},
+            {required_path, RawRequiredPath},
+            {limit, Limit}
+        }
+    ),
     % Convert the required path to a list of _binary_ keys.
     RequiredPath =
         case RawRequiredPath of
@@ -68,11 +82,13 @@ latest(ProcID, RawRequiredPath, Limit, Opts) ->
             _ ->
                 hb_path:term_to_path_parts(
                     RawRequiredPath,
-                    Opts#{ atom_keys => false }
+                    Opts
                 )
         end,
+    ?event({required_path_converted, {proc_id, ProcID}, {required_path, RequiredPath}}),
     Path = path(ProcID, slot_root, Opts),
     AllSlots = hb_cache:list_numbered(Path, Opts),
+    ?event({all_slots, {proc_id, ProcID}, {slots, AllSlots}}),
     CappedSlots =
         case Limit of
             undefined -> AllSlots;
@@ -120,7 +136,7 @@ first_with_path(ProcID, RequiredPath, [Slot | Rest], Opts, Store) ->
     ResolvedPath = hb_store:resolve(Store, RawPath),
     ?event({trying_slot, {slot, Slot}, {path, RawPath}, {resolved_path, ResolvedPath}}),
     case hb_store:type(Store, ResolvedPath) of
-        no_viable_store ->
+        not_found ->
             first_with_path(ProcID, RequiredPath, Rest, Opts, Store);
         _ ->
             Slot
@@ -137,8 +153,7 @@ process_cache_suite_test_() ->
         [
             {Name, Opts}
         ||
-            {Name, Opts} <- hb_store:test_stores(),
-                Name =/= hb_store_rocksdb % Disable rocksdb for now
+            {Name, Opts} <- hb_store:test_stores()
         ]
     ).
 
@@ -147,7 +162,7 @@ process_cache_suite_test_() ->
 test_write_and_read_output(Opts) ->
     Proc = hb_cache:test_signed(
         #{ <<"test-item">> => hb_cache:test_unsigned(<<"test-body-data">>) }),
-    ProcID = hb_util:human_id(hb_converge:get(id, Proc)),
+    ProcID = hb_util:human_id(hb_ao:get(id, Proc)),
     Item1 = hb_cache:test_signed(<<"Simple signed output #1">>),
     Item2 = hb_cache:test_unsigned(<<"Simple unsigned output #2">>),
     {ok, Path0} = write(ProcID, 0, Item1, Opts),
@@ -161,10 +176,10 @@ test_write_and_read_output(Opts) ->
     {ok, ReadItem2BySlotNum} = read(ProcID, 1, Opts),
     ?assert(hb_message:match(Item2, ReadItem2BySlotNum)),
     {ok, ReadItem1ByID} =
-        read(ProcID, hb_util:human_id(hb_converge:get(id, Item1)), Opts),
+        read(ProcID, hb_util:human_id(hb_ao:get(id, Item1)), Opts),
     ?assert(hb_message:match(Item1, ReadItem1ByID)),
     {ok, ReadItem2ByID} =
-        read(ProcID, hb_util:human_id(hb_converge:get(unsigned_id, Item2)), Opts),
+        read(ProcID, hb_util:human_id(hb_message:id(Item2, all)), Opts),
     ?assert(hb_message:match(Item2, ReadItem2ByID)).
 
 %% @doc Test for retrieving the latest computed output for a process.
@@ -174,9 +189,9 @@ find_latest_outputs(Opts) ->
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
     Proc1 = dev_process:test_aos_process(),
-    ProcID = hb_util:human_id(hb_converge:get(id, Proc1)),
+    ProcID = hb_util:human_id(hb_ao:get(id, Proc1, Opts)),
     % Create messages for the slots, with only the middle slot having a
-    % `/Process` field, while the top slot has a `/Deep/Process` field.
+    % `/Process' field, while the top slot has a `/Deep/Process' field.
     Msg0 = #{ <<"Results">> => #{ <<"Result-Number">> => 0 } },
     Msg1 =
         #{ 
@@ -205,5 +220,5 @@ find_latest_outputs(Opts) ->
     {ok, 2, ReadMsg2Required} = latest(ProcID, <<"Deep/Process">>, Opts),
     ?assert(hb_message:match(Msg2, ReadMsg2Required)),
     ?event(read_latest_slot_with_deep_key),
-    {ok, 1, ReadMsg1} = latest(ProcID, <<"">>, 1, Opts),
+    {ok, 1, ReadMsg1} = latest(ProcID, [], 1, Opts),
     ?assert(hb_message:match(Msg1, ReadMsg1)).

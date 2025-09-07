@@ -2,6 +2,8 @@
 -define(DEFAULT_ID, << 0:256 >>).
 -define(DEFAULT_OWNER, << 0:4096 >>).
 -define(DEFAULT_DATA, <<>>).
+-define(DEFAULT_LAST_TX, <<>>).
+-define(DEFAULT_TARGET, <<>>).
 
 -define(MAX_TAG_NAME_SIZE, 3072).
 -define(MAX_TAG_VALUE_SIZE, 3072).
@@ -15,13 +17,13 @@
     %% Either the identifier of the previous transaction from
     %% the same wallet or the identifier of one of the
     %% last ?MAX_TX_ANCHOR_DEPTH blocks.
-    last_tx = <<>>,
+    anchor = ?DEFAULT_LAST_TX,
     %% The public key the transaction is signed with.
     owner =	?DEFAULT_OWNER,
     %% A list of arbitrary key-value pairs. Keys and values are binaries.
     tags = [],
     %% The address of the recipient, if any. The SHA2-256 hash of the public key.
-    target = <<>>,
+    target = ?DEFAULT_TARGET,
     %% The amount of Winstons to send to the recipient, if any.
     quantity = 0,
     %% The data to upload, if any. For v2 transactions, the field is optional - a fee

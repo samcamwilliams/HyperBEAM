@@ -1,17 +1,17 @@
 
 %%% @doc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their uderlying binary representations and formats.
+%%% AO-Core protocol, and their uderlying binary representations and formats.
 %%% 
 %%% Unless you are implementing a new message serialization codec, you should
 %%% not need to interact with this module directly. Instead, use the
-%%% `hb_converge' interfaces to interact with all messages. The `dev_message'
+%%% `hb_ao' interfaces to interact with all messages. The `dev_message'
 %%% module implements a device interface for abstracting over the different
 %%% message formats.
 %%% 
 %%% `hb_message' and the HyperBEAM caches can interact with multiple different
 %%% types of message formats:
 %%% 
-%%%     - Richly typed Converge messages.
+%%%     - Richly typed AO-Core structured messages.
 %%%     - Arweave transations.
 %%%     - ANS-104 data items.
 %%%     - HTTP Signed Messages.
@@ -28,22 +28,23 @@
 %%% 
 %%% The structure of the conversions is as follows:
 %%% 
-%%% ```
-%%%     Arweave TX/ANS-104 ==> hb_codec_tx:from/1 ==> TABM
-%%%     HTTP Signed Message ==> hb_codec_http:from/1 ==> TABM
-%%%     Flat Maps ==> hb_codec_flat:from/1 ==> TABM
+%%% <pre>
+%%%     Arweave TX/ANS-104 ==> dev_codec_ans104:from/1 ==> TABM
+%%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
+%%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
 %%% 
-%%%     TABM ==> hb_codec_converge:to/1 ==> Converge Message
-%%%     Converge Message ==> hb_codec_converge:from/1 ==> TABM
+%%%     TABM ==> dev_codec_structured:to/1 ==> AO-Core Message
+%%%     AO-Core Message ==> dev_codec_structured:from/1 ==> TABM
 %%% 
-%%%     TABM ==> hb_codec_tx:to/1 ==> Arweave TX/ANS-104
-%%%     TABM ==> hb_codec_http:to/1 ==> HTTP Signed Message
-%%%     TABM ==> hb_codec_flat:to/1 ==> Flat Maps
-%%% '''
+%%%     TABM ==> dev_codec_ans104:to/1 ==> Arweave TX/ANS-104
+%%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
+%%%     TABM ==> dev_codec_flat:to/1 ==> Flat Maps
+%%%     ...
+%%% </pre>
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
-%%% arbitrary type, or `hb_message:format/1' to print a Converge/TABM message in
+%%% arbitrary type, or `hb_formatter:format_msg/1' to print an AO-Core/TABM message in
 %%% a human-readable format.
 %%% 
 %%% The `hb_cache' module is responsible for storing and retrieving messages in
@@ -51,235 +52,380 @@
 %%% backend, but each works with simple key-value pairs. Subsequently, the 
 %%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
+%%% 
+%%% Test vectors to ensure the functioning of this module and the codecs that
+%%% interact with it are found in `hb_message_test_vectors.erl'.
 -module(hb_message).
--export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, verify/1, type/1, minimize/1, normalize_keys/1]). 
--export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
--export([match/2, match/3]).
+-export([id/1, id/2, id/3]).
+-export([convert/3, convert/4, uncommitted/1, uncommitted/2, committed/3]).
+-export([with_only_committers/2, with_only_committers/3, commitment_devices/2]).
+-export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
+-export([normalize_commitments/2, is_signed_key/3]).
+-export([commitment/2, commitment/3, commitments/3]).
+-export([with_only_committed/2, without_unless_signed/3]).
+-export([with_commitments/3, without_commitments/3]).
+-export([diff/3, match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
--export([print/1, format/1, format/2]).
+-export([print/1]).
 -include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %% @doc Convert a message from one format to another. Taking a message in the
 %% source format, a target format, and a set of opts. If not given, the source
-%% is assumed to be `converge`. Additional codecs can be added by ensuring they
-%% are part of the `Opts` map -- either globally, or locally for a computation.
+%% is assumed to be `structured@1.0'. Additional codecs can be added by ensuring they
+%% are part of the `Opts' map -- either globally, or locally for a computation.
 %% 
 %% The encoding happens in two phases:
 %% 1. Convert the message to a TABM.
 %% 2. Convert the TABM to the target format.
 %% 
-%% The conversion to a TABM is done by the `converge' codec, which is always
+%% The conversion to a TABM is done by the `structured@1.0' codec, which is always
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
-    convert(Msg, TargetFormat, converge, Opts).
+    convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
+convert(Msg, TargetFormat, tabm, Opts) ->
+    OldPriv =
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+           true -> #{}
+        end,
+    from_tabm(Msg, TargetFormat, OldPriv, Opts);
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    TABM = convert_to_tabm(Msg, SourceFormat, Opts),
+    OldPriv =
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+           true -> #{}
+        end,
+    TABM =
+        to_tabm(
+            case is_map(Msg) of
+                true -> hb_maps:without([<<"priv">>], Msg, Opts);
+                false -> Msg
+            end,
+            SourceFormat,
+            Opts
+        ),
     case TargetFormat of
-        tabm -> TABM;
-        _ -> convert_to_target(TABM, TargetFormat, Opts)
+        tabm -> restore_priv(TABM, OldPriv, Opts);
+        _ -> from_tabm(TABM, TargetFormat, OldPriv, Opts)
     end.
 
-convert_to_tabm(Msg, SourceFormat, Opts) ->
-    SourceCodecMod = get_codec(SourceFormat, Opts),
-    case SourceCodecMod:from(Msg) of
-        TypicalMsg when is_map(TypicalMsg) ->
-            minimize(filter_default_keys(TypicalMsg));
-        OtherTypeRes -> OtherTypeRes
+to_tabm(Msg, SourceFormat, Opts) ->
+    {SourceCodecMod, Params} = conversion_spec_to_req(SourceFormat, Opts),
+    % We use _from_ here because the codecs are labelled from the perspective
+    % of their own format. `dev_codec_ans104:from/1' will convert _from_
+    % an ANS-104 message _into_ a TABM.
+    case SourceCodecMod:from(Msg, Params, Opts) of
+        {ok, TypicalMsg} when is_map(TypicalMsg) ->
+            TypicalMsg;
+        {ok, OtherTypeRes} -> OtherTypeRes
     end.
 
-convert_to_target(Msg, TargetFormat, Opts) ->
-    TargetCodecMod = get_codec(TargetFormat, Opts),
-    TargetCodecMod:to(Msg).
-
-%% @doc Return the unsigned version of a message in Converge format.
-unsigned(Bin) when is_binary(Bin) -> Bin;
-unsigned(Msg) ->
-    maps:remove([signed_id, signature, owner], Msg).
-
-%% @doc Return a sub-map of the attestation-related keys in a message.
-attestations(Msg) ->
-    maps:with([signed_id, signature, owner], Msg).
-
-%% @doc Get a codec from the options.
-get_codec(TargetFormat, Opts) ->
-    case hb_opts:get(codecs, #{}, Opts) of
-        #{ TargetFormat := CodecMod } -> CodecMod;
-        _ -> throw({message_codec_not_found, TargetFormat})
+from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
+    {TargetCodecMod, Params} = conversion_spec_to_req(TargetFormat, Opts),
+    % We use the _to_ function here because each of the codecs we may call in
+    % this step are labelled from the perspective of the target format. For 
+    % example, `dev_codec_httpsig:to/1' will convert _from_ a TABM to an
+    % HTTPSig message.
+    case TargetCodecMod:to(Msg, Params, Opts) of
+        {ok, TypicalMsg} when is_map(TypicalMsg) ->
+            restore_priv(TypicalMsg, OldPriv, Opts);
+        {ok, OtherTypeRes} -> OtherTypeRes
     end.
+
+%% @doc Add the existing `priv' sub-map back to a converted message, honoring
+%% any existing `priv' sub-map that may already be present.
+restore_priv(Msg, EmptyPriv, _Opts) when map_size(EmptyPriv) == 0 -> Msg;
+restore_priv(Msg, OldPriv, Opts) ->
+    MsgPriv = hb_maps:get(<<"priv">>, Msg, #{}, Opts),
+    ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
+    NewPriv = hb_util:deep_merge(MsgPriv, OldPriv, Opts),
+    ?event({new_priv, NewPriv}),
+    Msg#{ <<"priv">> => NewPriv }.
+
+%% @doc Get a codec device and request params from the given conversion request. 
+%% Expects conversion spec to either be a binary codec name, or a map with a
+%% `device' key and other parameters. Additionally honors the `always_bundle'
+%% key in the node message if present.
+conversion_spec_to_req(Spec, Opts) when is_binary(Spec) or (Spec == tabm) ->
+    conversion_spec_to_req(#{ <<"device">> => Spec }, Opts);
+conversion_spec_to_req(Spec, Opts) ->
+    try
+        Device =
+            hb_maps:get(
+                <<"device">>,
+                Spec,
+                no_codec_device_in_conversion_spec,
+                Opts
+            ),
+        {
+            case Device of
+                tabm -> tabm;
+                _ ->
+                    hb_ao:message_to_device(
+                        #{
+                            <<"device">> => Device
+                        },
+                        Opts
+                    )
+            end,
+            hb_maps:without([<<"device">>], Spec, Opts)
+        }
+    catch _:_ ->
+        throw({message_codec_not_extractable, Spec})
+    end.
+
+%% @doc Return the ID of a message.
+id(Msg) -> id(Msg, uncommitted).
+id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts);
+id(Msg, Committers) -> id(Msg, Committers, #{}).
+id(Msg, RawCommitters, Opts) ->
+    CommSpec =
+        case RawCommitters of
+            none -> #{ <<"committers">> => <<"none">> };
+            uncommitted -> #{ <<"committers">> => <<"none">> };
+            unsigned -> #{ <<"committers">> => <<"none">> };
+            all -> #{ <<"committers">> => <<"all">> };
+            signed -> #{ <<"committers">> => <<"all">> };
+            List when is_list(List) -> #{ <<"committers">> => List }
+        end,
+    ?event({getting_id, {msg, Msg}, {spec, CommSpec}}),
+    {ok, ID} =
+        dev_message:id(
+            Msg,
+            CommSpec#{ <<"path">> => <<"id">> },
+            Opts
+        ),
+    hb_util:human_id(ID).
+
+%% @doc Normalize the IDs in a message, ensuring that there is at least one
+%% unsigned ID present. By forcing this work to occur in strategically positioned
+%% places, we avoid the need to recalculate the IDs for every `hb_message:id`
+%% call.
+normalize_commitments(Msg, Opts) when is_map(Msg) ->
+    NormMsg = 
+        maps:map(
+            fun(Key, Val) when Key == <<"commitments">> orelse Key == <<"priv">> ->
+                Val;
+               (_Key, Val) -> normalize_commitments(Val, Opts)
+            end,
+            Msg
+        ),
+    case hb_maps:get(<<"commitments">>, NormMsg, not_found, Opts) of
+        not_found ->
+            {ok, #{ <<"commitments">> := Commitments }} =
+                dev_message:commit(
+                    NormMsg,
+                    #{ <<"type">> => <<"unsigned">> },
+                    Opts
+                ),
+            NormMsg#{ <<"commitments">> => Commitments };
+        _ -> NormMsg
+    end;
+normalize_commitments(Msg, Opts) when is_list(Msg) ->
+    lists:map(fun(X) -> normalize_commitments(X, Opts) end, Msg);
+normalize_commitments(Msg, _Opts) ->
+    Msg.
+
+%% @doc Return a message with only the committed keys. If no commitments are
+%% present, the message is returned unchanged. This means that you need to
+%% check if the message is:
+%% - Committed
+%% - Verifies
+%% ...before using the output of this function as the 'canonical' message. This
+%% is such that expensive operations like signature verification are not
+%% performed unless necessary.
+with_only_committed(Msg, Opts) when is_map(Msg) ->
+    ?event({with_only_committed, {msg, Msg}, {opts, Opts}}),
+    Comms = hb_maps:get(<<"commitments">>, Msg, not_found, Opts),
+    case is_map(Msg) andalso Comms /= not_found of
+        true ->
+            try
+                CommittedKeys =
+                    hb_message:committed(
+                        Msg,
+                        #{ <<"commitments">> => <<"all">> },
+                        Opts
+                    ),
+                % Add the ao-body-key to the committed list if it is not
+                % already present.
+                ?event(debug_bundle, {committed_keys, CommittedKeys, {msg, Msg}}),
+                {ok,
+                    with_links(
+                        [<<"commitments">> | CommittedKeys],
+                        Msg,
+                        Opts
+                    )
+                }
+            catch Class:Reason:St ->
+                {error,
+                    {could_not_normalize,
+                        {class, Class},
+                        {reason, Reason},
+                        {msg, Msg},
+                        {stacktrace, St}
+                    }
+                }
+            end;
+        false -> {ok, Msg}
+    end;
+with_only_committed(Msg, _) ->
+    % If the message is not a map, it cannot be signed.
+    {ok, Msg}.
+
+%% @doc Filter keys from a map that do not match either the list of keys or
+%% their relative `+link` variants.
+with_links(Keys, Map, Opts) ->
+    hb_maps:with(
+        Keys ++
+            lists:map(
+                fun(Key) ->
+                    <<(hb_link:remove_link_specifier(Key))/binary, "+link">>
+                end,
+                Keys
+            ),
+        Map,
+        Opts
+    ).
+
+%% @doc Return the message with only the specified committers attached.
+with_only_committers(Msg, Committers) ->
+    with_only_committers(Msg, Committers, #{}).
+with_only_committers(Msg, Committers, Opts) when is_map(Msg) ->
+    NewCommitments =
+        hb_maps:filter(
+            fun(_, #{ <<"committer">> := Committer }) ->
+                lists:member(Committer, Committers);
+               (_, _) -> false
+            end,
+            hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+			Opts
+        ),
+    Msg#{ <<"commitments">> => NewCommitments };
+with_only_committers(Msg, _Committers, _Opts) ->
+    throw({unsupported_message_type, Msg}).
+
+%% @doc Determine whether a specific key is part of a message's commitments.
+is_signed_key(Key, Msg, Opts) ->
+    lists:member(Key, hb_message:committed(Msg, all, Opts)).
+
+%% @doc Remove the any of the given keys that are not signed from a message.
+without_unless_signed(Key, Msg, Opts) when not is_list(Key) ->
+    without_unless_signed([Key], Msg, Opts);
+without_unless_signed(Keys, Msg, Opts) ->
+    SignedKeys = hb_message:committed(Msg, all, Opts),
+    maps:without(
+        lists:filter(fun(K) -> not lists:member(K, SignedKeys) end, Keys),
+        Msg
+    ).
+
+%% @doc Sign a message with the given wallet.
+commit(Msg, WalletOrOpts) ->
+    commit(
+        Msg,
+        WalletOrOpts,
+        hb_opts:get(
+            commitment_device,
+            no_viable_commitment_device,
+            case is_map(WalletOrOpts) of
+                true -> WalletOrOpts;
+                false -> #{ priv_wallet => WalletOrOpts }
+            end
+        )
+    ).
+commit(Msg, Wallet, Format) when not is_map(Wallet) ->
+    commit(Msg, #{ priv_wallet => Wallet }, Format);
+commit(Msg, Opts, CodecName) when is_binary(CodecName) ->
+    commit(Msg, Opts, #{ <<"commitment-device">> => CodecName });
+commit(Msg, Opts, Spec) ->
+    {ok, Signed} =
+        dev_message:commit(
+            Msg,
+            Spec#{
+                <<"commitment-device">> =>
+                    case hb_maps:get(<<"commitment-device">>, Spec, none, Opts) of
+                        none ->
+                            case hb_maps:get(<<"device">>, Spec, none, Opts) of
+                                none ->
+                                    throw(
+                                        {
+                                            no_commitment_device_in_codec_spec,
+                                            Spec
+                                        }
+                                    );
+                                Device -> Device
+                            end;
+                        CommitmentDevice -> CommitmentDevice
+                    end
+            },
+            Opts
+        ),
+    Signed.
+
+%% @doc Return the list of committed keys from a message.
+committed(Msg, all, Opts) ->
+    committed(Msg, #{ <<"committers">> => <<"all">> }, Opts);
+committed(Msg, none, Opts) ->
+    committed(Msg, #{ <<"committers">> => <<"none">> }, Opts);
+committed(Msg, List, Opts) when is_list(List) ->
+    committed(Msg, #{ <<"commitments">> => List }, Opts);
+committed(Msg, CommittersMsg, Opts) ->
+    ?event(
+        {committed,
+            {msg, {explicit, Msg}},
+            {committers_msg, {explicit, CommittersMsg}},
+            {opts, Opts}
+        }
+    ),
+    {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
+    CommittedKeys.
+
+%% @doc wrapper function to verify a message.
+verify(Msg) -> verify(Msg, all).
+verify(Msg, Committers) ->
+    verify(Msg, Committers, #{}).
+verify(Msg, all, Opts) ->
+    verify(Msg, <<"all">>, Opts);
+verify(Msg, signers, Opts) ->
+    verify(Msg, hb_message:signers(Msg, Opts), Opts);
+verify(Msg, Committers, Opts) when not is_map(Committers) ->
+    verify(
+        Msg,
+        #{
+            <<"committers">> =>
+                case ?IS_ID(Committers) of
+                    true -> [Committers];
+                    false -> Committers
+                end
+        },
+        Opts
+    );
+verify(Msg, Spec, Opts) ->
+    ?event(verify, {verify, {spec, Spec}}),
+    {ok, Res} =
+        dev_message:verify(
+            Msg,
+            Spec,
+            Opts
+        ),
+    Res.
+
+%% @doc Return the unsigned version of a message in AO-Core format.
+uncommitted(Msg) -> uncommitted(Msg, #{}).
+uncommitted(Bin, _Opts) when is_binary(Bin) -> Bin;
+uncommitted(Msg, Opts) ->
+    hb_maps:remove(<<"commitments">>, Msg, Opts).
+
+%% @doc Return all of the committers on a message that have 'normal', 256 bit, 
+%% addresses.
+signers(Msg, Opts) ->
+    hb_util:ok(dev_message:committers(Msg, #{}, Opts)).
 
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
 print(Msg, Indent) ->
-    io:format(standard_error, "~s", [lists:flatten(format(Msg, Indent))]).
+    io:format(standard_error, "~s", [lists:flatten(hb_format:message(Msg, #{}, Indent))]).
 
-%% @doc Format a message for printing, optionally taking an indentation level
-%% to start from.
-format(Item) -> format(Item, 0).
-format(Bin, Indent) when is_binary(Bin) ->
-    hb_util:format_indented(
-        hb_util:format_binary(Bin),
-        Indent
-    );
-format(Map, Indent) when is_map(Map) ->
-    % Define helper functions for formatting elements of the map.
-    ValOrUndef =
-        fun(Key) ->
-            case dev_message:get(Key, Map) of
-                {ok, Val} ->
-                    case hb_util:short_id(Val) of
-                        undefined -> Val;
-                        ShortID -> ShortID
-                    end;
-                {error, _} -> undefined
-            end
-        end,
-    FilterUndef =
-        fun(List) ->
-            lists:filter(fun({_, undefined}) -> false; (_) -> true end, List)
-        end,
-    % Prepare the metadata row for formatting.
-    % Note: We try to get the IDs _if_ they are *already* in the map. We do not
-    % force calculation of the IDs here because that may cause significant
-    % overhead unless the `debug_ids` option is set.
-    IDMetadata =
-        case hb_opts:get(debug_ids, false, #{}) of
-            false ->
-                [
-                    {<<"#P">>, ValOrUndef(hashpath)},
-                    {<<"*U">>, ValOrUndef(unsigned_id)},
-                    {<<"*S">>, ValOrUndef(id)}
-                ];
-            true ->
-                {ok, UID} = dev_message:unsigned_id(Map),
-                {ok, ID} = dev_message:id(Map),
-                [
-                    {<<"#P">>, hb_util:short_id(ValOrUndef(hashpath))},
-                    {<<"*U">>, hb_util:short_id(UID)}
-                ] ++
-                case ID of
-                    UID -> [];
-                    _ -> [{<<"*S">>, hb_util:short_id(ID)}]
-                end
-        end,
-    SignerMetadata =
-        case signers(Map) of
-            [] -> [];
-            [Signer] ->
-                [{<<"Sig">>, hb_util:short_id(Signer)}];
-            Signers ->
-                [
-                    {
-                        <<"Sigs">>,
-                        string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")
-                    }
-                ]
-        end,
-    % Concatenate the present metadata rows.
-    Metadata = FilterUndef(lists:flatten([IDMetadata, SignerMetadata])),
-    % Format the metadata row.
-    Header =
-        hb_util:format_indented("Message [~s] {",
-            [
-                string:join(
-                    [
-                        io_lib:format("~s: ~s", [Lbl, Val])
-                        || {Lbl, Val} <- Metadata
-                    ],
-                    ", "
-                )
-            ],
-            Indent
-        ),
-    % Put the path and device rows into the output at the _top_ of the map.
-    PriorityKeys = [{<<"Path">>, ValOrUndef(path)}, {<<"Device">>, ValOrUndef(device)}],
-    FooterKeys =
-        case hb_private:from_message(Map) of
-            PrivMap when map_size(PrivMap) == 0 -> [];
-            PrivMap -> [{<<"!Private!">>, PrivMap}]
-        end,
-    % Concatenate the path and device rows with the rest of the key values.
-    KeyVals =
-        FilterUndef(PriorityKeys) ++
-        maps:to_list(
-            minimize(Map,
-                [owner, signature, id, unsigned_id, hashpath, path, device]
-                ++ [<<"Device">>, <<"Path">>] % Hack: Until key capitalization is fixed.
-            )
-        ) ++ FooterKeys,
-    % Format the remaining 'normal' keys and values.
-    Res = lists:map(
-        fun({Key, Val}) ->
-            NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
-            KeyStr = 
-                case NormKey of
-                    undefined ->
-                        io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
-                    _ ->
-                        hb_converge:key_to_binary(Key)
-                end,
-            hb_util:format_indented(
-                "~s => ~s~n",
-                [
-                    lists:flatten([KeyStr]),
-                    case Val of
-                        NextMap when is_map(NextMap) ->
-                            hb_util:format_map(NextMap, Indent + 2);
-                        _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
-                            Short = hb_util:short_id(Val),
-                            io_lib:format("~s [*]", [Short]);
-                        _ when byte_size(Val) == 87 ->
-                            io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
-                        Bin when is_binary(Bin) ->
-                            hb_util:format_binary(Bin);
-                        Other ->
-                            io_lib:format("~p", [Other])
-                    end
-                ],
-                Indent + 1
-            )
-        end,
-        KeyVals
-    ),
-    case Res of
-        [] -> lists:flatten(Header ++ " [Empty] }");
-        _ ->
-            lists:flatten(
-                Header ++ ["\n"] ++ Res ++ hb_util:format_indented("}", Indent)
-            )
-    end;
-format(Item, Indent) ->
-    % Whatever we have is not a message map.
-    hb_util:format_indented("[UNEXPECTED VALUE] ~p", [Item], Indent).
-
-%% @doc Return the signers of a message. For now, this is just the signer
-%% of the message itself. In the future, we will support multiple signers.
-signers(Msg) when is_map(Msg) ->
-    case {maps:find(owner, Msg), maps:find(signature, Msg)} of
-        {_, error} -> [];
-        {error, _} -> [];
-        {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
-    end;
-signers(TX) when is_record(TX, tx) ->
-    ar_bundles:signer(TX);
-signers(_) -> [].
-
-%% @doc Sign a message with the given wallet. Only supports the `tx' format
-%% at the moment.
-sign(Msg, Wallet) ->
-    TX = convert(Msg, tx, #{}),
-    SignedTX = ar_bundles:sign_item(TX, Wallet),
-    convert(SignedTX, converge, tx, #{}).
-
-%% @doc Verify a message.
-verify(Msg) ->
-    TX = convert(Msg, tx, converge, #{}),
-    ar_bundles:verify_item(TX).
-
-%% @doc Return the type of a message.
+%% @doc Return the type of an encoded message.
 type(TX) when is_record(TX, tx) -> tx;
 type(Binary) when is_binary(Binary) -> binary;
 type(Msg) when is_map(Msg) ->
@@ -287,7 +433,7 @@ type(Msg) when is_map(Msg) ->
         fun({_, Value}) -> is_map(Value) end,
         lists:filter(
             fun({Key, _}) -> not hb_private:is_private(Key) end,
-            maps:to_list(Msg)
+            hb_maps:to_list(Msg)
         )
     ),
     case IsDeep of
@@ -300,16 +446,32 @@ type(Msg) when is_map(Msg) ->
 %%      `strict': All keys in both maps be present and match.
 %%      `only_present': Only present keys in both maps must match.
 %%      `primary': Only the primary map's keys must be present.
+%% Returns `true` or `{ErrType, Err}`.
 match(Map1, Map2) ->
     match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
+    match(Map1, Map2, Mode, #{}).
+match(Map1, Map2, Mode, Opts) ->
+    try unsafe_match(Map1, Map2, Mode, [], Opts)
+    catch _:Details -> Details
+    end.
+
+%% @doc Match two maps, returning `true' if they match, or throwing an error
+%% if they do not.
+unsafe_match(Map1, Map2, Mode, Path, Opts) ->
     Keys1 =
-        maps:keys(
-            NormMap1 = minimize(normalize(hb_converge:ensure_message(Map1)))
+        hb_maps:keys(
+            NormMap1 = hb_util:lower_case_key_map(minimize(
+                normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
+                [<<"content-type">>, <<"ao-body-key">>]
+            ), Opts)
         ),
     Keys2 =
-        maps:keys(
-            NormMap2 = minimize(normalize(hb_converge:ensure_message(Map2)))
+        hb_maps:keys(
+            NormMap2 = hb_util:lower_case_key_map(minimize(
+                normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
+                [<<"content-type">>, <<"ao-body-key">>]
+            ), Opts)
         ),
     PrimaryKeysPresent =
         (Mode == primary) andalso
@@ -317,28 +479,56 @@ match(Map1, Map2, Mode) ->
                 fun(Key) -> lists:member(Key, Keys1) end,
                 Keys1
             ),
+    ?event(match,
+        {match,
+            {keys1, Keys1},
+            {keys2, Keys2},
+            {mode, Mode},
+            {primary_keys_present, PrimaryKeysPresent},
+            {msg1, Map1},
+            {msg2, Map2}
+        }
+    ),
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
                 fun(Key) ->
-                    Val1 = maps:get(Key, NormMap1, not_found),
-                    Val2 = maps:get(Key, NormMap2, not_found),
+                    ?event(match, {matching_key, Key}),
+                    Val1 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap1, not_found, Opts),
+                            Opts
+                        ),
+                    Val2 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap2, not_found, Opts),
+                            Opts
+                        ),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
                         false ->
                             case is_map(Val1) andalso is_map(Val2) of
-                                true -> match(Val1, Val2);
+                                true ->
+                                    unsafe_match(Val1, Val2, Mode, Path ++ [Key], Opts);
                                 false ->
-                                    case Val1 == Val2 of
-                                        true -> true;
-                                        false ->
-                                            ?event(
+                                    case {Val1, Val2} of
+                                        {V, V} -> true;
+                                        {V, '_'} when V =/= not_found -> true;
+                                        {'_', V} when V =/= not_found -> true;
+                                        {'_', '_'} -> true;
+                                        _ ->
+                                            throw(
                                                 {value_mismatch,
-                                                    {key, Val1, Val2}
+                                                    hb_format:short_id(
+                                                        hb_path:to_binary(
+                                                            Path ++ [Key]
+                                                        )
+                                                    ),
+                                                    {val1, Val1},
+                                                    {val2, Val2}
                                                 }
-                                            ),
-                                            false
+                                            )
                                     end
                             end
                     end
@@ -346,36 +536,191 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
-            false
+            throw(
+                {keys_mismatch,
+                    {path, hb_format:short_id(hb_path:to_binary(Path))},
+                    {keys1, Keys1},
+                    {keys2, Keys2}
+                }
+            )
     end.
 	
 matchable_keys(Map) ->
-    lists:sort(lists:map(fun hb_converge:key_to_binary/1, maps:keys(Map))).
+    lists:sort(lists:map(fun hb_ao:normalize_key/1, hb_maps:keys(Map))).
 
-%% @doc Normalize the keys in a map. Also takes a list of keys and returns a
-%% sorted list of normalized keys if the input is a list.
-normalize_keys(Keys) when is_list(Keys) ->
-    lists:sort(lists:map(fun hb_converge:key_to_binary/1, Keys));
-normalize_keys(Map) ->
-    maps:from_list(
-        lists:map(
-            fun({Key, Value}) ->
-                {hb_converge:key_to_binary(Key), Value}
+%% @doc Return the numeric differences between two messages, matching deeply
+%% across nested messages. If the values are non-numeric, the new value is 
+%% returned if the values are different. Keys found only in the first message
+%% are dropped, as they have 'changed' to absence.
+diff(Msg1, Msg2, Opts) when is_map(Msg1) andalso is_map(Msg2) ->
+    maps:filtermap(
+        fun(Key, Val2) ->
+            case hb_maps:get(Key, Msg1, not_found, Opts) of
+                Val2 ->
+                    % The key is present in both maps, and the values match.
+                    false;
+                not_found ->
+                    % The key is net-new in Map2.
+                    {true, Val2};
+                Val1 when is_number(Val1) andalso is_number(Val2) ->
+                    % The key is present in both maps, and the values are numbers;
+                    % return the difference.
+                    {true, Val2 - Val1};
+                Val1 when is_map(Val1) andalso is_map(Val2) ->
+                    % The key is present in both maps, and the values are maps;
+                    % return the difference.
+                    {true, diff(Val1, Val2, Opts)};
+                _ ->
+                    % The key is present in both maps, and the values do not 
+                    % match. Return the new value.
+                    {true, Val2}
+            end
+        end,
+        Msg2
+    );
+diff(_Val1, _Val2, _Opts) ->
+    not_found.
+
+%% @doc Filter messages that do not match the 'spec' given. The underlying match
+%% is performed in the `only_present' mode, such that match specifications only
+%% need to specify the keys that must be present.
+with_commitments(ID, Msg, Opts) when ?IS_ID(ID) ->
+    with_commitments([ID], Msg, Opts);
+with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
+    ?event({with_commitments, {spec, Spec}, {commitments, Commitments}}),
+    FilteredCommitments =
+        hb_maps:filter(
+            fun(ID, CommMsg) ->
+                if is_list(Spec) ->
+                    lists:member(ID, Spec);
+                is_map(Spec) ->
+                    match(Spec, CommMsg, primary, Opts) == true
+                end
             end,
-            maps:to_list(Map)
-        )
-    ).
+            Commitments,
+            Opts
+        ),
+    ?event({with_commitments, {filtered_commitments, FilteredCommitments}}),
+    Msg#{ <<"commitments">> => FilteredCommitments };
+with_commitments(_Spec, Msg, _Opts) ->
+    Msg.
+
+%% @doc Filter messages that match the 'spec' given. Inverts the `with_commitments/2'
+%% function, such that only messages that do _not_ match the spec are returned.
+without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
+    ?event({without_commitments, {spec, Spec}, {msg, Msg}, {commitments, Commitments}}),
+    FilteredCommitments =
+        hb_maps:without(
+            hb_maps:keys(
+                hb_maps:get(
+                    <<"commitments">>,
+                    with_commitments(Spec, Msg, Opts),
+                    #{},
+                    Opts
+                )
+            ),
+            Commitments
+        ),
+    ?event({without_commitments, {filtered_commitments, FilteredCommitments}}),
+    Msg#{ <<"commitments">> => FilteredCommitments };
+without_commitments(_Spec, Msg, _Opts) ->
+    Msg.
+
+%% @doc Extract a commitment from a message given a `committer' or `commitment'
+%% ID, or a spec message to match against. Returns only the first matching
+%% commitment, or `not_found'.
+commitment(ID, Msg) ->
+    commitment(ID, Msg, #{}).
+commitment(ID, Link, Opts) when ?IS_LINK(Link) ->
+    commitment(ID, hb_cache:ensure_loaded(Link, Opts), Opts);
+commitment(ID, #{ <<"commitments">> := Commitments }, Opts)
+        when is_binary(ID), is_map_key(ID, Commitments) ->
+    hb_maps:get(
+        ID,
+        Commitments,
+        not_found,
+        Opts
+    );
+commitment(Spec, Msg, Opts) ->
+    Matches = commitments(Spec, Msg, Opts),
+    ?event(debug_commitment, {commitment, {spec, Spec}, {matches, Matches}}),
+    if
+        map_size(Matches) == 0 -> not_found;
+        map_size(Matches) == 1 ->
+            CommID = hd(hb_maps:keys(Matches)),
+            {ok, CommID, hb_util:ok(hb_maps:find(CommID, Matches, Opts))};
+        true ->
+            ?event(commitment, {multiple_matches, {matches, Matches}}),
+            multiple_matches
+    end;
+commitment(_Spec, _Msg, _Opts) ->
+    % The message has no commitments, so the spec can never match.
+    not_found.
+
+%% @doc Return a list of all commitments that match the spec.
+commitments(ID, Link, Opts) when ?IS_LINK(Link) ->
+    commitments(ID, hb_cache:ensure_loaded(Link, Opts), Opts);
+commitments(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
+    commitments(#{ <<"committer">> => CommitterID }, Msg, Opts);
+commitments(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
+    hb_maps:filtermap(
+        fun(_ID, CommMsg) ->
+            case match(Spec, CommMsg, primary, Opts) of
+                true -> {true, CommMsg};
+                _ -> false
+            end
+        end,
+        Commitments,
+        Opts
+    );
+commitments(_Spec, _Msg, _Opts) ->
+    #{}.
+
+%% @doc Return the devices for which there are commitments on a message.
+commitment_devices(#{ <<"commitments">> := Commitments }, Opts) ->
+    lists:map(
+        fun(CommMsg) ->
+            hb_ao:get(<<"commitment-device">>, CommMsg, Opts)
+        end,
+        maps:values(Commitments)
+    );
+commitment_devices(_Msg, _Opts) ->
+    [].
+
+%% @doc Implements a standard pattern in which the target for an operation is
+%% found by looking for a `target' key in the request. If the target is `self',
+%% or not present, the operation is performed on the original message. Otherwise,
+%% the target is expected to be a key in the message, and the operation is
+%% performed on the value of that key.
+find_target(Self, Req, Opts) ->
+	GetOpts = Opts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>]
+    },
+    {ok,
+        case hb_maps:get(<<"target">>, Req, <<"self">>, GetOpts) of
+            <<"self">> -> Self;
+            Key ->
+                hb_maps:get(
+                    Key,
+                    Req,
+                    hb_maps:get(<<"body">>, Req, GetOpts),
+                    GetOpts
+                )
+        end
+    }.
 
 %% @doc Remove keys from the map that can be regenerated. Optionally takes an
 %% additional list of keys to include in the minimization.
 minimize(Msg) -> minimize(Msg, []).
 minimize(RawVal, _) when not is_map(RawVal) -> RawVal;
 minimize(Map, ExtraKeys) ->
-    NormKeys = normalize_keys(?REGEN_KEYS) ++ normalize_keys(ExtraKeys),
+    NormKeys =
+        lists:map(fun hb_ao:normalize_key/1, ?REGEN_KEYS)
+            ++ lists:map(fun hb_ao:normalize_key/1, ExtraKeys),
     maps:filter(
         fun(Key, _) ->
-            (not lists:member(hb_converge:key_to_binary(Key), NormKeys))
+            (not lists:member(hb_ao:normalize_key(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
         maps:map(fun(_K, V) -> minimize(V) end, Map)
@@ -383,10 +728,12 @@ minimize(Map, ExtraKeys) ->
 
 %% @doc Return a map with only the keys that necessary, without those that can
 %% be regenerated.
-normalize(Map) ->
-    NormalizedMap = normalize_keys(Map),
+normalize(Map, Opts) when is_map(Map) orelse is_list(Map) ->
+    NormalizedMap = hb_ao:normalize_keys(Map, Opts),
     FilteredMap = filter_default_keys(NormalizedMap),
-    maps:with(matchable_keys(FilteredMap), FilteredMap).
+    hb_maps:with(matchable_keys(FilteredMap), FilteredMap);
+normalize(Other, _Opts) ->
+    Other.
 
 %% @doc Remove keys from a map that have the default values found in the tx
 %% record.
@@ -394,7 +741,7 @@ filter_default_keys(Map) ->
     DefaultsMap = default_tx_message(),
     maps:filter(
         fun(Key, Value) ->
-            case maps:find(hb_converge:key_to_binary(Key), DefaultsMap) of
+            case hb_maps:find(hb_ao:normalize_key(Key), DefaultsMap) of
                 {ok, Value} -> false;
                 _ -> true
             end
@@ -404,376 +751,10 @@ filter_default_keys(Map) ->
 
 %% @doc Get the normalized fields and default values of the tx record.
 default_tx_message() ->
-    normalize_keys(maps:from_list(default_tx_list())).
+    hb_maps:from_list(default_tx_list()).
 
-%% @doc Get the ordered list of fields and default values of the tx record.
+%% @doc Get the ordered list of fields as AO-Core keys and default values of
+%% the tx record.
 default_tx_list() ->
-    lists:zip(record_info(fields, tx), tl(tuple_to_list(#tx{}))).
-
-%% @doc Serialize a message to a binary representation, either as JSON or the
-%% binary format native to the message/bundles spec in use.
-serialize(M) -> serialize(M, binary).
-serialize(M, json) ->
-    jiffy:encode(ar_bundles:item_to_json_struct(M));
-serialize(M, binary) ->
-    ar_bundles:serialize(convert(M, tx, #{})).
-
-%% @doc Deserialize a message from a binary representation.
-deserialize(B) -> deserialize(B, binary).
-deserialize(J, json) ->
-    {JSONStruct} = jiffy:decode(J),
-    ar_bundles:json_struct_to_item(JSONStruct);
-deserialize(B, binary) ->
-    convert(ar_bundles:deserialize(B), converge, tx, #{}).
-
-%%% Tests
-
-%% @doc Test that the filter_default_keys/1 function removes TX fields
-%% that have the default values found in the tx record, but not those that
-%% have been set by the user.
-default_keys_removed_test() ->
-    TX = #tx { unsigned_id = << 1:256 >>, last_tx = << 2:256 >> },
-    TXMap = #{
-        unsigned_id => TX#tx.unsigned_id,
-        last_tx => TX#tx.last_tx,
-        <<"owner">> => TX#tx.owner,
-        <<"target">> => TX#tx.target,
-        data => TX#tx.data
-    },
-    FilteredMap = filter_default_keys(TXMap),
-    ?assertEqual(<< 1:256 >>, maps:get(unsigned_id, FilteredMap)),
-    ?assertEqual(<< 2:256 >>, maps:get(last_tx, FilteredMap, not_found)),
-    ?assertEqual(not_found, maps:get(<<"owner">>, FilteredMap, not_found)),
-    ?assertEqual(not_found, maps:get(<<"target">>, FilteredMap, not_found)).
-
-minimization_test() ->
-    Msg = #{
-        unsigned_id => << 1:256 >>,
-        <<"id">> => << 2:256 >>
-    },
-    MinimizedMsg = minimize(Msg),
-    ?event({minimized, MinimizedMsg}),
-    ?assertEqual(0, maps:size(MinimizedMsg)).
-
-
-basic_map_codec_test(Codec) ->
-    Msg = #{ normal_key => <<"NORMAL_VALUE">> },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(hb_message:match(Msg, Decoded)).
-
-%% @doc Test that we can convert a message into a tx record and back.
-single_layer_message_to_encoding_test(Codec) ->
-    Msg = #{
-        last_tx => << 2:256 >>,
-        owner => << 3:4096 >>,
-        target => << 4:256 >>,
-        data => <<"DATA">>,
-        <<"Special-Key">> => <<"SPECIAL_VALUE">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(hb_message:match(Msg, Decoded)).
-
-% %% @doc Test that different key encodings are converted to their corresponding
-% %% TX fields.
-% key_encodings_to_tx_test() ->
-%     Msg = #{
-%         <<"last_tx">> => << 2:256 >>,
-%         <<"Owner">> => << 3:4096 >>,
-%         <<"Target">> => << 4:256 >>
-%     },
-%     TX = message_to_tx(Msg),
-%     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
-%     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
-%     ?assertEqual(maps:get(<<"Owner">>, Msg), TX#tx.owner),
-%     ?assertEqual(maps:get(<<"Target">>, Msg), TX#tx.target).
-
-%% @doc Test that the message matching function works.
-match_test(Codec) ->
-    Msg = #{ a => 1, b => 2 },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-match_modes_test() ->
-    Msg1 = #{ a => 1, b => 2 },
-    Msg2 = #{ a => 1 },
-    Msg3 = #{ a => 1, b => 2, c => 3 },
-    ?assert(match(Msg1, Msg2, only_present)),
-    ?assert(not match(Msg2, Msg1, strict)),
-    ?assert(match(Msg1, Msg3, primary)),
-    ?assert(not match(Msg3, Msg1, primary)).
-
-%% @doc Structured field parsing tests.
-structured_field_atom_parsing_test(Codec) ->
-    Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-structured_field_decimal_parsing_test(Codec) ->
-    Msg = #{ integer_field => 1234567890 },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-binary_to_binary_test(Codec) ->
-    % Serialization must be able to turn a raw binary into a TX, then turn
-    % that TX back into a binary and have the result match the original.
-    Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Encoded = convert(Bin, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assertEqual(Bin, Decoded).
-
-%% @doc Test that the data field is correctly managed when we have multiple
-%% uses for it (the 'data' key itself, as well as keys that cannot fit in
-%% tags).
-message_with_large_keys_test(Codec) ->
-    Msg = #{
-        <<"normal_key">> => <<"normal_value">>,
-        <<"large_key">> => << 0:((1 + 1024) * 8) >>,
-        <<"another_large_key">> => << 0:((1 + 1024) * 8) >>,
-        <<"another_normal_key">> => <<"another_normal_value">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-%% @doc Check that large keys and data fields are correctly handled together.
-nested_message_with_large_keys_and_data_test(Codec) ->
-    Msg = #{
-        <<"normal_key">> => <<"normal_value">>,
-        <<"large_key">> => << 0:(1024 * 16) >>,
-        <<"another_large_key">> => << 0:(1024 * 16) >>,
-        <<"another_normal_key">> => <<"another_normal_value">>,
-        data => <<"Hey from the data field!">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event({matching, {input, Msg}, {output, Decoded}}),
-    ?assert(match(Msg, Decoded)).
-
-simple_nested_message_test(Codec) ->
-    Msg = #{
-        a => <<"1">>,
-        nested => #{ <<"b">> => <<"1">> },
-        c => <<"3">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event({matching, {input, Msg}, {output, Decoded}}),
-    ?assert(
-        match(
-            Msg,
-            Decoded
-        )
-    ).
-
-%% @doc Test that the data field is correctly managed when we have multiple
-%% uses for it (the 'data' key itself, as well as keys that cannot fit in
-%% tags).
-nested_message_with_large_data_test(Codec) ->
-    Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        data => #{
-            <<"tx_map_item">> =>
-                #{
-                    <<"tx_depth">> => <<"inner">>,
-                    <<"large_data_inner">> => << 0:((1 + 1024) * 8) >>
-                },
-            <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
-        }
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-%% @doc Test that we can convert a 3 layer nested message into a tx record and back.
-deeply_nested_message_with_data_test(Codec) ->
-    Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        data => #{
-            <<"tx_map_item">> =>
-                #{
-                    <<"tx_depth">> => <<"inner">>,
-                    data => #{
-                        <<"tx_depth">> => <<"innermost">>,
-                        data => <<"DATA">>
-                    }
-                }
-        }
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-nested_structured_fields_test(Codec) ->
-    NestedMsg = #{ a => #{ b => 1 } },
-    Encoded = convert(NestedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(NestedMsg, Decoded)).
-
-nested_message_with_large_keys_test(Codec) ->
-    Msg = #{
-        a => <<"1">>,
-        long_data => << 0:((1 + 1024) * 8) >>,
-        nested => #{ <<"b">> => <<"1">> },
-        c => <<"3">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-%% @doc Test that we can convert a signed tx into a message and back.
-signed_tx_encode_decode_verify_test(Codec) ->
-    TX = #tx {
-        data = <<"TEST_DATA">>,
-        tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
-    },
-    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(verify(Decoded)).
-
-signed_message_encode_decode_verify_test(Codec) ->
-    Msg = #{
-        data => <<"TEST_DATA">>,
-        tags => [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
-    },
-    SignedMsg = hb_message:sign(Msg, hb:wallet()),
-    Encoded = convert(SignedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(SignedMsg, Decoded)).
-
-tabm_converge_ids_equal_test() ->
-    Msg = #{
-        data => <<"TEST_DATA">>,
-        deep_data => #{
-            data => <<"DEEP_DATA">>,
-            complex_key => 1337,
-            list => [1,2,3]
-        }
-    },
-    ?assertEqual(
-        dev_message:unsigned_id(Msg),
-        dev_message:unsigned_id(convert(Msg, tabm, converge, #{}))
-    ).
-
-signed_deep_tx_serialize_and_deserialize_test(Codec) ->
-    TX = #tx {
-        tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}],
-        data = #{
-            <<"NESTED_TX">> =>
-                #tx {
-                    data = <<"NESTED_DATA">>,
-                    tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
-                }
-        }
-    },
-    SignedTX = ar_bundles:deserialize(
-        ar_bundles:sign_item(TX, hb:wallet())
-    ),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(
-        match(
-            convert(SignedTX, converge, tx, #{}),
-            Decoded
-        )
-    ).
-
-unsigned_id_test(Codec) ->
-    Msg = #{ data => <<"TEST_DATA">> },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assertEqual(
-        dev_message:unsigned_id(Decoded),
-        dev_message:unsigned_id(Msg)
-    ).
-
-% signed_id_test_disabled() ->
-%     TX = #tx {
-%         data = <<"TEST_DATA">>,
-%         tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
-%     },
-%     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
-%     ?assert(ar_bundles:verify_item(SignedTX)),
-%     SignedMsg = hb_codec_tx:from(SignedTX),
-%     ?assertEqual(
-%         hb_util:encode(ar_bundles:id(SignedTX, signed)),
-%         hb_util:id(SignedMsg, signed)
-%     ).
-
-message_with_simple_list_test(Codec) ->
-    Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-empty_string_in_tag_test(Codec) ->
-    Msg =
-        #{
-            dev =>
-                #{
-                    <<"stderr">> => <<"">>,
-                    <<"stdin">> => <<"b">>,
-                    <<"stdout">> => <<"c">>
-                }
-        },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-
-%%% Test helpers
-
-test_codecs() ->
-    [converge, tx, flat, http].
-
-generate_test_suite(Suite) ->
-    lists:map(
-        fun(CodecName) ->
-            {foreach,
-                fun() -> ok end,
-                fun(_) -> ok end,
-                [
-                    {
-                        atom_to_list(CodecName) ++ ": " ++ Desc,
-                        fun() -> Test(CodecName) end
-                    }
-                ||
-                    {Desc, Test} <- Suite
-                ]
-            }
-        end,
-        test_codecs()
-    ).
-
-message_suite_test_() ->
-    generate_test_suite([
-        {"basic map codec test", fun basic_map_codec_test/1},
-        {"match test", fun match_test/1},
-        {"single layer message to encoding test", fun single_layer_message_to_encoding_test/1},
-        {"message with large keys test", fun message_with_large_keys_test/1},
-        {"nested message with large keys and data test", fun nested_message_with_large_keys_and_data_test/1},
-        {"simple nested message test", fun simple_nested_message_test/1},
-        {"nested message with large data test", fun nested_message_with_large_data_test/1},
-        {"deeply nested message with data test", fun deeply_nested_message_with_data_test/1},
-        {"structured field atom parsing test", fun structured_field_atom_parsing_test/1},
-        {"structured field decimal parsing test", fun structured_field_decimal_parsing_test/1},
-        {"binary to binary test", fun binary_to_binary_test/1},
-        {"nested structured fields test", fun nested_structured_fields_test/1},
-        {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
-        {"message with simple list test", fun message_with_simple_list_test/1},
-        {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed item to message and back test", fun signed_message_encode_decode_verify_test/1},
-        {"signed item to tx and back test", fun signed_tx_encode_decode_verify_test/1},
-        {"signed deep serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
-        {"unsigned id test", fun unsigned_id_test/1}
-    ]).
-
-simple_test() ->
-    basic_map_codec_test(http).
+    Keys = lists:map(fun hb_ao:normalize_key/1, record_info(fields, tx)),
+    lists:zip(Keys, tl(tuple_to_list(#tx{}))).
