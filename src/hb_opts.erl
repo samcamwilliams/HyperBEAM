@@ -208,6 +208,7 @@ default_message() ->
             #{<<"name">> => <<"multipass@1.0">>, <<"module">> => dev_multipass},
             #{<<"name">> => <<"name@1.0">>, <<"module">> => dev_name},
             #{<<"name">> => <<"node-process@1.0">>, <<"module">> => dev_node_process},
+            #{<<"name">> => <<"ouroboros@1.0">>, <<"module">> => dev_ouroboros},
             #{<<"name">> => <<"p4@1.0">>, <<"module">> => dev_p4},
             #{<<"name">> => <<"patch@1.0">>, <<"module">> => dev_patch},
             #{<<"name">> => <<"poda@1.0">>, <<"module">> => dev_poda},
@@ -251,6 +252,12 @@ default_message() ->
         http_client_connect_timeout => 5000,
         http_client_keepalive => 120000,
         http_client_send_timeout => 300_000,
+        rate_limit_exempt => [
+            <<"localhost">>,
+            <<"127.0.0.1">>,
+            <<"::1">>,
+            <<"0:0:0:0:0:0:0:1">>
+        ],
         port => 8734,
         process_sampler => true,
         process_sampler_interval => 15000,
