@@ -259,6 +259,7 @@ default_message() ->
             <<"0:0:0:0:0:0:0:1">>
         ],
         port => 8734,
+        process_snapshot_slots => 1,
         process_sampler => true,
         process_sampler_interval => 15000,
         wasm_allow_aot => false,
